@@ -1,0 +1,33 @@
+openapi: 3.0.1
+info:
+  title: Alphine AI ACA API
+  description: |
+    ACA (Automated Call Attender) API for managing customer interactions,
+    orders, and monitoring endpoints.
+  version: "1.0.0"
+servers:
+  - url: https://aca-orchestrator-cloud.herokuapp.com
+paths:
+  /health:
+    get:
+      summary: Health check
+      responses:
+        "200":
+          description: Server is healthy
+  /orchestrator/order/intent:
+    post:
+      summary: Detect order intent from text
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                business_id:
+                  type: integer
+                query:
+                  type: string
+      responses:
+        "200":
+          description: Detected order intent
