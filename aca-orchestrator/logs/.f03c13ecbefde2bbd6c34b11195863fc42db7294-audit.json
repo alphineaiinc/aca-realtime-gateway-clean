@@ -1,0 +1,30 @@
+{
+    "keep": {
+        "days": true,
+        "amount": 14
+    },
+    "auditLog": "C:\\Alphine\\Projects\\aca-realtime-gateway\\aca-orchestrator\\logs\\.f03c13ecbefde2bbd6c34b11195863fc42db7294-audit.json",
+    "files": [
+        {
+            "date": 1759982033329,
+            "name": "C:\\Alphine\\Projects\\aca-realtime-gateway\\aca-orchestrator\\logs\\orchestrator-2025-10-08.log",
+            "hash": "9f9b1b3dc5ebea3d8c333441f4a4c64f7e14314b3fe6047d97e94495640b8311"
+        },
+        {
+            "date": 1759983184364,
+            "name": "C:\\Alphine\\Projects\\aca-realtime-gateway\\aca-orchestrator\\logs\\orchestrator-2025-10-09.log",
+            "hash": "1fd715046ce839bcbd3cf5e36f380545fdd2dc9dc8cb8829652798804c86b252"
+        },
+        {
+            "date": 1760068805368,
+            "name": "C:\\Alphine\\Projects\\aca-realtime-gateway\\aca-orchestrator\\logs\\orchestrator-2025-10-10.log",
+            "hash": "93b717980768cc6148ecd8821695c04172d8f5ec0e0f1e57db914162c0057842"
+        },
+        {
+            "date": 1760155689411,
+            "name": "C:\\Alphine\\Projects\\aca-realtime-gateway\\aca-orchestrator\\logs\\orchestrator-2025-10-11.log",
+            "hash": "b3553751eb91145e1d030a40c1a84f60fd9c9fe1370cc9ad955f8f805fb835b7"
+        }
+    ],
+    "hashType": "sha256"
+}

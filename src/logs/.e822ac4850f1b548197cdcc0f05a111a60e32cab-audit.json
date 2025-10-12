@@ -1,0 +1,25 @@
+{
+    "keep": {
+        "days": true,
+        "amount": 7
+    },
+    "auditLog": "C:\\Alphine\\Projects\\aca-realtime-gateway\\src\\logs\\.e822ac4850f1b548197cdcc0f05a111a60e32cab-audit.json",
+    "files": [
+        {
+            "date": 1760064981128,
+            "name": "C:\\Alphine\\Projects\\aca-realtime-gateway\\src\\logs\\orchestrator-2025-10-09.log",
+            "hash": "c0cc4fc69364fc3d2b5116f79613096fa6665ad602bf8a80c59cc7f0577d34c2"
+        },
+        {
+            "date": 1760068805411,
+            "name": "C:\\Alphine\\Projects\\aca-realtime-gateway\\src\\logs\\orchestrator-2025-10-10.log",
+            "hash": "713ef89f9407e0a5d375c56b08e7b690825c721544bc1ce6891e13015558e171"
+        },
+        {
+            "date": 1760155246181,
+            "name": "C:\\Alphine\\Projects\\aca-realtime-gateway\\src\\logs\\orchestrator-2025-10-11.log",
+            "hash": "6f01ca57bc15f6f352bc605f14e23558554faed8ffde3a11a5ba680a0cd9bfd3"
+        }
+    ],
+    "hashType": "sha256"
+}

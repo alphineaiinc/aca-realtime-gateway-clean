@@ -1,0 +1,37 @@
+{
+  "name": "aca-realtime-gateway",
+  "version": "1.0.0",
+  "description": "Alphine AI Automated Call Attender Gateway - clean setup",
+  "main": "server.js",
+  "scripts": {
+    "start": "node -r module-alias/register server.js",
+    "start:orchestrator": "node -r module-alias/register aca-orchestrator/src/index.js"
+  },
+  "_moduleAliases": {
+    "@gateway": "src",
+    "@orchestrator": "aca-orchestrator/src",
+    "@shared": "shared"
+  },
+  "dependencies": {
+    "@google-cloud/speech": "^7.2.0",
+    "@google-cloud/text-to-speech": "^6.3.0",
+    "@grpc/grpc-js": "^1.10.9",
+    "@grpc/proto-loader": "^0.7.10",
+    "axios": "^1.12.2",
+    "body-parser": "^2.2.0",
+    "cors": "^2.8.5",
+    "dotenv": "^16.6.1",
+    "express": "^5.1.0",
+    "googleapis": "^144.0.0",
+    "helmet": "^8.1.0",
+    "module-alias": "^2.2.3",
+    "openai": "^5.23.1",
+    "pdf-parse": "^1.1.1",
+    "pg": "^8.16.3",
+    "sox-stream": "^2.0.6",
+    "wav": "^1.0.2",
+    "winston": "^3.10.0",
+    "winston-daily-rotate-file": "^4.7.1",
+    "ws": "^8.18.0"
+  }
+}
