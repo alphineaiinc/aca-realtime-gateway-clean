@@ -24,6 +24,11 @@
             "date": 1760155689411,
             "name": "C:\\Alphine\\Projects\\aca-realtime-gateway\\aca-orchestrator\\logs\\orchestrator-2025-10-11.log",
             "hash": "b3553751eb91145e1d030a40c1a84f60fd9c9fe1370cc9ad955f8f805fb835b7"
+        },
+        {
+            "date": 1760243974610,
+            "name": "C:\\Alphine\\Projects\\aca-realtime-gateway\\aca-orchestrator\\logs\\orchestrator-2025-10-12.log",
+            "hash": "fd40679e0a71fa713ce8855f08168a8ebe0620bb6040da3a0b627564c1694bd7"
         }
     ],
     "hashType": "sha256"

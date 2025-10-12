@@ -1,0 +1,47 @@
+Folder PATH listing for volume Windows
+Volume serial number is 6C82-414B
+C:\ALPHINE\PROJECTS\ACA-REALTIME-GATEWAY\ACA-ORCHESTRATOR
+|   .env
+|   config.js
+|   gpt_function_test.js
+|   index.js
+|   ingest_kb.js
+|   orchestrator_structure.txt
+|   retriever.js
+|   sample_faq.txt
+|   socket_handler.js
+|   tamil_test.mp3
+|   tts.js
+|   
++---logs
++---migrations
+|       002_tenant_isolation.sql
+|       
++---public
+|   \---dashboard
+|           index.backup.story2_11.html
+|           index.html
+|           
+\---src
+    +---brain
+    |   \---utils
+    |           embeddingManager.js
+    |           logger.js
+    |           
+    +---db
+    |       pool.js
+    |       
+    +---logs
+    |       .98ce0fd849ce3c85889c6bbdc8fc50ab38bc7e0b-audit.json
+    |       orchestrator-2025-10-07.log
+    |       
+    \---routes
+        |   brain.js
+        |   dashboard.js
+        |   dir
+        |   orchestrator.js
+        |   orderRoutes.js
+        |   
+        \---logs
+                response_tuning.log
+                

@@ -1,0 +1,51 @@
+[
+  {
+    "id": 1760156235921,
+    "timestamp": "2025-10-11T04:17:15.921Z",
+    "issueType": "DB connection lost",
+    "source": "simulator",
+    "action": "Restarted component successfully",
+    "success": true,
+    "business_id": 101,
+    "status": "success"
+  },
+  {
+    "id": 1760155999945,
+    "timestamp": "2025-10-11T04:13:19.946Z",
+    "issueType": "DB connection lost",
+    "source": "simulator",
+    "action": "Restarted component successfully",
+    "success": true,
+    "business_id": 101,
+    "status": "success"
+  },
+  {
+    "id": 1760153600074,
+    "timestamp": "2025-10-11T03:33:20.074Z",
+    "issueType": "DB connection lost",
+    "source": "simulator",
+    "action": "Restarted component successfully",
+    "success": true,
+    "business_id": 101,
+    "status": "success"
+  },
+  {
+    "id": 1760153538845,
+    "timestamp": "2025-10-11T03:32:18.845Z",
+    "issueType": "DB connection lost",
+    "source": "simulator",
+    "action": "Restarted component successfully",
+    "success": true,
+    "business_id": 101,
+    "status": "success"
+  },
+  {
+    "id": 1760149280430,
+    "timestamp": "2025-10-11T02:21:20.430Z",
+    "issueType": "Tenant 101 simulated error",
+    "source": "api",
+    "action": "Restarted component",
+    "success": true,
+    "business_id": 101
+  }
+]

@@ -32,7 +32,30 @@ const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
 // --- Database Client ---
 const { Pool } = require("pg");
-const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+
+// ✅ Dynamic SSL: local (no SSL), Heroku (SSL, no CA verify)
+const pgSSL =
+  process.env.NODE_ENV === "production" ? { rejectUnauthorized: false } : false;
+
+const pool = new Pool({
+  connectionString: process.env.DATABASE_URL,
+  ssl: pgSSL,
+});
+
+// Optional: quick startup connectivity test for clearer logs
+(async () => {
+  try {
+    const client = await pool.connect();
+    await client.query("SELECT 1");
+    client.release();
+    console.log("🌐 Connected to Postgres successfully (startup test)");
+  } catch (err) {
+    console.error("❌ Startup connection failed:", err.message);
+    try {
+      sendAlert("Database", `Startup connection failed: ${err.message}`);
+    } catch (_) {}
+  }
+})();
 
 // --- Express App (declare before using) ---
 const app = express();
@@ -72,7 +95,6 @@ app.use((req, res, next) => {
   next();
 });
 
-
 // ============================================
 // ROUTES
 // ============================================
@@ -94,7 +116,6 @@ app.use(
     { index: "index.html" }
   )
 );
-
 
 // ============================================
 // Monitoring Routes (Health, Alerts, Recovery APIs)
@@ -380,10 +401,10 @@ async function runHealthCheck() {
 setInterval(runHealthCheck, CHECK_INTERVAL);
 
 // ============================================
-// START SERVER
+// START SERVER (Heroku-compatible port binding)
 // ============================================
-const PORT = process.env.APP_PORT || 8080;
-server.listen(PORT, () => {
+const PORT = process.env.PORT || 8080;
+server.listen(PORT, "0.0.0.0", () => {
   console.log(`✅ Server running on port ${PORT}`);
   console.log(`🌐 NGROK_HOST from .env: ${process.env.NGROK_HOST}`);
 });

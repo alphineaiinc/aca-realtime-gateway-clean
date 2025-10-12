@@ -1,0 +1,13 @@
+{
+  "type": "service_account",
+  "project_id": "mercurial-water-472602-r4",
+  "private_key_id": "501ae9a1dff79b6aaf7c6d00700c6817a4f099a2",
+  "private_key": "-----BEGIN PRIVATE KEY-----\nMIIEvAIBADANBgkqhkiG9w0BAQEFAASCBKYwggSiAgEAAoIBAQClf6wF90CvDg/v\nefVmtCnMzya2A2mZecLn3in1ewqzKoH2/yJYb4W7Y1SEtLbAQmTjtn+xx5YzNb4d\nyMZcz0pq51YEiDy8eBm5XIEvqXRkLJC2qDPyQvZ9XuauLQEWW5bG4QSumsljOQ+u\noW2t+UpyJ9gfsZlqlWPsz3QVCXKC/jmWWd9hYBhRP3Vj1qlalX2A0Jl8+IAwsev7\nMnA0EdUcjHzKn/RcpeAKpJce7b15xiyJ57Djv8ONLgVPNHUrl26ro+e21Sdt4VAO\nV0ifjv1B5jqpS1iKNjfQ5XVS24fvaqyIgyPfZyFkXD0V0Ltf9At4MWHPBwyNwMoJ\nKLw11VytAgMBAAECggEAIg+Up+WrOlv6i57eErUhpTU9EljBcwTMSExA9nTMTvOA\nrAT2XJ0XOOnIi0dmFUuU2AjHXx9kmkWFSzv3F0LSXg4edfBUD7XoFW4kaFrHyZYi\ncnVLu6BseoD9mPtKLf/LmELXY9gXeoRT5ezzVcrot3Xb1SoIGReF6UcI7Qt0teCn\nyNy5XkxO2DjRLRxJj5rIys6f+ufzCKB4d9HkxBqYiiU9Zqi4TG//VBe9iqvR1DNp\n3LPg7niBLrq/1IMzEWBjH2UGZ9hPIF6SB/QrQrQrkpca0Y3isHUuN/gXllpnARxE\n6Vn/r4bTqjuKbH4bIQGmS6kwRt3IAK1A7dHOa1t8AQKBgQDXgDkr7McF6rLuKMCa\ny/v0bl8p1mLmnwqdYBcimdqax/n/TDSOh8/X6p/x7C/H+57u/eRoMGPjCABtLYaJ\n3SfKGu0fFd5Vu/NY9uZagoditExAIvqD1w+ej69Q7Ss/iM5dJd4fcqhUy0Z6rQvR\nyh6BKhI0J8n8GID+UJdJhEkbMQKBgQDEmdaPt0yZc3YuccvVPW939cG0tVBmikx8\nm4RwtxPC5Sovhs5ql6OzoAkrYLkqosx6R7pyQoP4Edug88Q/VpHfe5sJ+pLG5tAo\nxVSgi5Q9MiTO7zkQQIPaS7htnOuM0DppZRg+PxHyO98CVSwEoSGf6tQ/Q/kP4UIx\n2Z34XYuCPQKBgBO+7v4kWvQi1jRWTZehezuhZVzbBQLmrb1P0a7c9BfcnP6Uh/hL\nX3MET5WGM7aaSqzRXL1jObPSxt86HarCNeQh5XpEsbOfXiPXs7G1ZhxYMuhpjBTK\nfubjeYfrw1u1+Fq2noy5H81tNs8EziFx6KujJDndL3fG8wLadZJJ6bzxAoGAB32Z\nCDbCq2IT0acyTfieQ6LQc5Mo8g845NKEFEtVbGqQ1ei7+qG2cgSZ9NYll/NF+S68\nctgH8S61AIfpJUSmIC60dIfgicWHjtYd6FQJHN/JOT0yHmVm4K1b5IlDDEVuxE8+\nwjhi9ajEUXFvUOnWvyISXiq31ZwOipmxBCKESz0CgYBSoigwg3sKZLky3Y4ehfdc\nIG1yMIjZAkZTqxLou7JmnvGhXP/iSfbXzwReesk5tXPUL/WvO9ILAcaoQRwOPWjq\nKNDrXRi2OXj9GPY5y1IoHJq+c2GfIUORoKSqZBZSulFJFwMlQOseUh55Tl5PnsTz\n3S3V+YBqXdtNRXWoNbBKjQ==\n-----END PRIVATE KEY-----\n",
+  "client_email": "aca-gateway-speech@mercurial-water-472602-r4.iam.gserviceaccount.com",
+  "client_id": "115718489119457323240",
+  "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+  "token_uri": "https://oauth2.googleapis.com/token",
+  "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
+  "client_x509_cert_url": "https://www.googleapis.com/robot/v1/metadata/x509/aca-gateway-speech%40mercurial-water-472602-r4.iam.gserviceaccount.com",
+  "universe_domain": "googleapis.com"
+}

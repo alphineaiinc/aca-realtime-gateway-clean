@@ -1,0 +1,6 @@
+{"time":"2025-10-11T03:32:18.841Z","component":"simulator","message":"DB connection lost","severity":"critical","level":"critical","source":"simulator","business_id":101,"status":"resolved","resolved_at":"2025-10-11T04:13:19.948Z"}
+{"time":"2025-10-11T03:33:20.071Z","component":"simulator","message":"DB connection lost","severity":"critical","level":"critical","source":"simulator","business_id":101,"status":"resolved","resolved_at":"2025-10-11T04:13:19.948Z"}
+{"time":"2025-10-11T04:13:19.942Z","component":"simulator","message":"DB connection lost","severity":"critical","level":"critical","source":"simulator","business_id":101,"status":"resolved","resolved_at":"2025-10-11T04:13:19.948Z"}
+{"time":"2025-10-11T04:13:19.948Z","component":"simulator","business_id":101,"message":"Recovered automatically","severity":"info","status":"resolved"}
+{"time":"2025-10-11T04:17:15.918Z","component":"simulator","message":"DB connection lost","severity":"critical","level":"critical","source":"simulator","business_id":101,"status":"resolved","resolved_at":"2025-10-11T04:17:15.922Z"}
+{"time":"2025-10-11T04:17:15.922Z","component":"simulator","business_id":101,"message":"Recovered automatically","severity":"info","status":"resolved"}

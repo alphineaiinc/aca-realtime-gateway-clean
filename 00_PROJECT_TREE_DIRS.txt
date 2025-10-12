@@ -1,0 +1,1445 @@
+Folder PATH listing for volume Windows
+Volume serial number is 6C82-414B
+C:.
++---aca-orchestrator
+|   +---logs
+|   +---migrations
+|   +---public
+|   |   \---dashboard
+|   \---src
+|       +---brain
+|       |   \---utils
+|       +---db
+|       +---logs
+|       \---routes
+|           \---logs
++---Archive
++---Backup working codes 09-25-25
++---config
++---google cloud speech key
++---keys
++---logs
++---node_modules
+|   +---.bin
+|   +---@colors
+|   |   \---colors
+|   |       +---examples
+|   |       +---lib
+|   |       |   +---custom
+|   |       |   +---maps
+|   |       |   \---system
+|   |       \---themes
+|   +---@dabh
+|   |   \---diagnostics
+|   |       +---adapters
+|   |       +---browser
+|   |       +---logger
+|   |       +---modifiers
+|   |       \---node
+|   +---@google-cloud
+|   |   +---common
+|   |   |   +---build
+|   |   |   |   \---src
+|   |   |   \---node_modules
+|   |   |       +---gaxios
+|   |   |       |   \---build
+|   |   |       |       +---cjs
+|   |   |       |       |   +---browser-test
+|   |   |       |       |   +---src
+|   |   |       |       |   +---system-test
+|   |   |       |       |   \---test
+|   |   |       |       \---esm
+|   |   |       |           +---browser-test
+|   |   |       |           +---src
+|   |   |       |           +---system-test
+|   |   |       |           \---test
+|   |   |       +---gcp-metadata
+|   |   |       |   \---build
+|   |   |       |       \---src
+|   |   |       +---google-auth-library
+|   |   |       |   \---build
+|   |   |       |       \---src
+|   |   |       |           +---auth
+|   |   |       |           \---crypto
+|   |   |       |               +---browser
+|   |   |       |               \---node
+|   |   |       +---google-logging-utils
+|   |   |       |   \---build
+|   |   |       |       \---src
+|   |   |       +---gtoken
+|   |   |       |   \---build
+|   |   |       |       +---cjs
+|   |   |       |       |   \---src
+|   |   |       |       \---esm
+|   |   |       |           \---src
+|   |   |       \---node-fetch
+|   |   |           +---@types
+|   |   |           \---src
+|   |   |               +---errors
+|   |   |               \---utils
+|   |   +---projectify
+|   |   |   \---build
+|   |   |       \---src
+|   |   +---promisify
+|   |   |   \---build
+|   |   |       \---src
+|   |   +---speech
+|   |   |   +---build
+|   |   |   |   +---protos
+|   |   |   |   |   \---google
+|   |   |   |   |       \---cloud
+|   |   |   |   |           \---speech
+|   |   |   |   |               +---v1
+|   |   |   |   |               +---v1p1beta1
+|   |   |   |   |               \---v2
+|   |   |   |   \---src
+|   |   |   |       +---v1
+|   |   |   |       +---v1p1beta1
+|   |   |   |       \---v2
+|   |   |   \---node_modules
+|   |   |       +---.bin
+|   |   |       \---uuid
+|   |   |           \---dist
+|   |   |               +---cjs
+|   |   |               +---cjs-browser
+|   |   |               +---esm
+|   |   |               |   \---bin
+|   |   |               \---esm-browser
+|   |   \---text-to-speech
+|   |       \---build
+|   |           +---protos
+|   |           |   \---google
+|   |           |       \---cloud
+|   |           |           \---texttospeech
+|   |           |               +---v1
+|   |           |               \---v1beta1
+|   |           \---src
+|   |               +---v1
+|   |               \---v1beta1
+|   +---@grpc
+|   |   +---grpc-js
+|   |   |   +---build
+|   |   |   |   \---src
+|   |   |   |       \---generated
+|   |   |   |           +---google
+|   |   |   |           |   \---protobuf
+|   |   |   |           +---grpc
+|   |   |   |           |   \---channelz
+|   |   |   |           |       \---v1
+|   |   |   |           +---validate
+|   |   |   |           \---xds
+|   |   |   |               +---data
+|   |   |   |               |   \---orca
+|   |   |   |               |       \---v3
+|   |   |   |               \---service
+|   |   |   |                   \---orca
+|   |   |   |                       \---v3
+|   |   |   +---node_modules
+|   |   |   |   +---.bin
+|   |   |   |   \---@grpc
+|   |   |   |       \---proto-loader
+|   |   |   |           \---build
+|   |   |   |               +---bin
+|   |   |   |               \---src
+|   |   |   +---proto
+|   |   |   |   +---protoc-gen-validate
+|   |   |   |   |   \---validate
+|   |   |   |   \---xds
+|   |   |   |       \---xds
+|   |   |   |           +---data
+|   |   |   |           |   \---orca
+|   |   |   |           |       \---v3
+|   |   |   |           \---service
+|   |   |   |               \---orca
+|   |   |   |                   \---v3
+|   |   |   \---src
+|   |   |       \---generated
+|   |   |           +---google
+|   |   |           |   \---protobuf
+|   |   |           +---grpc
+|   |   |           |   \---channelz
+|   |   |           |       \---v1
+|   |   |           +---validate
+|   |   |           \---xds
+|   |   |               +---data
+|   |   |               |   \---orca
+|   |   |               |       \---v3
+|   |   |               \---service
+|   |   |                   \---orca
+|   |   |                       \---v3
+|   |   \---proto-loader
+|   |       \---build
+|   |           +---bin
+|   |           \---src
+|   +---@js-sdsl
+|   |   \---ordered-map
+|   |       \---dist
+|   |           +---cjs
+|   |           +---esm
+|   |           \---umd
+|   +---@protobufjs
+|   |   +---aspromise
+|   |   |   \---tests
+|   |   +---base64
+|   |   |   \---tests
+|   |   +---codegen
+|   |   |   \---tests
+|   |   +---eventemitter
+|   |   |   \---tests
+|   |   +---fetch
+|   |   |   \---tests
+|   |   +---float
+|   |   |   +---bench
+|   |   |   \---tests
+|   |   +---inquire
+|   |   |   \---tests
+|   |   |       \---data
+|   |   +---path
+|   |   |   \---tests
+|   |   +---pool
+|   |   |   \---tests
+|   |   \---utf8
+|   |       \---tests
+|   |           \---data
+|   +---@so-ric
+|   |   \---colorspace
+|   |       \---dist
+|   +---@tootallnate
+|   |   \---once
+|   |       \---dist
+|   +---@types
+|   |   +---duplexify
+|   |   +---node
+|   |   |   +---assert
+|   |   |   +---compatibility
+|   |   |   +---dns
+|   |   |   +---fs
+|   |   |   +---readline
+|   |   |   +---stream
+|   |   |   +---timers
+|   |   |   +---ts5.6
+|   |   |   |   \---compatibility
+|   |   |   +---ts5.7
+|   |   |   |   \---compatibility
+|   |   |   \---web-globals
+|   |   +---pumpify
+|   |   \---triple-beam
+|   +---abort-controller
+|   |   \---dist
+|   +---accepts
+|   +---agent-base
+|   |   \---dist
+|   +---ansi-regex
+|   +---ansi-styles
+|   +---arrify
+|   +---async
+|   |   +---dist
+|   |   \---internal
+|   +---asynckit
+|   |   \---lib
+|   +---axios
+|   |   +---dist
+|   |   |   +---browser
+|   |   |   +---esm
+|   |   |   \---node
+|   |   \---lib
+|   |       +---adapters
+|   |       +---cancel
+|   |       +---core
+|   |       +---defaults
+|   |       +---env
+|   |       |   \---classes
+|   |       +---helpers
+|   |       \---platform
+|   |           +---browser
+|   |           |   \---classes
+|   |           +---common
+|   |           \---node
+|   |               \---classes
+|   +---base64-js
+|   +---bignumber.js
+|   |   \---doc
+|   +---body-parser
+|   |   \---lib
+|   |       \---types
+|   +---buffer-alloc
+|   +---buffer-alloc-unsafe
+|   +---buffer-equal-constant-time
+|   +---buffer-fill
+|   +---buffer-from
+|   +---bytes
+|   +---call-bind-apply-helpers
+|   |   +---.github
+|   |   \---test
+|   +---call-bound
+|   |   +---.github
+|   |   \---test
+|   +---cliui
+|   |   \---build
+|   |       \---lib
+|   +---color
+|   |   \---node_modules
+|   |       +---color-convert
+|   |       \---color-name
+|   +---color-convert
+|   +---color-name
+|   +---color-string
+|   |   \---node_modules
+|   |       \---color-name
+|   +---combined-stream
+|   |   \---lib
+|   +---content-disposition
+|   +---content-type
+|   +---cookie
+|   +---cookie-signature
+|   +---core-util-is
+|   |   \---lib
+|   +---create-temp-file
+|   |   \---test
+|   +---data-uri-to-buffer
+|   |   +---dist
+|   |   \---src
+|   +---debug
+|   |   \---src
+|   +---delayed-stream
+|   |   \---lib
+|   +---depd
+|   |   \---lib
+|   |       \---browser
+|   +---dotenv
+|   |   \---lib
+|   +---dunder-proto
+|   |   +---.github
+|   |   \---test
+|   +---duplexer
+|   |   \---test
+|   +---duplexify
+|   +---ecdsa-sig-formatter
+|   |   \---src
+|   +---ee-first
+|   +---emoji-regex
+|   |   \---es2015
+|   +---enabled
+|   +---encodeurl
+|   +---end-of-stream
+|   +---es-define-property
+|   |   +---.github
+|   |   \---test
+|   +---es-errors
+|   |   +---.github
+|   |   \---test
+|   +---es-object-atoms
+|   |   +---.github
+|   |   \---test
+|   +---es-set-tostringtag
+|   |   \---test
+|   +---escalade
+|   |   +---dist
+|   |   \---sync
+|   +---escape-html
+|   +---etag
+|   +---event-target-shim
+|   |   \---dist
+|   +---express
+|   |   \---lib
+|   +---extend
+|   +---fecha
+|   |   +---dist
+|   |   +---lib
+|   |   \---src
+|   +---fetch-blob
+|   +---file-stream-rotator
+|   |   \---tests
+|   +---finalhandler
+|   +---fn.name
+|   +---follow-redirects
+|   +---form-data
+|   |   +---lib
+|   |   \---node_modules
+|   |       +---mime-db
+|   |       \---mime-types
+|   +---formdata-polyfill
+|   +---forwarded
+|   +---fresh
+|   +---function-bind
+|   |   +---.github
+|   |   \---test
+|   +---gaxios
+|   |   \---build
+|   |       \---src
+|   +---gcp-metadata
+|   |   \---build
+|   |       \---src
+|   +---get-caller-file
+|   +---get-intrinsic
+|   |   +---.github
+|   |   \---test
+|   +---get-proto
+|   |   +---.github
+|   |   \---test
+|   +---google-auth-library
+|   |   \---build
+|   |       \---src
+|   |           +---auth
+|   |           \---crypto
+|   |               +---browser
+|   |               \---node
+|   +---google-gax
+|   |   +---build
+|   |   |   +---protos
+|   |   |   |   \---google
+|   |   |   |       +---api
+|   |   |   |       |   +---apikeys
+|   |   |   |       |   |   \---v2
+|   |   |   |       |   +---cloudquotas
+|   |   |   |       |   |   +---v1
+|   |   |   |       |   |   \---v1beta
+|   |   |   |       |   +---expr
+|   |   |   |       |   |   +---conformance
+|   |   |   |       |   |   |   \---v1alpha1
+|   |   |   |       |   |   +---v1alpha1
+|   |   |   |       |   |   \---v1beta1
+|   |   |   |       |   +---servicecontrol
+|   |   |   |       |   |   +---v1
+|   |   |   |       |   |   \---v2
+|   |   |   |       |   +---servicemanagement
+|   |   |   |       |   |   \---v1
+|   |   |   |       |   \---serviceusage
+|   |   |   |       |       +---v1
+|   |   |   |       |       \---v1beta1
+|   |   |   |       +---cloud
+|   |   |   |       |   \---location
+|   |   |   |       +---iam
+|   |   |   |       |   \---v1
+|   |   |   |       |       \---logging
+|   |   |   |       +---logging
+|   |   |   |       |   \---type
+|   |   |   |       +---longrunning
+|   |   |   |       +---monitoring
+|   |   |   |       |   \---v3
+|   |   |   |       +---protobuf
+|   |   |   |       |   +---bridge
+|   |   |   |       |   +---compiler
+|   |   |   |       |   |   \---ruby
+|   |   |   |       |   \---util
+|   |   |   |       +---rpc
+|   |   |   |       |   \---context
+|   |   |   |       \---type
+|   |   |   \---src
+|   |   |       +---bundlingCalls
+|   |   |       +---longRunningCalls
+|   |   |       +---normalCalls
+|   |   |       +---paginationCalls
+|   |   |       \---streamingCalls
+|   |   \---node_modules
+|   |       +---.bin
+|   |       +---@grpc
+|   |       |   \---proto-loader
+|   |       |       \---build
+|   |       |           +---bin
+|   |       |           \---src
+|   |       +---gaxios
+|   |       |   \---build
+|   |       |       +---cjs
+|   |       |       |   +---browser-test
+|   |       |       |   +---src
+|   |       |       |   +---system-test
+|   |       |       |   \---test
+|   |       |       \---esm
+|   |       |           +---browser-test
+|   |       |           +---src
+|   |       |           +---system-test
+|   |       |           \---test
+|   |       +---gcp-metadata
+|   |       |   \---build
+|   |       |       \---src
+|   |       +---google-auth-library
+|   |       |   \---build
+|   |       |       \---src
+|   |       |           +---auth
+|   |       |           \---crypto
+|   |       |               +---browser
+|   |       |               \---node
+|   |       +---google-logging-utils
+|   |       |   \---build
+|   |       |       \---src
+|   |       +---gtoken
+|   |       |   \---build
+|   |       |       +---cjs
+|   |       |       |   \---src
+|   |       |       \---esm
+|   |       |           \---src
+|   |       \---node-fetch
+|   |           +---@types
+|   |           \---src
+|   |               +---errors
+|   |               \---utils
+|   +---google-logging-utils
+|   |   \---build
+|   |       \---src
+|   +---googleapis
+|   |   \---build
+|   |       \---src
+|   |           +---apis
+|   |           |   +---abusiveexperiencereport
+|   |           |   +---acceleratedmobilepageurl
+|   |           |   +---accessapproval
+|   |           |   +---accesscontextmanager
+|   |           |   +---acmedns
+|   |           |   +---addressvalidation
+|   |           |   +---adexchangebuyer
+|   |           |   +---adexchangebuyer2
+|   |           |   +---adexperiencereport
+|   |           |   +---admin
+|   |           |   +---admob
+|   |           |   +---adsense
+|   |           |   +---adsensehost
+|   |           |   +---adsenseplatform
+|   |           |   +---advisorynotifications
+|   |           |   +---aiplatform
+|   |           |   +---airquality
+|   |           |   +---alertcenter
+|   |           |   +---alloydb
+|   |           |   +---analytics
+|   |           |   +---analyticsadmin
+|   |           |   +---analyticsdata
+|   |           |   +---analyticshub
+|   |           |   +---analyticsreporting
+|   |           |   +---androiddeviceprovisioning
+|   |           |   +---androidenterprise
+|   |           |   +---androidmanagement
+|   |           |   +---androidpublisher
+|   |           |   +---apigateway
+|   |           |   +---apigeeregistry
+|   |           |   +---apikeys
+|   |           |   +---apim
+|   |           |   +---appengine
+|   |           |   +---apphub
+|   |           |   +---appsactivity
+|   |           |   +---area120tables
+|   |           |   +---artifactregistry
+|   |           |   +---assuredworkloads
+|   |           |   +---authorizedbuyersmarketplace
+|   |           |   +---backupdr
+|   |           |   +---baremetalsolution
+|   |           |   +---batch
+|   |           |   +---beyondcorp
+|   |           |   +---biglake
+|   |           |   +---bigquery
+|   |           |   +---bigqueryconnection
+|   |           |   +---bigquerydatapolicy
+|   |           |   +---bigquerydatatransfer
+|   |           |   +---bigqueryreservation
+|   |           |   +---bigtableadmin
+|   |           |   +---billingbudgets
+|   |           |   +---binaryauthorization
+|   |           |   +---blockchainnodeengine
+|   |           |   +---blogger
+|   |           |   +---books
+|   |           |   +---businessprofileperformance
+|   |           |   +---calendar
+|   |           |   +---certificatemanager
+|   |           |   +---chat
+|   |           |   +---checks
+|   |           |   +---chromemanagement
+|   |           |   +---chromepolicy
+|   |           |   +---chromeuxreport
+|   |           |   +---civicinfo
+|   |           |   +---classroom
+|   |           |   +---cloudasset
+|   |           |   +---cloudbilling
+|   |           |   +---cloudbuild
+|   |           |   +---cloudchannel
+|   |           |   +---cloudcontrolspartner
+|   |           |   +---clouddebugger
+|   |           |   +---clouddeploy
+|   |           |   +---clouderrorreporting
+|   |           |   +---cloudfunctions
+|   |           |   +---cloudidentity
+|   |           |   +---cloudiot
+|   |           |   +---cloudkms
+|   |           |   +---cloudprofiler
+|   |           |   +---cloudresourcemanager
+|   |           |   +---cloudscheduler
+|   |           |   +---cloudsearch
+|   |           |   +---cloudshell
+|   |           |   +---cloudsupport
+|   |           |   +---cloudtasks
+|   |           |   +---cloudtrace
+|   |           |   +---composer
+|   |           |   +---compute
+|   |           |   +---config
+|   |           |   +---connectors
+|   |           |   +---contactcenteraiplatform
+|   |           |   +---contactcenterinsights
+|   |           |   +---container
+|   |           |   +---containeranalysis
+|   |           |   +---content
+|   |           |   +---contentwarehouse
+|   |           |   +---css
+|   |           |   +---customsearch
+|   |           |   +---datacatalog
+|   |           |   +---dataflow
+|   |           |   +---dataform
+|   |           |   +---datafusion
+|   |           |   +---datalabeling
+|   |           |   +---datalineage
+|   |           |   +---datamigration
+|   |           |   +---datapipelines
+|   |           |   +---dataplex
+|   |           |   +---dataportability
+|   |           |   +---dataproc
+|   |           |   +---datastore
+|   |           |   +---datastream
+|   |           |   +---deploymentmanager
+|   |           |   +---developerconnect
+|   |           |   +---dfareporting
+|   |           |   +---dialogflow
+|   |           |   +---digitalassetlinks
+|   |           |   +---discovery
+|   |           |   +---discoveryengine
+|   |           |   +---displayvideo
+|   |           |   +---dlp
+|   |           |   +---dns
+|   |           |   +---docs
+|   |           |   +---documentai
+|   |           |   +---domains
+|   |           |   +---domainsrdap
+|   |           |   +---doubleclickbidmanager
+|   |           |   +---doubleclicksearch
+|   |           |   +---drive
+|   |           |   +---driveactivity
+|   |           |   +---drivelabels
+|   |           |   +---essentialcontacts
+|   |           |   +---eventarc
+|   |           |   +---factchecktools
+|   |           |   +---fcm
+|   |           |   +---fcmdata
+|   |           |   +---file
+|   |           |   +---firebase
+|   |           |   +---firebaseappcheck
+|   |           |   +---firebaseappdistribution
+|   |           |   +---firebasedatabase
+|   |           |   +---firebasedynamiclinks
+|   |           |   +---firebasehosting
+|   |           |   +---firebaseml
+|   |           |   +---firebaserules
+|   |           |   +---firebasestorage
+|   |           |   +---firestore
+|   |           |   +---fitness
+|   |           |   +---forms
+|   |           |   +---games
+|   |           |   +---gamesConfiguration
+|   |           |   +---gameservices
+|   |           |   +---gamesManagement
+|   |           |   +---genomics
+|   |           |   +---gkebackup
+|   |           |   +---gkehub
+|   |           |   +---gkeonprem
+|   |           |   +---gmail
+|   |           |   +---gmailpostmastertools
+|   |           |   +---groupsmigration
+|   |           |   +---groupssettings
+|   |           |   +---healthcare
+|   |           |   +---homegraph
+|   |           |   +---iam
+|   |           |   +---iamcredentials
+|   |           |   +---iap
+|   |           |   +---ideahub
+|   |           |   +---identitytoolkit
+|   |           |   +---ids
+|   |           |   +---indexing
+|   |           |   +---integrations
+|   |           |   +---jobs
+|   |           |   +---keep
+|   |           |   +---kgsearch
+|   |           |   +---kmsinventory
+|   |           |   +---language
+|   |           |   +---libraryagent
+|   |           |   +---licensing
+|   |           |   +---lifesciences
+|   |           |   +---localservices
+|   |           |   +---logging
+|   |           |   +---looker
+|   |           |   +---managedidentities
+|   |           |   +---manufacturers
+|   |           |   +---marketingplatformadmin
+|   |           |   +---meet
+|   |           |   +---memcache
+|   |           |   +---merchantapi
+|   |           |   +---metastore
+|   |           |   +---migrationcenter
+|   |           |   +---ml
+|   |           |   +---monitoring
+|   |           |   +---mybusinessaccountmanagement
+|   |           |   +---mybusinessbusinesscalls
+|   |           |   +---mybusinessbusinessinformation
+|   |           |   +---mybusinesslodging
+|   |           |   +---mybusinessnotifications
+|   |           |   +---mybusinessplaceactions
+|   |           |   +---mybusinessqanda
+|   |           |   +---mybusinessverifications
+|   |           |   +---networkconnectivity
+|   |           |   +---networkmanagement
+|   |           |   +---networksecurity
+|   |           |   +---networkservices
+|   |           |   +---notebooks
+|   |           |   +---oauth2
+|   |           |   +---ondemandscanning
+|   |           |   +---orgpolicy
+|   |           |   +---osconfig
+|   |           |   +---oslogin
+|   |           |   +---pagespeedonline
+|   |           |   +---paymentsresellersubscription
+|   |           |   +---people
+|   |           |   +---places
+|   |           |   +---playablelocations
+|   |           |   +---playcustomapp
+|   |           |   +---playdeveloperreporting
+|   |           |   +---playgrouping
+|   |           |   +---playintegrity
+|   |           |   +---plus
+|   |           |   +---policyanalyzer
+|   |           |   +---policysimulator
+|   |           |   +---policytroubleshooter
+|   |           |   +---pollen
+|   |           |   +---poly
+|   |           |   +---privateca
+|   |           |   +---prod_tt_sasportal
+|   |           |   +---publicca
+|   |           |   +---pubsub
+|   |           |   +---pubsublite
+|   |           |   +---rapidmigrationassessment
+|   |           |   +---readerrevenuesubscriptionlinking
+|   |           |   +---realtimebidding
+|   |           |   +---recaptchaenterprise
+|   |           |   +---recommendationengine
+|   |           |   +---recommender
+|   |           |   +---redis
+|   |           |   +---remotebuildexecution
+|   |           |   +---reseller
+|   |           |   +---resourcesettings
+|   |           |   +---retail
+|   |           |   +---run
+|   |           |   +---runtimeconfig
+|   |           |   +---safebrowsing
+|   |           |   +---sasportal
+|   |           |   +---script
+|   |           |   +---searchads360
+|   |           |   +---searchconsole
+|   |           |   +---secretmanager
+|   |           |   +---securitycenter
+|   |           |   +---serviceconsumermanagement
+|   |           |   +---servicecontrol
+|   |           |   +---servicedirectory
+|   |           |   +---servicemanagement
+|   |           |   +---servicenetworking
+|   |           |   +---serviceusage
+|   |           |   +---sheets
+|   |           |   +---siteVerification
+|   |           |   +---slides
+|   |           |   +---smartdevicemanagement
+|   |           |   +---solar
+|   |           |   +---sourcerepo
+|   |           |   +---spanner
+|   |           |   +---speech
+|   |           |   +---sql
+|   |           |   +---sqladmin
+|   |           |   +---storage
+|   |           |   +---storagetransfer
+|   |           |   +---streetviewpublish
+|   |           |   +---sts
+|   |           |   +---tagmanager
+|   |           |   +---tasks
+|   |           |   +---testing
+|   |           |   +---texttospeech
+|   |           |   +---toolresults
+|   |           |   +---tpu
+|   |           |   +---trafficdirector
+|   |           |   +---transcoder
+|   |           |   +---translate
+|   |           |   +---travelimpactmodel
+|   |           |   +---vault
+|   |           |   +---vectortile
+|   |           |   +---verifiedaccess
+|   |           |   +---versionhistory
+|   |           |   +---videointelligence
+|   |           |   +---vision
+|   |           |   +---vmmigration
+|   |           |   +---vmwareengine
+|   |           |   +---vpcaccess
+|   |           |   +---walletobjects
+|   |           |   +---webfonts
+|   |           |   +---webmasters
+|   |           |   +---webrisk
+|   |           |   +---websecurityscanner
+|   |           |   +---workflowexecutions
+|   |           |   +---workflows
+|   |           |   +---workloadmanager
+|   |           |   +---workspaceevents
+|   |           |   +---workstations
+|   |           |   +---youtube
+|   |           |   +---youtubeAnalytics
+|   |           |   \---youtubereporting
+|   |           \---generator
+|   +---googleapis-common
+|   |   \---build
+|   |       \---src
+|   +---gopd
+|   |   +---.github
+|   |   \---test
+|   +---gtoken
+|   |   \---build
+|   |       \---src
+|   +---has-symbols
+|   |   +---.github
+|   |   \---test
+|   |       \---shams
+|   +---has-tostringtag
+|   |   +---.github
+|   |   \---test
+|   |       \---shams
+|   +---hash-to-array
+|   +---hasown
+|   |   \---.github
+|   +---helmet
+|   +---html-entities
+|   |   +---dist
+|   |   |   +---commonjs
+|   |   |   \---esm
+|   |   \---src
+|   +---http-errors
+|   |   \---node_modules
+|   |       \---statuses
+|   +---http-proxy-agent
+|   |   +---dist
+|   |   \---node_modules
+|   |       \---agent-base
+|   |           +---dist
+|   |           |   \---src
+|   |           \---src
+|   +---https-proxy-agent
+|   |   \---dist
+|   +---iconv-lite
+|   |   +---.github
+|   |   +---.idea
+|   |   |   +---codeStyles
+|   |   |   \---inspectionProfiles
+|   |   +---encodings
+|   |   |   \---tables
+|   |   \---lib
+|   +---inherits
+|   +---ipaddr.js
+|   |   \---lib
+|   +---is-fullwidth-code-point
+|   +---is-promise
+|   +---is-stream
+|   +---isarray
+|   |   \---build
+|   +---json-bigint
+|   |   \---lib
+|   +---jwa
+|   +---jws
+|   |   \---lib
+|   +---kuler
+|   +---lodash.camelcase
+|   +---logform
+|   |   \---dist
+|   +---long
+|   |   \---umd
+|   +---math-intrinsics
+|   |   +---.github
+|   |   +---constants
+|   |   \---test
+|   +---media-typer
+|   +---merge-descriptors
+|   +---mime-db
+|   +---mime-types
+|   +---moment
+|   |   +---dist
+|   |   |   \---locale
+|   |   +---locale
+|   |   +---min
+|   |   +---src
+|   |   |   +---lib
+|   |   |   |   +---create
+|   |   |   |   +---duration
+|   |   |   |   +---format
+|   |   |   |   +---locale
+|   |   |   |   +---moment
+|   |   |   |   +---parse
+|   |   |   |   +---units
+|   |   |   |   \---utils
+|   |   |   \---locale
+|   |   \---ts3.1-typings
+|   +---ms
+|   +---negotiator
+|   |   \---lib
+|   +---node-domexception
+|   |   \---.history
+|   +---node-ensure
+|   +---node-fetch
+|   |   \---lib
+|   +---object-hash
+|   |   \---dist
+|   +---object-inspect
+|   |   +---.github
+|   |   +---example
+|   |   \---test
+|   |       \---browser
+|   +---on-finished
+|   +---once
+|   +---one-time
+|   +---openai
+|   |   +---beta
+|   |   |   \---realtime
+|   |   +---bin
+|   |   +---core
+|   |   +---helpers
+|   |   +---internal
+|   |   |   +---decoders
+|   |   |   +---qs
+|   |   |   \---utils
+|   |   +---lib
+|   |   |   \---responses
+|   |   +---realtime
+|   |   +---resources
+|   |   |   +---audio
+|   |   |   +---beta
+|   |   |   |   +---realtime
+|   |   |   |   \---threads
+|   |   |   |       \---runs
+|   |   |   +---chat
+|   |   |   |   \---completions
+|   |   |   +---containers
+|   |   |   |   \---files
+|   |   |   +---conversations
+|   |   |   +---evals
+|   |   |   |   \---runs
+|   |   |   +---fine-tuning
+|   |   |   |   +---alpha
+|   |   |   |   +---checkpoints
+|   |   |   |   \---jobs
+|   |   |   +---graders
+|   |   |   +---realtime
+|   |   |   +---responses
+|   |   |   +---uploads
+|   |   |   \---vector-stores
+|   |   +---src
+|   |   |   +---beta
+|   |   |   |   \---realtime
+|   |   |   +---core
+|   |   |   +---helpers
+|   |   |   +---internal
+|   |   |   |   +---decoders
+|   |   |   |   +---qs
+|   |   |   |   \---utils
+|   |   |   +---lib
+|   |   |   |   \---responses
+|   |   |   +---realtime
+|   |   |   +---resources
+|   |   |   |   +---audio
+|   |   |   |   +---beta
+|   |   |   |   |   +---realtime
+|   |   |   |   |   \---threads
+|   |   |   |   |       \---runs
+|   |   |   |   +---chat
+|   |   |   |   |   \---completions
+|   |   |   |   +---containers
+|   |   |   |   |   \---files
+|   |   |   |   +---conversations
+|   |   |   |   +---evals
+|   |   |   |   |   \---runs
+|   |   |   |   +---fine-tuning
+|   |   |   |   |   +---alpha
+|   |   |   |   |   +---checkpoints
+|   |   |   |   |   \---jobs
+|   |   |   |   +---graders
+|   |   |   |   +---realtime
+|   |   |   |   +---responses
+|   |   |   |   +---uploads
+|   |   |   |   \---vector-stores
+|   |   |   \---_vendor
+|   |   |       +---partial-json-parser
+|   |   |       \---zod-to-json-schema
+|   |   |           \---parsers
+|   |   \---_vendor
+|   |       +---partial-json-parser
+|   |       \---zod-to-json-schema
+|   |           \---parsers
+|   +---os-tmpdir
+|   +---parseurl
+|   +---path-to-regexp
+|   |   \---dist
+|   +---pdf-parse
+|   |   +---.vscode
+|   |   +---lib
+|   |   |   \---pdf.js
+|   |   |       +---v1.10.100
+|   |   |       |   \---build
+|   |   |       +---v1.10.88
+|   |   |       |   +---build
+|   |   |       |   \---web
+|   |   |       |       +---cmaps
+|   |   |       |       +---images
+|   |   |       |       \---locale
+|   |   |       |           +---ach
+|   |   |       |           +---af
+|   |   |       |           +---ak
+|   |   |       |           +---an
+|   |   |       |           +---ar
+|   |   |       |           +---as
+|   |   |       |           +---ast
+|   |   |       |           +---az
+|   |   |       |           +---be
+|   |   |       |           +---bg
+|   |   |       |           +---bn-BD
+|   |   |       |           +---bn-IN
+|   |   |       |           +---br
+|   |   |       |           +---bs
+|   |   |       |           +---ca
+|   |   |       |           +---cs
+|   |   |       |           +---csb
+|   |   |       |           +---cy
+|   |   |       |           +---da
+|   |   |       |           +---de
+|   |   |       |           +---el
+|   |   |       |           +---en-GB
+|   |   |       |           +---en-US
+|   |   |       |           +---en-ZA
+|   |   |       |           +---eo
+|   |   |       |           +---es-AR
+|   |   |       |           +---es-CL
+|   |   |       |           +---es-ES
+|   |   |       |           +---es-MX
+|   |   |       |           +---et
+|   |   |       |           +---eu
+|   |   |       |           +---fa
+|   |   |       |           +---ff
+|   |   |       |           +---fi
+|   |   |       |           +---fr
+|   |   |       |           +---fy-NL
+|   |   |       |           +---ga-IE
+|   |   |       |           +---gd
+|   |   |       |           +---gl
+|   |   |       |           +---gu-IN
+|   |   |       |           +---he
+|   |   |       |           +---hi-IN
+|   |   |       |           +---hr
+|   |   |       |           +---hu
+|   |   |       |           +---hy-AM
+|   |   |       |           +---id
+|   |   |       |           +---is
+|   |   |       |           +---it
+|   |   |       |           +---ja
+|   |   |       |           +---ka
+|   |   |       |           +---kk
+|   |   |       |           +---km
+|   |   |       |           +---kn
+|   |   |       |           +---ko
+|   |   |       |           +---ku
+|   |   |       |           +---lg
+|   |   |       |           +---lij
+|   |   |       |           +---lt
+|   |   |       |           +---lv
+|   |   |       |           +---mai
+|   |   |       |           +---mk
+|   |   |       |           +---ml
+|   |   |       |           +---mn
+|   |   |       |           +---mr
+|   |   |       |           +---ms
+|   |   |       |           +---my
+|   |   |       |           +---nb-NO
+|   |   |       |           +---nl
+|   |   |       |           +---nn-NO
+|   |   |       |           +---nso
+|   |   |       |           +---oc
+|   |   |       |           +---or
+|   |   |       |           +---pa-IN
+|   |   |       |           +---pl
+|   |   |       |           +---pt-BR
+|   |   |       |           +---pt-PT
+|   |   |       |           +---rm
+|   |   |       |           +---ro
+|   |   |       |           +---ru
+|   |   |       |           +---rw
+|   |   |       |           +---sah
+|   |   |       |           +---si
+|   |   |       |           +---sk
+|   |   |       |           +---sl
+|   |   |       |           +---son
+|   |   |       |           +---sq
+|   |   |       |           +---sr
+|   |   |       |           +---sv-SE
+|   |   |       |           +---sw
+|   |   |       |           +---ta
+|   |   |       |           +---ta-LK
+|   |   |       |           +---te
+|   |   |       |           +---th
+|   |   |       |           +---tl
+|   |   |       |           +---tn
+|   |   |       |           +---tr
+|   |   |       |           +---uk
+|   |   |       |           +---ur
+|   |   |       |           +---vi
+|   |   |       |           +---wo
+|   |   |       |           +---xh
+|   |   |       |           +---zh-CN
+|   |   |       |           +---zh-TW
+|   |   |       |           \---zu
+|   |   |       +---v1.9.426
+|   |   |       |   +---build
+|   |   |       |   \---web
+|   |   |       |       +---cmaps
+|   |   |       |       +---images
+|   |   |       |       \---locale
+|   |   |       |           +---ach
+|   |   |       |           +---af
+|   |   |       |           +---ak
+|   |   |       |           +---an
+|   |   |       |           +---ar
+|   |   |       |           +---as
+|   |   |       |           +---ast
+|   |   |       |           +---az
+|   |   |       |           +---be
+|   |   |       |           +---bg
+|   |   |       |           +---bn-BD
+|   |   |       |           +---bn-IN
+|   |   |       |           +---br
+|   |   |       |           +---bs
+|   |   |       |           +---ca
+|   |   |       |           +---cs
+|   |   |       |           +---csb
+|   |   |       |           +---cy
+|   |   |       |           +---da
+|   |   |       |           +---de
+|   |   |       |           +---el
+|   |   |       |           +---en-GB
+|   |   |       |           +---en-US
+|   |   |       |           +---en-ZA
+|   |   |       |           +---eo
+|   |   |       |           +---es-AR
+|   |   |       |           +---es-CL
+|   |   |       |           +---es-ES
+|   |   |       |           +---es-MX
+|   |   |       |           +---et
+|   |   |       |           +---eu
+|   |   |       |           +---fa
+|   |   |       |           +---ff
+|   |   |       |           +---fi
+|   |   |       |           +---fr
+|   |   |       |           +---fy-NL
+|   |   |       |           +---ga-IE
+|   |   |       |           +---gd
+|   |   |       |           +---gl
+|   |   |       |           +---gu-IN
+|   |   |       |           +---he
+|   |   |       |           +---hi-IN
+|   |   |       |           +---hr
+|   |   |       |           +---hu
+|   |   |       |           +---hy-AM
+|   |   |       |           +---id
+|   |   |       |           +---is
+|   |   |       |           +---it
+|   |   |       |           +---ja
+|   |   |       |           +---ka
+|   |   |       |           +---kk
+|   |   |       |           +---km
+|   |   |       |           +---kn
+|   |   |       |           +---ko
+|   |   |       |           +---ku
+|   |   |       |           +---lg
+|   |   |       |           +---lij
+|   |   |       |           +---lt
+|   |   |       |           +---lv
+|   |   |       |           +---mai
+|   |   |       |           +---mk
+|   |   |       |           +---ml
+|   |   |       |           +---mn
+|   |   |       |           +---mr
+|   |   |       |           +---ms
+|   |   |       |           +---my
+|   |   |       |           +---nb-NO
+|   |   |       |           +---nl
+|   |   |       |           +---nn-NO
+|   |   |       |           +---nso
+|   |   |       |           +---oc
+|   |   |       |           +---or
+|   |   |       |           +---pa-IN
+|   |   |       |           +---pl
+|   |   |       |           +---pt-BR
+|   |   |       |           +---pt-PT
+|   |   |       |           +---rm
+|   |   |       |           +---ro
+|   |   |       |           +---ru
+|   |   |       |           +---rw
+|   |   |       |           +---sah
+|   |   |       |           +---si
+|   |   |       |           +---sk
+|   |   |       |           +---sl
+|   |   |       |           +---son
+|   |   |       |           +---sq
+|   |   |       |           +---sr
+|   |   |       |           +---sv-SE
+|   |   |       |           +---sw
+|   |   |       |           +---ta
+|   |   |       |           +---ta-LK
+|   |   |       |           +---te
+|   |   |       |           +---th
+|   |   |       |           +---tl
+|   |   |       |           +---tn
+|   |   |       |           +---tr
+|   |   |       |           +---uk
+|   |   |       |           +---ur
+|   |   |       |           +---vi
+|   |   |       |           +---wo
+|   |   |       |           +---xh
+|   |   |       |           +---zh-CN
+|   |   |       |           +---zh-TW
+|   |   |       |           \---zu
+|   |   |       \---v2.0.550
+|   |   |           \---build
+|   |   +---node_modules
+|   |   |   \---debug
+|   |   |       \---src
+|   |   \---test
+|   |       \---data
+|   +---pg
+|   |   +---esm
+|   |   \---lib
+|   |       +---crypto
+|   |       \---native
+|   +---pg-cloudflare
+|   |   +---dist
+|   |   +---esm
+|   |   \---src
+|   +---pg-connection-string
+|   |   \---esm
+|   +---pg-int8
+|   +---pg-pool
+|   |   \---esm
+|   +---pg-protocol
+|   |   +---dist
+|   |   +---esm
+|   |   \---src
+|   |       +---testing
+|   |       \---types
+|   +---pg-types
+|   |   +---lib
+|   |   \---test
+|   +---pgpass
+|   |   \---lib
+|   +---postgres-array
+|   +---postgres-bytea
+|   +---postgres-date
+|   +---postgres-interval
+|   +---proto3-json-serializer
+|   |   \---build
+|   |       \---src
+|   +---protobufjs
+|   |   +---dist
+|   |   |   +---light
+|   |   |   \---minimal
+|   |   +---ext
+|   |   |   +---debug
+|   |   |   \---descriptor
+|   |   +---google
+|   |   |   +---api
+|   |   |   \---protobuf
+|   |   +---scripts
+|   |   \---src
+|   |       +---rpc
+|   |       \---util
+|   +---proxy-addr
+|   +---proxy-from-env
+|   +---pump
+|   |   \---.github
+|   +---pumpify
+|   +---qs
+|   |   +---.github
+|   |   +---dist
+|   |   +---lib
+|   |   \---test
+|   +---range-parser
+|   +---raw-body
+|   |   \---node_modules
+|   |       \---iconv-lite
+|   |           +---encodings
+|   |           |   \---tables
+|   |           \---lib
+|   |               \---helpers
+|   +---readable-stream
+|   |   \---lib
+|   |       \---internal
+|   |           \---streams
+|   +---require-directory
+|   +---retry-request
+|   +---router
+|   |   \---lib
+|   +---safe-buffer
+|   +---safe-stable-stringify
+|   |   \---esm
+|   +---safer-buffer
+|   +---send
+|   +---serve-static
+|   +---setprototypeof
+|   |   \---test
+|   +---side-channel
+|   |   +---.github
+|   |   \---test
+|   +---side-channel-list
+|   |   +---.github
+|   |   \---test
+|   +---side-channel-map
+|   |   +---.github
+|   |   \---test
+|   +---side-channel-weakmap
+|   |   +---.github
+|   |   \---test
+|   +---sox-stream
+|   +---split2
+|   +---stack-trace
+|   |   \---lib
+|   +---statuses
+|   +---stream-events
+|   +---stream-parser
+|   |   +---node_modules
+|   |   |   +---debug
+|   |   |   |   \---src
+|   |   |   \---ms
+|   |   \---test
+|   +---stream-shift
+|   |   \---.github
+|   |       \---workflows
+|   +---string-width
+|   +---string_decoder
+|   |   \---lib
+|   +---strip-ansi
+|   +---stubs
+|   +---teeny-request
+|   |   +---build
+|   |   |   \---src
+|   |   \---node_modules
+|   |       +---agent-base
+|   |       |   +---dist
+|   |       |   |   \---src
+|   |       |   \---src
+|   |       +---https-proxy-agent
+|   |       |   \---dist
+|   |       \---node-fetch
+|   |           +---@types
+|   |           \---src
+|   |               +---errors
+|   |               \---utils
+|   +---tempfile
+|   |   \---node_modules
+|   |       \---uuid
+|   |           +---benchmark
+|   |           +---misc
+|   |           \---test
+|   +---text-hex
+|   +---toidentifier
+|   +---tr46
+|   |   \---lib
+|   +---triple-beam
+|   |   +---.nyc_output
+|   |   |   \---processinfo
+|   |   \---config
+|   +---type-is
+|   +---undici-types
+|   +---unpipe
+|   +---url-template
+|   |   +---lib
+|   |   +---test
+|   |   \---uritemplate-test
+|   +---util-deprecate
+|   +---uuid
+|   |   \---dist
+|   |       +---bin
+|   |       +---commonjs-browser
+|   |       +---esm-browser
+|   |       \---esm-node
+|   +---vary
+|   +---wav
+|   |   +---examples
+|   |   +---lib
+|   |   +---node_modules
+|   |   |   +---debug
+|   |   |   |   \---src
+|   |   |   +---ms
+|   |   |   +---readable-stream
+|   |   |   |   \---lib
+|   |   |   \---string_decoder
+|   |   \---test
+|   |       \---fixtures
+|   +---web-streams-polyfill
+|   |   +---dist
+|   |   |   \---types
+|   |   |       \---ts3.6
+|   |   +---es2018
+|   |   +---es6
+|   |   \---ponyfill
+|   |       +---es2018
+|   |       \---es6
+|   +---webidl-conversions
+|   |   \---lib
+|   +---whatwg-url
+|   |   \---lib
+|   +---winston
+|   |   +---dist
+|   |   |   \---winston
+|   |   |       +---config
+|   |   |       \---transports
+|   |   \---lib
+|   |       \---winston
+|   |           +---config
+|   |           \---transports
+|   +---winston-daily-rotate-file
+|   +---winston-transport
+|   |   +---.nyc_output
+|   |   |   \---processinfo
+|   |   \---dist
+|   +---wrap-ansi
+|   +---wrappy
+|   +---ws
+|   |   \---lib
+|   +---xtend
+|   +---y18n
+|   |   \---build
+|   |       \---lib
+|   |           \---platform-shims
+|   +---yargs
+|   |   +---build
+|   |   |   \---lib
+|   |   |       +---typings
+|   |   |       \---utils
+|   |   +---helpers
+|   |   +---lib
+|   |   |   \---platform-shims
+|   |   \---locales
+|   \---yargs-parser
+|       \---build
+|           \---lib
++---protos
+|   \---google
+|       +---api
+|       |   +---google
+|       |   |   \---api
+|       |   \---speech
+|       |       \---v1
+|       +---cloud
+|       |   \---speech
+|       |       \---v1
+|       +---longrunning
+|       \---rpc
++---scripts
+\---src
+    \---brain
+        +---controllers
+        +---logs
+        +---middleware
+        +---models
+        +---policies
+        +---services
+        +---types
+        \---utils

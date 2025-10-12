@@ -1,0 +1,267 @@
+[
+  {
+    "id": 1760245109254,
+    "timestamp": "2025-10-12T04:58:29.254Z",
+    "issueType": "Startup connection failed: password authentication failed for user \"postgres\"",
+    "source": "Database",
+    "action": "Restarted component successfully",
+    "success": true,
+    "business_id": null,
+    "status": "success"
+  },
+  {
+    "id": 1760244799456,
+    "timestamp": "2025-10-12T04:53:19.456Z",
+    "issueType": "Startup connection failed: password authentication failed for user \"postgres\"",
+    "source": "Database",
+    "action": "Manual intervention required",
+    "success": false,
+    "business_id": null,
+    "status": "failed"
+  },
+  {
+    "id": 1760244681486,
+    "timestamp": "2025-10-12T04:51:21.486Z",
+    "issueType": "Startup connection failed: password authentication failed for user \"postgres\"",
+    "source": "Database",
+    "action": "Restarted component successfully",
+    "success": true,
+    "business_id": null,
+    "status": "success"
+  },
+  {
+    "id": 1760244431247,
+    "timestamp": "2025-10-12T04:47:11.247Z",
+    "issueType": "Startup connection failed: password authentication failed for user \"postgres\"",
+    "source": "Database",
+    "action": "Restarted component successfully",
+    "success": true,
+    "business_id": null,
+    "status": "success"
+  },
+  {
+    "id": 1760152500784,
+    "timestamp": "2025-10-11T03:15:00.784Z",
+    "issueType": "Simulated critical issue",
+    "source": "tenant1",
+    "action": "Restarted component",
+    "success": true,
+    "business_id": null
+  },
+  {
+    "id": 1760152263199,
+    "timestamp": "2025-10-11T03:11:03.199Z",
+    "issueType": "Simulated critical issue",
+    "source": "tenant1",
+    "action": "Restarted component",
+    "success": true,
+    "business_id": null
+  },
+  {
+    "id": 1760152229796,
+    "timestamp": "2025-10-11T03:10:29.796Z",
+    "issueType": "Simulated critical issue",
+    "source": "tenant1",
+    "action": "Restarted component",
+    "success": true,
+    "business_id": null
+  },
+  {
+    "id": 1760149230773,
+    "timestamp": "2025-10-11T02:20:30.773Z",
+    "issueType": "Tenant 101 simulated error",
+    "source": "api",
+    "action": "Restarted component",
+    "success": true,
+    "business_id": null
+  },
+  {
+    "id": 1760143354901,
+    "timestamp": "2025-10-11T00:42:34.901Z",
+    "issueType": "Tenant 101 simulated error",
+    "source": "api",
+    "action": "Restarted component",
+    "success": true,
+    "business_id": null
+  },
+  {
+    "id": 1760143082392,
+    "timestamp": "2025-10-11T00:38:02.392Z",
+    "issueType": "Tenant 101 simulated error",
+    "source": "api",
+    "action": "Restarted component",
+    "success": true,
+    "business_id": null
+  },
+  {
+    "id": 1760142251339,
+    "timestamp": "2025-10-11T00:24:11.339Z",
+    "issueType": "Tenant 101 simulated error",
+    "source": "api",
+    "action": "Restarted component",
+    "success": true,
+    "business_id": null
+  },
+  {
+    "id": 1760142101066,
+    "timestamp": "2025-10-11T00:21:41.066Z",
+    "issueType": "Tenant 101 simulated error",
+    "source": "api",
+    "action": "Restarted component",
+    "success": true,
+    "business_id": null
+  },
+  {
+    "id": 1760140570178,
+    "timestamp": "2025-10-10T23:56:10.178Z",
+    "issueType": "Health check failed: Request failed with status code 400",
+    "source": "Monitor",
+    "action": "Restarted component",
+    "success": true,
+    "business_id": null
+  },
+  {
+    "id": 1760140510214,
+    "timestamp": "2025-10-10T23:55:10.214Z",
+    "issueType": "Health check failed: Request failed with status code 400",
+    "source": "Monitor",
+    "action": "Restarted component",
+    "success": true,
+    "business_id": null
+  },
+  {
+    "id": 1760140413180,
+    "timestamp": "2025-10-10T23:53:33.180Z",
+    "issueType": "Health check failed: Request failed with status code 400",
+    "source": "Monitor",
+    "action": "Restarted component",
+    "success": true,
+    "business_id": null
+  },
+  {
+    "id": 1760140310141,
+    "timestamp": "2025-10-10T23:51:50.141Z",
+    "issueType": "Health check failed: Request failed with status code 400",
+    "source": "Monitor",
+    "action": "Restarted component",
+    "success": true,
+    "business_id": null
+  },
+  {
+    "id": 1760140218715,
+    "timestamp": "2025-10-10T23:50:18.715Z",
+    "issueType": "Health check failed: Request failed with status code 400",
+    "source": "Monitor",
+    "action": "Restarted component",
+    "success": true,
+    "business_id": null
+  },
+  {
+    "id": 1760140158739,
+    "timestamp": "2025-10-10T23:49:18.739Z",
+    "issueType": "Health check failed: Request failed with status code 400",
+    "source": "Monitor",
+    "action": "Restarted component",
+    "success": true,
+    "business_id": null
+  },
+  {
+    "id": 1760140042142,
+    "timestamp": "2025-10-10T23:47:22.142Z",
+    "issueType": "Health check failed: Request failed with status code 400",
+    "source": "Monitor",
+    "action": "Restarted component",
+    "success": true,
+    "business_id": null
+  },
+  {
+    "id": 1760139945514,
+    "timestamp": "2025-10-10T23:45:45.514Z",
+    "issueType": "Health check failed: Request failed with status code 400",
+    "source": "Monitor",
+    "action": "Restarted component",
+    "success": true,
+    "business_id": null
+  },
+  {
+    "id": 1760139885512,
+    "timestamp": "2025-10-10T23:44:45.512Z",
+    "issueType": "Health check failed: Request failed with status code 400",
+    "source": "Monitor",
+    "action": "Restarted component",
+    "success": true,
+    "business_id": null
+  },
+  {
+    "id": 1760139825504,
+    "timestamp": "2025-10-10T23:43:45.504Z",
+    "issueType": "Health check failed: Request failed with status code 400",
+    "source": "Monitor",
+    "action": "Manual intervention needed",
+    "success": false,
+    "business_id": null
+  },
+  {
+    "id": 1760139765494,
+    "timestamp": "2025-10-10T23:42:45.494Z",
+    "issueType": "Health check failed: Request failed with status code 400",
+    "source": "Monitor",
+    "action": "Restarted component",
+    "success": true,
+    "business_id": null
+  },
+  {
+    "id": 1760139705490,
+    "timestamp": "2025-10-10T23:41:45.490Z",
+    "issueType": "Health check failed: Request failed with status code 400",
+    "source": "Monitor",
+    "action": "Restarted component",
+    "success": true,
+    "business_id": null
+  },
+  {
+    "id": 1760139645496,
+    "timestamp": "2025-10-10T23:40:45.496Z",
+    "issueType": "Health check failed: Request failed with status code 400",
+    "source": "Monitor",
+    "action": "Restarted component",
+    "success": true,
+    "business_id": null
+  },
+  {
+    "id": 1760139585501,
+    "timestamp": "2025-10-10T23:39:45.501Z",
+    "issueType": "Health check failed: Request failed with status code 400",
+    "source": "Monitor",
+    "action": "Restarted component",
+    "success": true,
+    "business_id": null
+  },
+  {
+    "id": 1760139480496,
+    "timestamp": "2025-10-10T23:38:00.496Z",
+    "issueType": "Health check failed: Request failed with status code 400",
+    "source": "Monitor",
+    "action": "Restarted component",
+    "success": true,
+    "business_id": null
+  },
+  {
+    "id": 1760139420528,
+    "timestamp": "2025-10-10T23:37:00.528Z",
+    "issueType": "Health check failed: Request failed with status code 400",
+    "source": "Monitor",
+    "action": "Restarted component",
+    "success": true,
+    "business_id": null
+  },
+  {
+    "id": 1760138998245,
+    "timestamp": "2025-10-10T23:29:58.245Z",
+    "issueType": "Tenant 1 alert test",
+    "source": "api",
+    "action": "Restarted component",
+    "success": true,
+    "business_id": null
+  }
+]

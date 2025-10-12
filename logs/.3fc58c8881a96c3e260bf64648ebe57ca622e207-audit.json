@@ -1,0 +1,15 @@
+{
+    "keep": {
+        "days": true,
+        "amount": 14
+    },
+    "auditLog": "C:\\Alphine\\Projects\\aca-realtime-gateway\\logs\\.3fc58c8881a96c3e260bf64648ebe57ca622e207-audit.json",
+    "files": [
+        {
+            "date": 1759981519321,
+            "name": "C:\\Alphine\\Projects\\aca-realtime-gateway\\logs\\orchestrator-2025-10-08.log",
+            "hash": "1e623ebe2c9252ba637fdf99d2356f14a50afe2eef8c8697813de5bb430b707d"
+        }
+    ],
+    "hashType": "sha256"
+}

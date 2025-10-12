@@ -1,0 +1,247 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>ACA Monitoring Dashboard</title>
+  <link rel="stylesheet"
+        href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css"/>
+  <style>
+    body {
+      background:#0e0e11;
+      color:#f8f9fa;
+      font-family:'Segoe UI',Inter,Roboto,sans-serif;
+      padding:20px;
+      overflow-x:hidden;
+    }
+    h2{text-align:center;font-weight:600;margin-bottom:1rem;}
+    pre{
+      background:#18181b;
+      color:#10b981;
+      padding:10px;
+      height:300px;
+      overflow-y:scroll;
+      border-radius:8px;
+    }
+
+    /* --- Banner --- */
+    .status-banner{
+      display:flex;justify-content:center;align-items:center;
+      font-size:1.1rem;font-weight:600;
+      border-radius:8px;margin-bottom:1.5rem;padding:10px;
+      color:#fff;transition:all .4s ease;
+      box-shadow:0 0 8px rgba(0,0,0,0.4);
+    }
+    .status-banner.normal{
+      background:linear-gradient(90deg,#16a34a,#22c55e);
+      color:#fff;
+      box-shadow:0 0 12px rgba(34,197,94,0.6);
+    }
+    .status-banner.warning{
+      background:linear-gradient(90deg,#facc15,#f59e0b);
+      color:#111;
+      box-shadow:0 0 12px rgba(250,204,21,0.5);
+    }
+    .status-banner.critical{
+      background:linear-gradient(90deg,#ffeb3b,#ff9800);
+      color:#111;
+      box-shadow:0 0 15px rgba(255,152,0,0.6);
+    }
+
+    .badge-critical{background-color:#b91c1c!important;}
+    .badge-warning{background-color:#f59e0b!important;color:#111!important;}
+    .badge-info{background-color:#0ea5e9!important;}
+
+    /* --- Inline tenant view --- */
+    #tenantView{display:none;animation:fadeIn .3s ease;}
+    @keyframes fadeIn{from{opacity:0;}to{opacity:1;}}
+
+    #backButton{
+      background-color:#333;
+      color:#f8f9fa;
+      border:none;
+      padding:8px 16px;
+      border-radius:6px;
+      cursor:pointer;
+      position:fixed;
+      top:15px;left:15px;
+      z-index:9999;
+      display:none;
+      font-weight:600;
+      transition:all .3s ease;
+      box-shadow:0 0 8px rgba(255,255,255,0.2);
+    }
+    #backButton:hover{
+      background-color:#555;
+      box-shadow:0 0 12px rgba(255,255,255,0.4);
+    }
+
+    .tenant-content{
+      background:#18181b;
+      border-radius:10px;
+      padding:20px;
+      margin-top:60px;
+      box-shadow:0 0 8px rgba(0,0,0,0.4);
+    }
+  </style>
+</head>
+<body>
+  <div class="container mt-4" id="mainDashboard">
+    <h2>📊 ACA Monitoring Dashboard</h2>
+    <div class="status-banner" id="statusBanner">Loading system status...</div>
+
+    <div class="mb-3">
+      <label class="form-label">Tenant ID (optional)</label>
+      <input type="number" id="tenantId" class="form-control"
+             placeholder="Enter business ID (e.g. 101)" />
+      <button id="loadBtn" class="btn btn-warning mt-2">Load Tenant</button>
+    </div>
+
+    <div class="row mb-3">
+      <div class="col-md-4"><b>Uptime:</b> <span id="uptime"></span></div>
+      <div class="col-md-4"><b>Memory:</b> <span id="memory"></span></div>
+      <div class="col-md-4"><b>Load Avg:</b> <span id="load"></span></div>
+    </div>
+    <p><b>Last Updated:</b> <span id="timestamp"></span></p>
+
+    <h4 class="mt-4">🧾 Recent Logs</h4>
+    <pre id="logs"></pre>
+
+    <h4 class="mt-5">🚨 Recent Alerts</h4>
+    <ul id="alertList" class="list-group"></ul>
+  </div>
+
+  <div class="container" id="tenantView">
+    <button id="backButton">⬅ Back</button>
+    <div class="tenant-content" id="tenantContent">
+      <h4 class="text-center text-info">Loading Tenant Dashboard...</h4>
+    </div>
+  </div>
+
+  <script>
+    const statusBanner=document.getElementById("statusBanner"),
+          alertList=document.getElementById("alertList"),
+          tenantInput=document.getElementById("tenantId"),
+          mainDashboard=document.getElementById("mainDashboard"),
+          tenantView=document.getElementById("tenantView"),
+          tenantContent=document.getElementById("tenantContent"),
+          backButton=document.getElementById("backButton");
+
+    function formatMB(b){return b?(b/(1024*1024)).toFixed(1)+" MB":"0 MB";}
+    function formatUptime(s){const h=Math.floor(s/3600),m=Math.floor((s%3600)/60),sec=Math.floor(s%60);return`${h}h ${m}m ${sec}s`; }
+
+    function setBanner(text,level="normal"){
+      statusBanner.textContent=text;
+      statusBanner.className="status-banner "+level;
+    }
+
+    async function loadData(){
+      try{
+        const res=await fetch("/monitor");
+        if(!res.ok)throw new Error(`HTTP ${res.status}`);
+        const d=await res.json(),
+              mem=d.memory||{},load=d.loadAvg||[0,0,0];
+        document.getElementById("uptime").textContent=formatUptime(d.uptime);
+        document.getElementById("memory").textContent=
+          `Heap: ${formatMB(mem.heapUsed)} / ${formatMB(mem.heapTotal)} • RSS: ${formatMB(mem.rss)}`;
+        const loadText=load.every(v=>v===0)?"N/A (Windows)":load.map(v=>v.toFixed(2)).join(", ");
+        document.getElementById("load").textContent=loadText;
+        document.getElementById("timestamp").textContent=new Date(d.timestamp).toLocaleTimeString();
+        document.getElementById("logs").textContent=(d.recentLogs||[]).join("\n");
+      }catch(e){console.error(e);setBanner("⚠️ Failed to fetch system metrics","warning");}
+    }
+
+    async function loadAlerts(){
+      const tid=tenantInput.value.trim();
+      const url=tid?`/monitor/overview?tenant_id=${tid}`:"/monitor/overview";
+      try{
+        const res=await fetch(url);if(!res.ok)throw new Error(`HTTP ${res.status}`);
+        const d=await res.json(),scope=tid?`Tenant ${tid}`:"Global";
+        if(d.active_alerts>0)setBanner(`🚨 ${d.active_alerts} Active Alerts (${scope})`,"critical");
+        else if(d.recovery_count>0)setBanner(`✅ Auto-Recovery completed (${scope})`,"normal");
+        else setBanner(`✅ All systems normal (${scope})`,"normal");
+
+        const alerts=d.latest_alerts||[];
+        alertList.innerHTML="";
+        if(!alerts.length){
+          const li=document.createElement("li");
+          li.classList.add("list-group-item","text-secondary");
+          li.textContent="No recent alerts.";alertList.appendChild(li);
+        }else{
+          alerts.forEach(a=>{
+            const level=a.level||a.severity||"info",
+                  t=a.timestamp||a.time||"",
+                  comp=a.component||"system",
+                  msg=a.message||"";
+            const li=document.createElement("li");
+            li.classList.add("list-group-item","d-flex","justify-content-between","align-items-start");
+            li.innerHTML=`<div><strong>${comp}</strong><br/><small>${t}</small><br/>${msg}</div>`;
+            const badge=document.createElement("span");
+            badge.classList.add("badge","rounded-pill",
+              level==="critical"?"badge-critical":
+              level==="warning"?"badge-warning":"badge-info");
+            badge.textContent=level.toUpperCase();
+            li.appendChild(badge);
+            alertList.appendChild(li);
+
+            if(comp.toLowerCase().includes("tenant")){
+              li.style.cursor="pointer";
+              li.title="Open inline tenant dashboard";
+              li.addEventListener("click",()=>openTenantView(comp));
+            }
+          });
+        }
+      }catch(e){console.error(e);setBanner("⚠️ Dashboard connection lost","warning");}
+    }
+
+    async function openTenantView(component){
+      const m=component.match(/\d+/);const n=m?m[0]:null;
+      if(!n){alert("Invalid tenant identifier");return;}
+      mainDashboard.style.display="none";
+      tenantView.style.display="block";
+      backButton.style.display="block";
+      try{
+        const res=await fetch(`/monitor/overview?tenant_id=${n}`);
+        const d=await res.json();
+        const alerts=(d.latest_alerts||[]).map(a=>`[${a.level}] ${a.message}`).join("\n");
+        const recs=(d.latest_recoveries||[]).map(r=>`[${r.status}] ${r.action||r.issueType}`).join("\n");
+        tenantContent.innerHTML=`
+          <h3 class="text-center text-warning">Tenant ${n} Dashboard</h3>
+          <p><b>Active Alerts:</b> ${d.active_alerts}  |  <b>Recoveries:</b> ${d.recovery_count}</p>
+          <div class="row">
+            <div class="col-md-6">
+              <h5 class="text-danger">Recent Alerts</h5>
+              <pre>${alerts||"None"}</pre>
+            </div>
+            <div class="col-md-6">
+              <h5 class="text-success">Recent Recoveries</h5>
+              <pre>${recs||"None"}</pre>
+            </div>
+          </div>`;
+      }catch(e){
+        tenantContent.innerHTML=`<p class="text-danger text-center">Failed to load tenant data.</p>`;
+        console.error(e);
+      }
+    }
+
+    backButton.addEventListener("click",()=>{
+      tenantView.style.display="none";
+      mainDashboard.style.display="block";
+      backButton.style.display="none";
+      tenantContent.innerHTML="<h4 class='text-center text-info'>Loading Tenant Dashboard...</h4>";
+    });
+
+    document.getElementById("loadBtn").addEventListener("click",()=>{
+      const id=tenantInput.value.trim();
+      localStorage.setItem("tenant_id",id);
+      refresh();
+    });
+
+    const last=localStorage.getItem("tenant_id");
+    if(last)tenantInput.value=last;
+
+    function refresh(){loadData();loadAlerts();}
+    refresh();
+    setInterval(refresh,5000);
+  </script>
+</body>
+</html>

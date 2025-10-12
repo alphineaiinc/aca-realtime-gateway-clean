@@ -1,0 +1,130 @@
+[
+  {
+    "id": 1760155136692,
+    "timestamp": "2025-10-11T03:58:56.693Z",
+    "issueType": "DB connection lost",
+    "source": "simulator",
+    "action": "Restarted component successfully",
+    "success": true,
+    "business_id": 1,
+    "status": "success"
+  },
+  {
+    "id": 1760154913875,
+    "timestamp": "2025-10-11T03:55:13.875Z",
+    "issueType": "DB connection lost",
+    "source": "simulator",
+    "action": "Restarted component successfully",
+    "success": true,
+    "business_id": 1,
+    "status": "success"
+  },
+  {
+    "id": 1760154057508,
+    "timestamp": "2025-10-11T03:40:57.508Z",
+    "issueType": "DB connection lost",
+    "source": "manual",
+    "action": "Restarted component successfully",
+    "success": true,
+    "business_id": 1,
+    "status": "success"
+  },
+  {
+    "id": 1760153952729,
+    "timestamp": "2025-10-11T03:39:12.729Z",
+    "issueType": "DB connection lost",
+    "source": "simulator",
+    "action": "Restarted component successfully",
+    "success": true,
+    "business_id": 1,
+    "status": "success"
+  },
+  {
+    "id": 1760153901697,
+    "timestamp": "2025-10-11T03:38:21.697Z",
+    "issueType": "DB connection lost",
+    "source": "simulator",
+    "action": "Restarted component successfully",
+    "success": true,
+    "business_id": 1,
+    "status": "success"
+  },
+  {
+    "id": 1760153886305,
+    "timestamp": "2025-10-11T03:38:06.305Z",
+    "issueType": "DB connection lost",
+    "source": "simulator",
+    "action": "Restarted component successfully",
+    "success": true,
+    "business_id": 1,
+    "status": "success"
+  },
+  {
+    "id": 1760153878722,
+    "timestamp": "2025-10-11T03:37:58.722Z",
+    "issueType": "DB connection lost",
+    "source": "simulator",
+    "action": "Restarted component successfully",
+    "success": true,
+    "business_id": 1,
+    "status": "success"
+  },
+  {
+    "id": 1760153866627,
+    "timestamp": "2025-10-11T03:37:46.627Z",
+    "issueType": "DB connection lost",
+    "source": "simulator",
+    "action": "Restarted component successfully",
+    "success": true,
+    "business_id": 1,
+    "status": "success"
+  },
+  {
+    "id": 1760153850161,
+    "timestamp": "2025-10-11T03:37:30.161Z",
+    "issueType": "DB connection lost",
+    "source": "simulator",
+    "action": "Restarted component successfully",
+    "success": true,
+    "business_id": 1,
+    "status": "success"
+  },
+  {
+    "id": 1760153819036,
+    "timestamp": "2025-10-11T03:36:59.036Z",
+    "issueType": "DB connection lost",
+    "source": "simulator",
+    "action": "Restarted component successfully",
+    "success": true,
+    "business_id": 1,
+    "status": "success"
+  },
+  {
+    "id": 1760153805735,
+    "timestamp": "2025-10-11T03:36:45.735Z",
+    "issueType": "DB connection lost",
+    "source": "simulator",
+    "action": "Restarted component successfully",
+    "success": true,
+    "business_id": 1,
+    "status": "success"
+  },
+  {
+    "id": 1760139109514,
+    "timestamp": "2025-10-10T23:31:49.514Z",
+    "issueType": "Database reconnect",
+    "source": "system",
+    "action": "Restarted component",
+    "success": true,
+    "business_id": 1
+  },
+  {
+    "id": 1760139109249,
+    "timestamp": "2025-10-10T23:31:49.249Z",
+    "issueType": "Tenant 1 test alert",
+    "source": "api",
+    "action": "Restarted component",
+    "success": true,
+    "business_id": 1
+  }
+]
