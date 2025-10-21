@@ -205,6 +205,19 @@ try {
   // Mount Twilio webhooks
   healthApp.use("/twilio", twilioRoutes);
 
+  // 🆕 --- Fallback handler for /twilio/voice to prevent 404 in cloud ---
+  healthApp.post("/twilio/voice", (req, res) => {
+    res.type("text/xml");
+    res.send(`
+      <?xml version="1.0" encoding="UTF-8"?>
+      <Response>
+        <Say voice="Polly.Joanna-Neural">Welcome to Alphine AI. The call orchestration service is active.</Say>
+        <Pause length="1"/>
+        <Hangup/>
+      </Response>
+    `);
+  });
+
   // Health check endpoint
   healthApp.get("/health", (req, res) => {
     res.json({ ok: true, message: "ACA orchestrator running" });
