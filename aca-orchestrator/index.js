@@ -8,6 +8,13 @@ require("dotenv").config({ path: path.resolve(__dirname, "../.env") });
 const { save: saveSession, load: loadSession } = require("./src/brain/utils/sessionState");
 const { getMetricsText, markRecovery } = require("./src/monitor/resilienceMetrics");
 
+console.log("🧠 Startup check:", {
+  OPENAI: !!process.env.OPENAI_API_KEY,
+  DB: !!process.env.DATABASE_URL,
+  NODE_ENV: process.env.NODE_ENV
+});
+
+
 // Global in-memory session placeholder (align with your actual objects)
 global.__ACA_STATE__ = { activeSessions: [], version: "5.3.A" };
 
