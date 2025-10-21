@@ -193,9 +193,19 @@ module.exports = { onSTTResponse, onStreamEnd };
 // ---------------------------------------------------------------------------
 try {
   const express = require("express");
+  const bodyParser = require("body-parser");
+  const twilioRoutes = require("./src/routes/twilio");
+
   const healthApp = express();
   const PORT = process.env.PORT || 8080;
 
+  healthApp.use(bodyParser.urlencoded({ extended: false }));
+  healthApp.use(bodyParser.json());
+
+  // Mount Twilio webhooks
+  healthApp.use("/twilio", twilioRoutes);
+
+  // Health check endpoint
   healthApp.get("/health", (req, res) => {
     res.json({ ok: true, message: "ACA orchestrator running" });
   });
