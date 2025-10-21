@@ -14,7 +14,6 @@ console.log("🧠 Startup check:", {
   NODE_ENV: process.env.NODE_ENV
 });
 
-
 // Global in-memory session placeholder (align with your actual objects)
 global.__ACA_STATE__ = { activeSessions: [], version: "5.3.A" };
 
@@ -40,7 +39,6 @@ if (app && typeof app.get === "function") {
     res.send(getMetricsText());
   });
 }
-
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 const FORCE_LANG = process.env.FORCE_LANG || ""; // FORCE_LANG=ta-IN to lock for demo
@@ -189,3 +187,22 @@ async function onFinalTranscript(transcript, langCode, businessId, ws) {
 }
 
 module.exports = { onSTTResponse, onStreamEnd };
+
+// ---------------------------------------------------------------------------
+// ✅ KEEP-ALIVE SERVER FOR CLOUD DEPLOYMENT (Render / Heroku / etc.)
+// ---------------------------------------------------------------------------
+try {
+  const express = require("express");
+  const healthApp = express();
+  const PORT = process.env.PORT || 8080;
+
+  healthApp.get("/health", (req, res) => {
+    res.json({ ok: true, message: "ACA orchestrator running" });
+  });
+
+  healthApp.listen(PORT, () => {
+    console.log(`🚀 ACA Orchestrator running on port ${PORT}`);
+  });
+} catch (err) {
+  console.error("⚠️ Express startup failed:", err.message);
+}
