@@ -12,6 +12,7 @@ const crypto = require("crypto");
 // Core Winston Logger (rotating files)
 // ----------------------------------------------------------
 function createLogger({ level = "info" } = {}) {
+  // ✅ move outside /src to real logs directory
   const logDir = path.resolve(__dirname, "../../../logs");
   if (!fs.existsSync(logDir)) fs.mkdirSync(logDir, { recursive: true });
 
@@ -43,7 +44,7 @@ function createLogger({ level = "info" } = {}) {
 }
 
 // ----------------------------------------------------------
-// Instantiate default logger (used by all modules)
+// Instantiate default logger (used by modules)
 // ----------------------------------------------------------
 const logger = createLogger({ level: process.env.LOG_LEVEL || "info" });
 
@@ -67,7 +68,7 @@ function maskSensitiveInfo(value) {
 // --- Append marketing analytics event ---
 function logAnalyticsEvent(eventType, payload = {}) {
   try {
-    const logDir = path.join(__dirname, "../../../logs");
+    const logDir = path.resolve(__dirname, "../../../logs");
     if (!fs.existsSync(logDir)) fs.mkdirSync(logDir, { recursive: true });
 
     const file = path.join(logDir, "analytics.log");
@@ -94,11 +95,11 @@ function logAnalyticsEvent(eventType, payload = {}) {
 // Exports (Unified Interface)
 // ==========================================================
 //
-// Now any file can safely call:
-//   logger.info("...");
-//   logger.warn("...");
-//   logger.error("...");
-//   logAnalyticsEvent("signup", {...});
+// Backwards compatible:
+//   const { createLogger } = require("./logger");
+// New:
+//   const logger = require("./logger"); logger.info(...)
+//   logger.logAnalyticsEvent("signup", {...})
 //
 module.exports = Object.assign(logger, {
   createLogger,

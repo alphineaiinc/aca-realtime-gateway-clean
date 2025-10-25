@@ -3,7 +3,46 @@ const { retrieveAnswer } = require("./retriever");
 const { synthesizeSpeech } = require("./tts");
 const OpenAI = require("openai");
 const path = require("path");
-require("dotenv").config({ path: path.resolve(__dirname, "../.env") });
+
+// ✅ Force-load orchestrator-level .env (absolute path)
+const dotenvPath = path.resolve(__dirname, "./.env");
+console.log("🧩 index.js loading .env from:", dotenvPath);
+require("dotenv").config({ path: dotenvPath, override: true });
+
+const { save: saveSession, load: loadSession } = require("./src/brain/utils/sessionState");
+const { getMetricsText, markRecovery } = require("./src/monitor/resilienceMetrics");
+
+// Global in-memory session placeholder (align with your actual objects)
+global.__ACA_STATE__ = { activeSessions: [], version: "5.3.A" };
+
+// Restore on boot
+const prior = loadSession();
+if (prior && prior.activeSessions) {
+  global.__ACA_STATE__.activeSessions = prior.activeSessions;
+  markRecovery();
+  console.log("♻️  Restored session state:", prior.activeSessions.length, "items");
+}
+
+// Graceful snapshot on shutdown/crash
+process.on("SIGINT", () => { try { saveSession(global.__ACA_STATE__); } finally { process.exit(0); } });
+process.on("uncaughtException", (err) => { console.error(err); saveSession(global.__ACA_STATE__); process.exit(1); });
+process.on("unhandledRejection", (err) => { console.error(err); saveSession(global.__ACA_STATE__); process.exit(1); });
+
+// OPTIONAL: expose metrics if not already mounted in your monitor routes
+const express = require("express");
+const app = global.__EXPRESS_APP__ || express(); // ensure Express app exists
+
+if (app && typeof app.get === "function") {
+  app.get("/monitor/resilience", (req, res) => {
+    res.set("Content-Type", "text/plain; version=0.0.4");
+    res.send(getMetricsText());
+  });
+}
+
+// === Story 9.5.2 — Backend Voice Profile API integration ===
+const voiceProfileRoutes = require("./src/routes/voiceProfile");
+app.use("/", voiceProfileRoutes);
+// ============================================================
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 const FORCE_LANG = process.env.FORCE_LANG || ""; // FORCE_LANG=ta-IN to lock for demo
