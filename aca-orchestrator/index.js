@@ -44,6 +44,12 @@ const voiceProfileRoutes = require("./src/routes/voiceProfile");
 app.use("/", voiceProfileRoutes);
 // ============================================================
 
+const PORT = process.env.PORT || 8080;
+app.listen(PORT, () => {
+  console.log(`🚀 ACA Orchestrator running on port ${PORT}`);
+});
+
+
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 const FORCE_LANG = process.env.FORCE_LANG || ""; // FORCE_LANG=ta-IN to lock for demo
 
