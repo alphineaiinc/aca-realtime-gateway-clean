@@ -3,7 +3,55 @@ const { retrieveAnswer } = require("./retriever");
 const { synthesizeSpeech } = require("./tts");
 const OpenAI = require("openai");
 const path = require("path");
+console.log("🧩 ACA index.js loaded, main =", require.main && require.main.filename);
+console.log("__filename =", __filename);
+
 require("dotenv").config({ path: path.resolve(__dirname, "../.env") });
+
+// ---------------------------------------------------------------------------
+// ✅ EXPRESS + WEBSOCKET INITIALIZATION (moved to top to fix app undefined)
+// ---------------------------------------------------------------------------
+const express = require("express");
+const bodyParser = require("body-parser");
+const expressWs = require("express-ws");
+
+const app = express();
+expressWs(app); // enable websocket
+
+// 🔧 Parse Twilio webhook form data correctly (important for req.body)
+app.use(express.urlencoded({ extended: false }));
+app.use(express.json());
+
+app.use(bodyParser.urlencoded({ extended: false }));
+app.use(bodyParser.json());
+
+// Mount Twilio routes (voice + stream)
+const twilioRoutes = require("./src/routes/twilio");
+app.use("/twilio", twilioRoutes);
+
+// ---------------------------------------------------------------------------
+// ✅ NEW: Mount public routes (tenant signup, etc.)
+// ---------------------------------------------------------------------------
+try {
+  const publicRoutes = require("./src/routes/public");
+  app.use("/", publicRoutes);
+  console.log("🌍 Public routes mounted successfully");
+} catch (err) {
+  console.warn("⚠️ public.js route file missing or failed to load:", err.message);
+}
+
+// ---------------------------------------------------------------------------
+// ✅ NEW: Root health check for Render
+// ---------------------------------------------------------------------------
+app.get("/", (req, res) => {
+  res.status(200).send("✅ Alphine AI Orchestrator is running on Render");
+});
+
+// Health check endpoint
+app.get("/health", (req, res) => {
+  res.json({ ok: true, message: "ACA orchestrator running" });
+});
+// ---------------------------------------------------------------------------
 
 const { save: saveSession, load: loadSession } = require("./src/brain/utils/sessionState");
 const { getMetricsText, markRecovery } = require("./src/monitor/resilienceMetrics");
@@ -25,20 +73,14 @@ if (prior && prior.activeSessions) {
   console.log("♻️  Restored session state:", prior.activeSessions.length, "items");
 }
 
-// Graceful snapshot on shutdown/crash
-process.on("SIGINT", () => { try { saveSession(global.__ACA_STATE__); } finally { process.exit(0); } });
-process.on("uncaughtException", (err) => { console.error(err); saveSession(global.__ACA_STATE__); process.exit(1); });
-process.on("unhandledRejection", (err) => { console.error(err); saveSession(global.__ACA_STATE__); process.exit(1); });
+// 🔒 Prevent early exit until server fully started
+let startupComplete = false;
 
 // OPTIONAL: expose metrics if not already mounted in your monitor routes
-const express = require("express");
-const app = global.__EXPRESS_APP__ || null; // if you already created one elsewhere, reuse it
-if (app && typeof app.get === "function") {
-  app.get("/monitor/resilience", (req, res) => {
-    res.set("Content-Type", "text/plain; version=0.0.4");
-    res.send(getMetricsText());
-  });
-}
+app.get("/monitor/resilience", (req, res) => {
+  res.set("Content-Type", "text/plain; version=0.0.4");
+  res.send(getMetricsText());
+});
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 const FORCE_LANG = process.env.FORCE_LANG || ""; // FORCE_LANG=ta-IN to lock for demo
@@ -189,43 +231,18 @@ async function onFinalTranscript(transcript, langCode, businessId, ws) {
 module.exports = { onSTTResponse, onStreamEnd };
 
 // ---------------------------------------------------------------------------
-// ✅ KEEP-ALIVE SERVER FOR CLOUD DEPLOYMENT (Render / Heroku / etc.)
+// ✅ GUARANTEED SERVER STARTUP
 // ---------------------------------------------------------------------------
-try {
-  const express = require("express");
-  const bodyParser = require("body-parser");
-  const twilioRoutes = require("./src/routes/twilio");
-
-  const healthApp = express();
+if (require.main === module) {
   const PORT = process.env.PORT || 8080;
-
-  healthApp.use(bodyParser.urlencoded({ extended: false }));
-  healthApp.use(bodyParser.json());
-
-  // Mount Twilio webhooks
-  healthApp.use("/twilio", twilioRoutes);
-
-  // 🆕 --- Fallback handler for /twilio/voice to prevent 404 in cloud ---
-  healthApp.post("/twilio/voice", (req, res) => {
-    res.type("text/xml");
-    res.send(`
-      <?xml version="1.0" encoding="UTF-8"?>
-      <Response>
-        <Say voice="Polly.Joanna-Neural">Welcome to Alphine AI. The call orchestration service is active.</Say>
-        <Pause length="1"/>
-        <Hangup/>
-      </Response>
-    `);
-  });
-
-  // Health check endpoint
-  healthApp.get("/health", (req, res) => {
-    res.json({ ok: true, message: "ACA orchestrator running" });
-  });
-
-  healthApp.listen(PORT, () => {
-    console.log(`🚀 ACA Orchestrator running on port ${PORT}`);
-  });
-} catch (err) {
-  console.error("⚠️ Express startup failed:", err.message);
+  console.log("🧩 Initializing ACA Orchestrator server...");
+  try {
+    app.listen(PORT, () => {
+      startupComplete = true;
+      console.log(`🚀 ACA Orchestrator running on port ${PORT}`);
+    });
+  } catch (err) {
+    console.error("⚠️  Express startup failed:", err.message);
+  }
+  setInterval(() => {}, 1 << 30);
 }
