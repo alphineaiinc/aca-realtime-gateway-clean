@@ -1,6 +1,11 @@
 // src/routes/twilio.js
 const express = require("express");
+const expressWs = require("express-ws"); // ✅ Added to enable router.ws()
 const router = express.Router();
+
+// ✅ Patch the router with express-ws before using router.ws()
+expressWs(router);
+
 const twilio = require("twilio");
 const path = require("path");
 const WebSocket = require("ws");
@@ -39,11 +44,9 @@ router.post("/voice", (req, res) => {
   const xmlResponse = twiml.toString();
   console.log("📤 Returning TwiML to Twilio:\n", xmlResponse);
 
-
   res.status(200);
   res.set("Content-Type", "text/xml");
   res.send(xmlResponse);
-
 });
 
 /**
