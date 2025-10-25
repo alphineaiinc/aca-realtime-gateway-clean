@@ -3,64 +3,14 @@ const { retrieveAnswer } = require("./retriever");
 const { synthesizeSpeech } = require("./tts");
 const OpenAI = require("openai");
 const path = require("path");
-console.log("🧩 ACA index.js loaded, main =", require.main && require.main.filename);
-console.log("__filename =", __filename);
 
-require("dotenv").config({ path: path.resolve(__dirname, "../.env") });
-
-// ---------------------------------------------------------------------------
-// ✅ EXPRESS + WEBSOCKET INITIALIZATION (moved to top to fix app undefined)
-// ---------------------------------------------------------------------------
-const express = require("express");
-const bodyParser = require("body-parser");
-const expressWs = require("express-ws");
-
-const app = express();
-expressWs(app); // enable websocket
-
-// 🔧 Parse Twilio webhook form data correctly (important for req.body)
-app.use(express.urlencoded({ extended: false }));
-app.use(express.json());
-
-app.use(bodyParser.urlencoded({ extended: false }));
-app.use(bodyParser.json());
-
-// Mount Twilio routes (voice + stream)
-const twilioRoutes = require("./src/routes/twilio");
-app.use("/twilio", twilioRoutes);
-
-// ---------------------------------------------------------------------------
-// ✅ NEW: Mount public routes (tenant signup, etc.)
-// ---------------------------------------------------------------------------
-try {
-  const publicRoutes = require("./src/routes/public");
-  app.use("/", publicRoutes);
-  console.log("🌍 Public routes mounted successfully");
-} catch (err) {
-  console.warn("⚠️ public.js route file missing or failed to load:", err.message);
-}
-
-// ---------------------------------------------------------------------------
-// ✅ NEW: Root health check for Render
-// ---------------------------------------------------------------------------
-app.get("/", (req, res) => {
-  res.status(200).send("✅ Alphine AI Orchestrator is running on Render");
-});
-
-// Health check endpoint
-app.get("/health", (req, res) => {
-  res.json({ ok: true, message: "ACA orchestrator running" });
-});
-// ---------------------------------------------------------------------------
+// ✅ Force-load orchestrator-level .env (absolute path)
+const dotenvPath = path.resolve(__dirname, "./.env");
+console.log("🧩 index.js loading .env from:", dotenvPath);
+require("dotenv").config({ path: dotenvPath, override: true });
 
 const { save: saveSession, load: loadSession } = require("./src/brain/utils/sessionState");
 const { getMetricsText, markRecovery } = require("./src/monitor/resilienceMetrics");
-
-console.log("🧠 Startup check:", {
-  OPENAI: !!process.env.OPENAI_API_KEY,
-  DB: !!process.env.DATABASE_URL,
-  NODE_ENV: process.env.NODE_ENV
-});
 
 // Global in-memory session placeholder (align with your actual objects)
 global.__ACA_STATE__ = { activeSessions: [], version: "5.3.A" };
@@ -73,14 +23,26 @@ if (prior && prior.activeSessions) {
   console.log("♻️  Restored session state:", prior.activeSessions.length, "items");
 }
 
-// 🔒 Prevent early exit until server fully started
-let startupComplete = false;
+// Graceful snapshot on shutdown/crash
+process.on("SIGINT", () => { try { saveSession(global.__ACA_STATE__); } finally { process.exit(0); } });
+process.on("uncaughtException", (err) => { console.error(err); saveSession(global.__ACA_STATE__); process.exit(1); });
+process.on("unhandledRejection", (err) => { console.error(err); saveSession(global.__ACA_STATE__); process.exit(1); });
 
 // OPTIONAL: expose metrics if not already mounted in your monitor routes
-app.get("/monitor/resilience", (req, res) => {
-  res.set("Content-Type", "text/plain; version=0.0.4");
-  res.send(getMetricsText());
-});
+const express = require("express");
+const app = global.__EXPRESS_APP__ || express(); // ensure Express app exists
+
+if (app && typeof app.get === "function") {
+  app.get("/monitor/resilience", (req, res) => {
+    res.set("Content-Type", "text/plain; version=0.0.4");
+    res.send(getMetricsText());
+  });
+}
+
+// === Story 9.5.2 — Backend Voice Profile API integration ===
+const voiceProfileRoutes = require("./src/routes/voiceProfile");
+app.use("/", voiceProfileRoutes);
+// ============================================================
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 const FORCE_LANG = process.env.FORCE_LANG || ""; // FORCE_LANG=ta-IN to lock for demo
@@ -229,20 +191,3 @@ async function onFinalTranscript(transcript, langCode, businessId, ws) {
 }
 
 module.exports = { onSTTResponse, onStreamEnd };
-
-// ---------------------------------------------------------------------------
-// ✅ GUARANTEED SERVER STARTUP
-// ---------------------------------------------------------------------------
-if (require.main === module) {
-  const PORT = process.env.PORT || 8080;
-  console.log("🧩 Initializing ACA Orchestrator server...");
-  try {
-    app.listen(PORT, () => {
-      startupComplete = true;
-      console.log(`🚀 ACA Orchestrator running on port ${PORT}`);
-    });
-  } catch (err) {
-    console.error("⚠️  Express startup failed:", err.message);
-  }
-  setInterval(() => {}, 1 << 30);
-}
