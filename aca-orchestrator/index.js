@@ -28,32 +28,61 @@ process.on("SIGINT", () => { try { saveSession(global.__ACA_STATE__); } finally 
 process.on("uncaughtException", (err) => { console.error(err); saveSession(global.__ACA_STATE__); process.exit(1); });
 process.on("unhandledRejection", (err) => { console.error(err); saveSession(global.__ACA_STATE__); process.exit(1); });
 
-// OPTIONAL: expose metrics if not already mounted in your monitor routes
+// ============================================================
+// EXPRESS APP INITIALIZATION (required for Render)
 const express = require("express");
-const app = global.__EXPRESS_APP__ || express(); // ensure Express app exists
+const cors = require("cors");
+const bodyParser = require("body-parser");
+const app = express();
 
-if (app && typeof app.get === "function") {
-  app.get("/monitor/resilience", (req, res) => {
-    res.set("Content-Type", "text/plain; version=0.0.4");
-    res.send(getMetricsText());
-  });
-}
-
-// === Story 9.5.2 — Backend Voice Profile API integration ===
-const voiceProfileRoutes = require("./src/routes/voiceProfile");
-app.use("/", voiceProfileRoutes);
-
-const tenantRoutes = require("./src/routes/tenant");   // ADD
-app.use("/tenant", tenantRoutes);                      // ADD
+// Enable middleware globally
+app.use(cors());
+app.use(express.json({ limit: "10mb" }));
+app.use(bodyParser.urlencoded({ extended: true }));
 
 // ============================================================
+// === System & Health Routes ===
+app.get("/", (req, res) => {
+  res.status(200).send("Welcome to Alphine AI. The call orchestration service is active.");
+});
 
+app.get("/monitor/resilience", (req, res) => {
+  res.set("Content-Type", "text/plain; version=0.0.4");
+  res.send(getMetricsText());
+});
+
+// ============================================================
+// === Story 9.5.2 — Backend Voice Profile API integration ===
+try {
+  const voiceProfileRoutes = require("./src/routes/voiceProfile");
+  app.use("/", voiceProfileRoutes);
+  console.log("✅ Mounted / (voiceProfileRoutes)");
+} catch (err) {
+  console.warn("⚠️ voiceProfileRoutes not loaded:", err.message);
+}
+
+// ============================================================
+// === Tenant Management Routes ===
+try {
+  const tenantRoutes = require("./src/routes/tenant");
+  app.use("/tenant", tenantRoutes);
+  console.log("✅ Mounted /tenant routes");
+} catch (err) {
+  console.warn("⚠️ tenantRoutes not loaded:", err.message);
+}
+
+// ============================================================
+// === Server Start ===
 const PORT = process.env.PORT || 8080;
 app.listen(PORT, () => {
   console.log(`🚀 ACA Orchestrator running on port ${PORT}`);
 });
 
+global.__EXPRESS_APP__ = app; // keep for any module reuse
+// ============================================================
 
+// ============================================================
+// === Language Detection Logic ===
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 const FORCE_LANG = process.env.FORCE_LANG || ""; // FORCE_LANG=ta-IN to lock for demo
 
