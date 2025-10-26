@@ -7,9 +7,6 @@ const pool = require("../db/pool");
 // ---------------------------------------------------------------------------
 // Utility: build safe insert for master_tenants based on actual columns
 // ---------------------------------------------------------------------------
-// ---------------------------------------------------------------------------
-// Utility: build safe insert for master_tenants based on actual columns
-// ---------------------------------------------------------------------------
 async function insertTenantDynamic(client, payload) {
   const { rows: cols } = await client.query(`
     SELECT column_name
@@ -18,12 +15,17 @@ async function insertTenantDynamic(client, payload) {
   `);
   const allowed = new Set(cols.map(c => c.column_name));
 
+  // Always include a valid email because the DB requires NOT NULL
   const candidateFields = {
+    email:
+      payload.email ||
+      payload.contact_email ||
+      `tenant_${Date.now()}@autogen.local`,
     business_type: payload.business_type || "unknown",
     preferred_lang: payload.preferred_lang || "en-US",
     contact_email: payload.contact_email || null,
     region: payload.region || "global",
-    phone: payload.phone || null
+    phone: payload.phone || null,
   };
 
   const fields = [];
@@ -32,7 +34,6 @@ async function insertTenantDynamic(client, payload) {
   let i = 1;
 
   for (const [k, v] of Object.entries(candidateFields)) {
-    // insert only if column exists AND value is not null/undefined
     if (allowed.has(k) && v !== null && v !== undefined) {
       fields.push(k);
       values.push(v);
@@ -57,7 +58,6 @@ async function insertTenantDynamic(client, payload) {
   const { rows } = await client.query(sql, values);
   return rows[0].id;
 }
-
 
 // ---------------------------------------------------------------------------
 // Utility: create or update business row with same id (1:1 mapping)
@@ -96,7 +96,7 @@ async function ensureDefaultEmbeddingSpace(client, tenantId) {
     FROM information_schema.columns
     WHERE table_schema='public' AND table_name='embedding_spaces'
   `);
-  if (tcols.length === 0) return; // Table not present
+  if (tcols.length === 0) return;
 
   const hasBusinessId = tcols.some(c => c.column_name === "business_id");
   const hasName = tcols.some(c => c.column_name === "name");
@@ -151,14 +151,14 @@ router.post("/provision", async (req, res) => {
     return res.json({
       ok: true,
       tenant_id: tenantId,
-      message: "Tenant provisioned successfully"
+      message: "Tenant provisioned successfully",
     });
   } catch (err) {
     console.error("Provision error:", err);
     await pool.query("ROLLBACK").catch(() => {});
     return res.status(500).json({
       ok: false,
-      error: err.message || "Provision failed"
+      error: err.message || "Provision failed",
     });
   }
 });
@@ -179,11 +179,9 @@ router.post("/login", async (req, res) => {
     if (rows.length === 0)
       return res.status(404).json({ ok: false, error: "Tenant not found" });
 
-    const token = jwt.sign(
-      { tenant_id: tenantId },
-      process.env.JWT_SECRET,
-      { expiresIn: "12h" }
-    );
+    const token = jwt.sign({ tenant_id: tenantId }, process.env.JWT_SECRET, {
+      expiresIn: "12h",
+    });
     return res.json({ ok: true, token });
   } catch (err) {
     console.error("Login error:", err);
@@ -204,6 +202,7 @@ router.get("/profile", async (req, res) => {
 
     const { rows } = await pool.query(
       `SELECT t.id AS tenant_id,
+              t.email,
               t.preferred_lang,
               t.business_type,
               b.id AS business_id
