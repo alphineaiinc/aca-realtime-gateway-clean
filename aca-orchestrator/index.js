@@ -126,6 +126,21 @@ app.get("/monitor/deploy-matrix", async (req, res) => {
 });
 
 // ============================================================
+// === Knowledge Brain Query Route (for test_multilang.ps1) ===
+// ============================================================
+// ============================================================
+// === Knowledge Brain Query Route (for test_multilang.ps1) ===
+// ============================================================
+try {
+  const brainRoutes = require("./src/routes/brain");
+  app.use("/brain", brainRoutes);
+  console.log("✅ Mounted /brain routes for global matrix test");
+} catch (err) {
+  console.warn("⚠️ brainRoutes not loaded:", err.message);
+}
+
+
+// ============================================================
 // === Server Start ===
 const PORT = process.env.PORT || 8080;
 app.listen(PORT, () => {
