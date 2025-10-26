@@ -1,6 +1,7 @@
 // ===============================================
 // src/routes/brain.js
 // Story 2.9 — Adaptive Response Tuning for ACA
+// + Story 9.6 — Multilingual / Tenant-Aware Query Layer
 // ===============================================
 const express = require("express");
 const router = express.Router();
@@ -13,9 +14,8 @@ const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
 console.log("🔥 Story 2.9 adaptive router executing");
 
-
 // ---------- Logging setup ----------
-const LOG_PATH = path.join(__dirname, "logs", "response_tuning.log");
+const LOG_PATH = path.join(__dirname, "..", "logs", "response_tuning.log");
 try {
   const logDir = path.dirname(LOG_PATH);
   if (!fs.existsSync(logDir)) fs.mkdirSync(logDir, { recursive: true });
@@ -27,9 +27,12 @@ try {
 router.post("/query", async (req, res) => {
   console.log("🟡 Story 2.9 adaptive tuning layer active");
 
-  const { business_id, query, top_k = 3 } = req.body;
-  if (!business_id || !query)
-    return res.status(400).json({ error: "business_id and query required" });
+  // Support both legacy and tenant-based payloads
+  const { business_id, tenant_id, query, language = "en-US", top_k = 3 } = req.body;
+  const resolvedId = tenant_id || business_id;
+
+  if (!resolvedId || !query)
+    return res.status(400).json({ ok: false, error: "tenant_id (or business_id) and query required" });
 
   try {
     // 1️⃣ Create embedding for the incoming query
@@ -50,7 +53,7 @@ router.post("/query", async (req, res) => {
     ORDER BY embedding <=> $1::vector
        LIMIT $3;
       `,
-      [vectorLiteral, business_id, top_k]
+      [vectorLiteral, resolvedId, top_k]
     );
 
     const rows = result.rows;
@@ -66,17 +69,20 @@ router.post("/query", async (req, res) => {
       if (confidence < 0.88) {
         const adaptivePrompt = `
 Caller asked: "${query}"
+Language: ${language}
 Closest KB answer (candidate): "${top.answer}"
 Similarity score: ${confidence}
 
-Rewrite this answer naturally for a phone conversation. Be friendly and concise. If unsure, add something like "I believe so" or "Let me confirm that for you."
+Rewrite this answer naturally for a ${language} phone conversation. 
+Be friendly and concise. If unsure, add something like 
+"I believe so" or "Let me confirm that for you."
 `;
 
         try {
           const completion = await openai.chat.completions.create({
             model: "gpt-4o-mini",
             messages: [
-              { role: "system", content: "You are a polite voice AI assistant for a business call center." },
+              { role: "system", content: "You are a polite multilingual voice AI assistant for a business call center." },
               { role: "user", content: adaptivePrompt },
             ],
             max_tokens: 120,
@@ -94,25 +100,27 @@ Rewrite this answer naturally for a phone conversation. Be friendly and concise.
     }
 
     // 4️⃣ Log adaptive response
-    await logAdaptiveResponse(query, tunedResponse, confidence);
+    await logAdaptiveResponse(query, tunedResponse, confidence, resolvedId, language);
 
     // 5️⃣ Respond to client
     res.json({
-      query,
+      ok: true,
+      business_id: resolvedId,
+      language,
       confidence,
       tuned_response: tunedResponse,
       matches: rows,
     });
   } catch (err) {
     console.error("❌ /brain/query failed:", err.message);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ ok: false, error: err.message });
   }
 });
 
 // ---------- Utility: logAdaptiveResponse ----------
-async function logAdaptiveResponse(query, response, confidence) {
+async function logAdaptiveResponse(query, response, confidence, id, lang) {
   try {
-    const logEntry = `[${new Date().toISOString()}] confidence=${confidence} | query="${query}" | response="${response}"\n`;
+    const logEntry = `[${new Date().toISOString()}] tenant=${id} lang=${lang} confidence=${confidence} | query="${query}" | response="${response}"\n`;
     await fs.promises.appendFile(LOG_PATH, logEntry, { encoding: "utf8" });
   } catch (err) {
     console.error("⚠️ Log write failed:", err.message);
