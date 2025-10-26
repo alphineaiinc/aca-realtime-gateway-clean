@@ -42,6 +42,10 @@ if (app && typeof app.get === "function") {
 // === Story 9.5.2 — Backend Voice Profile API integration ===
 const voiceProfileRoutes = require("./src/routes/voiceProfile");
 app.use("/", voiceProfileRoutes);
+
+const tenantRoutes = require("./src/routes/tenant");   // ADD
+app.use("/tenant", tenantRoutes);                      // ADD
+
 // ============================================================
 
 const PORT = process.env.PORT || 8080;
