@@ -1,13 +1,17 @@
 // ============================================
-// embeddingManager.js — Story 2.8 Tenant Isolation
+// embeddingManager.js — Story 2.8 + 9.5.4 Unified Tenant Embedding Manager
 // ============================================
 
 const { Pool } = require("pg");
 const OpenAI = require("openai");
+
+// Initialize clients
 const pool = new Pool({ connectionString: process.env.DATABASE_URL });
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
-// get existing or create new embedding space for a business
+// ---------------------------------------------------------------------------
+// getOrCreateEmbeddingSpace — returns the tenant's embedding_space_id
+// ---------------------------------------------------------------------------
 async function getOrCreateEmbeddingSpace(business_id) {
   const res = await pool.query(
     "SELECT id FROM embedding_spaces WHERE business_id=$1 LIMIT 1",
@@ -22,7 +26,9 @@ async function getOrCreateEmbeddingSpace(business_id) {
   return insert.rows[0].id;
 }
 
-// embed text for a business and return {spaceId, vector}
+// ---------------------------------------------------------------------------
+// embedTextForBusiness — create an embedding for specific tenant
+// ---------------------------------------------------------------------------
 async function embedTextForBusiness(business_id, text) {
   const spaceId = await getOrCreateEmbeddingSpace(business_id);
   const embedding = await openai.embeddings.create({
@@ -32,12 +38,21 @@ async function embedTextForBusiness(business_id, text) {
   return { spaceId, vector: embedding.data[0].embedding };
 }
 
-module.exports = { getOrCreateEmbeddingSpace, embedTextForBusiness };
+// ---------------------------------------------------------------------------
+// embedText — generic text embedding (no tenant context)
+// Used by uploadKnowledge.js for quick chunk embedding
+// ---------------------------------------------------------------------------
+async function embedText(text) {
+  const embedding = await openai.embeddings.create({
+    model: "text-embedding-3-small",
+    input: text,
+  });
+  return embedding.data[0].embedding;
+}
 
-// ============================================
-// getNearestEmbeddingsForBusiness
-// Ensures retrieval is tenant-scoped
-// ============================================
+// ---------------------------------------------------------------------------
+// getNearestEmbeddingsForBusiness — tenant-scoped retrieval
+// ---------------------------------------------------------------------------
 async function getNearestEmbeddingsForBusiness(business_id, vector, limit = 5) {
   const query = `
     SELECT id, question, answer, embedding
@@ -50,9 +65,12 @@ async function getNearestEmbeddingsForBusiness(business_id, vector, limit = 5) {
   return res.rows;
 }
 
+// ---------------------------------------------------------------------------
+// Exports
+// ---------------------------------------------------------------------------
 module.exports = {
   getOrCreateEmbeddingSpace,
   embedTextForBusiness,
-  getNearestEmbeddingsForBusiness, // ✅ add this
+  getNearestEmbeddingsForBusiness,
+  embedText, // ✅ generic embed function for uploadKnowledge.js
 };
-
