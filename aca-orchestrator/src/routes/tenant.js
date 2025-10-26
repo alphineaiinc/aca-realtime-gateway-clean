@@ -7,6 +7,9 @@ const pool = require("../db/pool");
 // ---------------------------------------------------------------------------
 // Utility: build safe insert for master_tenants based on actual columns
 // ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// Utility: build safe insert for master_tenants based on actual columns
+// ---------------------------------------------------------------------------
 async function insertTenantDynamic(client, payload) {
   const { rows: cols } = await client.query(`
     SELECT column_name
@@ -19,7 +22,7 @@ async function insertTenantDynamic(client, payload) {
     business_type: payload.business_type || "unknown",
     preferred_lang: payload.preferred_lang || "en-US",
     contact_email: payload.contact_email || null,
-    region: payload.region || null,
+    region: payload.region || "global",
     phone: payload.phone || null
   };
 
@@ -27,14 +30,25 @@ async function insertTenantDynamic(client, payload) {
   const values = [];
   const params = [];
   let i = 1;
+
   for (const [k, v] of Object.entries(candidateFields)) {
-    if (allowed.has(k)) {
+    // insert only if column exists AND value is not null/undefined
+    if (allowed.has(k) && v !== null && v !== undefined) {
       fields.push(k);
       values.push(v);
       params.push(`$${i++}`);
     }
   }
 
+  // ✅ Fallback: if no dynamic fields found, insert default row
+  if (fields.length === 0) {
+    const { rows } = await client.query(
+      `INSERT INTO master_tenants DEFAULT VALUES RETURNING id`
+    );
+    return rows[0].id;
+  }
+
+  // ✅ Normal insert
   const sql = `
     INSERT INTO master_tenants (${fields.join(", ")})
     VALUES (${params.join(", ")})
@@ -43,6 +57,7 @@ async function insertTenantDynamic(client, payload) {
   const { rows } = await client.query(sql, values);
   return rows[0].id;
 }
+
 
 // ---------------------------------------------------------------------------
 // Utility: create or update business row with same id (1:1 mapping)
