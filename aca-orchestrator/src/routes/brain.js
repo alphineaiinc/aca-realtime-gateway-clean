@@ -14,7 +14,6 @@ const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
 console.log("🔥 Story 2.9 adaptive router executing");
 
-// ---------- Logging setup ----------
 const LOG_PATH = path.join(__dirname, "..", "logs", "response_tuning.log");
 try {
   const logDir = path.dirname(LOG_PATH);
@@ -23,14 +22,11 @@ try {
   console.warn("⚠️ Log dir check failed:", e.message);
 }
 
-// ---------- /brain/query ----------
 router.post("/query", async (req, res) => {
   console.log("🟡 Story 2.9 adaptive tuning layer active");
 
-  // Support both legacy and tenant-based payloads
-  const { business_id, tenant_id, query, language = "en-US", top_k = 3 } = req.body;
+  const { tenant_id, business_id, query, language = "en-US", top_k = 3 } = req.body;
   const resolvedId = tenant_id || business_id;
-
   if (!resolvedId || !query)
     return res.status(400).json({ ok: false, error: "tenant_id (or business_id) and query required" });
 
@@ -46,10 +42,10 @@ router.post("/query", async (req, res) => {
     // 2️⃣ Query Postgres using cosine distance
     const result = await pool.query(
       `
-      SELECT id, question, answer,
+      SELECT id, query_text AS question, answer,
              1 - (embedding <=> $1::vector) AS similarity
         FROM kb_entries
-       WHERE business_id = $2
+       WHERE tenant_id = $2
     ORDER BY embedding <=> $1::vector
        LIMIT $3;
       `,
@@ -60,7 +56,6 @@ router.post("/query", async (req, res) => {
     let tunedResponse = null;
     let confidence = 0;
 
-    // 3️⃣ Adaptive Response Tuning
     if (rows.length > 0) {
       const top = rows[0];
       confidence = parseFloat(top.similarity || 0).toFixed(2);
@@ -73,11 +68,10 @@ Language: ${language}
 Closest KB answer (candidate): "${top.answer}"
 Similarity score: ${confidence}
 
-Rewrite this answer naturally for a ${language} phone conversation. 
-Be friendly and concise. If unsure, add something like 
+Rewrite this answer naturally for a ${language} phone conversation.
+Be friendly and concise. If unsure, add something like
 "I believe so" or "Let me confirm that for you."
 `;
-
         try {
           const completion = await openai.chat.completions.create({
             model: "gpt-4o-mini",
@@ -88,24 +82,20 @@ Be friendly and concise. If unsure, add something like
             max_tokens: 120,
             temperature: 0.8,
           });
-          tunedResponse =
-            completion.choices?.[0]?.message?.content?.trim() || top.answer;
+          tunedResponse = completion.choices?.[0]?.message?.content?.trim() || top.answer;
         } catch (gptErr) {
           console.error("⚠️ Adaptive GPT error:", gptErr.message);
         }
       }
     } else {
-      tunedResponse =
-        "I’m not sure about that. Would you like me to connect you with someone from our team?";
+      tunedResponse = "I’m not sure about that. Would you like me to connect you with someone from our team?";
     }
 
-    // 4️⃣ Log adaptive response
     await logAdaptiveResponse(query, tunedResponse, confidence, resolvedId, language);
 
-    // 5️⃣ Respond to client
     res.json({
       ok: true,
-      business_id: resolvedId,
+      tenant_id: resolvedId,
       language,
       confidence,
       tuned_response: tunedResponse,
@@ -117,7 +107,6 @@ Be friendly and concise. If unsure, add something like
   }
 });
 
-// ---------- Utility: logAdaptiveResponse ----------
 async function logAdaptiveResponse(query, response, confidence, id, lang) {
   try {
     const logEntry = `[${new Date().toISOString()}] tenant=${id} lang=${lang} confidence=${confidence} | query="${query}" | response="${response}"\n`;
