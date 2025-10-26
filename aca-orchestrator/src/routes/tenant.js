@@ -133,11 +133,8 @@ router.post("/provision", async (req, res) => {
 
     await pool.query("COMMIT");
     return res.json({ ok: true, tenant_id: tenantId, message: "Tenant provisioned successfully" });
-  } catch (err) {
-    console.error("Provision error:", err);
-    await pool.query("ROLLBACK").catch(() => {});
-    return res.status(500).json({ ok: false, error: "Provision failed" });
-  }
+  return res.status(500).json({ ok: false, error: err.message || "Provision failed" });
+
 });
 
 // POST /tenant/login  -> returns JWT {tenant_id}
