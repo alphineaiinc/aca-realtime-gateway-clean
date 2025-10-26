@@ -71,6 +71,15 @@ try {
   console.warn("⚠️ tenantRoutes not loaded:", err.message);
 }
 
+try {
+  const uploadKnowledgeRoutes = require("./src/routes/uploadKnowledge");
+  app.use("/", uploadKnowledgeRoutes);
+  console.log("✅ Mounted /tenant/upload-knowledge");
+} catch (err) {
+  console.warn("⚠️ uploadKnowledge route not loaded:", err.message);
+}
+
+
 // ============================================================
 // === Server Start ===
 const PORT = process.env.PORT || 8080;
