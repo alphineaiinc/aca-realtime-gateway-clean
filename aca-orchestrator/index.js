@@ -3,15 +3,27 @@ const { retrieveAnswer } = require("./retriever");
 const { synthesizeSpeech } = require("./tts");
 const OpenAI = require("openai");
 const path = require("path");
+const fs = require("fs");
+
+// ---------------------------------------------------------------------------
+// 🧩 Story 9.6 – Unified Global Deployment & Testing Hook
+// ---------------------------------------------------------------------------
+const deployLogPath = path.join(__dirname, "src/logs/deploy_tracker.log");
+try {
+  if (!fs.existsSync(path.dirname(deployLogPath))) {
+    fs.mkdirSync(path.dirname(deployLogPath), { recursive: true });
+  }
+  fs.appendFileSync(
+    deployLogPath,
+    `\n[${new Date().toISOString()}] Deployment started for ${process.env.NODE_ENV || "production"}`
+  );
+  console.log("📦 Deployment tracker log updated:", deployLogPath);
+} catch (err) {
+  console.warn("⚠️ Unable to write deploy tracker log:", err.message);
+}
+// ---------------------------------------------------------------------------
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-
-const fs = require("fs");
-fs.appendFileSync(
-  path.join(__dirname, "src/logs/deploy_tracker.log"),
-  `\n[${new Date().toISOString()}] Deployment started for ${process.env.NODE_ENV || "production"}`
-);
-
 
 // ✅ Force-load orchestrator-level .env (absolute path)
 const dotenvPath = path.resolve(__dirname, "./.env");
@@ -88,6 +100,30 @@ try {
   console.warn("⚠️ uploadKnowledge route not loaded:", err.message);
 }
 
+// ============================================================
+// === Story 9.6 — Global Matrix Health Endpoint ===
+// ============================================================
+app.get("/monitor/deploy-matrix", async (req, res) => {
+  try {
+    const dashboardUrl = process.env.DASHBOARD_URL || "https://alphine-dashboard.vercel.app";
+    const backendUrl = process.env.RENDER_BASE_URL || "https://aca-realtime-gateway-clean.onrender.com";
+    const supported = (process.env.SUPPORTED_LANGUAGES_GLOBAL || "en,ta,es,fr,hi").split(",");
+
+    const result = {
+      service: "ACA-Orchestrator",
+      environment: process.env.NODE_ENV || "production",
+      timestamp: new Date().toISOString(),
+      render_backend: backendUrl,
+      vercel_dashboard: dashboardUrl,
+      supported_languages: supported,
+    };
+
+    res.status(200).json({ ok: true, matrix: result });
+  } catch (err) {
+    console.error("❌ /monitor/deploy-matrix error:", err);
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
 
 // ============================================================
 // === Server Start ===
@@ -101,7 +137,6 @@ global.__EXPRESS_APP__ = app; // keep for any module reuse
 
 // ============================================================
 // === Language Detection Logic ===
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 const FORCE_LANG = process.env.FORCE_LANG || ""; // FORCE_LANG=ta-IN to lock for demo
 
 let lastTranscript = "";
