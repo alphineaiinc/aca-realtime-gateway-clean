@@ -4,6 +4,15 @@ const { synthesizeSpeech } = require("./tts");
 const OpenAI = require("openai");
 const path = require("path");
 
+const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+
+const fs = require("fs");
+fs.appendFileSync(
+  path.join(__dirname, "src/logs/deploy_tracker.log"),
+  `\n[${new Date().toISOString()}] Deployment started for ${process.env.NODE_ENV || "production"}`
+);
+
+
 // ✅ Force-load orchestrator-level .env (absolute path)
 const dotenvPath = path.resolve(__dirname, "./.env");
 console.log("🧩 index.js loading .env from:", dotenvPath);
