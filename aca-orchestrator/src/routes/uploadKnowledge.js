@@ -44,7 +44,9 @@ function chunkText(text, size = 1000) {
 // POST /tenant/upload-knowledge  (JWT required)
 // ---------------------------------------------------------------------------
 router.post("/tenant/upload-knowledge", authenticate, upload.single("file"), async (req, res) => {
-  if (!req.file) return res.status(400).json({ ok: false, error: "File missing" });
+  if (!req.file) {
+    return res.status(400).json({ ok: false, error: "File missing" });
+  }
 
   const filePath = req.file.path;
   const originalName = req.file.originalname;
@@ -63,23 +65,30 @@ router.post("/tenant/upload-knowledge", authenticate, upload.single("file"), asy
 
     for (let i = 0; i < chunks.length; i++) {
       const content = chunks[i];
+
+      // Get embedding array
       const embedding = await embedText(content);
+
+      // ✅ Convert embedding array → valid pgvector literal
+      const vectorLiteral = "[" + embedding.join(",") + "]";
 
       await pool.query(
         `INSERT INTO kb_entries (business_id, content, embedding, source_filename, chunk_index, created_at)
-         VALUES ($1, $2, $3, $4, $5, NOW())`,
-        [tenantId, content, embedding, originalName, i]
+         VALUES ($1, $2, $3::vector, $4, $5, NOW())`,
+        [tenantId, content, vectorLiteral, originalName, i]
       );
+
       inserted++;
     }
 
-    // 3️⃣ Cleanup
+    // 3️⃣ Cleanup temporary file
     fs.unlinkSync(filePath);
+
     return res.json({
       ok: true,
       message: "Knowledge uploaded successfully",
       filename: originalName,
-      chunks: inserted
+      chunks: inserted,
     });
   } catch (err) {
     console.error("UploadKnowledge error:", err);
