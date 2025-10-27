@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Voice Studio – Alphine AI</title>
+<style>
+body{background:#0d1117;color:#fff;font-family:Inter,sans-serif;margin:0;padding:2rem}
+h1{color:#ffd700}
+.card{background:rgba(255,255,255,0.05);border-radius:1rem;padding:1rem;margin-bottom:1rem;box-shadow:0 0 10px rgba(0,0,0,0.4)}
+label,input,select,button{font-size:1rem;margin:.25rem 0}
+button{background:#ffd700;border:none;border-radius:.5rem;padding:.5rem 1rem;cursor:pointer}
+button:hover{background:#ffea5c}
+audio{margin-top:1rem;width:100%}
+</style>
+</head>
+<body>
+<h1>Voice Studio</h1>
+<div class="card">
+  <label for="voiceText">Enter sample text:</label><br>
+  <textarea id="voiceText" rows="4" cols="60">Welcome to Alphine AI Voice Studio.</textarea><br>
+  <label for="language">Language:</label>
+  <select id="language">
+    <option value="en-US">English (US)</option>
+    <option value="ta-IN">Tamil (India)</option>
+    <option value="fr-FR">French (France)</option>
+  </select><br>
+  <button id="previewBtn">🔈 Preview Voice</button>
+  <audio id="previewAudio" controls></audio>
+</div>
+
+<script>
+document.getElementById("previewBtn").addEventListener("click", async ()=>{
+  const text=document.getElementById("voiceText").value;
+  const lang=document.getElementById("language").value;
+  const btn=document.getElementById("previewBtn");
+  btn.disabled=true;btn.textContent="Generating...";
+  try{
+    const res=await fetch("/brain/query",{
+      method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({business_id:1,query:text,lang})
+    });
+    const data=await res.json();
+    if(data.audio){
+      const audio=document.getElementById("previewAudio");
+      audio.src="data:audio/mp3;base64,"+data.audio;
+      audio.play();
+    }else alert("No audio returned.");
+  }catch(e){
+    console.error(e);alert("Error generating voice preview.");
+  }finally{
+    btn.disabled=false;btn.textContent="🔈 Preview Voice";
+  }
+});
+</script>
+</body>
+</html>
