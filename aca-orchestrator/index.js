@@ -68,6 +68,12 @@ app.use(express.json({ limit: "10mb" }));
 app.use(bodyParser.urlencoded({ extended: true }));
 
 // ============================================================
+// === Static File Hosting for Dashboards (Story 10.3) ===
+const publicPath = path.join(__dirname, "public");
+app.use(express.static(publicPath));
+console.log("✅ Static dashboards served from:", publicPath);
+
+// ============================================================
 // === System & Health Routes ===
 app.get("/", (req, res) => {
   res.status(200).send("Welcome to Alphine AI. The call orchestration service is active.");
