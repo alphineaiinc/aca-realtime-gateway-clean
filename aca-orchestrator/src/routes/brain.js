@@ -2,6 +2,7 @@
 // src/routes/brain.js
 // Story 2.9 — Adaptive Response Tuning for ACA
 // + Story 9.6 — Multilingual / Tenant-Aware Query Layer
+// + Story 9.5 / 10.3 — Voice Studio Audio Integration
 // ===============================================
 const express = require("express");
 const router = express.Router();
@@ -9,6 +10,7 @@ const OpenAI = require("openai");
 const fs = require("fs");
 const path = require("path");
 const pool = require("../db/pool");
+const { synthesizeSpeech } = require("../../tts"); // ✅ Added for Voice Studio
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
@@ -93,14 +95,28 @@ Be friendly and concise. If unsure, add something like
 
     await logAdaptiveResponse(query, tunedResponse, confidence, resolvedId, language);
 
+    // ✅ 3️⃣ Voice Studio / TTS integration block
+    let audioBase64 = null;
+    try {
+      const audioBuffer = await synthesizeSpeech(tunedResponse, language);
+      if (audioBuffer) {
+        audioBase64 = audioBuffer.toString("base64");
+      }
+    } catch (ttsErr) {
+      console.error("⚠️ TTS synthesis failed:", ttsErr.message);
+    }
+
+    // 4️⃣ Send response (text + optional audio)
     res.json({
       ok: true,
       tenant_id: resolvedId,
       language,
       confidence,
       tuned_response: tunedResponse,
+      audio: audioBase64, // 👈 Voice Studio now receives this
       matches: rows,
     });
+
   } catch (err) {
     console.error("❌ /brain/query failed:", err.message);
     res.status(500).json({ ok: false, error: err.message });
