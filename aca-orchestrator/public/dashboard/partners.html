@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Partner Dashboard – Alphine AI</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<style>
+body{background:#0d1117;color:#fff;font-family:Inter,sans-serif;margin:0;padding:2rem}
+.card{background:rgba(255,255,255,0.05);border-radius:1rem;padding:1rem;margin-bottom:1rem;box-shadow:0 0 10px rgba(0,0,0,0.4)}
+h1{color:#ffd700}
+</style>
+</head>
+<body>
+  <h1>Partner Dashboard</h1>
+  <div class="card" id="profile"></div>
+  <div class="card">
+    <h3>Reward Summary</h3>
+    <canvas id="rewardChart" width="400" height="200"></canvas>
+  </div>
+  <div class="card" id="referrals"></div>
+
+<script>
+const token = localStorage.getItem("partner_token"); // obtained from register/login
+const headers = { "Authorization": "Bearer " + token };
+
+// Load profile
+fetch("/partner/profile",{headers}).then(r=>r.json()).then(d=>{
+  document.getElementById("profile").innerHTML =
+    `<b>${d.profile.name}</b><br>${d.profile.email}<br>Referral Code: <b>${d.profile.referral_code}</b><br>Country: ${d.profile.country}`;
+});
+
+// Load rewards summary
+fetch("/partner/rewards",{headers}).then(r=>r.json()).then(d=>{
+  const ctx=document.getElementById("rewardChart");
+  new Chart(ctx,{
+    type:"doughnut",
+    data:{
+      labels:["Earned","Redeemed"],
+      datasets:[{data:[d.summary.earned,d.summary.redeemed]}]
+    }
+  });
+});
+
+// Load referrals
+fetch("/partner/referrals",{headers}).then(r=>r.json()).then(d=>{
+  document.getElementById("referrals").innerHTML =
+    "<h3>Referrals</h3>" + d.referrals.map(r=>`<div>${r.business_name||'Pending'} - ${r.reward_status}</div>`).join("");
+});
+</script>
+</body>
+</html>

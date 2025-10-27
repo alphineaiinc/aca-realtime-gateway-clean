@@ -118,6 +118,17 @@ try {
 }
 
 // ============================================================
+// 📊 Story 10.3 — Partner Dashboard & Reward Analytics UI
+// ============================================================
+try {
+  const partnerDashboardRoutes = require("./src/routes/partnerDashboard");
+  app.use("/partner", partnerDashboardRoutes);
+  console.log("✅ Mounted /partner dashboard routes (Story 10.3)");
+} catch (err) {
+  console.warn("⚠️ partnerDashboard routes not loaded:", err.message);
+}
+
+// ============================================================
 // === Story 9.6 — Global Matrix Health Endpoint ===
 // ============================================================
 app.get("/monitor/deploy-matrix", async (req, res) => {
