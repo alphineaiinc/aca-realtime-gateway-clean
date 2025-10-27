@@ -1,9 +1,13 @@
 {
-  "max_reward_percent": 10,
+  "global_mode": true,
+  "restricted_countries": ["CN", "RU", "IR"],
+  "default_reward_percent": 8,
+  "max_reward_percent": 12,
   "expiry_months": 6,
-  "allowed_countries": ["CA", "IN", "US", "UK"],
+  "auto_allow_language_regions": true,
   "legal": {
-    "IN": "Commissions subject to GST and local reward regulations.",
-    "CA": "Partners treated as independent contractors; income reporting mandatory."
+    "IN": "Subject to GST and local commission rules.",
+    "CA": "Partners treated as independent contractors.",
+    "EU": "Commissions follow EU Digital Services Directive compliance."
   }
 }
