@@ -1,0 +1,9 @@
+{
+  "max_reward_percent": 10,
+  "expiry_months": 6,
+  "allowed_countries": ["CA", "IN", "US", "UK"],
+  "legal": {
+    "IN": "Commissions subject to GST and local reward regulations.",
+    "CA": "Partners treated as independent contractors; income reporting mandatory."
+  }
+}

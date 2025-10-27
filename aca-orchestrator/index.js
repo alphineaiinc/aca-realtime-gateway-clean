@@ -56,6 +56,13 @@ const cors = require("cors");
 const bodyParser = require("body-parser");
 const app = express();
 
+const { loadLanguages } = require("./src/brain/utils/langLoader");
+(async () => {
+  global.__LANG_REGISTRY__ = await loadLanguages();
+  console.log("🌐 Loaded", Object.keys(global.__LANG_REGISTRY__).length, "languages globally");
+})();
+
+
 // Enable middleware globally
 app.use(cors());
 app.use(express.json({ limit: "10mb" }));
@@ -274,6 +281,10 @@ async function onFinalTranscript(transcript, langCode, businessId, ws) {
     // Step 5: Retrieve KB answer
     const answer = await retrieveAnswer(transcript, businessId, langCode);
     console.log("📋 Retrieved/polished answer:", answer);
+
+    const partnerRoutes = require("./src/routes/partner");
+app.use("/partner", partnerRoutes);
+
 
     // Step 6: Synthesize speech
     console.log("🔈 Sending to TTS with langCode:", langCode);

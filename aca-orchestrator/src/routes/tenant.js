@@ -139,6 +139,9 @@ router.post("/provision", async (req, res) => {
   }
 
   const businessName = req.body?.business_name || null;
+  const { registerLanguage } = require("../brain/utils/langLoader");
+registerLanguage(preferred_lang, tenant_region);
+
 
   try {
     await pool.query("BEGIN");
