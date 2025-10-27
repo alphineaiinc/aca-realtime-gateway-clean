@@ -1,68 +1,64 @@
-// tts.js – ElevenLabs TTS integration with debug logs
-const fetch = require("node-fetch");
-const path = require("path");
-require("dotenv").config({ path: path.resolve(__dirname, "../.env") });
+// ===============================================
+// tts.js — Alphine AI Text-to-Speech Handler
+// Story 9.3 / 10.3 Integration
+// ===============================================
+const axios = require("axios");
+const fs = require("fs");
 
-// Pick correct voice ID based on language
-function getVoiceForLang(langCode) {
-  let voiceId;
-  switch (langCode) {
-    case "ta-IN":
-      voiceId = process.env.ELEVENLABS_VOICE_TA;
-      break;
-    case "hi-IN":
-      voiceId = process.env.ELEVENLABS_VOICE_HI;
-      break;
-    case "es-ES":
-      voiceId = process.env.ELEVENLABS_VOICE_ES;
-      break;
-    default:
-      voiceId = process.env.ELEVENLABS_VOICE_EN;
-      break;
+// --- Default voice mapping (per language code)
+const voiceMap = {
+  "en-US": "21m00Tcm4TlvDq8ikWAM", // ElevenLabs default "Rachel"
+  "ta-IN": "TxGEqnHWrfWFTfGW9XjX", // Tamil - placeholder ID
+  "fr-FR": "EXAVITQu4vr4xnSDxMaL", // French - "Antoine"
+  "es-ES": "pNInz6obpgDQGcFmaJgB", // Spanish
+  "hi-IN": "MF3mGyEYCl7XYWbV9V6O"  // Hindi
+};
+
+// --- Default fallback voice ID (Rachel)
+const DEFAULT_VOICE_ID = "21m00Tcm4TlvDq8ikWAM";
+
+async function synthesizeSpeech(text, langCode = "en-US") {
+  try {
+    const apiKey = process.env.ELEVENLABS_API_KEY;
+    if (!apiKey) throw new Error("Missing ELEVENLABS_API_KEY in .env");
+
+    // Pick mapped voice or fallback
+    const voiceId = voiceMap[langCode] || DEFAULT_VOICE_ID;
+    const voiceLang = (langCode.split("-")[0] || "en").toLowerCase();
+
+    console.log(`🎙 [tts] Selected voiceId=${voiceId || "MISSING"} for langCode=${langCode}`);
+
+    const url = `https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`;
+    console.log("📤 [tts] API Request:", {
+      url,
+      model_id: "eleven_multilingual_v2",
+      language_code: voiceLang,
+      text_preview: text.substring(0, 80) + "..."
+    });
+
+    const response = await axios.post(
+      url,
+      {
+        text,
+        model_id: "eleven_multilingual_v2",
+        voice_settings: { stability: 0.4, similarity_boost: 0.8 },
+      },
+      {
+        headers: {
+          "xi-api-key": apiKey,
+          "Accept": "audio/mpeg",
+          "Content-Type": "application/json",
+        },
+        responseType: "arraybuffer",
+      }
+    );
+
+    console.log("✅ [tts] ElevenLabs synthesis complete");
+    return Buffer.from(response.data);
+  } catch (err) {
+    console.error("❌ [tts] ElevenLabs error:", err.response?.data || err.message);
+    throw new Error("ElevenLabs TTS failed: " + (err.response?.statusText || err.message));
   }
-  console.log(`🎙 [tts] Selected voiceId=${voiceId || "MISSING"} for langCode=${langCode}`);
-  return voiceId;
-}
-
-async function synthesizeSpeech(text, langCode) {
-  const voiceId = getVoiceForLang(langCode);
-  const modelId = process.env.ELEVEN_MODEL_ID || "eleven_multilingual_v2"; // safest default
-
-  // Prepare request body
-  const body = {
-    text,
-    model_id: modelId,
-    language_code: langCode.split("-")[0], // e.g. "ta" from "ta-IN"
-    voice_settings: { stability: 0.7, similarity_boost: 0.7 }
-  };
-
-  // Debug log
-  console.log("📤 [tts] API Request:", {
-    url: `https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`,
-    model_id: modelId,
-    language_code: body.language_code,
-    text_preview: text.slice(0, 60) + (text.length > 60 ? "..." : "")
-  });
-
-  // Make API call
-  const response = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`, {
-    method: "POST",
-    headers: {
-      "xi-api-key": process.env.ELEVENLABS_API_KEY,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify(body),
-  });
-
-  if (!response.ok) {
-    const errorText = await response.text();
-    console.error("❌ [tts] ElevenLabs error:", response.status, errorText);
-    throw new Error(`ElevenLabs TTS failed: ${response.status} ${response.statusText}`);
-  }
-
-  const audioBuffer = Buffer.from(await response.arrayBuffer());
-  console.log("✅ [tts] Received audio buffer length:", audioBuffer.length);
-  return audioBuffer;
 }
 
 module.exports = { synthesizeSpeech };
