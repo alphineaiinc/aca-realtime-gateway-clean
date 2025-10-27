@@ -62,7 +62,6 @@ const { loadLanguages } = require("./src/brain/utils/langLoader");
   console.log("🌐 Loaded", Object.keys(global.__LANG_REGISTRY__).length, "languages globally");
 })();
 
-
 // Enable middleware globally
 app.use(cors());
 app.use(express.json({ limit: "10mb" }));
@@ -108,6 +107,17 @@ try {
 }
 
 // ============================================================
+// 🪙 Story 10.2 — Partner Onboarding & Reward Referral Engine
+// ============================================================
+try {
+  const partnerRoutes = require("./src/routes/partner");
+  app.use("/partner", partnerRoutes);
+  console.log("✅ Mounted /partner routes (Story 10.2)");
+} catch (err) {
+  console.warn("⚠️ partnerRoutes not loaded:", err.message);
+}
+
+// ============================================================
 // === Story 9.6 — Global Matrix Health Endpoint ===
 // ============================================================
 app.get("/monitor/deploy-matrix", async (req, res) => {
@@ -134,10 +144,6 @@ app.get("/monitor/deploy-matrix", async (req, res) => {
 
 // ============================================================
 // === Knowledge Brain Query Route (for test_multilang.ps1) ===
-// ============================================================
-// ============================================================
-// === Knowledge Brain Query Route (for test_multilang.ps1) ===
-// ============================================================
 try {
   const brainRoutes = require("./src/routes/brain");
   app.use("/brain", brainRoutes);
@@ -145,7 +151,6 @@ try {
 } catch (err) {
   console.warn("⚠️ brainRoutes not loaded:", err.message);
 }
-
 
 // ============================================================
 // === Server Start ===
@@ -246,18 +251,15 @@ async function onFinalTranscript(transcript, langCode, businessId, ws) {
   console.log("🛠 onFinalTranscript called with transcript:", transcript, "incoming langCode:", langCode);
 
   try {
-    // Step 1: Force demo language if configured
     if (FORCE_LANG) {
       langCode = FORCE_LANG;
       console.log("🔒 FORCE_LANG applied:", langCode);
     } else {
-      // Step 2: Tamil/Tanglish detection
       if (await detectTamilSmart(transcript)) {
         langCode = "ta-IN";
         console.log("🔄 Tanglish/Tamil override triggered →", langCode);
       }
 
-      // Step 3: Hybrid detection if still auto
       if (langCode === "auto") {
         let guess = sessionLang;
         try {
@@ -269,7 +271,6 @@ async function onFinalTranscript(transcript, langCode, businessId, ws) {
         langCode = guess;
       }
 
-      // Step 4: Respect session language if already switched
       if (!FORCE_LANG && sessionLang && sessionLang !== "en-US") {
         console.log("🔁 Using sessionLang override:", sessionLang);
         langCode = sessionLang;
@@ -278,13 +279,8 @@ async function onFinalTranscript(transcript, langCode, businessId, ws) {
 
     console.log("➡️ Final decision: langCode =", langCode, "| sessionLang =", sessionLang);
 
-    // Step 5: Retrieve KB answer
     const answer = await retrieveAnswer(transcript, businessId, langCode);
     console.log("📋 Retrieved/polished answer:", answer);
-
-    const partnerRoutes = require("./src/routes/partner");
-app.use("/partner", partnerRoutes);
-
 
     // Step 6: Synthesize speech
     console.log("🔈 Sending to TTS with langCode:", langCode);
@@ -295,7 +291,6 @@ app.use("/partner", partnerRoutes);
       media: { payload: audioBuffer.toString("base64") }
     }));
 
-    // Step 7: Persist session language
     sessionLang = langCode;
     console.log("✅ Spoke in", langCode);
 
