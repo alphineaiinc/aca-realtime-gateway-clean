@@ -30,12 +30,6 @@ const dotenvPath = path.resolve(__dirname, "./.env");
 console.log("🧩 index.js loading .env from:", dotenvPath);
 require("dotenv").config({ path: dotenvPath, override: true });
 
-// index.js (add)
-const partnerLeaderboard = require("./src/routes/partnerLeaderboard");
-// after app initialization:
-app.use("/", partnerLeaderboard);
-
-
 const { save: saveSession, load: loadSession } = require("./src/brain/utils/sessionState");
 const { getMetricsText, markRecovery } = require("./src/monitor/resilienceMetrics");
 
@@ -138,6 +132,17 @@ try {
   console.log("✅ Mounted /partner dashboard routes (Story 10.3)");
 } catch (err) {
   console.warn("⚠️ partnerDashboard routes not loaded:", err.message);
+}
+
+// ============================================================
+// 🏆 Story 10.4 — Partner Leaderboard & Reward Payout System
+// ============================================================
+try {
+  const partnerLeaderboard = require("./src/routes/partnerLeaderboard");
+  app.use("/", partnerLeaderboard);
+  console.log("✅ Mounted /partnerLeaderboard routes (Story 10.4)");
+} catch (err) {
+  console.warn("⚠️ partnerLeaderboard routes not loaded:", err.message);
 }
 
 // ============================================================
@@ -321,7 +326,7 @@ async function onFinalTranscript(transcript, langCode, businessId, ws) {
     console.error("❌ Error in onFinalTranscript:", err);
     ws.send(JSON.stringify({
       event: "media",
-      media: { payload: Buffer.from("Sorry, something went wrong.").toString("base64") }
+      media: { payload: Buffer.from('Sorry, something went wrong.').toString('base64') }
     }));
   }
 }
