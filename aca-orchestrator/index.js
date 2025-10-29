@@ -30,6 +30,12 @@ const dotenvPath = path.resolve(__dirname, "./.env");
 console.log("🧩 index.js loading .env from:", dotenvPath);
 require("dotenv").config({ path: dotenvPath, override: true });
 
+// index.js (add)
+const partnerLeaderboard = require("./src/routes/partnerLeaderboard");
+// after app initialization:
+app.use("/", partnerLeaderboard);
+
+
 const { save: saveSession, load: loadSession } = require("./src/brain/utils/sessionState");
 const { getMetricsText, markRecovery } = require("./src/monitor/resilienceMetrics");
 
