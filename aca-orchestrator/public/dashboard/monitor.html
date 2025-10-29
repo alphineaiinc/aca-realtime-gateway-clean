@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1.0" />
+<title>Alphine AI — System Monitor</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#0b0e14;color:#eef2ff;font-family:Inter,system-ui}
+.section{max-width:1100px;margin:auto;padding:24px}
+h1{margin:0 0 10px;font-weight:700;color:#6ee7ff}
+.sub{color:#aab1c9;margin:0 0 16px}
+.card{background:rgba(255,255,255,.05);padding:20px;border-radius:14px;margin-top:20px}
+pre{background:rgba(255,255,255,.08);padding:12px;border-radius:8px;overflow-x:auto}
+</style>
+</head>
+<body>
+<script src="/dashboard/brand.js"></script>
+
+<div class="section">
+  <h1>🧠 System Monitor</h1>
+  <p class="sub">Live orchestrator and service health metrics.</p>
+  <div class="card" id="statusCard"><pre id="status">Loading...</pre></div>
+</div>
+
+<script>
+async function loadHealth(){
+  try{
+    const res=await fetch('/monitor/deploy-matrix');
+    const j=await res.json();
+    document.getElementById('status').textContent=JSON.stringify(j.matrix,null,2);
+  }catch(e){
+    document.getElementById('status').textContent='Error loading matrix: '+e.message;
+  }
+}
+loadHealth();
+</script>
+</body>
+</html>
