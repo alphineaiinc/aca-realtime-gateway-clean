@@ -1,0 +1,8 @@
+{
+  "version": 2,
+  "builds": [{ "src": "public/dashboard/**", "use": "@vercel/static" }],
+  "env": {
+    "API_BASE_URL": "https://aca-realtime-gateway-clean.onrender.com",
+    "SUPPORTED_LANGUAGES_GLOBAL": "en,ta,es,fr,de,hi"
+  }
+}

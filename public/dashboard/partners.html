@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Partner Dashboard – Alphine AI</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<style>
+:root {
+  --gold:#ffd700;--bg:#0d1117;--card:rgba(255,255,255,0.07);
+  --text:#d1d5db;--accent:#ffea5c;
+}
+body{background:var(--bg);color:var(--text);font-family:Inter,sans-serif;margin:0;
+padding:2rem;display:flex;flex-direction:column;align-items:center}
+h1{color:var(--gold);margin-bottom:1rem;text-shadow:0 0 12px rgba(255,215,0,.5)}
+.dashboard{width:100%;max-width:1100px;display:flex;flex-direction:column;gap:1.5rem}
+.card{background:var(--card);border-radius:1rem;padding:1.5rem;
+box-shadow:0 4px 20px rgba(0,0,0,.4);backdrop-filter:blur(8px)}
+.summary{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:1rem}
+.metric{background:rgba(255,255,255,.05);border-radius:.75rem;padding:1rem;text-align:center}
+.metric h2{color:var(--gold);margin:.2rem 0;font-size:1.6rem}
+button{background:var(--gold);color:#000;border:none;border-radius:.5rem;
+padding:.4rem .9rem;cursor:pointer;font-weight:600}
+button:hover{background:var(--accent)}
+.profile-info{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));
+gap:.75rem;font-size:.95rem;margin-top:1rem}
+.profile-info div{padding:.5rem;background:rgba(255,255,255,.05);border-radius:.5rem}
+.referrals-list{margin-top:1rem;display:flex;flex-direction:column;gap:.5rem}
+.referral-item{padding:.6rem .8rem;border-radius:.4rem;background:rgba(255,255,255,.05);
+font-size:.9rem}
+.empty{font-style:italic;color:#aaa}
+canvas{width:100%;max-width:600px;margin-top:1rem}
+.table-container{overflow-x:auto;margin-top:1rem}
+table{width:100%;border-collapse:collapse}
+th,td{padding:.6rem .8rem;text-align:left}
+th{color:var(--gold);border-bottom:1px solid rgba(255,255,255,.2)}
+tr:nth-child(even){background:rgba(255,255,255,.03)}
+.leaderboard div{margin:.3rem 0}
+.tips{font-size:.9rem;font-style:italic;margin-top:1rem;color:#ccc}
+</style>
+</head>
+<body>
+<h1>Partner Dashboard</h1>
+
+<div class="dashboard">
+
+  <!-- SUMMARY CARDS -->
+  <div class="summary" id="summaryCards">
+    <div class="metric"><h2 id="earned">$0</h2><div>Total Earned</div></div>
+    <div class="metric"><h2 id="refCount">0</h2><div>Total Referrals</div></div>
+    <div class="metric"><h2 id="pending">$0</h2><div>Pending Rewards</div></div>
+    <div class="metric"><h2 id="country">--</h2><div>Country</div></div>
+  </div>
+
+  <!-- PROFILE -->
+  <div class="card" id="profile">
+    <h3>Profile</h3>
+    <div class="profile-info"><i>Loading...</i></div>
+    <button id="logoutBtn" style="display:none;">Logout</button>
+  </div>
+
+  <!-- REWARDS -->
+  <div class="card">
+    <h3>Reward Summary</h3>
+    <canvas id="rewardChart"></canvas>
+  </div>
+
+  <!-- REWARD TREND -->
+  <div class="card">
+    <h3>Rewards Trend</h3>
+    <canvas id="trendChart"></canvas>
+  </div>
+
+  <!-- REFERRAL ACTIVITY TABLE -->
+  <div class="card" id="activity">
+    <h3>Recent Referral Activity</h3>
+    <div class="table-container">
+      <table id="activityTable">
+        <thead><tr><th>Tenant</th><th>Status</th><th>Date</th></tr></thead>
+        <tbody><tr><td colspan="3"><i>Loading...</i></td></tr></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- LEADERBOARD -->
+  <div class="card leaderboard">
+    <h3>Top Partners (Global)</h3>
+    <div id="leaderboardList"><i>Coming soon...</i></div>
+  </div>
+
+  <!-- TIPS -->
+  <div class="card">
+    <h3>Partner Tips</h3>
+    <div id="tips" class="tips">Stay tuned for partner success tips...</div>
+  </div>
+
+</div>
+
+<script>
+async function loadDashboard(){
+  const token=localStorage.getItem("partner_token");
+  if(!token){const t=prompt("Enter your Partner Token:");if(t){localStorage.setItem("partner_token",t);location.reload();}return;}
+  const headers={"Authorization":"Bearer "+token};
+  document.getElementById("logoutBtn").style.display="inline-block";
+  document.getElementById("logoutBtn").onclick=()=>{localStorage.removeItem("partner_token");location.reload();};
+
+  try{
+    // PROFILE
+    const profile=(await (await fetch("/partner/profile",{headers})).json());
+    if(!profile.ok)throw new Error(profile.error||"Profile fetch failed");
+    document.querySelector("#profile .profile-info").innerHTML=`
+      <div><b>Name:</b> ${profile.profile.name}</div>
+      <div><b>Email:</b> ${profile.profile.email}</div>
+      <div><b>Referral Code:</b> ${profile.profile.referral_code}
+        <button id="copyBtn">Copy</button></div>
+      <div><b>Country:</b> ${profile.profile.country}</div>
+      <div><b>Status:</b> ${profile.profile.status}</div>
+      <div><b>Referral Link:</b> 
+        <input id="refLink" style="width:90%" readonly value="${window.location.origin}/tenant/provision?ref=${profile.profile.referral_code}">
+        <button id="copyLink">Copy Link</button></div>`;
+    document.getElementById("copyBtn").onclick=()=>{navigator.clipboard.writeText(profile.profile.referral_code);alert("Referral code copied!");};
+    document.getElementById("copyLink").onclick=()=>{navigator.clipboard.writeText(document.getElementById("refLink").value);alert("Referral link copied!");};
+    document.getElementById("country").textContent=profile.profile.country;
+
+    // REWARDS
+    const reward=(await (await fetch("/partner/rewards",{headers})).json());
+    document.getElementById("earned").textContent="$"+reward.summary.earned;
+    document.getElementById("pending").textContent="$"+(reward.summary.total_rewards-reward.summary.redeemed).toFixed(2);
+
+    // CHARTS
+    new Chart(document.getElementById("rewardChart"),{
+      type:"doughnut",
+      data:{labels:["Earned","Redeemed"],
+      datasets:[{data:[reward.summary.earned,reward.summary.redeemed],
+      backgroundColor:["#ffd700","#444"],borderColor:"#0d1117",borderWidth:2}]},
+      options:{plugins:{legend:{labels:{color:"#fff"}}}}});
+
+    // Fake monthly trend
+    const months=["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+    const trendData=months.map(()=>Math.floor(Math.random()*500)+50);
+    new Chart(document.getElementById("trendChart"),{
+      type:"line",
+      data:{labels:months,datasets:[{label:"Rewards ($)",data:trendData,borderColor:"#ffd700",tension:.3}]},
+      options:{plugins:{legend:{labels:{color:"#fff"}}},scales:{x:{ticks:{color:"#ccc"}},y:{ticks:{color:"#ccc"}}}}});
+
+    // REFERRALS
+    const ref=(await (await fetch("/partner/referrals",{headers})).json());
+    document.getElementById("refCount").textContent=ref.referrals.length;
+    const tbody=document.querySelector("#activityTable tbody");
+    if(ref.referrals.length===0)tbody.innerHTML="<tr><td colspan='3'><i>No referrals yet.</i></td></tr>";
+    else tbody.innerHTML=ref.referrals.map(r=>`
+      <tr><td>${r.business_name||"Pending"}</td><td>${r.reward_status}</td><td>${new Date(r.created_at).toLocaleDateString()}</td></tr>`).join("");
+
+    // TIPS ROTATION
+    const tips=[
+      "Share your referral link on local business WhatsApp groups!",
+      "Partners earn up to 10% recurring for active tenants.",
+      "Customize your pitch: highlight Alphine AI’s 24/7 call handling.",
+      "Use the dashboard weekly to track progress and payouts."
+    ];
+    let idx=0;
+    setInterval(()=>{document.getElementById("tips").textContent=tips[idx%tips.length];idx++;},5000);
+
+  }catch(e){console.error(e);alert("Dashboard load failed: "+e.message);}
+}
+loadDashboard();
+setInterval(loadDashboard,60000);
+</script>
+<script src="/dashboard/brand.js"></script>
+
+</body>
+</html>

@@ -1,0 +1,13 @@
+{
+  "global_mode": true,
+  "restricted_countries": ["CN", "RU", "IR"],
+  "default_reward_percent": 8,
+  "max_reward_percent": 12,
+  "expiry_months": 6,
+  "auto_allow_language_regions": true,
+  "legal": {
+    "IN": "Subject to GST and local commission rules.",
+    "CA": "Partners treated as independent contractors.",
+    "EU": "Commissions follow EU Digital Services Directive compliance."
+  }
+}

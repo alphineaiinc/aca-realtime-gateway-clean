@@ -3,6 +3,27 @@ const { retrieveAnswer } = require("./retriever");
 const { synthesizeSpeech } = require("./tts");
 const OpenAI = require("openai");
 const path = require("path");
+const fs = require("fs");
+
+// ---------------------------------------------------------------------------
+// 🧩 Story 9.6 – Unified Global Deployment & Testing Hook
+// ---------------------------------------------------------------------------
+const deployLogPath = path.join(__dirname, "src/logs/deploy_tracker.log");
+try {
+  if (!fs.existsSync(path.dirname(deployLogPath))) {
+    fs.mkdirSync(path.dirname(deployLogPath), { recursive: true });
+  }
+  fs.appendFileSync(
+    deployLogPath,
+    `\n[${new Date().toISOString()}] Deployment started for ${process.env.NODE_ENV || "production"}`
+  );
+  console.log("📦 Deployment tracker log updated:", deployLogPath);
+} catch (err) {
+  console.warn("⚠️ Unable to write deploy tracker log:", err.message);
+}
+// ---------------------------------------------------------------------------
+
+const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
 // ✅ Force-load orchestrator-level .env (absolute path)
 const dotenvPath = path.resolve(__dirname, "./.env");
@@ -28,23 +49,149 @@ process.on("SIGINT", () => { try { saveSession(global.__ACA_STATE__); } finally 
 process.on("uncaughtException", (err) => { console.error(err); saveSession(global.__ACA_STATE__); process.exit(1); });
 process.on("unhandledRejection", (err) => { console.error(err); saveSession(global.__ACA_STATE__); process.exit(1); });
 
-// OPTIONAL: expose metrics if not already mounted in your monitor routes
+// ============================================================
+// EXPRESS APP INITIALIZATION (required for Render)
 const express = require("express");
-const app = global.__EXPRESS_APP__ || express(); // ensure Express app exists
+const cors = require("cors");
+const bodyParser = require("body-parser");
+const app = express();
 
-if (app && typeof app.get === "function") {
-  app.get("/monitor/resilience", (req, res) => {
-    res.set("Content-Type", "text/plain; version=0.0.4");
-    res.send(getMetricsText());
-  });
+const { loadLanguages } = require("./src/brain/utils/langLoader");
+(async () => {
+  global.__LANG_REGISTRY__ = await loadLanguages();
+  console.log("🌐 Loaded", Object.keys(global.__LANG_REGISTRY__).length, "languages globally");
+})();
+
+// Enable middleware globally
+app.use(cors());
+app.use(express.json({ limit: "10mb" }));
+app.use(bodyParser.urlencoded({ extended: true }));
+
+// ============================================================
+// === Static File Hosting for Dashboards (Story 10.3) ===
+const publicPath = path.join(__dirname, "public");
+app.use(express.static(publicPath));
+console.log("✅ Static dashboards served from:", publicPath);
+
+// ============================================================
+// === System & Health Routes ===
+app.get("/", (req, res) => {
+  res.status(200).send("Welcome to Alphine AI. The call orchestration service is active.");
+});
+
+app.get("/monitor/resilience", (req, res) => {
+  res.set("Content-Type", "text/plain; version=0.0.4");
+  res.send(getMetricsText());
+});
+
+// ============================================================
+// === Story 9.5.2 — Backend Voice Profile API integration ===
+try {
+  const voiceProfileRoutes = require("./src/routes/voiceProfile");
+  app.use("/", voiceProfileRoutes);
+  console.log("✅ Mounted / (voiceProfileRoutes)");
+} catch (err) {
+  console.warn("⚠️ voiceProfileRoutes not loaded:", err.message);
 }
 
-// === Story 9.5.2 — Backend Voice Profile API integration ===
-const voiceProfileRoutes = require("./src/routes/voiceProfile");
-app.use("/", voiceProfileRoutes);
+// ============================================================
+// === Tenant Management Routes ===
+try {
+  const tenantRoutes = require("./src/routes/tenant");
+  app.use("/tenant", tenantRoutes);
+  console.log("✅ Mounted /tenant routes");
+} catch (err) {
+  console.warn("⚠️ tenantRoutes not loaded:", err.message);
+}
+
+try {
+  const uploadKnowledgeRoutes = require("./src/routes/uploadKnowledge");
+  app.use("/", uploadKnowledgeRoutes);
+  console.log("✅ Mounted /tenant/upload-knowledge");
+} catch (err) {
+  console.warn("⚠️ uploadKnowledge route not loaded:", err.message);
+}
+
+// ============================================================
+// 🪙 Story 10.2 — Partner Onboarding & Reward Referral Engine
+// ============================================================
+try {
+  const partnerRoutes = require("./src/routes/partner");
+  app.use("/partner", partnerRoutes);
+  console.log("✅ Mounted /partner routes (Story 10.2)");
+} catch (err) {
+  console.warn("⚠️ partnerRoutes not loaded:", err.message);
+}
+
+// ============================================================
+// 📊 Story 10.3 — Partner Dashboard & Reward Analytics UI
+// ============================================================
+try {
+  const partnerDashboardRoutes = require("./src/routes/partnerDashboard");
+  app.use("/partner", partnerDashboardRoutes);
+  console.log("✅ Mounted /partner dashboard routes (Story 10.3)");
+} catch (err) {
+  console.warn("⚠️ partnerDashboard routes not loaded:", err.message);
+}
+
+// ============================================================
+// 🏆 Story 10.4 — Partner Leaderboard & Reward Payout System
+// ============================================================
+try {
+  const partnerLeaderboard = require("./src/routes/partnerLeaderboard");
+  app.use("/", partnerLeaderboard);
+  console.log("✅ Mounted /partnerLeaderboard routes (Story 10.4)");
+} catch (err) {
+  console.warn("⚠️ partnerLeaderboard routes not loaded:", err.message);
+}
+
+// ============================================================
+// === Story 9.6 — Global Matrix Health Endpoint ===
+// ============================================================
+app.get("/monitor/deploy-matrix", async (req, res) => {
+  try {
+    const dashboardUrl = process.env.DASHBOARD_URL || "https://alphine-dashboard.vercel.app";
+    const backendUrl = process.env.RENDER_BASE_URL || "https://aca-realtime-gateway-clean.onrender.com";
+    const supported = (process.env.SUPPORTED_LANGUAGES_GLOBAL || "en,ta,es,fr,hi").split(",");
+
+    const result = {
+      service: "ACA-Orchestrator",
+      environment: process.env.NODE_ENV || "production",
+      timestamp: new Date().toISOString(),
+      render_backend: backendUrl,
+      vercel_dashboard: dashboardUrl,
+      supported_languages: supported,
+    };
+
+    res.status(200).json({ ok: true, matrix: result });
+  } catch (err) {
+    console.error("❌ /monitor/deploy-matrix error:", err);
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+// ============================================================
+// === Knowledge Brain Query Route (for test_multilang.ps1) ===
+try {
+  const brainRoutes = require("./src/routes/brain");
+  app.use("/brain", brainRoutes);
+  console.log("✅ Mounted /brain routes for global matrix test");
+} catch (err) {
+  console.warn("⚠️ brainRoutes not loaded:", err.message);
+}
+
+// ============================================================
+// === Server Start ===
+const PORT = process.env.PORT || 8080;
+app.listen(PORT, () => {
+  console.log(`🚀 ACA Orchestrator running on port ${PORT}`);
+});
+
+global.__EXPRESS_APP__ = app; // keep for any module reuse
 // ============================================================
 
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+// ============================================================
+// === Language Detection Logic ===
 const FORCE_LANG = process.env.FORCE_LANG || ""; // FORCE_LANG=ta-IN to lock for demo
 
 let lastTranscript = "";
@@ -132,18 +279,15 @@ async function onFinalTranscript(transcript, langCode, businessId, ws) {
   console.log("🛠 onFinalTranscript called with transcript:", transcript, "incoming langCode:", langCode);
 
   try {
-    // Step 1: Force demo language if configured
     if (FORCE_LANG) {
       langCode = FORCE_LANG;
       console.log("🔒 FORCE_LANG applied:", langCode);
     } else {
-      // Step 2: Tamil/Tanglish detection
       if (await detectTamilSmart(transcript)) {
         langCode = "ta-IN";
         console.log("🔄 Tanglish/Tamil override triggered →", langCode);
       }
 
-      // Step 3: Hybrid detection if still auto
       if (langCode === "auto") {
         let guess = sessionLang;
         try {
@@ -155,7 +299,6 @@ async function onFinalTranscript(transcript, langCode, businessId, ws) {
         langCode = guess;
       }
 
-      // Step 4: Respect session language if already switched
       if (!FORCE_LANG && sessionLang && sessionLang !== "en-US") {
         console.log("🔁 Using sessionLang override:", sessionLang);
         langCode = sessionLang;
@@ -164,7 +307,6 @@ async function onFinalTranscript(transcript, langCode, businessId, ws) {
 
     console.log("➡️ Final decision: langCode =", langCode, "| sessionLang =", sessionLang);
 
-    // Step 5: Retrieve KB answer
     const answer = await retrieveAnswer(transcript, businessId, langCode);
     console.log("📋 Retrieved/polished answer:", answer);
 
@@ -177,7 +319,6 @@ async function onFinalTranscript(transcript, langCode, businessId, ws) {
       media: { payload: audioBuffer.toString("base64") }
     }));
 
-    // Step 7: Persist session language
     sessionLang = langCode;
     console.log("✅ Spoke in", langCode);
 
@@ -185,7 +326,7 @@ async function onFinalTranscript(transcript, langCode, businessId, ws) {
     console.error("❌ Error in onFinalTranscript:", err);
     ws.send(JSON.stringify({
       event: "media",
-      media: { payload: Buffer.from("Sorry, something went wrong.").toString("base64") }
+      media: { payload: Buffer.from('Sorry, something went wrong.').toString('base64') }
     }));
   }
 }

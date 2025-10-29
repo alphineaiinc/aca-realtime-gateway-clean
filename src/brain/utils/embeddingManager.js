@@ -1,36 +1,78 @@
-// ============================================
-// embeddingManager.js — Story 2.8 Tenant Isolation
-// ============================================
+// ==========================================================
+// src/brain/utils/embeddingManager.js
+// Embedding manager — tenant-scoped embedding spaces + retrieval
+// ==========================================================
+require("dotenv").config();
 
 const { Pool } = require("pg");
 const OpenAI = require("openai");
 
+// Initialize clients
 const pool = new Pool({ connectionString: process.env.DATABASE_URL });
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
-// get existing or create new embedding space for a business
+// ---------------------------------------------------------------------------
+// getOrCreateEmbeddingSpace
+// Ensures embeddings are tenant-scoped
+// ---------------------------------------------------------------------------
 async function getOrCreateEmbeddingSpace(business_id) {
-  const res = await pool.query(
-    "SELECT id FROM embedding_spaces WHERE business_id=$1 LIMIT 1",
-    [business_id]
-  );
-  if (res.rows.length) return res.rows[0].id;
+  const q = `
+    SELECT id
+    FROM embedding_spaces
+    WHERE business_id = $1
+    LIMIT 1
+  `;
+  const existing = await pool.query(q, [business_id]);
+  if (existing.rows.length > 0) return existing.rows[0].id;
 
-  const insert = await pool.query(
-    "INSERT INTO embedding_spaces (business_id) VALUES ($1) RETURNING id",
-    [business_id]
-  );
-  return insert.rows[0].id;
+  const insert = `
+    INSERT INTO embedding_spaces (business_id)
+    VALUES ($1)
+    RETURNING id
+  `;
+  const created = await pool.query(insert, [business_id]);
+  return created.rows[0].id;
 }
 
-// embed text for a business and return {spaceId, vector}
+// ---------------------------------------------------------------------------
+// embedTextForBusiness
+// Embeds text and returns { spaceId, vector } for tenant-scoped storage
+// ---------------------------------------------------------------------------
 async function embedTextForBusiness(business_id, text) {
   const spaceId = await getOrCreateEmbeddingSpace(business_id);
+
   const embedding = await openai.embeddings.create({
     model: "text-embedding-3-small",
     input: text,
   });
+
   return { spaceId, vector: embedding.data[0].embedding };
+}
+
+// ---------------------------------------------------------------------------
+// embedText — generic text embedding (no tenant context)
+// Used by uploadKnowledge.js for quick chunk embedding
+// ---------------------------------------------------------------------------
+async function embedText(text) {
+  if (typeof text !== "string") {
+    throw new Error("embedText: input must be a string");
+  }
+
+  // Security / stability guard: prevent huge payloads from blowing tokens/memory
+  const trimmed = text.trim();
+  if (!trimmed) {
+    throw new Error("embedText: input is empty");
+  }
+  if (trimmed.length > 50_000) {
+    throw new Error("embedText: input too large");
+  }
+
+  const embedding = await openai.embeddings.create({
+    model: "text-embedding-3-small",
+    input: trimmed,
+  });
+
+  return embedding.data[0].embedding;
 }
 
 // ============================================
@@ -39,18 +81,19 @@ async function embedTextForBusiness(business_id, text) {
 // ============================================
 async function getNearestEmbeddingsForBusiness(business_id, vector, limit = 5) {
   const query = `
-    SELECT id, question, answer, embedding
-    FROM kb_entries
-    WHERE business_id = $1
-    ORDER BY embedding <-> $2
-    LIMIT $3;
-  `;
-  const res = await pool.query(query, [business_id, vector, limit]);
-  return res.rows;
+      SELECT id, question, answer, embedding
+      FROM kb_entries
+      WHERE business_id = $1
+      ORDER BY embedding <-> $2
+      LIMIT $3;
+    `;
+  const result = await pool.query(query, [business_id, vector, limit]);
+  return result.rows;
 }
 
 module.exports = {
   getOrCreateEmbeddingSpace,
   embedTextForBusiness,
+  embedText,
   getNearestEmbeddingsForBusiness,
 };
