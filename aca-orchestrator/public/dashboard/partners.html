@@ -5,209 +5,114 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Partner Dashboard – Alphine AI</title>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
-
 <style>
 :root {
-  --gold: #ffd700;
-  --bg: #0d1117;
-  --card-bg: rgba(255,255,255,0.07);
-  --text-light: #d1d5db;
-  --accent: #ffea5c;
+  --gold:#ffd700;--bg:#0d1117;--card:rgba(255,255,255,0.07);
+  --text:#d1d5db;--accent:#ffea5c;
 }
-
-body {
-  background: var(--bg);
-  color: var(--text-light);
-  font-family: 'Inter', sans-serif;
-  margin: 0;
-  padding: 2rem;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-}
-
-h1 {
-  color: var(--gold);
-  margin-bottom: 1rem;
-  text-shadow: 0 0 12px rgba(255,215,0,0.5);
-  letter-spacing: 0.5px;
-}
-
-.dashboard-container {
-  width: 100%;
-  max-width: 900px;
-  display: flex;
-  flex-direction: column;
-  gap: 1.5rem;
-}
-
-.card {
-  background: var(--card-bg);
-  border-radius: 1rem;
-  padding: 1.5rem;
-  box-shadow: 0 4px 20px rgba(0,0,0,0.4);
-  backdrop-filter: blur(8px);
-}
-
-.card h3 {
-  margin-top: 0;
-  color: var(--gold);
-  font-weight: 600;
-}
-
-.profile-info {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-  gap: 0.75rem;
-  font-size: 0.95rem;
-}
-
-.profile-info div {
-  padding: 0.5rem;
-  background: rgba(255,255,255,0.05);
-  border-radius: 0.5rem;
-}
-
-button {
-  background: var(--gold);
-  color: #000;
-  border: none;
-  border-radius: 0.5rem;
-  padding: 0.6rem 1.2rem;
-  font-weight: 600;
-  cursor: pointer;
-  margin-top: 0.5rem;
-  transition: 0.2s;
-}
-button:hover { background: var(--accent); }
-
-.referrals-list {
-  margin-top: 1rem;
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-}
-
-.referral-item {
-  padding: 0.6rem 0.8rem;
-  border-radius: 0.4rem;
-  background: rgba(255,255,255,0.05);
-  font-size: 0.9rem;
-}
-
-.empty-state {
-  font-style: italic;
-  color: #aaa;
-}
-
-canvas {
-  width: 100%;
-  max-width: 400px;
-  margin-top: 1rem;
-}
+body{background:var(--bg);color:var(--text);font-family:Inter,sans-serif;
+margin:0;padding:2rem;display:flex;flex-direction:column;align-items:center}
+h1{color:var(--gold);margin-bottom:1rem;text-shadow:0 0 12px rgba(255,215,0,.5)}
+.dashboard{width:100%;max-width:1000px;display:flex;flex-direction:column;gap:1.5rem}
+.card{background:var(--card);border-radius:1rem;padding:1.5rem;
+box-shadow:0 4px 20px rgba(0,0,0,.4);backdrop-filter:blur(8px)}
+.summary{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:1rem}
+.summary .metric{background:rgba(255,255,255,.05);border-radius:.75rem;padding:1rem;text-align:center}
+.metric h2{color:var(--gold);margin:.2rem 0;font-size:1.6rem}
+button{background:var(--gold);color:#000;border:none;border-radius:.5rem;padding:.4rem .9rem;cursor:pointer;font-weight:600}
+button:hover{background:var(--accent)}
+.profile-info{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:.75rem;font-size:.95rem;margin-top:1rem}
+.profile-info div{padding:.5rem;background:rgba(255,255,255,.05);border-radius:.5rem}
+.referrals-list{margin-top:1rem;display:flex;flex-direction:column;gap:.5rem}
+.referral-item{padding:.6rem .8rem;border-radius:.4rem;background:rgba(255,255,255,.05);font-size:.9rem}
+.empty{font-style:italic;color:#aaa}
+canvas{width:100%;max-width:400px;margin-top:1rem}
 </style>
 </head>
-
 <body>
 <h1>Partner Dashboard</h1>
 
-<div class="dashboard-container">
+<div class="dashboard">
 
+  <!-- Summary Cards -->
+  <div class="summary" id="summaryCards">
+    <div class="metric"><h2 id="earned">$0</h2><div>Total Earned</div></div>
+    <div class="metric"><h2 id="refCount">0</h2><div>Total Referrals</div></div>
+    <div class="metric"><h2 id="pending">$0</h2><div>Pending Rewards</div></div>
+    <div class="metric"><h2 id="country">--</h2><div>Country</div></div>
+  </div>
+
+  <!-- Profile -->
   <div class="card" id="profile">
     <h3>Profile</h3>
-    <div class="profile-info"><i>Loading profile...</i></div>
+    <div class="profile-info"><i>Loading...</i></div>
     <button id="logoutBtn" style="display:none;">Logout</button>
   </div>
 
+  <!-- Rewards -->
   <div class="card">
     <h3>Reward Summary</h3>
     <canvas id="rewardChart"></canvas>
   </div>
 
+  <!-- Referrals -->
   <div class="card" id="referrals">
     <h3>Referrals</h3>
-    <div class="referrals-list"><i>Loading referrals...</i></div>
+    <div class="referrals-list"><i>Loading...</i></div>
   </div>
-
 </div>
 
 <script>
-(async function(){
-  let token = localStorage.getItem("partner_token");
-  if (!token) {
-    token = prompt("Enter your Partner Token:");
-    if (token) localStorage.setItem("partner_token", token);
-  }
-  if (!token) {
-    alert("No token entered. Reload and provide your Partner Token to view data.");
-    return;
-  }
+async function loadDashboard(){
+  const token = localStorage.getItem("partner_token");
+  if(!token){const t=prompt("Enter your Partner Token:");if(t){localStorage.setItem("partner_token",t);location.reload();}return;}
+  const headers={"Authorization":"Bearer "+token};
+  document.getElementById("logoutBtn").style.display="inline-block";
+  document.getElementById("logoutBtn").onclick=()=>{localStorage.removeItem("partner_token");location.reload();};
 
-  const headers = { "Authorization": "Bearer " + token };
-  document.getElementById("logoutBtn").style.display = "inline-block";
-  document.getElementById("logoutBtn").addEventListener("click", () => {
-    localStorage.removeItem("partner_token");
-    location.reload();
-  });
+  try{
+    const profileResp=await fetch("/partner/profile",{headers});
+    const profile=await profileResp.json();
+    if(!profile.ok)throw new Error(profile.error||"Profile error");
 
-  try {
-    // Fetch Partner Profile
-    const profileResp = await fetch("/partner/profile", { headers });
-    const profile = await profileResp.json();
-    if (!profile.ok) throw new Error(profile.error || "Profile fetch failed.");
-
-    const infoHTML = `
+    // Profile grid + copy code
+    document.querySelector("#profile .profile-info").innerHTML=`
       <div><b>Name:</b> ${profile.profile.name}</div>
       <div><b>Email:</b> ${profile.profile.email}</div>
-      <div><b>Referral Code:</b> ${profile.profile.referral_code}</div>
+      <div><b>Referral Code:</b> ${profile.profile.referral_code}
+        <button id="copyBtn">Copy</button></div>
       <div><b>Country:</b> ${profile.profile.country}</div>
-      <div><b>Status:</b> ${profile.profile.status}</div>
-    `;
-    document.querySelector("#profile .profile-info").innerHTML = infoHTML;
+      <div><b>Status:</b> ${profile.profile.status}</div>`;
+    document.getElementById("copyBtn").onclick=()=>{
+      navigator.clipboard.writeText(profile.profile.referral_code);
+      alert("Referral code copied!");
+    };
 
-    // Fetch Reward Summary
-    const rewardResp = await fetch("/partner/rewards", { headers });
-    const reward = await rewardResp.json();
-    const ctx = document.getElementById("rewardChart");
-    new Chart(ctx,{
-      type:"doughnut",
-      data:{
-        labels:["Earned","Redeemed"],
-        datasets:[{
-          data:[reward.summary.earned,reward.summary.redeemed],
-          backgroundColor:["#ffd700","#444"],
-          borderColor:"#0d1117",
-          borderWidth:2
-        }]
-      },
-      options:{
-        plugins:{
-          legend:{labels:{color:"#fff"}},
-          tooltip:{backgroundColor:"#111"}
-        }
-      }
-    });
+    // Summary cards country
+    document.getElementById("country").textContent=profile.profile.country;
 
-    // Fetch Referrals
-    const refResp = await fetch("/partner/referrals", { headers });
-    const ref = await refResp.json();
-    const container = document.querySelector(".referrals-list");
-    if (ref.referrals.length === 0) {
-      container.innerHTML = "<div class='empty-state'>No referrals yet.</div>";
-    } else {
-      container.innerHTML = ref.referrals.map(r=>`
-        <div class="referral-item">
-          <b>${r.business_name || "Pending"}</b><br>
-          Status: ${r.reward_status}
-        </div>
-      `).join("");
-    }
+    // Rewards summary
+    const reward=await (await fetch("/partner/rewards",{headers})).json();
+    document.getElementById("earned").textContent="$"+reward.summary.earned;
+    document.getElementById("pending").textContent="$"+(reward.summary.total_rewards-reward.summary.redeemed);
+    const ctx=document.getElementById("rewardChart");
+    new Chart(ctx,{type:"doughnut",data:{labels:["Earned","Redeemed"],
+      datasets:[{data:[reward.summary.earned,reward.summary.redeemed],
+      backgroundColor:["#ffd700","#444"],borderColor:"#0d1117",borderWidth:2}]},
+      options:{plugins:{legend:{labels:{color:"#fff"}}}}});
 
-  } catch (err) {
-    console.error("Dashboard load error:", err);
-    alert("Unable to load dashboard data: " + err.message);
-  }
-})();
+    // Referrals
+    const ref=await (await fetch("/partner/referrals",{headers})).json();
+    document.getElementById("refCount").textContent=ref.referrals.length;
+    const container=document.querySelector(".referrals-list");
+    if(ref.referrals.length===0)container.innerHTML="<div class='empty'>No referrals yet.</div>";
+    else container.innerHTML=ref.referrals.map(r=>`
+      <div class="referral-item"><b>${r.business_name||"Pending"}</b> — ${r.reward_status}</div>`).join("");
+
+  }catch(e){console.error(e);alert("Dashboard load failed: "+e.message);}
+}
+loadDashboard();
+setInterval(loadDashboard,60000); // 🔄 Auto refresh every 60s
 </script>
 </body>
 </html>
