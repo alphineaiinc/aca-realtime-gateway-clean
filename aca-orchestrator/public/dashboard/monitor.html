@@ -10,8 +10,13 @@ body{margin:0;background:#0b0e14;color:#eef2ff;font-family:Inter,system-ui}
 .section{max-width:1100px;margin:auto;padding:24px}
 h1{margin:0 0 10px;font-weight:700;color:#6ee7ff}
 .sub{color:#aab1c9;margin:0 0 16px}
-.card{background:rgba(255,255,255,.05);padding:20px;border-radius:14px;margin-top:20px}
-pre{background:rgba(255,255,255,.08);padding:12px;border-radius:8px;overflow-x:auto}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:16px;margin-top:20px}
+.card{background:rgba(255,255,255,.05);padding:18px 20px;border-radius:14px;border:1px solid rgba(255,255,255,.08)}
+.card h3{margin:0 0 8px;font-size:16px;color:#6ee7ff}
+.value{font-size:15px;font-weight:600;letter-spacing:.3px}
+.badge{display:inline-block;padding:4px 10px;margin:4px;border-radius:999px;font-size:12px;background:rgba(255,255,255,.1);color:#aab1c9}
+#timestamp{color:#aab1c9;font-size:13px;margin-top:8px}
+.refresh{margin-top:20px;font-size:13px;color:#6ee7ff;cursor:pointer;text-align:right}
 </style>
 </head>
 <body>
@@ -19,21 +24,53 @@ pre{background:rgba(255,255,255,.08);padding:12px;border-radius:8px;overflow-x:a
 
 <div class="section">
   <h1>🧠 System Monitor</h1>
-  <p class="sub">Live orchestrator and service health metrics.</p>
-  <div class="card" id="statusCard"><pre id="status">Loading...</pre></div>
+  <p class="sub">Live orchestrator and service health metrics for Alphine AI Cloud.</p>
+
+  <div class="grid">
+    <div class="card"><h3>Service</h3><div class="value" id="svc">—</div></div>
+    <div class="card"><h3>Environment</h3><div class="value" id="env">—</div></div>
+    <div class="card"><h3>Backend URL</h3><div class="value" id="backend">—</div></div>
+    <div class="card"><h3>Dashboard URL</h3><div class="value" id="vercel">—</div></div>
+    <div class="card"><h3>Supported Languages</h3><div id="langs"></div></div>
+  </div>
+
+  <div id="timestamp"></div>
+  <div class="refresh" onclick="loadHealth(true)">↻ Refresh Now</div>
 </div>
 
 <script>
-async function loadHealth(){
+async function loadHealth(manual=false){
   try{
-    const res=await fetch('/monitor/deploy-matrix');
-    const j=await res.json();
-    document.getElementById('status').textContent=JSON.stringify(j.matrix,null,2);
+    const res = await fetch('/monitor/deploy-matrix');
+    const j = await res.json();
+    const m = j.matrix;
+
+    document.getElementById('svc').textContent = m.service;
+    document.getElementById('env').textContent = m.environment.toUpperCase();
+    document.getElementById('backend').textContent = m.render_backend;
+    document.getElementById('vercel').textContent = m.vercel_dashboard;
+
+    const langs = document.getElementById('langs');
+    langs.innerHTML = "";
+    m.supported_languages.forEach(l=>{
+      const span=document.createElement('span');
+      span.className='badge';
+      span.textContent=l;
+      langs.appendChild(span);
+    });
+
+    document.getElementById('timestamp').textContent =
+      "Last updated: " + new Date(m.timestamp).toLocaleString() +
+      (manual ? " (manual refresh)" : "");
+
   }catch(e){
-    document.getElementById('status').textContent='Error loading matrix: '+e.message;
+    document.getElementById('svc').textContent="Error";
+    document.getElementById('timestamp').textContent="Failed to load: "+e.message;
   }
 }
+// first load and auto refresh every 30 s
 loadHealth();
+setInterval(loadHealth, 30000);
 </script>
 </body>
 </html>
