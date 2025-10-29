@@ -1,16 +1,12 @@
-// ==========================================================
-// src/brain/utils/logger.js
-// Unified Logger: Winston + Analytics (Windows-safe)
-// ==========================================================
+// ==========================================
+// aca-orchestrator/src/brain/utils/logger.js
+// Winston logger with daily rotate (Windows-safe)
+// ==========================================
 const winston = require("winston");
 require("winston-daily-rotate-file");
 const fs = require("fs");
 const path = require("path");
-const crypto = require("crypto");
 
-// ----------------------------------------------------------
-// Core Winston Logger (rotating files)
-// ----------------------------------------------------------
 function createLogger({ level = "info" } = {}) {
   // ✅ move outside /src to real logs directory
   const logDir = path.resolve(__dirname, "../../../logs");
@@ -43,65 +39,4 @@ function createLogger({ level = "info" } = {}) {
   return logger;
 }
 
-// ----------------------------------------------------------
-// Instantiate default logger (used by modules)
-// ----------------------------------------------------------
-const logger = createLogger({ level: process.env.LOG_LEVEL || "info" });
-
-// ==========================================================
-// Story 6.4 — Growth Tracker & Marketing Analytics Logger
-// ==========================================================
-
-// --- Helper: safely mask email & phone ---
-function maskSensitiveInfo(value) {
-  if (!value || typeof value !== "string") return "";
-  if (value.includes("@")) {
-    const [user, domain] = value.split("@");
-    return user.slice(0, 2) + "***@" + domain;
-  }
-  if (value.startsWith("+")) {
-    return value.slice(0, 3) + "******" + value.slice(-2);
-  }
-  return "***";
-}
-
-// --- Append marketing analytics event ---
-function logAnalyticsEvent(eventType, payload = {}) {
-  try {
-    const logDir = path.resolve(__dirname, "../../../logs");
-    if (!fs.existsSync(logDir)) fs.mkdirSync(logDir, { recursive: true });
-
-    const file = path.join(logDir, "analytics.log");
-    const maskedPayload = {
-      ...payload,
-      email: maskSensitiveInfo(payload.email),
-      contact_number: maskSensitiveInfo(payload.contact_number),
-    };
-
-    const entry = {
-      id: crypto.randomUUID(),
-      ts: new Date().toISOString(),
-      event: eventType,
-      data: maskedPayload,
-    };
-
-    fs.appendFileSync(file, JSON.stringify(entry) + "\n");
-  } catch (err) {
-    console.error("⚠️ Analytics logging failed:", err.message || err);
-  }
-}
-
-// ==========================================================
-// Exports (Unified Interface)
-// ==========================================================
-//
-// Backwards compatible:
-//   const { createLogger } = require("./logger");
-// New:
-//   const logger = require("./logger"); logger.info(...)
-//   logger.logAnalyticsEvent("signup", {...})
-//
-module.exports = Object.assign(logger, {
-  createLogger,
-  logAnalyticsEvent,
-});
+module.exports = { createLogger };

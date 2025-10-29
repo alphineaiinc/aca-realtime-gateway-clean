@@ -4,33 +4,17 @@
 // ---------------------------------------------------------------------------
 const express = require("express");
 const router = express.Router();
+const { Pool } = require("pg");
 const jwt = require("jsonwebtoken");
-const crypto = require("crypto");
 
-// Load environment variables (only helpful locally; Render uses env vars)
-try {
-  const path = require("path");
-  if (process.env.NODE_ENV !== "production") {
-    require("dotenv").config({
-      path: path.resolve(__dirname, "../../.env"),
-      override: false,
-    });
-  }
-} catch (_) {
-  // ignore
-}
+// Load environment variables
+require("dotenv").config({ path: require("path").resolve(__dirname, "../../.env") });
 
-// Prefer orchestrator shared pool (keeps latest Neon SSL + env isolation fixes)
-let pool;
-try {
-  pool = require("../db/pool");
-} catch (e) {
-  const { Pool } = require("pg");
-  pool = new Pool({
-    connectionString: process.env.DATABASE_URL,
-    ssl: { rejectUnauthorized: false }, // fallback only (shared pool should handle SSL properly)
-  });
-}
+// Initialize PostgreSQL pool (Render + Neon connection)
+const pool = new Pool({
+  connectionString: process.env.DATABASE_URL,
+  ssl: { rejectUnauthorized: false },
+});
 
 // ---------------------------------------------------------------------------
 // 🔹 POST /public/signup — create a new tenant (business)
@@ -43,18 +27,17 @@ router.post("/public/signup", async (req, res) => {
   }
 
   try {
-    // 1️⃣ Insert into master_tenants
+    const client = await pool.connect();
+
+    // 1️⃣  Insert into master_tenants
     const insertTenant = `
       INSERT INTO master_tenants (email, contact_number, business_type, region, preferred_lang, jwt_secret, api_key)
       VALUES ($1, $2, $3, $4, $5, $6, $7)
-      RETURNING id, email, region, preferred_lang, jwt_secret, api_key;
+      RETURNING id, email, region, preferred_lang;
     `;
-
-    // Security-first: unique per-tenant secret (do NOT use a global or hardcoded fallback)
-    const jwtSecret = crypto.randomBytes(32).toString("hex");
-    const apiKey = "tenant_" + crypto.randomBytes(8).toString("hex");
-
-    const result = await pool.query(insertTenant, [
+    const jwtSecret = process.env.TENANT_JWT_SECRET || "alphine_tenant_jwt_2025_secure!";
+    const apiKey = "tenant_" + Math.random().toString(36).substring(2, 10);
+    const result = await client.query(insertTenant, [
       email,
       contact_number || "",
       "restaurant",
@@ -66,18 +49,20 @@ router.post("/public/signup", async (req, res) => {
 
     const tenant = result.rows[0];
 
-    // 2️⃣ Generate Tenant JWT token (sign with tenant-specific secret)
+    // 2️⃣  Generate Tenant JWT token
     const token = jwt.sign(
       { tenant_id: tenant.id, email: tenant.email },
-      tenant.jwt_secret,
+      jwtSecret,
       { expiresIn: "1h" }
     );
 
-    // 3️⃣ Create corresponding business record
-    await pool.query(
+    // 3️⃣  Create corresponding business record
+    await client.query(
       `INSERT INTO businesses (name, email, phone) VALUES ($1, $2, $3)`,
       [business_name, email, contact_number || ""]
     );
+
+    client.release();
 
     console.log(`✅ Tenant created: ${tenant.email} (id=${tenant.id})`);
     res.json({
@@ -86,7 +71,7 @@ router.post("/public/signup", async (req, res) => {
       email: tenant.email,
       business_name,
       contact_number,
-      tenant_key: tenant.api_key,
+      tenant_key: apiKey,
       token,
       source: "public",
     });
@@ -108,54 +93,20 @@ router.get("/public/test", (req, res) => {
 });
 
 // ---------------------------------------------------------------------------
-// 🔹 POST /public/login — issue a tenant token (security-first)
+// 🔹 (Optional) POST /public/login — verify token validity
 // ---------------------------------------------------------------------------
-// By default: requires { email, tenant_key } so attackers cannot mint tokens by email alone.
-// Demo override: set PUBLIC_DEMO_MODE=1 to allow email-only login for public demo usage.
 router.post("/public/login", async (req, res) => {
-  const { email, tenant_key } = req.body;
-
+  const { email } = req.body;
   if (!email) return res.status(400).json({ ok: false, error: "Missing email" });
 
-  const demoMode =
-    String(process.env.PUBLIC_DEMO_MODE || "").toLowerCase() === "1" ||
-    String(process.env.PUBLIC_DEMO_MODE || "").toLowerCase() === "true";
-
-  if (!demoMode && !tenant_key) {
-    return res.status(400).json({ ok: false, error: "Missing tenant_key" });
-  }
-
   try {
-    let rows;
-    if (demoMode) {
-      ({ rows } = await pool.query(
-        "SELECT id, email, jwt_secret, api_key FROM master_tenants WHERE email = $1",
-        [email]
-      ));
-    } else {
-      ({ rows } = await pool.query(
-        "SELECT id, email, jwt_secret, api_key FROM master_tenants WHERE email = $1 AND api_key = $2",
-        [email, tenant_key]
-      ));
-    }
+    const { rows } = await pool.query("SELECT id, email FROM master_tenants WHERE email = $1", [email]);
+    if (rows.length === 0) return res.status(404).json({ ok: false, error: "Tenant not found" });
 
-    if (rows.length === 0) {
-      return res.status(404).json({ ok: false, error: "Tenant not found" });
-    }
+    const jwtSecret = process.env.TENANT_JWT_SECRET || "alphine_tenant_jwt_2025_secure!";
+    const token = jwt.sign({ tenant_id: rows[0].id, email: rows[0].email }, jwtSecret, { expiresIn: "1h" });
 
-    const tenant = rows[0];
-
-    if (!tenant.jwt_secret) {
-      return res.status(500).json({ ok: false, error: "Tenant jwt_secret missing" });
-    }
-
-    const token = jwt.sign(
-      { tenant_id: tenant.id, email: tenant.email },
-      tenant.jwt_secret,
-      { expiresIn: "1h" }
-    );
-
-    res.json({ ok: true, token, tenant_id: tenant.id, tenant_key: tenant.api_key });
+    res.json({ ok: true, token, tenant_id: rows[0].id });
   } catch (err) {
     console.error("❌ /public/login failed:", err);
     res.status(500).json({ ok: false, error: err.message });

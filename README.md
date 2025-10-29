@@ -1,2 +1,0 @@
-# aca-realtime-gateway
-

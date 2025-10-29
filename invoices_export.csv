@@ -1,3 +1,0 @@
-id,tenant_id,partner_id,amount_usd,status,payment_method,payment_reference,generated_at,paid_at,invoice_path
-"3","1","4","1.58","unpaid","","","Mon Nov 03 2025 03:17:53 GMT+0000 (Coordinated Universal Time)","","/invoices/1/invoice_1762139873697.pdf"
-"2","1","4","1.50","paid","mock","pay_1762139879152","Mon Nov 03 2025 03:05:33 GMT+0000 (Coordinated Universal Time)","Mon Nov 03 2025 03:17:59 GMT+0000 (Coordinated Universal Time)","/invoices/1/invoice_1762139132930.pdf"

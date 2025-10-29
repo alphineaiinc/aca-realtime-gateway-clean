@@ -1,5 +1,0 @@
-{"time":"2025-10-10T23:38:59.576Z","component":"manual","message":"Tenant 2 API error","severity":"critical","source":"test","business_id":2}
-{"time":"2025-10-10T23:39:14.253Z","component":"manual","message":"Tenant 2 API error","severity":"critical","source":"test","business_id":2}
-{"time":"2025-10-11T04:14:06.363Z","component":"simulator","message":"API rate limit exceeded","severity":"critical","level":"critical","source":"simulator","business_id":2,"status":"resolved","resolved_at":"2025-10-11T04:14:57.532Z"}
-{"time":"2025-10-11T04:14:57.527Z","component":"simulator","message":"API rate limit exceeded","severity":"critical","level":"critical","source":"simulator","business_id":2,"status":"resolved","resolved_at":"2025-10-11T04:14:57.532Z"}
-{"time":"2025-10-11T04:14:57.532Z","component":"simulator","business_id":2,"message":"Recovered automatically","severity":"info","status":"resolved"}

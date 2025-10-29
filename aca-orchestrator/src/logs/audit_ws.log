@@ -1,4 +1,0 @@
-{"ts":"2026-01-13T02:53:36.798Z","type":"ws_connected","tenant_key":"unknown","session_hash":"63ec3dceec1757a3","role":"unknown"}
-{"ts":"2026-01-13T02:53:36.809Z","type":"ws_user_msg_unknown_tenant","session_hash":"f527ee34a52ed7fe","locale":"en-US","msg_len":0}
-{"ts":"2026-01-13T02:53:36.810Z","type":"ws_message_processed","tenant_key":"unknown","session_hash":"f527ee34a52ed7fe","ms":2}
-{"ts":"2026-01-13T02:55:33.153Z","type":"ws_closed","tenant_key":"unknown","session_hash":"63ec3dceec1757a3","tenant_conn":null}
