@@ -1,38 +1,48 @@
 // ============================================================
-// src/db/pool.js — Final Render + Neon PostgreSQL connection (SSL verified, orchestrator .env)
+// src/db/pool.js — Final Render + Local PostgreSQL connection (adaptive SSL)
 // ============================================================
 const path = require("path");
+const { Pool } = require("pg");
 
 // --- Confirm correct .env path ---
 console.log("🧩 pool.js is running from:", __dirname);
-const dotenvPath = path.resolve(__dirname, "../../.env"); // ✅ points to orchestrator-level .env only
+const dotenvPath = path.resolve(__dirname, "../../.env"); // ✅ points to orchestrator-level .env
 console.log("🧩 Loading .env from:", dotenvPath);
 
 // --- Load environment variables ---
 require("dotenv").config({ path: dotenvPath });
-const { Pool } = require("pg");
 
-let baseUrl = process.env.DATABASE_URL;
-
-// --- Diagnostic: print the connection URL being used ---
+// --- Base connection URL ---
+let baseUrl = process.env.DATABASE_URL || "";
 console.log("🔍 Using DATABASE_URL =", baseUrl);
 
-// --- Ensure sslmode=require is appended if missing ---
-if (baseUrl && !baseUrl.includes("sslmode")) {
+// --- Detect environment type ---
+const isRender =
+  baseUrl.includes("neon.tech") ||
+  baseUrl.includes("render.com") ||
+  baseUrl.includes("sslmode=require");
+
+// --- Append sslmode if missing for cloud ---
+if (isRender && !baseUrl.includes("sslmode")) {
   baseUrl += "?sslmode=require";
 }
 
-// --- Create the Pool (Neon requires SSL) ---
-const pool = new Pool({
+// --- Pool configuration ---
+const poolConfig = {
   connectionString: baseUrl,
-  ssl: {
-    require: true,
-    rejectUnauthorized: false, // ✅ Required for managed Neon certificates
-  },
+  ssl: isRender
+    ? {
+        require: true,
+        rejectUnauthorized: false, // ✅ required for managed Neon/Render SSL
+      }
+    : false, // ✅ disables SSL for localhost
   max: 10,
   idleTimeoutMillis: 30000,
   connectionTimeoutMillis: 10000,
-});
+};
+
+// --- Create pool ---
+const pool = new Pool(poolConfig);
 
 // --- Verify connection on startup ---
 (async () => {
@@ -41,7 +51,11 @@ const pool = new Pool({
     const result = await client.query(
       "SELECT current_user, current_database(), version();"
     );
-    console.log("🌐 Connected successfully to Neon PostgreSQL (SSL verified)");
+    console.log(
+      `🌐 Connected successfully to ${
+        isRender ? "Render/Neon (SSL verified)" : "Local PostgreSQL (non-SSL)"
+      }`
+    );
     console.log("📊 DB Info:", result.rows[0]);
     client.release();
   } catch (err) {

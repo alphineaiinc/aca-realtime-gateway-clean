@@ -74,6 +74,16 @@ app.use(express.static(publicPath));
 console.log("✅ Static dashboards served from:", publicPath);
 
 // ============================================================
+// === Story 10.9 – Partner Legal & Compliance Automation ===
+try {
+  const partnerLegal = require("./src/routes/partnerLegal");
+  app.use("/api", partnerLegal);
+  console.log("✅ Mounted /api/partner/legal routes (Story 10.9)");
+} catch (err) {
+  console.warn("⚠️ partnerLegal routes not loaded:", err.message);
+}
+
+// ============================================================
 // === System & Health Routes ===
 app.get("/", (req, res) => {
   res.status(200).send("Welcome to Alphine AI. The call orchestration service is active.");
