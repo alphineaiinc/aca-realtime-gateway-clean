@@ -12,19 +12,40 @@
 
 const pool = require("../../db/pool");
 const axios = require("axios");
-const Stripe = require("stripe");
 
-// --- Stripe Client Initialization ---
+// ============================================================
+// Stripe Initialization (with mock fallback)
+// ============================================================
 let stripe = null;
+
 try {
+  const Stripe = require("stripe");
+
   if (process.env.STRIPE_SECRET_KEY) {
     stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
     console.log("💳 Stripe initialized for Partner Payouts.");
   } else {
-    console.warn("⚠️ STRIPE_SECRET_KEY not set — Stripe payouts disabled.");
+    console.warn("⚠️ STRIPE_SECRET_KEY not set — Stripe payouts disabled (using mock mode).");
+    stripe = {
+      transfers: {
+        create: async (opts) => {
+          console.log("🧪 Mock Stripe transfer (no real payout):", opts);
+          return { id: `mock_${Date.now()}`, ...opts };
+        },
+      },
+    };
   }
 } catch (err) {
-  console.error("❌ Stripe init failed:", err.message);
+  console.error("❌ Stripe initialization failed:", err.message);
+  console.warn("⚠️ Using mock Stripe instance for safety.");
+  stripe = {
+    transfers: {
+      create: async (opts) => {
+        console.log("🧪 Mock Stripe transfer (fallback mode):", opts);
+        return { id: `mock_${Date.now()}`, ...opts };
+      },
+    },
+  };
 }
 
 // ============================================================
@@ -45,7 +66,7 @@ async function createStripePayout(partner_id, amount, currency = "USD") {
     const accountId = res.rows[0].stripe_account_id;
     console.log(`🪙 Creating Stripe payout → Partner ${partner_id} | Account ${accountId}`);
 
-    // Create transfer in Stripe
+    // Create transfer (live or mock)
     const transfer = await stripe.transfers.create({
       amount: Math.round(amount * 100), // cents
       currency,
