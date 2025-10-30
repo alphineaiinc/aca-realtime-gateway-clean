@@ -6,54 +6,53 @@
 //   Centralized utility for creating partner payouts via Stripe Connect
 //   or Wise Business API. Logs every payout to Postgres and ensures
 //   compliance linkage to partner_legal_acceptance.
-//
-//   Each payout entry → partner_payouts table (005_partner_payouts.sql)
 // ============================================================
 
 const pool = require("../../db/pool");
 const axios = require("axios");
 
 // ============================================================
-// Stripe Initialization (with mock fallback)
+// Stripe Initialization (Safe Guarded)
 // ============================================================
-let stripe = null;
+let stripe;
 
-try {
-  const Stripe = require("stripe");
+(function initStripeSafely() {
+  try {
+    const Stripe = require("stripe");
+    const key = process.env.STRIPE_SECRET_KEY;
 
-  if (process.env.STRIPE_SECRET_KEY) {
-    stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
-    console.log("💳 Stripe initialized for Partner Payouts.");
-  } else {
-    console.warn("⚠️ STRIPE_SECRET_KEY not set — Stripe payouts disabled (using mock mode).");
+    if (key && typeof key === "string" && key.trim().length > 0) {
+      stripe = new Stripe(key);
+      console.log("💳 Stripe initialized for Partner Payouts.");
+    } else {
+      console.warn("⚠️ STRIPE_SECRET_KEY not set — Stripe payouts disabled (mock mode).");
+      stripe = {
+        transfers: {
+          create: async (opts) => {
+            console.log("🧪 Mock Stripe transfer (no real payout):", opts);
+            return { id: `mock_${Date.now()}`, ...opts };
+          },
+        },
+      };
+    }
+  } catch (err) {
+    console.error("❌ Stripe initialization failed:", err.message);
     stripe = {
       transfers: {
         create: async (opts) => {
-          console.log("🧪 Mock Stripe transfer (no real payout):", opts);
+          console.log("🧪 Mock Stripe transfer (safe fallback):", opts);
           return { id: `mock_${Date.now()}`, ...opts };
         },
       },
     };
   }
-} catch (err) {
-  console.error("❌ Stripe initialization failed:", err.message);
-  console.warn("⚠️ Using mock Stripe instance for safety.");
-  stripe = {
-    transfers: {
-      create: async (opts) => {
-        console.log("🧪 Mock Stripe transfer (fallback mode):", opts);
-        return { id: `mock_${Date.now()}`, ...opts };
-      },
-    },
-  };
-}
+})();
 
 // ============================================================
 // Helper 1: Stripe Connect Payout
 // ============================================================
 async function createStripePayout(partner_id, amount, currency = "USD") {
   try {
-    // Validate partner linkage
     const res = await pool.query(
       "SELECT stripe_account_id FROM partners WHERE id=$1",
       [partner_id]
@@ -66,15 +65,13 @@ async function createStripePayout(partner_id, amount, currency = "USD") {
     const accountId = res.rows[0].stripe_account_id;
     console.log(`🪙 Creating Stripe payout → Partner ${partner_id} | Account ${accountId}`);
 
-    // Create transfer (live or mock)
     const transfer = await stripe.transfers.create({
-      amount: Math.round(amount * 100), // cents
+      amount: Math.round(amount * 100),
       currency,
       destination: accountId,
       description: `Alphine AI Reward Payout for Partner ${partner_id}`,
     });
 
-    // Log to DB
     await pool.query(
       `INSERT INTO partner_payouts (partner_id, provider, payout_ref, currency, amount, status, processed_at)
        VALUES ($1, 'stripe', $2, $3, $4, 'success', NOW())`,
