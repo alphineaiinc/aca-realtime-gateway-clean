@@ -84,6 +84,22 @@ try {
 }
 
 // ============================================================
+// 🏦 Story 10.10 — Global Partner Payout Gateway
+// ============================================================
+// Added redundancy check to ensure route loads only once
+try {
+  const partnerPayout = require("./src/routes/partnerPayout");
+  if (!app._router.stack.some(r => r.name && r.name.includes('partnerPayout'))) {
+    app.use("/api", partnerPayout);
+    console.log("✅ Mounted /api/partner/payout routes (Story 10.10)");
+  } else {
+    console.log("ℹ️ Skipped duplicate partnerPayout registration.");
+  }
+} catch (err) {
+  console.warn("⚠️ partnerPayout routes not loaded:", err.message);
+}
+
+// ============================================================
 // === System & Health Routes ===
 app.get("/", (req, res) => {
   res.status(200).send("Welcome to Alphine AI. The call orchestration service is active.");
