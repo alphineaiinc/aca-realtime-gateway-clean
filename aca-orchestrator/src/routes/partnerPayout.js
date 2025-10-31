@@ -13,6 +13,11 @@
 //     GET  /api/partner/payouts
 // ============================================================
 
+console.log("🔍 Loading partnerPayout.js route file...");
+process.on("uncaughtException", (e) => console.error("💥 partnerPayout uncaughtException:", e));
+process.on("unhandledRejection", (e) => console.error("💥 partnerPayout unhandledRejection:", e));
+
+
 const express = require("express");
 const jwt = require("jsonwebtoken");
 const { processPayout } = require("../brain/utils/payoutManager");
@@ -87,3 +92,4 @@ router.get("/partner/payouts", async (req, res) => {
 });
 
 module.exports = router;
+console.log("✅ partnerPayout.js route file exported successfully.");
