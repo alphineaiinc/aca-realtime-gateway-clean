@@ -25,6 +25,10 @@ const pool = require("../db/pool");
 
 const router = express.Router();
 
+process.on("unhandledRejection", (e) => console.error("💥 partnerPayout unhandledRejection:", e));
+process.on("uncaughtException", (e) => console.error("💥 partnerPayout uncaughtException:", e));
+
+
 // ============================================================
 // POST /api/partner/payout
 // Trigger a payout for a specific partner.
