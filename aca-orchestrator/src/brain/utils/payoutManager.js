@@ -2,54 +2,48 @@
 // src/brain/utils/payoutManager.js
 // Alphine AI — Partner Reward Payout Gateway (Story 10.10)
 // ============================================================
-// Purpose:
-//   Centralized utility for creating partner payouts via Stripe Connect
-//   or Wise Business API. Logs every payout to Postgres and ensures
-//   compliance linkage to partner_legal_acceptance.
+// Purpose: Safe, fault-tolerant global payout manager for
+// Stripe Connect (mock supported) and Wise Business.
 // ============================================================
 
 const pool = require("../../db/pool");
 const axios = require("axios");
 
-// ============================================================
-// Stripe Initialization (Safe Guarded)
-// ============================================================
 let stripe;
 
-(function initStripeSafely() {
-  try {
-    const Stripe = require("stripe");
-    const key = process.env.STRIPE_SECRET_KEY;
+// Safe Stripe initialization (always defines stripe)
+try {
+  const Stripe = require("stripe");
+  const key = process.env.STRIPE_SECRET_KEY;
 
-    if (key && typeof key === "string" && key.trim().length > 0) {
-      stripe = new Stripe(key);
-      console.log("💳 Stripe initialized for Partner Payouts.");
-    } else {
-      console.warn("⚠️ STRIPE_SECRET_KEY not set — Stripe payouts disabled (mock mode).");
-      stripe = {
-        transfers: {
-          create: async (opts) => {
-            console.log("🧪 Mock Stripe transfer (no real payout):", opts);
-            return { id: `mock_${Date.now()}`, ...opts };
-          },
-        },
-      };
-    }
-  } catch (err) {
-    console.error("❌ Stripe initialization failed:", err.message);
+  if (key && key.trim()) {
+    stripe = new Stripe(key);
+    console.log("💳 Stripe initialized for Partner Payouts.");
+  } else {
+    console.warn("⚠️ STRIPE_SECRET_KEY not set — mock mode enabled.");
     stripe = {
       transfers: {
         create: async (opts) => {
-          console.log("🧪 Mock Stripe transfer (safe fallback):", opts);
+          console.log("🧪 Mock Stripe transfer:", opts);
           return { id: `mock_${Date.now()}`, ...opts };
         },
       },
     };
   }
-})();
+} catch (err) {
+  console.error("❌ Stripe init failed:", err.message);
+  stripe = {
+    transfers: {
+      create: async (opts) => {
+        console.log("🧪 Mock Stripe fallback:", opts);
+        return { id: `mock_${Date.now()}`, ...opts };
+      },
+    },
+  };
+}
 
 // ============================================================
-// Helper 1: Stripe Connect Payout
+// Stripe payout
 // ============================================================
 async function createStripePayout(partner_id, amount, currency = "USD") {
   try {
@@ -57,13 +51,11 @@ async function createStripePayout(partner_id, amount, currency = "USD") {
       "SELECT stripe_account_id FROM partners WHERE id=$1",
       [partner_id]
     );
-
-    if (!res.rows.length || !res.rows[0].stripe_account_id) {
-      throw new Error("Partner is not linked to a Stripe account.");
-    }
+    if (!res.rows.length || !res.rows[0].stripe_account_id)
+      throw new Error("Partner not linked to a Stripe account.");
 
     const accountId = res.rows[0].stripe_account_id;
-    console.log(`🪙 Creating Stripe payout → Partner ${partner_id} | Account ${accountId}`);
+    console.log(`🪙 Stripe payout → Partner ${partner_id} | Account ${accountId}`);
 
     const transfer = await stripe.transfers.create({
       amount: Math.round(amount * 100),
@@ -74,17 +66,17 @@ async function createStripePayout(partner_id, amount, currency = "USD") {
 
     await pool.query(
       `INSERT INTO partner_payouts (partner_id, provider, payout_ref, currency, amount, status, processed_at)
-       VALUES ($1, 'stripe', $2, $3, $4, 'success', NOW())`,
+       VALUES ($1,'stripe',$2,$3,$4,'success',NOW())`,
       [partner_id, transfer.id, currency, amount]
     );
 
-    console.log(`✅ Stripe payout complete for partner ${partner_id} (${transfer.id})`);
+    console.log(`✅ Stripe payout complete (${transfer.id})`);
     return { ok: true, transferId: transfer.id, amount, currency };
   } catch (err) {
     console.error("❌ Stripe payout failed:", err.message);
     await pool.query(
       `INSERT INTO partner_payouts (partner_id, provider, payout_ref, currency, amount, status)
-       VALUES ($1, 'stripe', $2, $3, $4, 'failed')`,
+       VALUES ($1,'stripe',$2,$3,$4,'failed')`,
       [partner_id, err.message, currency, amount]
     );
     return { ok: false, error: err.message };
@@ -92,7 +84,7 @@ async function createStripePayout(partner_id, amount, currency = "USD") {
 }
 
 // ============================================================
-// Helper 2: Wise Business Payout
+// Wise payout
 // ============================================================
 async function createWisePayout(partner_id, amount, currency = "USD") {
   try {
@@ -100,13 +92,11 @@ async function createWisePayout(partner_id, amount, currency = "USD") {
       "SELECT wise_profile_id FROM partners WHERE id=$1",
       [partner_id]
     );
-
-    if (!res.rows.length || !res.rows[0].wise_profile_id) {
-      throw new Error("Partner is not linked to a Wise profile.");
-    }
+    if (!res.rows.length || !res.rows[0].wise_profile_id)
+      throw new Error("Partner not linked to a Wise profile.");
 
     const profileId = res.rows[0].wise_profile_id;
-    console.log(`🏦 Creating Wise payout → Partner ${partner_id} | Profile ${profileId}`);
+    console.log(`🏦 Wise payout → Partner ${partner_id} | Profile ${profileId}`);
 
     const apiKey = process.env.WISE_API_KEY;
     if (!apiKey) throw new Error("WISE_API_KEY missing.");
@@ -125,17 +115,17 @@ async function createWisePayout(partner_id, amount, currency = "USD") {
     const payoutRef = response.data.id || `wise_${Date.now()}`;
     await pool.query(
       `INSERT INTO partner_payouts (partner_id, provider, payout_ref, currency, amount, status, processed_at)
-       VALUES ($1, 'wise', $2, $3, $4, 'success', NOW())`,
+       VALUES ($1,'wise',$2,$3,$4,'success',NOW())`,
       [partner_id, payoutRef, currency, amount]
     );
 
-    console.log(`✅ Wise payout complete for partner ${partner_id} (${payoutRef})`);
+    console.log(`✅ Wise payout complete (${payoutRef})`);
     return { ok: true, payoutRef, amount, currency };
   } catch (err) {
     console.error("❌ Wise payout failed:", err.message);
     await pool.query(
       `INSERT INTO partner_payouts (partner_id, provider, payout_ref, currency, amount, status)
-       VALUES ($1, 'wise', $2, $3, $4, 'failed')`,
+       VALUES ($1,'wise',$2,$3,$4,'failed')`,
       [partner_id, err.message, currency, amount]
     );
     return { ok: false, error: err.message };
@@ -143,14 +133,12 @@ async function createWisePayout(partner_id, amount, currency = "USD") {
 }
 
 // ============================================================
-// Helper 3: Unified Dispatcher
+// Dispatcher
 // ============================================================
 async function processPayout(partner_id, amount, currency = "USD", provider = "stripe") {
-  if (provider === "wise") {
-    return await createWisePayout(partner_id, amount, currency);
-  } else {
-    return await createStripePayout(partner_id, amount, currency);
-  }
+  return provider === "wise"
+    ? createWisePayout(partner_id, amount, currency)
+    : createStripePayout(partner_id, amount, currency);
 }
 
 module.exports = { createStripePayout, createWisePayout, processPayout };
