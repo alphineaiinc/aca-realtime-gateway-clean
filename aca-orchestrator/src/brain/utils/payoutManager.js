@@ -6,10 +6,23 @@
 // Stripe Connect (mock supported) and Wise Business.
 // ============================================================
 
+console.log("🔍 Loading payoutManager.js...");
+process.on("uncaughtException", (e) => console.error("💥 payoutManager uncaughtException:", e));
+
 const pool = require("../../db/pool");
 const axios = require("axios");
 
 let stripe;
+
+
+
+try {
+  // existing Stripe initialization and helper definitions go here...
+} catch (e) {
+  console.error("💥 payoutManager init error:", e);
+  throw e; // re-throw so Render shows it in partnerPayout catch
+}
+
 
 // Safe Stripe initialization (always defines stripe)
 try {
