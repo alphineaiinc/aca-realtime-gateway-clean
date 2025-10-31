@@ -90,6 +90,8 @@ try {
 try {
   const partnerPayout = require("./src/routes/partnerPayout");
   if (!app._router.stack.some(r => r.name && r.name.includes('partnerPayout'))) {
+    console.log("🧩 partnerPayout import type:", typeof partnerPayout, "value:", partnerPayout);
+
     app.use("/api", partnerPayout);
     console.log("✅ Mounted /api/partner/payout routes (Story 10.10)");
   } else {
