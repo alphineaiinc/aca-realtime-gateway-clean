@@ -54,9 +54,15 @@ router.post("/partner/payout", async (req, res) => {
       res.status(500).json({ ok: false, error: result.error });
     }
   } catch (err) {
-    console.error("❌ Error in /partner/payout:", err);
-    res.status(500).json({ ok: false, error: err.message });
-  }
+  console.error("❌ Error in /partner/payout full stack:", err);
+  res.status(500).json({
+    ok: false,
+    message: "Internal error in payout route",
+    error: err.message,
+    stack: err.stack
+  });
+}
+
 });
 
 // ============================================================
