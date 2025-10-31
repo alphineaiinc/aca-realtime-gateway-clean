@@ -87,19 +87,23 @@ try {
 // 🏦 Story 10.10 — Global Partner Payout Gateway
 // ============================================================
 // Added redundancy check to ensure route loads only once
+// ============================================================
+// 🏦 Story 10.10 — Global Partner Payout Gateway (Debug Mode)
+// ============================================================
 try {
   const partnerPayout = require("./src/routes/partnerPayout");
-  if (!app._router.stack.some(r => r.name && r.name.includes('partnerPayout'))) {
-    console.log("🧩 partnerPayout import type:", typeof partnerPayout, "value:", partnerPayout);
 
-    app.use("/api", partnerPayout);
-    console.log("✅ Mounted /api/partner/payout routes (Story 10.10)");
-  } else {
-    console.log("ℹ️ Skipped duplicate partnerPayout registration.");
-  }
+  // 🔍 Detailed introspection
+  console.log("🧩 partnerPayout require result type:", typeof partnerPayout);
+  console.log("🧩 partnerPayout keys:", partnerPayout ? Object.keys(partnerPayout) : "undefined or null");
+
+  app.use("/api", partnerPayout);
+  console.log("✅ Mounted /api/partner/payout routes (Story 10.10)");
 } catch (err) {
-  console.warn("⚠️ partnerPayout routes not loaded:", err.message);
+  console.warn("⚠️ partnerPayout routes not loaded (stack trace below):");
+  console.error(err);
 }
+
 
 // ============================================================
 // === System & Health Routes ===
