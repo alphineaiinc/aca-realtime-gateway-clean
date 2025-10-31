@@ -6,6 +6,8 @@
 // Stripe Connect (mock supported) and Wise Business.
 // ============================================================
 
+
+
 console.log("🔍 Loading payoutManager.js...");
 process.on("uncaughtException", (e) => console.error("💥 payoutManager uncaughtException:", e));
 
@@ -31,6 +33,17 @@ try {
 
   if (key && key.trim()) {
     stripe = new Stripe(key);
+    if (!stripe) {
+  stripe = {
+    transfers: {
+      create: async (opts) => {
+        console.log("🧪 Mock Stripe transfer:", opts);
+        return { id: `mock_${Date.now()}`, ...opts };
+      }
+    }
+  };
+}
+
     console.log("💳 Stripe initialized for Partner Payouts.");
   } else {
     console.warn("⚠️ STRIPE_SECRET_KEY not set — mock mode enabled.");
@@ -127,10 +140,12 @@ async function createWisePayout(partner_id, amount, currency = "USD") {
 
     const payoutRef = response.data.id || `wise_${Date.now()}`;
     await pool.query(
-      `INSERT INTO partner_payouts (partner_id, provider, payout_ref, currency, amount, status, processed_at)
-       VALUES ($1,'wise',$2,$3,$4,'success',NOW())`,
-      [partner_id, payoutRef, currency, amount]
-    );
+  `INSERT INTO partner_payouts
+   (partner_id, amount, status, provider, payout_ref, currency, requested_at)
+   VALUES ($1, $2, 'success', 'stripe', $3, $4, NOW())`,
+  [partner_id, amount, transfer.id, currency]
+);
+
 
     console.log(`✅ Wise payout complete (${payoutRef})`);
     return { ok: true, payoutRef, amount, currency };
