@@ -56,13 +56,8 @@ const cors = require("cors");
 const bodyParser = require("body-parser");
 const app = express();
 
-const path = require("path");
-const express = require("express");
-const app = express();
-
 // ✅ Serve orchestrator/public for static assets (Marketplace manifest)
 app.use(express.static(path.join(__dirname, "public")));
-
 
 const { loadLanguages } = require("./src/brain/utils/langLoader");
 (async () => {
