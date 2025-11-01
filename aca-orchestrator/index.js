@@ -56,23 +56,40 @@ const cors = require("cors");
 const bodyParser = require("body-parser");
 const app = express();
 
-// --- Marketplace manifest endpoints (serve files manually) ---
-const manifestBase = path.resolve(__dirname, "public", ".well-known");
+// ---------------------------------------------------------------------------
+// ✅ Guaranteed serving of Marketplace manifest files (Render-safe absolute paths)
+// ---------------------------------------------------------------------------
+const wellKnownAbsolute = path.resolve(__dirname, "public", ".well-known");
+
+// respond explicitly
 app.get("/.well-known/ai-plugin.json", (req, res) => {
-  res.sendFile(path.join(manifestBase, "ai-plugin.json"));
+  const filePath = path.join(wellKnownAbsolute, "ai-plugin.json");
+  res.sendFile(filePath, (err) => {
+    if (err) {
+      console.error("❌ Failed to send ai-plugin.json:", err.message, "→", filePath);
+      res.status(404).send("Manifest not found");
+    }
+  });
 });
+
 app.get("/.well-known/openapi.yaml", (req, res) => {
-  res.sendFile(path.join(manifestBase, "openapi.yaml"));
+  const filePath = path.join(wellKnownAbsolute, "openapi.yaml");
+  res.sendFile(filePath, (err) => {
+    if (err) {
+      console.error("❌ Failed to send openapi.yaml:", err.message, "→", filePath);
+      res.status(404).send("OpenAPI spec not found");
+    }
+  });
 });
-console.log("✅ Explicit routes serving .well-known manifest files from:", manifestBase);
 
+console.log("✅ Explicit .well-known routes bound to:", wellKnownAbsolute);
 
-// ✅ Serve orchestrator/public for static assets (Marketplace manifest)
-// ✅ Serve orchestrator/public for Marketplace manifest (.well-known)
+// also expose everything under /public normally
 const staticDir = path.resolve(__dirname, "public");
 app.use(express.static(staticDir));
 console.log("✅ Static assets served from absolute path:", staticDir);
 
+// ---------------------------------------------------------------------------
 
 const { loadLanguages } = require("./src/brain/utils/langLoader");
 (async () => {
