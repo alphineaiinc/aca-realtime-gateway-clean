@@ -56,6 +56,17 @@ const cors = require("cors");
 const bodyParser = require("body-parser");
 const app = express();
 
+// --- Marketplace manifest endpoints (serve files manually) ---
+const manifestBase = path.resolve(__dirname, "public", ".well-known");
+app.get("/.well-known/ai-plugin.json", (req, res) => {
+  res.sendFile(path.join(manifestBase, "ai-plugin.json"));
+});
+app.get("/.well-known/openapi.yaml", (req, res) => {
+  res.sendFile(path.join(manifestBase, "openapi.yaml"));
+});
+console.log("✅ Explicit routes serving .well-known manifest files from:", manifestBase);
+
+
 // ✅ Serve orchestrator/public for static assets (Marketplace manifest)
 // ✅ Serve orchestrator/public for Marketplace manifest (.well-known)
 const staticDir = path.resolve(__dirname, "public");
