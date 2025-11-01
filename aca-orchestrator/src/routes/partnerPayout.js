@@ -125,12 +125,12 @@ router.get("/partner/payouts", async (req, res) => {
       console.warn("⚠️ JWT decode skipped — using open admin query.");
     }
 
-  let query = "SELECT * FROM partner_payouts ORDER BY id DESC LIMIT 50";
+  let query = "SELECT * FROM partner_payouts ORDER BY requested_at DESC LIMIT 50";
 
     let params = [];
 
     if (partner_id) {
-      let query = "SELECT * FROM partner_payouts ORDER BY id DESC LIMIT 50";
+      let query = "SELECT * FROM partner_payouts WHERE partner_id=$1 ORDER BY requested_at DESC LIMIT 50";
 
       params = [partner_id];
     }
