@@ -1,0 +1,15 @@
+﻿{
+  "schema_version": "v1",
+  "name_for_human": "Alphine AI  Automated Call Attender",
+  "name_for_model": "AlphineAI_ACA",
+  "description_for_human": "An intelligent call attendant that answers and automates customer calls in multiple languages.",
+  "description_for_model": "Enterprise-ready, multilingual call automation for SMBs and enterprises. Supports regional voice chat, bookings, orders, and partner referrals.",
+  "auth": { "type": "none" },
+  "api": {
+    "type": "openapi",
+    "url": "https://aca-realtime-gateway-clean.onrender.com/.well-known/openapi.yaml"
+  },
+  "logo_url": "https://alphineai.com/logo.png",
+  "contact_email": "support@alphineai.com",
+  "legal_info_url": "https://alphineai.com/legal/terms.html"
+}

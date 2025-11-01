@@ -1,0 +1,32 @@
+﻿openapi: 3.0.1
+info:
+  title: Alphine AI  Automated Call Attender (Public)
+  version: 1.0.0
+  description: Public demo/auth/billing-lite endpoints for GPT Marketplace validation.
+servers:
+  - url: https://aca-realtime-gateway-clean.onrender.com
+paths:
+  /api/demo:
+    get:
+      summary: Public demo message (supports ?lang=xx-YY)
+      parameters:
+        - in: query
+          name: lang
+          schema: { type: string }
+          required: false
+          description: Language code like ta-IN, hi-IN, fr-FR
+      responses:
+        "200":
+          description: OK
+  /auth/init:
+    post:
+      summary: Issue a short-lived demo token for sandbox tenant
+      responses:
+        "200":
+          description: OK
+  /api/billing/summary:
+    get:
+      summary: Return mock monthly invoice summary for a tenant (requires server-side tenant resolve in demo)
+      responses:
+        "200":
+          description: OK
