@@ -57,7 +57,11 @@ const bodyParser = require("body-parser");
 const app = express();
 
 // ✅ Serve orchestrator/public for static assets (Marketplace manifest)
-app.use(express.static(path.join(__dirname, "public")));
+// ✅ Serve orchestrator/public for Marketplace manifest (.well-known)
+const staticDir = path.resolve(__dirname, "public");
+app.use(express.static(staticDir));
+console.log("✅ Static assets served from absolute path:", staticDir);
+
 
 const { loadLanguages } = require("./src/brain/utils/langLoader");
 (async () => {
