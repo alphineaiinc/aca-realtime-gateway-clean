@@ -85,13 +85,6 @@ export function isRunnableFunctionWithParse<Args extends object>(
 
 export type BaseFunctionsArgs = readonly (object | string)[];
 
-export type RunnableFunctions<FunctionsArgs extends BaseFunctionsArgs> =
-  [any[]] extends [FunctionsArgs] ? readonly RunnableFunction<any>[]
-  : {
-      [Index in keyof FunctionsArgs]: Index extends number ? RunnableFunction<FunctionsArgs[Index]>
-      : FunctionsArgs[Index];
-    };
-
 export type RunnableTools<FunctionsArgs extends BaseFunctionsArgs> =
   [any[]] extends [FunctionsArgs] ? readonly RunnableToolFunction<any>[]
   : {

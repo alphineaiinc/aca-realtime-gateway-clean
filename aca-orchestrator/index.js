@@ -65,7 +65,8 @@ console.log("🧭 __dirname:", __dirname);
 // ✅ Guaranteed serving of Marketplace manifest files (Render-safe absolute paths)
 //    We keep your explicit routes AND add a regex catch-all to cover all proxies.
 // ---------------------------------------------------------------------------
-const wellKnownAbsolute = path.resolve(__dirname, "public", ".well-known");
+const wellKnownAbsolute = path.resolve(__dirname, "public", "wellknown");
+
 
 // Your explicit endpoints (kept intact)
 app.get("/.well-known/ai-plugin.json", (req, res) => {

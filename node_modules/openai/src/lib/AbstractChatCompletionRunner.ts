@@ -1,27 +1,26 @@
-import { OpenAIError } from '../error';
-import type OpenAI from '../index';
-import type { RequestOptions } from '../internal/request-options';
-import { isAutoParsableTool, parseChatCompletion } from '../lib/parser';
-import type {
-  ChatCompletion,
-  ChatCompletionCreateParams,
-  ChatCompletionMessage,
-  ChatCompletionMessageFunctionToolCall,
-  ChatCompletionMessageParam,
-  ChatCompletionTool,
-  ParsedChatCompletion,
-} from '../resources/chat/completions';
-import type { CompletionUsage } from '../resources/completions';
-import type { ChatCompletionToolRunnerParams } from './ChatCompletionRunner';
-import type { ChatCompletionStreamingToolRunnerParams } from './ChatCompletionStreamingRunner';
-import { isAssistantMessage, isToolMessage } from './chatCompletionUtils';
-import { BaseEvents, EventStream } from './EventStream';
+import { type CompletionUsage } from '../resources/completions';
 import {
+  type ChatCompletion,
+  type ChatCompletionMessage,
+  type ChatCompletionMessageParam,
+  type ChatCompletionCreateParams,
+  type ChatCompletionTool,
+} from '../resources/chat/completions';
+import { OpenAIError } from '../error';
+import {
+  type RunnableFunction,
   isRunnableFunctionWithParse,
   type BaseFunctionsArgs,
-  type RunnableFunction,
-  type RunnableToolFunction,
+  RunnableToolFunction,
 } from './RunnableFunction';
+import { ChatCompletionToolRunnerParams } from './ChatCompletionRunner';
+import { ChatCompletionStreamingToolRunnerParams } from './ChatCompletionStreamingRunner';
+import { isAssistantMessage, isFunctionMessage, isToolMessage } from './chatCompletionUtils';
+import { BaseEvents, EventStream } from './EventStream';
+import { ParsedChatCompletion } from '../resources/beta/chat/completions';
+import OpenAI from '../index';
+import { isAutoParsableTool, parseChatCompletion } from '../lib/parser';
+import { RequestOptions } from '../internal/request-options';
 
 const DEFAULT_MAX_CHAT_COMPLETIONS = 10;
 export interface RunnerOptions extends RequestOptions {
@@ -58,13 +57,15 @@ export class AbstractChatCompletionRunner<
 
     if (emit) {
       this._emit('message', message);
-      if (isToolMessage(message) && message.content) {
+      if ((isFunctionMessage(message) || isToolMessage(message)) && message.content) {
         // Note, this assumes that {role: 'tool', content: …} is always the result of a call of tool of type=function.
-        this._emit('functionToolCallResult', message.content as string);
+        this._emit('functionCallResult', message.content as string);
+      } else if (isAssistantMessage(message) && message.function_call) {
+        this._emit('functionCall', message.function_call);
       } else if (isAssistantMessage(message) && message.tool_calls) {
         for (const tool_call of message.tool_calls) {
           if (tool_call.type === 'function') {
-            this._emit('functionToolCall', tool_call.function);
+            this._emit('functionCall', tool_call.function);
           }
         }
       }
@@ -100,12 +101,17 @@ export class AbstractChatCompletionRunner<
     while (i-- > 0) {
       const message = this.messages[i];
       if (isAssistantMessage(message)) {
+        const { function_call, ...rest } = message;
+
         // TODO: support audio here
         const ret: Omit<ChatCompletionMessage, 'audio'> = {
-          ...message,
+          ...rest,
           content: (message as ChatCompletionMessage).content ?? null,
           refusal: (message as ChatCompletionMessage).refusal ?? null,
         };
+        if (function_call) {
+          ret.function_call = function_call;
+        }
         return ret;
       }
     }
@@ -121,11 +127,14 @@ export class AbstractChatCompletionRunner<
     return this.#getFinalMessage();
   }
 
-  #getFinalFunctionToolCall(): ChatCompletionMessageFunctionToolCall.Function | undefined {
+  #getFinalFunctionCall(): ChatCompletionMessage.FunctionCall | undefined {
     for (let i = this.messages.length - 1; i >= 0; i--) {
       const message = this.messages[i];
+      if (isAssistantMessage(message) && message?.function_call) {
+        return message.function_call;
+      }
       if (isAssistantMessage(message) && message?.tool_calls?.length) {
-        return message.tool_calls.filter((x) => x.type === 'function').at(-1)?.function;
+        return message.tool_calls.at(-1)?.function;
       }
     }
 
@@ -136,14 +145,17 @@ export class AbstractChatCompletionRunner<
    * @returns a promise that resolves with the content of the final FunctionCall, or rejects
    * if an error occurred or the stream ended prematurely without producing a ChatCompletionMessage.
    */
-  async finalFunctionToolCall(): Promise<ChatCompletionMessageFunctionToolCall.Function | undefined> {
+  async finalFunctionCall(): Promise<ChatCompletionMessage.FunctionCall | undefined> {
     await this.done();
-    return this.#getFinalFunctionToolCall();
+    return this.#getFinalFunctionCall();
   }
 
-  #getFinalFunctionToolCallResult(): string | undefined {
+  #getFinalFunctionCallResult(): string | undefined {
     for (let i = this.messages.length - 1; i >= 0; i--) {
       const message = this.messages[i];
+      if (isFunctionMessage(message) && message.content != null) {
+        return message.content;
+      }
       if (
         isToolMessage(message) &&
         message.content != null &&
@@ -161,9 +173,9 @@ export class AbstractChatCompletionRunner<
     return;
   }
 
-  async finalFunctionToolCallResult(): Promise<string | undefined> {
+  async finalFunctionCallResult(): Promise<string | undefined> {
     await this.done();
-    return this.#getFinalFunctionToolCallResult();
+    return this.#getFinalFunctionCallResult();
   }
 
   #calculateTotalUsage(): CompletionUsage {
@@ -201,11 +213,11 @@ export class AbstractChatCompletionRunner<
     const finalContent = this.#getFinalContent();
     if (finalContent) this._emit('finalContent', finalContent);
 
-    const finalFunctionCall = this.#getFinalFunctionToolCall();
-    if (finalFunctionCall) this._emit('finalFunctionToolCall', finalFunctionCall);
+    const finalFunctionCall = this.#getFinalFunctionCall();
+    if (finalFunctionCall) this._emit('finalFunctionCall', finalFunctionCall);
 
-    const finalFunctionCallResult = this.#getFinalFunctionToolCallResult();
-    if (finalFunctionCallResult != null) this._emit('finalFunctionToolCallResult', finalFunctionCallResult);
+    const finalFunctionCallResult = this.#getFinalFunctionCallResult();
+    if (finalFunctionCallResult != null) this._emit('finalFunctionCallResult', finalFunctionCallResult);
 
     if (this._chatCompletions.some((c) => c.usage)) {
       this._emit('totalUsage', this.#calculateTotalUsage());
@@ -260,8 +272,7 @@ export class AbstractChatCompletionRunner<
   ) {
     const role = 'tool' as const;
     const { tool_choice = 'auto', stream, ...restParams } = params;
-    const singleFunctionToCall =
-      typeof tool_choice !== 'string' && tool_choice.type === 'function' && tool_choice?.function?.name;
+    const singleFunctionToCall = typeof tool_choice !== 'string' && tool_choice?.function?.name;
     const { maxChatCompletions = DEFAULT_MAX_CHAT_COMPLETIONS } = options || {};
 
     // TODO(someday): clean this logic up
@@ -391,14 +402,14 @@ export class AbstractChatCompletionRunner<
 }
 
 export interface AbstractChatCompletionRunnerEvents extends BaseEvents {
-  functionToolCall: (functionCall: ChatCompletionMessageFunctionToolCall.Function) => void;
+  functionCall: (functionCall: ChatCompletionMessage.FunctionCall) => void;
   message: (message: ChatCompletionMessageParam) => void;
   chatCompletion: (completion: ChatCompletion) => void;
   finalContent: (contentSnapshot: string) => void;
   finalMessage: (message: ChatCompletionMessageParam) => void;
   finalChatCompletion: (completion: ChatCompletion) => void;
-  finalFunctionToolCall: (functionCall: ChatCompletionMessageFunctionToolCall.Function) => void;
-  functionToolCallResult: (content: string) => void;
-  finalFunctionToolCallResult: (content: string) => void;
+  finalFunctionCall: (functionCall: ChatCompletionMessage.FunctionCall) => void;
+  functionCallResult: (content: string) => void;
+  finalFunctionCallResult: (content: string) => void;
   totalUsage: (usage: CompletionUsage) => void;
 }

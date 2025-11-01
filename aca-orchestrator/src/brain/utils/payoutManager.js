@@ -99,8 +99,10 @@ console.log("🧾 About to insert payout record →", {
 });
 
     await pool.query(
-      `INSERT INTO partner_payouts (partner_id, provider, payout_ref, currency, amount, status, processed_at)
-       VALUES ($1,'stripe',$2,$3,$4,'success',NOW())`,
+      `INSERT INTO partner_payouts
+(partner_id, amount, status, provider, payout_ref, currency, requested_at)
+VALUES ($1, $2, 'success', 'stripe', $3, $4, NOW())
+`,
       [partner_id, transfer.id, currency, amount]
     );
 

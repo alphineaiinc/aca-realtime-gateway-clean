@@ -1,6 +1,6 @@
 # OpenAI TypeScript and JavaScript API Library
 
-[![NPM version](<https://img.shields.io/npm/v/openai.svg?label=npm%20(stable)>)](https://npmjs.org/package/openai) ![npm bundle size](https://img.shields.io/bundlephobia/minzip/openai) [![JSR Version](https://jsr.io/badges/@openai/openai)](https://jsr.io/@openai/openai)
+[![NPM version](https://img.shields.io/npm/v/openai.svg)](https://npmjs.org/package/openai) ![npm bundle size](https://img.shields.io/bundlephobia/minzip/openai) [![JSR Version](https://jsr.io/badges/@openai/openai)](https://jsr.io/@openai/openai)
 
 This library provides convenient access to the OpenAI REST API from TypeScript or JavaScript.
 
@@ -21,7 +21,9 @@ deno add jsr:@openai/openai
 npx jsr add @openai/openai
 ```
 
-These commands will make the module importable from the `@openai/openai` scope. You can also [import directly from JSR](https://jsr.io/docs/using-packages#importing-with-jsr-specifiers) without an install step if you're using the Deno JavaScript runtime:
+These commands will make the module importable from the `@openai/openai` scope:
+
+You can also [import directly from JSR](https://jsr.io/docs/using-packages#importing-with-jsr-specifiers) without an install step if you're using the Deno JavaScript runtime:
 
 ```ts
 import OpenAI from 'jsr:@openai/openai';
@@ -29,44 +31,24 @@ import OpenAI from 'jsr:@openai/openai';
 
 ## Usage
 
-The full API of this library can be found in [api.md file](api.md) along with many [code examples](https://github.com/openai/openai-node/tree/master/examples).
+The full API of this library can be found in [api.md file](api.md) along with many [code examples](https://github.com/openai/openai-node/tree/master/examples). The code below shows how to get started using the chat completions API.
 
-The primary API for interacting with OpenAI models is the [Responses API](https://platform.openai.com/docs/api-reference/responses). You can generate text from the model with the code below.
-
-```ts
+<!-- prettier-ignore -->
+```js
 import OpenAI from 'openai';
 
 const client = new OpenAI({
   apiKey: process.env['OPENAI_API_KEY'], // This is the default and can be omitted
 });
 
-const response = await client.responses.create({
-  model: 'gpt-4o',
-  instructions: 'You are a coding assistant that talks like a pirate',
-  input: 'Are semicolons optional in JavaScript?',
-});
+async function main() {
+  const chatCompletion = await client.chat.completions.create({
+    messages: [{ role: 'user', content: 'Say this is a test' }],
+    model: 'gpt-4o',
+  });
+}
 
-console.log(response.output_text);
-```
-
-The previous standard (supported indefinitely) for generating text is the [Chat Completions API](https://platform.openai.com/docs/api-reference/chat). You can use that API to generate text from the model with the code below.
-
-```ts
-import OpenAI from 'openai';
-
-const client = new OpenAI({
-  apiKey: process.env['OPENAI_API_KEY'], // This is the default and can be omitted
-});
-
-const completion = await client.chat.completions.create({
-  model: 'gpt-4o',
-  messages: [
-    { role: 'developer', content: 'Talk like a pirate.' },
-    { role: 'user', content: 'Are semicolons optional in JavaScript?' },
-  ],
-});
-
-console.log(completion.choices[0].message.content);
+main();
 ```
 
 ## Streaming responses
@@ -78,16 +60,235 @@ import OpenAI from 'openai';
 
 const client = new OpenAI();
 
-const stream = await client.responses.create({
-  model: 'gpt-4o',
-  input: 'Say "Sheep sleep deep" ten times fast!',
-  stream: true,
+async function main() {
+  const stream = await client.chat.completions.create({
+    model: 'gpt-4o',
+    messages: [{ role: 'user', content: 'Say this is a test' }],
+    stream: true,
+  });
+  for await (const chunk of stream) {
+    process.stdout.write(chunk.choices[0]?.delta?.content || '');
+  }
+}
+
+main();
+```
+
+If you need to cancel a stream, you can `break` from the loop
+or call `stream.controller.abort()`.
+
+### Request & Response types
+
+This library includes TypeScript definitions for all request params and response fields. You may import and use them like so:
+
+<!-- prettier-ignore -->
+```ts
+import OpenAI from 'openai';
+
+const client = new OpenAI({
+  apiKey: process.env['OPENAI_API_KEY'], // This is the default and can be omitted
 });
 
-for await (const event of stream) {
-  console.log(event);
+async function main() {
+  const params: OpenAI.Chat.ChatCompletionCreateParams = {
+    messages: [{ role: 'user', content: 'Say this is a test' }],
+    model: 'gpt-4o',
+  };
+  const chatCompletion: OpenAI.Chat.ChatCompletion = await client.chat.completions.create(params);
 }
+
+main();
 ```
+
+Documentation for each method, request param, and response field are available in docstrings and will appear on hover in most modern editors.
+
+> [!IMPORTANT]
+> Previous versions of this SDK used a `Configuration` class. See the [v3 to v4 migration guide](https://github.com/openai/openai-node/discussions/217).
+
+### Polling Helpers
+
+When interacting with the API some actions such as starting a Run and adding files to vector stores are asynchronous and take time to complete. The SDK includes
+helper functions which will poll the status until it reaches a terminal state and then return the resulting object.
+If an API method results in an action which could benefit from polling there will be a corresponding version of the
+method ending in 'AndPoll'.
+
+For instance to create a Run and poll until it reaches a terminal state you can run:
+
+```ts
+const run = await openai.beta.threads.runs.createAndPoll(thread.id, {
+  assistant_id: assistantId,
+});
+```
+
+More information on the lifecycle of a Run can be found in the [Run Lifecycle Documentation](https://platform.openai.com/docs/assistants/deep-dive/run-lifecycle)
+
+### Bulk Upload Helpers
+
+When creating and interacting with vector stores, you can use the polling helpers to monitor the status of operations.
+For convenience, we also provide a bulk upload helper to allow you to simultaneously upload several files at once.
+
+```ts
+const fileList = [
+  createReadStream('/home/data/example.pdf'),
+  ...
+];
+
+const batch = await openai.vectorStores.fileBatches.uploadAndPoll(vectorStore.id, {files: fileList});
+```
+
+### Streaming Helpers
+
+The SDK also includes helpers to process streams and handle the incoming events.
+
+```ts
+const run = openai.beta.threads.runs
+  .stream(thread.id, {
+    assistant_id: assistant.id,
+  })
+  .on('textCreated', (text) => process.stdout.write('\nassistant > '))
+  .on('textDelta', (textDelta, snapshot) => process.stdout.write(textDelta.value))
+  .on('toolCallCreated', (toolCall) => process.stdout.write(`\nassistant > ${toolCall.type}\n\n`))
+  .on('toolCallDelta', (toolCallDelta, snapshot) => {
+    if (toolCallDelta.type === 'code_interpreter') {
+      if (toolCallDelta.code_interpreter.input) {
+        process.stdout.write(toolCallDelta.code_interpreter.input);
+      }
+      if (toolCallDelta.code_interpreter.outputs) {
+        process.stdout.write('\noutput >\n');
+        toolCallDelta.code_interpreter.outputs.forEach((output) => {
+          if (output.type === 'logs') {
+            process.stdout.write(`\n${output.logs}\n`);
+          }
+        });
+      }
+    }
+  });
+```
+
+More information on streaming helpers can be found in the dedicated documentation: [helpers.md](helpers.md)
+
+### Streaming responses
+
+This library provides several conveniences for streaming chat completions, for example:
+
+```ts
+import OpenAI from 'openai';
+
+const openai = new OpenAI();
+
+async function main() {
+  const stream = await openai.beta.chat.completions.stream({
+    model: 'gpt-4o',
+    messages: [{ role: 'user', content: 'Say this is a test' }],
+    stream: true,
+  });
+
+  stream.on('content', (delta, snapshot) => {
+    process.stdout.write(delta);
+  });
+
+  // or, equivalently:
+  for await (const chunk of stream) {
+    process.stdout.write(chunk.choices[0]?.delta?.content || '');
+  }
+
+  const chatCompletion = await stream.finalChatCompletion();
+  console.log(chatCompletion); // {id: "…", choices: […], …}
+}
+
+main();
+```
+
+Streaming with `openai.beta.chat.completions.stream({…})` exposes
+[various helpers for your convenience](helpers.md#chat-events) including event handlers and promises.
+
+Alternatively, you can use `openai.chat.completions.create({ stream: true, … })`
+which only returns an async iterable of the chunks in the stream and thus uses less memory
+(it does not build up a final chat completion object for you).
+
+If you need to cancel a stream, you can `break` from a `for await` loop or call `stream.abort()`.
+
+### Automated function calls
+
+We provide the `openai.beta.chat.completions.runTools({…})`
+convenience helper for using function tool calls with the `/chat/completions` endpoint
+which automatically call the JavaScript functions you provide
+and sends their results back to the `/chat/completions` endpoint,
+looping as long as the model requests tool calls.
+
+If you pass a `parse` function, it will automatically parse the `arguments` for you
+and returns any parsing errors to the model to attempt auto-recovery.
+Otherwise, the args will be passed to the function you provide as a string.
+
+If you pass `tool_choice: {function: {name: …}}` instead of `auto`,
+it returns immediately after calling that function (and only loops to auto-recover parsing errors).
+
+```ts
+import OpenAI from 'openai';
+
+const client = new OpenAI();
+
+async function main() {
+  const runner = client.beta.chat.completions
+    .runTools({
+      model: 'gpt-4o',
+      messages: [{ role: 'user', content: 'How is the weather this week?' }],
+      tools: [
+        {
+          type: 'function',
+          function: {
+            function: getCurrentLocation,
+            parameters: { type: 'object', properties: {} },
+          },
+        },
+        {
+          type: 'function',
+          function: {
+            function: getWeather,
+            parse: JSON.parse, // or use a validation library like zod for typesafe parsing.
+            parameters: {
+              type: 'object',
+              properties: {
+                location: { type: 'string' },
+              },
+            },
+          },
+        },
+      ],
+    })
+    .on('message', (message) => console.log(message));
+
+  const finalContent = await runner.finalContent();
+  console.log();
+  console.log('Final content:', finalContent);
+}
+
+async function getCurrentLocation() {
+  return 'Boston'; // Simulate lookup
+}
+
+async function getWeather(args: { location: string }) {
+  const { location } = args;
+  // … do lookup …
+  return { temperature, precipitation };
+}
+
+main();
+
+// {role: "user",      content: "How's the weather this week?"}
+// {role: "assistant", tool_calls: [{type: "function", function: {name: "getCurrentLocation", arguments: "{}"}, id: "123"}
+// {role: "tool",      name: "getCurrentLocation", content: "Boston", tool_call_id: "123"}
+// {role: "assistant", tool_calls: [{type: "function", function: {name: "getWeather", arguments: '{"location": "Boston"}'}, id: "1234"}]}
+// {role: "tool",      name: "getWeather", content: '{"temperature": "50degF", "preciptation": "high"}', tool_call_id: "1234"}
+// {role: "assistant", content: "It's looking cold and rainy - you might want to wear a jacket!"}
+//
+// Final content: "It's looking cold and rainy - you might want to wear a jacket!"
+```
+
+Like with `.stream()`, we provide a variety of [helpers and events](helpers.md#chat-events).
+
+Read more about various examples such as with integrating with [zod](helpers.md#integrate-with-zod),
+[next.js](helpers.md#integrate-with-nextjs), and [proxying a stream to the browser](helpers.md#proxy-streaming-to-a-browser).
 
 ## File uploads
 
@@ -124,85 +325,6 @@ await client.files.create({
 });
 ```
 
-## Webhook Verification
-
-Verifying webhook signatures is _optional but encouraged_.
-
-For more information about webhooks, see [the API docs](https://platform.openai.com/docs/guides/webhooks).
-
-### Parsing webhook payloads
-
-For most use cases, you will likely want to verify the webhook and parse the payload at the same time. To achieve this, we provide the method `client.webhooks.unwrap()`, which parses a webhook request and verifies that it was sent by OpenAI. This method will throw an error if the signature is invalid.
-
-Note that the `body` parameter must be the raw JSON string sent from the server (do not parse it first). The `.unwrap()` method will parse this JSON for you into an event object after verifying the webhook was sent from OpenAI.
-
-```ts
-import { headers } from 'next/headers';
-import OpenAI from 'openai';
-
-const client = new OpenAI({
-  webhookSecret: process.env.OPENAI_WEBHOOK_SECRET, // env var used by default; explicit here.
-});
-
-export async function webhook(request: Request) {
-  const headersList = headers();
-  const body = await request.text();
-
-  try {
-    const event = client.webhooks.unwrap(body, headersList);
-
-    switch (event.type) {
-      case 'response.completed':
-        console.log('Response completed:', event.data);
-        break;
-      case 'response.failed':
-        console.log('Response failed:', event.data);
-        break;
-      default:
-        console.log('Unhandled event type:', event.type);
-    }
-
-    return Response.json({ message: 'ok' });
-  } catch (error) {
-    console.error('Invalid webhook signature:', error);
-    return new Response('Invalid signature', { status: 400 });
-  }
-}
-```
-
-### Verifying webhook payloads directly
-
-In some cases, you may want to verify the webhook separately from parsing the payload. If you prefer to handle these steps separately, we provide the method `client.webhooks.verifySignature()` to _only verify_ the signature of a webhook request. Like `.unwrap()`, this method will throw an error if the signature is invalid.
-
-Note that the `body` parameter must be the raw JSON string sent from the server (do not parse it first). You will then need to parse the body after verifying the signature.
-
-```ts
-import { headers } from 'next/headers';
-import OpenAI from 'openai';
-
-const client = new OpenAI({
-  webhookSecret: process.env.OPENAI_WEBHOOK_SECRET, // env var used by default; explicit here.
-});
-
-export async function webhook(request: Request) {
-  const headersList = headers();
-  const body = await request.text();
-
-  try {
-    client.webhooks.verifySignature(body, headersList);
-
-    // Parse the body after verification
-    const event = JSON.parse(body);
-    console.log('Verified event:', event);
-
-    return Response.json({ message: 'ok' });
-  } catch (error) {
-    console.error('Invalid webhook signature:', error);
-    return new Response('Invalid signature', { status: 400 });
-  }
-}
-```
-
 ## Handling errors
 
 When the library is unable to connect to the API,
@@ -211,21 +333,24 @@ a subclass of `APIError` will be thrown:
 
 <!-- prettier-ignore -->
 ```ts
-const job = await client.fineTuning.jobs
-  .create({ model: 'gpt-4o', training_file: 'file-abc123' })
-  .catch(async (err) => {
-    if (err instanceof OpenAI.APIError) {
-      console.log(err.request_id);
-      console.log(err.status); // 400
-      console.log(err.name); // BadRequestError
-      console.log(err.headers); // {server: 'nginx', ...}
-    } else {
-      throw err;
-    }
-  });
+async function main() {
+  const job = await client.fineTuning.jobs
+    .create({ model: 'gpt-4o', training_file: 'file-abc123' })
+    .catch(async (err) => {
+      if (err instanceof OpenAI.APIError) {
+        console.log(err.status); // 400
+        console.log(err.name); // BadRequestError
+        console.log(err.headers); // {server: 'nginx', ...}
+      } else {
+        throw err;
+      }
+    });
+}
+
+main();
 ```
 
-Error codes are as follows:
+Error codes are as followed:
 
 | Status Code | Error Type                 |
 | ----------- | -------------------------- |
@@ -245,11 +370,8 @@ Error codes are as follows:
 All object responses in the SDK provide a `_request_id` property which is added from the `x-request-id` response header so that you can quickly log failing requests and report them back to OpenAI.
 
 ```ts
-const completion = await client.chat.completions.create({
-  messages: [{ role: 'user', content: 'Say this is a test' }],
-  model: 'gpt-4o',
-});
-console.log(completion._request_id); // req_123
+const completion = await client.chat.completions.create({ messages: [{ role: 'user', content: 'Say this is a test' }], model: 'gpt-4o' });
+console.log(completion._request_id) // req_123
 ```
 
 You can also access the Request ID using the `.withResponse()` method:
@@ -264,14 +386,14 @@ const { data: stream, request_id } = await openai.chat.completions
   .withResponse();
 ```
 
-## Realtime API
+## Realtime API Beta
 
 The Realtime API enables you to build low-latency, multi-modal conversational experiences. It currently supports text and audio as both input and output, as well as [function calling](https://platform.openai.com/docs/guides/function-calling) through a `WebSocket` connection.
 
 ```ts
-import { OpenAIRealtimeWebSocket } from 'openai/realtime/websocket';
+import { OpenAIRealtimeWebSocket } from 'openai/beta/realtime/websocket';
 
-const rt = new OpenAIRealtimeWebSocket({ model: 'gpt-realtime' });
+const rt = new OpenAIRealtimeWebSocket({ model: 'gpt-4o-realtime-preview-2024-12-17' });
 
 rt.on('response.text.delta', (event) => process.stdout.write(event.delta));
 ```
@@ -347,29 +469,6 @@ On timeout, an `APIConnectionTimeoutError` is thrown.
 
 Note that requests which time out will be [retried twice by default](#retries).
 
-## Request IDs
-
-> For more information on debugging requests, see [these docs](https://platform.openai.com/docs/api-reference/debugging-requests)
-
-All object responses in the SDK provide a `_request_id` property which is added from the `x-request-id` response header so that you can quickly log failing requests and report them back to OpenAI.
-
-```ts
-const response = await client.responses.create({ model: 'gpt-4o', input: 'testing 123' });
-console.log(response._request_id); // req_123
-```
-
-You can also access the Request ID using the `.withResponse()` method:
-
-```ts
-const { data: stream, request_id } = await openai.responses
-  .create({
-    model: 'gpt-4o',
-    input: 'Say this is a test',
-    stream: true,
-  })
-  .withResponse();
-```
-
 ## Auto-pagination
 
 List methods in the OpenAI API are paginated.
@@ -401,79 +500,29 @@ while (page.hasNextPage()) {
 }
 ```
 
-## Realtime API
-
-The Realtime API enables you to build low-latency, multi-modal conversational experiences. It currently supports text and audio as both input and output, as well as [function calling](https://platform.openai.com/docs/guides/function-calling) through a `WebSocket` connection.
-
-```ts
-import { OpenAIRealtimeWebSocket } from 'openai/realtime/websocket';
-
-const rt = new OpenAIRealtimeWebSocket({ model: 'gpt-realtime' });
-
-rt.on('response.text.delta', (event) => process.stdout.write(event.delta));
-```
-
-For more information see [realtime.md](realtime.md).
-
-## Microsoft Azure OpenAI
-
-To use this library with [Azure OpenAI](https://learn.microsoft.com/azure/ai-services/openai/overview), use the `AzureOpenAI`
-class instead of the `OpenAI` class.
-
-> [!IMPORTANT]
-> The Azure API shape slightly differs from the core API shape which means that the static types for responses / params
-> won't always be correct.
-
-```ts
-import { AzureOpenAI } from 'openai';
-import { getBearerTokenProvider, DefaultAzureCredential } from '@azure/identity';
-
-const credential = new DefaultAzureCredential();
-const scope = 'https://cognitiveservices.azure.com/.default';
-const azureADTokenProvider = getBearerTokenProvider(credential, scope);
-
-const openai = new AzureOpenAI({
-  azureADTokenProvider,
-  apiVersion: '<The API version, e.g. 2024-10-01-preview>',
-});
-
-const result = await openai.chat.completions.create({
-  model: 'gpt-4o',
-  messages: [{ role: 'user', content: 'Say hello!' }],
-});
-
-console.log(result.choices[0]!.message?.content);
-```
-
-For more information on support for the Azure API, see [azure.md](azure.md).
-
 ## Advanced Usage
 
 ### Accessing raw Response data (e.g., headers)
 
 The "raw" `Response` returned by `fetch()` can be accessed through the `.asResponse()` method on the `APIPromise` type that all methods return.
-This method returns as soon as the headers for a successful response are received and does not consume the response body, so you are free to write custom parsing or streaming logic.
 
 You can also use the `.withResponse()` method to get the raw `Response` along with the parsed data.
-Unlike `.asResponse()` this method consumes the body, returning once it is parsed.
 
 <!-- prettier-ignore -->
 ```ts
 const client = new OpenAI();
 
-const httpResponse = await client.responses
-  .create({ model: 'gpt-4o', input: 'say this is a test.' })
+const response = await client.chat.completions
+  .create({ messages: [{ role: 'user', content: 'Say this is a test' }], model: 'gpt-4o' })
   .asResponse();
+console.log(response.headers.get('X-My-Header'));
+console.log(response.statusText); // access the underlying Response object
 
-// access the underlying web standard Response object
-console.log(httpResponse.headers.get('X-My-Header'));
-console.log(httpResponse.statusText);
-
-const { data: modelResponse, response: raw } = await client.responses
-  .create({ model: 'gpt-4o', input: 'say this is a test.' })
+const { data: chatCompletion, response: raw } = await client.chat.completions
+  .create({ messages: [{ role: 'user', content: 'Say this is a test' }], model: 'gpt-4o' })
   .withResponse();
 console.log(raw.headers.get('X-My-Header'));
-console.log(modelResponse);
+console.log(chatCompletion);
 ```
 
 ### Logging
@@ -553,8 +602,9 @@ parameter. This library doesn't validate at runtime that the request matches the
 send will be sent as-is.
 
 ```ts
-client.chat.completions.create({
-  // ...
+client.foo.create({
+  foo: 'my_param',
+  bar: 12,
   // @ts-expect-error baz is not yet public
   baz: 'undocumented option',
 });
@@ -573,6 +623,8 @@ the response object, or cast the response object to the requisite type. Like the
 validate or strip extra properties from the response from the API.
 
 ### Customizing the fetch client
+
+By default, this library expects a global `fetch` function is defined.
 
 If you want to use a different `fetch` function, you can either polyfill the global:
 
@@ -669,7 +721,7 @@ TypeScript >= 4.9 is supported.
 
 The following runtimes are supported:
 
-- Node.js 20 LTS or later ([non-EOL](https://endoflife.date/nodejs)) versions.
+- Node.js 18 LTS or later ([non-EOL](https://endoflife.date/nodejs)) versions.
 - Deno v1.28.0 or higher.
 - Bun 1.0 or later.
 - Cloudflare Workers.
