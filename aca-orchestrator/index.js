@@ -56,14 +56,21 @@ const cors = require("cors");
 const bodyParser = require("body-parser");
 const app = express();
 
+// Trust Render proxy and log runtime roots once
+app.set("trust proxy", 1);
+console.log("🧭 process.cwd():", process.cwd());
+console.log("🧭 __dirname:", __dirname);
+
 // ---------------------------------------------------------------------------
 // ✅ Guaranteed serving of Marketplace manifest files (Render-safe absolute paths)
+//    We keep your explicit routes AND add a regex catch-all to cover all proxies.
 // ---------------------------------------------------------------------------
 const wellKnownAbsolute = path.resolve(__dirname, "public", ".well-known");
 
-// respond explicitly
+// Your explicit endpoints (kept intact)
 app.get("/.well-known/ai-plugin.json", (req, res) => {
   const filePath = path.join(wellKnownAbsolute, "ai-plugin.json");
+  console.log("➡️  [.well-known] serving:", filePath);
   res.sendFile(filePath, (err) => {
     if (err) {
       console.error("❌ Failed to send ai-plugin.json:", err.message, "→", filePath);
@@ -74,6 +81,7 @@ app.get("/.well-known/ai-plugin.json", (req, res) => {
 
 app.get("/.well-known/openapi.yaml", (req, res) => {
   const filePath = path.join(wellKnownAbsolute, "openapi.yaml");
+  console.log("➡️  [.well-known] serving:", filePath);
   res.sendFile(filePath, (err) => {
     if (err) {
       console.error("❌ Failed to send openapi.yaml:", err.message, "→", filePath);
@@ -82,7 +90,31 @@ app.get("/.well-known/openapi.yaml", (req, res) => {
   });
 });
 
-console.log("✅ Explicit .well-known routes bound to:", wellKnownAbsolute);
+// 🔒 Regex catch-all for any .well-known/* (covers caching/proxy edge-cases)
+app.get(/^\/\.well-known\/(.+)$/i, (req, res) => {
+  const requested = (req.params[0] || "").toString();
+  const safeName = requested.replace(/[^a-zA-Z0-9._-]/g, "");
+  const filePath = path.join(wellKnownAbsolute, safeName);
+  console.log("➡️  [.well-known regex] request:", requested, "→", filePath);
+
+  if (!fs.existsSync(filePath)) {
+    console.error("❌ [.well-known regex] not found:", filePath);
+    return res.status(404).send("Not Found");
+  }
+
+  // Set explicit content-type for common cases
+  if (safeName.endsWith(".json")) res.type("application/json");
+  if (safeName.endsWith(".yaml") || safeName.endsWith(".yml")) res.type("text/yaml");
+
+  return res.sendFile(filePath, (err) => {
+    if (err) {
+      console.error("❌ [.well-known regex] send error:", err.message);
+      res.status(500).send("Send error");
+    }
+  });
+});
+
+console.log("✅ .well-known bound to:", wellKnownAbsolute);
 
 // also expose everything under /public normally
 const staticDir = path.resolve(__dirname, "public");
