@@ -21,7 +21,8 @@ const express = require("express");
 const jwt = require("jsonwebtoken");
 const { processPayout } = require("../brain/utils/payoutManager");
 const pool = require("../db/pool");
-const { recordEvent } = require("../analytics/eventCollector"); // 🧩 Story 11.1
+const { recordEvent } = require("../analytics/eventCollector.js");
+
 
 const router = express.Router();
 
