@@ -280,6 +280,17 @@ try {
   console.warn("⚠️ brainRoutes not loaded:", err.message);
 }
 
+
+try {
+  const partnerPayout = require("./src/routes/partnerPayout");   // capital P here ⬅️
+  app.use("/api", partnerPayout);
+  console.log("✅ Mounted /api/partner/payout routes (Story 10.10)");
+} catch (err) {
+  console.warn("⚠️ partnerPayout routes not loaded:", err.message);
+}
+
+
+
 // ============================================================
 // === Server Start ===
 const PORT = process.env.PORT || 8080;
