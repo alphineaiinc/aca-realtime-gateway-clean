@@ -89,6 +89,14 @@ async function createStripePayout(partner_id, amount, currency = "USD") {
       destination: accountId,
       description: `Alphine AI Reward Payout for Partner ${partner_id}`,
     });
+console.log("🧾 About to insert payout record →", {
+  partner_id,
+  amount,
+  status: "success",
+  provider: "stripe",
+  payout_ref: transfer.id,
+  currency
+});
 
     await pool.query(
       `INSERT INTO partner_payouts (partner_id, provider, payout_ref, currency, amount, status, processed_at)
