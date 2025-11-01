@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Billing & Invoices – Alphine AI Partner Dashboard</title>
+
+  <!-- Chart.js for possible future billing trend graph -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+
+  <style>
+    :root {
+      --bg: #0d1117;
+      --card: #161b22;
+      --text: #e6edf3;
+      --muted: #9aa4ad;
+      --accent: #ffcc66;
+      --ok: #2ea043;
+      --warn: #f2a900;
+      --error: #da3633;
+    }
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: Inter, system-ui, sans-serif;
+      margin: 0;
+      padding: 0;
+    }
+    header {
+      background: rgba(255,255,255,0.05);
+      backdrop-filter: blur(8px);
+      padding: 16px 32px;
+      font-size: 20px;
+      font-weight: 600;
+      color: var(--accent);
+      border-bottom: 1px solid rgba(255,255,255,0.1);
+    }
+    main { padding: 32px; }
+    h2 { color: var(--accent); }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 20px;
+      background: var(--card);
+      border-radius: 10px;
+      overflow: hidden;
+      box-shadow: 0 0 10px rgba(0,0,0,0.3);
+    }
+    th, td {
+      padding: 12px 16px;
+      text-align: left;
+      border-bottom: 1px solid rgba(255,255,255,0.08);
+    }
+    th { background: rgba(255,255,255,0.05); }
+    tr:hover { background: rgba(255,255,255,0.04); }
+    .status {
+      padding: 4px 10px;
+      border-radius: 6px;
+      font-size: 13px;
+      font-weight: 600;
+      text-transform: capitalize;
+    }
+    .unpaid { background: var(--warn); color: #000; }
+    .paid { background: var(--ok); color: #fff; }
+    .download-btn {
+      color: var(--accent);
+      text-decoration: none;
+      font-weight: 600;
+    }
+    .summary {
+      margin-top: 20px;
+      font-size: 16px;
+      color: var(--muted);
+    }
+    .error {
+      color: var(--error);
+      font-weight: 600;
+    }
+  </style>
+</head>
+<body>
+  <header>💳 Alphine AI Partner Billing</header>
+  <main>
+    <h2>Your Invoices</h2>
+    <p id="statusMsg">Loading invoice history...</p>
+    <table id="invoiceTable" style="display:none;">
+      <thead>
+        <tr>
+          <th>ID</th>
+          <th>Date</th>
+          <th>Amount (USD)</th>
+          <th>Status</th>
+          <th>Download</th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+    <div class="summary" id="summary"></div>
+  </main>
+
+  <script>
+    async function loadBilling() {
+      const token = localStorage.getItem("partner_token");
+      if (!token) {
+        document.getElementById("statusMsg").innerHTML =
+          "<span class='error'>Authentication token missing. Please log in again.</span>";
+        return;
+      }
+      try {
+        const res = await fetch("/api/billing/history", {
+          headers: { Authorization: "Bearer " + token }
+        });
+        const data = await res.json();
+        if (!data.ok) throw new Error(data.error || "Failed to fetch billing history");
+
+        const tbody = document.querySelector("#invoiceTable tbody");
+        tbody.innerHTML = "";
+        let totalDue = 0;
+
+        data.invoices.forEach(inv => {
+          const tr = document.createElement("tr");
+          const amount = Number(inv.amount_usd || 0);
+          totalDue += inv.status === "unpaid" ? amount : 0;
+          tr.innerHTML = `
+            <td>${inv.id}</td>
+            <td>${new Date(inv.generated_at).toLocaleDateString()}</td>
+            <td>$${amount.toFixed(2)}</td>
+            <td><span class="status ${inv.status.toLowerCase()}">${inv.status}</span></td>
+            <td><a class="download-btn" href="${inv.invoice_path}" target="_blank">📄 Download</a></td>
+          `;
+          tbody.appendChild(tr);
+        });
+
+        document.getElementById("statusMsg").style.display = "none";
+        document.getElementById("invoiceTable").style.display = "table";
+        document.getElementById("summary").innerText =
+          `Total Unpaid Balance: $${totalDue.toFixed(2)}`;
+      } catch (err) {
+        console.error(err);
+        document.getElementById("statusMsg").innerHTML =
+          "<span class='error'>Error loading invoices: " + err.message + "</span>";
+      }
+    }
+
+    loadBilling();
+  </script>
+</body>
+</html>
