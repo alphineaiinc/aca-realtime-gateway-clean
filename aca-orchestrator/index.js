@@ -289,6 +289,7 @@ try {
   console.warn("⚠️ partnerPayout routes not loaded:", err.message);
 }
 
+app.use("/api/billing", require("./src/routes/billing"));
 
 
 // ============================================================
