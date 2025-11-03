@@ -6,6 +6,7 @@ const { generateInvoice } = require("../brain/billingEngine");
 const { logPayment } = require("../brain/utils/paymentLogger");
 const fs = require("fs");
 const path = require("path");
+const archiver = require("archiver");   // ensure available
 
 const router = express.Router();
 
@@ -79,11 +80,11 @@ router.get("/history", authenticate, async (req, res) => {
     const params = [req.tenant_id];
     let p = 2;
 
-    if (status && ["paid","unpaid"].includes(status)) {
+    if (status && ["paid", "unpaid"].includes(status)) {
       where.push(`status = $${p++}`); params.push(status);
     }
     if (from) { where.push(`generated_at >= $${p++}`); params.push(new Date(from)); }
-    if (to)   { where.push(`generated_at <  $${p++}`); params.push(new Date(to));   }
+    if (to)   { where.push(`generated_at <  $${p++}`); params.push(new Date(to)); }
 
     const result = await pool.query(
       `SELECT id, amount_usd, status, generated_at, invoice_path 
@@ -127,7 +128,8 @@ router.post("/pay", authenticate, rateLimit, async (req, res) => {
         req.tenant_id,
       ]
     );
-    if (upd.rowCount === 0) return res.status(404).json({ ok: false, error: "Invoice not found or access denied" });
+    if (upd.rowCount === 0)
+      return res.status(404).json({ ok: false, error: "Invoice not found or access denied" });
 
     const row = upd.rows[0];
     logPayment({
@@ -142,7 +144,16 @@ router.post("/pay", authenticate, rateLimit, async (req, res) => {
     });
 
     console.log(`[billing/pay] partner=${req.partner_id} invoice=${invoice_id} method=${payment_method}`);
-    res.json({ ok: true, payment: { id: row.id, status: row.status, paid_at: row.paid_at, payment_method: row.payment_method, payment_reference: row.payment_reference } });
+    res.json({
+      ok: true,
+      payment: {
+        id: row.id,
+        status: row.status,
+        paid_at: row.paid_at,
+        payment_method: row.payment_method,
+        payment_reference: row.payment_reference
+      }
+    });
   } catch (err) {
     console.error("[billing/pay]", err);
     res.status(500).json({ ok: false, error: err.message });
@@ -162,7 +173,8 @@ router.get("/status/:id", authenticate, async (req, res) => {
         WHERE id=$1 AND tenant_id=$2`,
       [invoiceId, req.tenant_id]
     );
-    if (result.rowCount === 0) return res.status(404).json({ ok: false, error: "Invoice not found or access denied" });
+    if (result.rowCount === 0)
+      return res.status(404).json({ ok: false, error: "Invoice not found or access denied" });
     res.json({ ok: true, invoice: result.rows[0] });
   } catch (err) {
     console.error("[billing/status]", err);
@@ -254,8 +266,8 @@ router.post("/email/:id", authenticate, async (req, res) => {
       `SELECT id, invoice_path, amount_usd FROM billing_invoices
         WHERE id=$1 AND tenant_id=$2`, [id, req.tenant_id]
     );
-    if (q.rowCount === 0) return res.status(404).json({ ok:false, error:"Invoice not found" });
-    // Mock only: in future, integrate SES/SendGrid
+    if (q.rowCount === 0)
+      return res.status(404).json({ ok:false, error:"Invoice not found" });
     console.log(`[billing/email] mock sent invoice=${id} path=${q.rows[0].invoice_path}`);
     res.json({ ok:true, email_sent:true, invoice_id:id });
   } catch (err) {
@@ -267,20 +279,26 @@ router.post("/email/:id", authenticate, async (req, res) => {
 // ---------------------------------------------------------------------
 // GET /api/billing/download-all  –  returns ZIP of all invoices for tenant
 // ---------------------------------------------------------------------
-const archiver = require("archiver");   // add at top of file if missing
-
 router.get("/download-all", authenticate, async (req, res) => {
   try {
     const invoiceDir = path.join(__dirname, "../../public/invoices", String(req.tenant_id));
-    if (!fs.existsSync(invoiceDir))
+    if (!fs.existsSync(invoiceDir)) {
+      fs.mkdirSync(invoiceDir, { recursive: true });
       return res.status(404).json({ ok:false, error:"No invoices found for this tenant" });
+    }
 
     const zipName = `invoices_tenant_${req.tenant_id}_${Date.now()}.zip`;
+    console.log("[billing/download-all] Streaming ZIP for tenant", req.tenant_id);
+
     res.setHeader("Content-Type", "application/zip");
-    res.setHeader("Content-Disposition", `attachment; filename="${zipName}"`);
+    res.setHeader("Content-Disposition", `attachment; filename=\"${zipName}\"`);
 
     const archive = archiver("zip", { zlib: { level: 9 } });
-    archive.on("error", err => { throw err; });
+    archive.on("error", (err) => {
+      console.error("[billing/download-all] archive error:", err.message);
+      res.status(500).end();
+    });
+
     archive.pipe(res);
     archive.directory(invoiceDir, false);
     await archive.finalize();
