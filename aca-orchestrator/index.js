@@ -291,6 +291,9 @@ try {
 
 app.use("/api/billing", require("./src/routes/billing"));
 
+app.use("/api/test", require("./src/routes/envTest"));
+
+
 
 // ============================================================
 // === Server Start ===
