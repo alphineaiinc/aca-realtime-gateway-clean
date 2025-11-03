@@ -4,7 +4,11 @@ const jwt = require("jsonwebtoken");
 const pool = require("../db/pool");
 const { generateInvoice } = require("../brain/billingEngine");
 const { logPayment } = require("../brain/utils/paymentLogger");
+const fs = require("fs");
+const path = require("path");
+
 const router = express.Router();
+
 
 // ---------------------------------------------------------------------
 // Simple in-memory rate limiter per partner for /pay (3 reqs / 10s)
