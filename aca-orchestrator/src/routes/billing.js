@@ -260,4 +260,31 @@ router.post("/email/:id", authenticate, async (req, res) => {
   }
 });
 
+// ---------------------------------------------------------------------
+// GET /api/billing/download-all  –  returns ZIP of all invoices for tenant
+// ---------------------------------------------------------------------
+const archiver = require("archiver");   // add at top of file if missing
+
+router.get("/download-all", authenticate, async (req, res) => {
+  try {
+    const invoiceDir = path.join(__dirname, "../../public/invoices", String(req.tenant_id));
+    if (!fs.existsSync(invoiceDir))
+      return res.status(404).json({ ok:false, error:"No invoices found for this tenant" });
+
+    const zipName = `invoices_tenant_${req.tenant_id}_${Date.now()}.zip`;
+    res.setHeader("Content-Type", "application/zip");
+    res.setHeader("Content-Disposition", `attachment; filename="${zipName}"`);
+
+    const archive = archiver("zip", { zlib: { level: 9 } });
+    archive.on("error", err => { throw err; });
+    archive.pipe(res);
+    archive.directory(invoiceDir, false);
+    await archive.finalize();
+  } catch (err) {
+    console.error("[billing/download-all]", err);
+    res.status(500).json({ ok:false, error:err.message });
+  }
+});
+
+
 module.exports = router;
