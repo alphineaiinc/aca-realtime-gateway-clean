@@ -296,10 +296,10 @@ app.use("/api/test", require("./src/routes/envTest"));
 
 
 // ============================================================
-// === Server Start ===
+// === Server Start === 
 const PORT = process.env.PORT || 8080;
 app.listen(PORT, () => {
-  console.log(`🚀 ACA Orchestrator running on port ${PORT}`);
+  console.log(`🧠 Orchestrator live on port ${PORT}`);
 });
 
 global.__EXPRESS_APP__ = app; // keep for any module reuse
