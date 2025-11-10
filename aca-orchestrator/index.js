@@ -312,6 +312,22 @@ app.use(cors());
 app.use(express.json({ limit: "10mb" }));
 app.use(bodyParser.urlencoded({ extended: true }));
 
+// --- Diagnostic: list all mounted routes ---
+function listRoutes(app) {
+  const routes = [];
+  app._router.stack.forEach(mw => {
+    if (mw.route) {
+      routes.push(mw.route.path);
+    } else if (mw.name === 'router' && mw.handle.stack) {
+      mw.handle.stack.forEach(handler => {
+        const route = handler.route && handler.route.path;
+        if (route) routes.push(route);
+      });
+    }
+  });
+  console.log("📋 Mounted routes:", routes);
+}
+listRoutes(app);
 
 
 // ============================================================
