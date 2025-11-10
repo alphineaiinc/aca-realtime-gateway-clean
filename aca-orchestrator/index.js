@@ -299,6 +299,18 @@ app.use("/api/billing", require("./src/routes/billing"));
 
 app.use("/api/test", require("./src/routes/envTest"));
 
+// ============================================================
+// 🧾 Story 11.6 — Stripe Webhook Integration
+// ============================================================
+try {
+  const stripeWebhook = require("./src/routes/stripeWebhook");
+  app.use("/api/stripe", stripeWebhook);
+  console.log("✅ Mounted /api/stripe/webhook route (Story 11.6)");
+} catch (err) {
+  console.warn("⚠️ stripeWebhook route not loaded:", err.message);
+}
+
+
 
 
 // ============================================================
