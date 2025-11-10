@@ -117,6 +117,9 @@ app.get(/^\/\.well-known\/(.+)$/i, (req, res) => {
 
 console.log("✅ .well-known bound to:", wellKnownAbsolute);
 
+// Stripe Webhook Route (Story 11.6)
+app.use("/api/stripe", require("./src/routes/stripeWebhook"));
+
 // also expose everything under /public normally
 const staticDir = path.resolve(__dirname, "public");
 app.use(express.static(staticDir));
@@ -134,6 +137,9 @@ const { loadLanguages } = require("./src/brain/utils/langLoader");
 app.use(cors());
 app.use(express.json({ limit: "10mb" }));
 app.use(bodyParser.urlencoded({ extended: true }));
+
+
+
 
 // ============================================================
 // === Static File Hosting for Dashboards (Story 10.3) ===
