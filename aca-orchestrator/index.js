@@ -312,22 +312,26 @@ app.use(cors());
 app.use(express.json({ limit: "10mb" }));
 app.use(bodyParser.urlencoded({ extended: true }));
 
-// --- Diagnostic: list all mounted routes ---
+// --- Safe Diagnostic: list all mounted routes (Express 4/5 compatible) ---
 function listRoutes(app) {
-  const routes = [];
-  app._router.stack.forEach(mw => {
-    if (mw.route) {
-      routes.push(mw.route.path);
-    } else if (mw.name === 'router' && mw.handle.stack) {
-      mw.handle.stack.forEach(handler => {
-        const route = handler.route && handler.route.path;
-        if (route) routes.push(route);
-      });
-    }
-  });
-  console.log("📋 Mounted routes:", routes);
+  try {
+    const paths = [];
+    app._router.stack.forEach(layer => {
+      if (layer.route && layer.route.path) {
+        paths.push(layer.route.path);
+      } else if (layer.name === 'router' && Array.isArray(layer.handle?.stack)) {
+        layer.handle.stack.forEach(inner => {
+          if (inner.route && inner.route.path) paths.push(inner.route.path);
+        });
+      }
+    });
+    console.log("📋 Mounted routes:", JSON.stringify(paths, null, 2));
+  } catch (e) {
+    console.error("🟥 Route-list diagnostic failed:", e);
+  }
 }
 listRoutes(app);
+
 
 
 // ============================================================
