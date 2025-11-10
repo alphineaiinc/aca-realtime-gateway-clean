@@ -16,6 +16,7 @@ router.post(
   "/webhook",
   bodyParser.raw({ type: "application/json" }),
   async (req, res) => {
+    console.log("🧾 Stripe webhook called at", new Date().toISOString());
     const sig = req.headers["stripe-signature"];
     let event;
 

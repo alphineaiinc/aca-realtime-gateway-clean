@@ -133,10 +133,7 @@ const { loadLanguages } = require("./src/brain/utils/langLoader");
   console.log("🌐 Loaded", Object.keys(global.__LANG_REGISTRY__).length, "languages globally");
 })();
 
-// Enable middleware globally
-app.use(cors());
-app.use(express.json({ limit: "10mb" }));
-app.use(bodyParser.urlencoded({ extended: true }));
+
 
 
 
@@ -310,6 +307,10 @@ try {
   console.warn("⚠️ stripeWebhook route not loaded:", err.message);
 }
 
+// Enable middleware globally
+app.use(cors());
+app.use(express.json({ limit: "10mb" }));
+app.use(bodyParser.urlencoded({ extended: true }));
 
 
 
