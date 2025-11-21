@@ -225,6 +225,48 @@ router.get("/stats", authenticate, async (req, res) => {
 });
 
 // ---------------------------------------------------------------------
+// GET /api/billing/summary – alias for /stats (Story 11.7)
+// ---------------------------------------------------------------------
+router.get("/summary", authenticate, async (req, res) => {
+  try {
+    const totals = await pool.query(
+      `SELECT
+         COALESCE(SUM(amount_usd) FILTER (WHERE status='paid'),0)   AS total_paid,
+         COALESCE(SUM(amount_usd) FILTER (WHERE status='unpaid'),0) AS total_unpaid,
+         COALESCE(SUM(amount_usd),0)                                 AS total_all,
+         COALESCE(COUNT(*) FILTER (WHERE status='paid'),0)           AS paid_count,
+         COALESCE(COUNT(*) FILTER (WHERE status='unpaid'),0)         AS unpaid_count
+       FROM billing_invoices
+       WHERE tenant_id = $1`, [req.tenant_id]
+    );
+
+    const monthly = await pool.query(
+      `SELECT month, revenue_paid_usd, revenue_unpaid_usd, paid_count, unpaid_count, invoice_count
+         FROM billing_monthly_summary
+        WHERE tenant_id = $1
+        ORDER BY month ASC`,
+      [req.tenant_id]
+    );
+
+    res.json({
+      ok: true,
+      totals: totals.rows[0],
+      monthly: monthly.rows.map(r => ({
+        month: r.month,
+        revenue: Number(r.revenue_paid_usd || 0),
+        unpaid: Number(r.revenue_unpaid_usd || 0),
+        paid_count: Number(r.paid_count || 0),
+        unpaid_count: Number(r.unpaid_count || 0),
+        invoice_count: Number(r.invoice_count || 0)
+      }))
+    });
+  } catch (err) {
+    console.error("[billing/summary]", err);
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+// ---------------------------------------------------------------------
 // GET /api/billing/export – CSV export of invoices for tenant
 // ---------------------------------------------------------------------
 router.get("/export", authenticate, async (req, res) => {
