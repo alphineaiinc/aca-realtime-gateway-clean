@@ -307,6 +307,18 @@ try {
   console.warn("⚠️ stripeWebhook route not loaded:", err.message);
 }
 
+// ============================================================
+// 🧾 Story 11.9 — Stripe Billing Notification Webhook  (ADDED)
+// ============================================================
+try {
+  const stripeBillingWebhook = require("./src/routes/stripeWebhook");
+  app.use("/api/stripe", stripeBillingWebhook);
+  console.log("✅ Mounted /api/stripe webhook routes (Story 11.9)");
+} catch (err) {
+  console.warn("⚠️ stripeBillingWebhook not loaded:", err.message);
+}
+
+
 // Enable middleware globally
 app.use(cors());
 app.use(express.json({ limit: "10mb" }));
