@@ -51,14 +51,15 @@ router.post(
         logPath,
         `[${new Date().toISOString()}] Signature verification failed: ${err.message}\n`
       );
+      console.error("❌ Stripe signature verification failed:", err.message);
       return res.status(400).send(`Webhook Error: ${err.message}`);
     }
 
     const type = event.type;
     const data = event.data.object;
 
+    // 🔔 This is what we want to see in Render logs
     console.log("🔔 Stripe webhook received:", type);
-
 
     fs.appendFileSync(
       logPath,
@@ -126,7 +127,7 @@ router.post(
       }
 
       // =============================
-      // subscription.updated
+      // customer.subscription.updated
       // =============================
       if (type === "customer.subscription.updated") {
         const email = event.data.object?.metadata?.customer_email;
@@ -166,7 +167,7 @@ router.post(
       }
 
       // =============================
-      // custom mock partner payout
+      // custom mock partner payout (payout.paid)
       // =============================
       if (type === "payout.paid") {
         const email = data.metadata?.partner_email;
@@ -190,6 +191,7 @@ router.post(
         logPath,
         `[${new Date().toISOString()}] ERROR processing webhook: ${err.message}\n`
       );
+      console.error("❌ Error processing Stripe webhook:", err);
     }
 
     res.json({ received: true });
