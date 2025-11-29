@@ -3,6 +3,7 @@
 // Story 2.9 — Adaptive Response Tuning for ACA
 // + Story 9.6 — Multilingual / Tenant-Aware Query Layer
 // + Story 9.5 / 10.3 — Voice Studio Audio Integration
+// + Story 9.X — Tenant-Aware Conversational TTS
 // ===============================================
 const express = require("express");
 const router = express.Router();
@@ -10,7 +11,8 @@ const OpenAI = require("openai");
 const fs = require("fs");
 const path = require("path");
 const pool = require("../db/pool");
-const { synthesizeSpeech } = require("../../tts"); // ✅ Added for Voice Studio
+const { synthesizeSpeech } = require("../../tts"); // ✅ TTS handler
+const { getTenantRegion } = require("../brain/utils/tenantContext"); // ✅ Tenant region helper
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
@@ -30,7 +32,9 @@ router.post("/query", async (req, res) => {
   const { tenant_id, business_id, query, language = "en-US", top_k = 3 } = req.body;
   const resolvedId = tenant_id || business_id;
   if (!resolvedId || !query)
-    return res.status(400).json({ ok: false, error: "tenant_id (or business_id) and query required" });
+    return res
+      .status(400)
+      .json({ ok: false, error: "tenant_id (or business_id) and query required" });
 
   try {
     // 1️⃣ Create embedding for the incoming query
@@ -78,27 +82,49 @@ Be friendly and concise. If unsure, add something like
           const completion = await openai.chat.completions.create({
             model: "gpt-4o-mini",
             messages: [
-              { role: "system", content: "You are a polite multilingual voice AI assistant for a business call center." },
+              {
+                role: "system",
+                content:
+                  "You are a polite multilingual voice AI assistant for a business call center.",
+              },
               { role: "user", content: adaptivePrompt },
             ],
             max_tokens: 120,
             temperature: 0.8,
           });
-          tunedResponse = completion.choices?.[0]?.message?.content?.trim() || top.answer;
+          tunedResponse =
+            completion.choices?.[0]?.message?.content?.trim() || top.answer;
         } catch (gptErr) {
           console.error("⚠️ Adaptive GPT error:", gptErr.message);
         }
       }
     } else {
-      tunedResponse = "I’m not sure about that. Would you like me to connect you with someone from our team?";
+      tunedResponse =
+        "I’m not sure about that. Would you like me to connect you with someone from our team?";
     }
 
     await logAdaptiveResponse(query, tunedResponse, confidence, resolvedId, language);
 
-    // ✅ 3️⃣ Voice Studio / TTS integration block
+    // ✅ 3️⃣ Voice Studio / TTS integration block (tenant + region aware)
     let audioBase64 = null;
     try {
-      const audioBuffer = await synthesizeSpeech(tunedResponse, language);
+      let regionCode = null;
+      try {
+        regionCode = await getTenantRegion(resolvedId);
+      } catch (regionErr) {
+        console.warn(
+          `⚠️ [brain] Failed to resolve tenant region for tenant=${resolvedId}:`,
+          regionErr.message
+        );
+      }
+
+      const audioBuffer = await synthesizeSpeech(tunedResponse, language, {
+        tenantId: resolvedId,
+        regionCode,
+        tonePreset: "friendly", // can later be driven from business profile
+        useFillers: true,
+      });
+
       if (audioBuffer) {
         audioBase64 = audioBuffer.toString("base64");
       }
@@ -116,7 +142,6 @@ Be friendly and concise. If unsure, add something like
       audio: audioBase64, // 👈 Voice Studio now receives this
       matches: rows,
     });
-
   } catch (err) {
     console.error("❌ /brain/query failed:", err.message);
     res.status(500).json({ ok: false, error: err.message });

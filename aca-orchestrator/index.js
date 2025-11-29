@@ -215,6 +215,10 @@ try {
   console.warn("⚠️ uploadKnowledge route not loaded:", err.message);
 }
 
+const voiceRouter = require("./src/routes/voice");
+app.use("/api/voice", voiceRouter);
+
+
 // ============================================================
 // 🪙 Story 10.2 — Partner Onboarding & Reward Referral Engine
 // ============================================================

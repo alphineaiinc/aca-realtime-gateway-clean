@@ -11,6 +11,7 @@ const path = require("path");
 const WebSocket = require("ws");
 const { retrieveAnswer } = require("../../retriever");
 const { synthesizeSpeech } = require("../../tts");
+const { getTenantRegion } = require("../brain/utils/tenantContext"); // ✅ tenant region helper
 require("dotenv").config({ path: path.resolve(__dirname, "../../.env") });
 
 /**
@@ -82,9 +83,7 @@ router.ws("/stream", async (ws, req) => {
       if (data.event === "start") {
         activeCallSid = data.start.callSid;
         console.log("🎬  Stream started for Call SID:", activeCallSid);
-      }
-
-      else if (data.event === "media" && data.media.payload) {
+      } else if (data.event === "media" && data.media.payload) {
         // Twilio sends base64 PCM16 audio in data.media.payload
         const audioBuffer = Buffer.from(data.media.payload, "base64");
 
@@ -95,22 +94,50 @@ router.ws("/stream", async (ws, req) => {
         if (simulatedText) {
           console.log(`👂  Heard (Call ${activeCallSid}):`, simulatedText);
 
+          // For now we assume tenant 1; later this should come from call context / webhook
+          const tenantId = 1;
+
           // Retrieve GPT-generated response
-          const reply = await retrieveAnswer(1, simulatedText);
+          const reply = await retrieveAnswer(tenantId, simulatedText);
           console.log("💬  GPT reply:", reply);
 
-          // Convert GPT reply to speech
-          const ttsBuffer = await synthesizeSpeech(reply);
+          // Resolve tenant region (for accent shaping, etc.)
+          let regionCode = null;
+          try {
+            regionCode = await getTenantRegion(tenantId);
+          } catch (e) {
+            console.warn(
+              `⚠️  Failed to get tenant region for tenant=${tenantId}:`,
+              e.message
+            );
+          }
 
-          // Send synthesized speech audio back to Twilio (base64)
-          ws.send(JSON.stringify({
-            event: "speech",
-            audio: ttsBuffer.toString("base64")
-          }));
+          // Convert GPT reply to speech using conversational TTS
+          let ttsBuffer = null;
+          try {
+            // For now we assume English; later this can be detected dynamically
+            const langCode = "en-US";
+            ttsBuffer = await synthesizeSpeech(reply, langCode, {
+              tenantId,
+              regionCode,
+              tonePreset: "friendly",
+              useFillers: true,
+            });
+          } catch (ttsErr) {
+            console.error("❌  TTS synthesis failed:", ttsErr.message);
+          }
+
+          if (ttsBuffer) {
+            // Send synthesized speech audio back to Twilio (base64)
+            ws.send(
+              JSON.stringify({
+                event: "speech",
+                audio: ttsBuffer.toString("base64"),
+              })
+            );
+          }
         }
-      }
-
-      else if (data.event === "stop") {
+      } else if (data.event === "stop") {
         console.log("🛑  Stream stopped for Call SID:", data.stop.callSid);
       }
     } catch (err) {

@@ -1,60 +1,180 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Voice Studio – Alphine AI</title>
-<style>
-body{background:#0d1117;color:#fff;font-family:Inter,sans-serif;margin:0;padding:2rem}
-h1{color:#ffd700}
-.card{background:rgba(255,255,255,0.05);border-radius:1rem;padding:1rem;margin-bottom:1rem;box-shadow:0 0 10px rgba(0,0,0,0.4)}
-label,input,select,button{font-size:1rem;margin:.25rem 0}
-button{background:#ffd700;border:none;border-radius:.5rem;padding:.5rem 1rem;cursor:pointer}
-button:hover{background:#ffea5c}
-audio{margin-top:1rem;width:100%}
-</style>
+  <meta charset="UTF-8" />
+  <title>Voice Studio – Alphine AI</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+  <style>
+    body {
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: #0d1117;
+      color: #e6edf3;
+      margin: 0;
+      padding: 0;
+    }
+
+    .container {
+      max-width: 900px;
+      margin: 40px auto;
+      padding: 24px;
+      background: #161b22;
+      border-radius: 16px;
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4);
+    }
+
+    h1 {
+      margin-top: 0;
+      font-size: 24px;
+    }
+
+    .field-group {
+      margin-bottom: 16px;
+    }
+
+    label {
+      display: block;
+      margin-bottom: 6px;
+      font-size: 14px;
+      color: #9aa4ad;
+    }
+
+    input[type="text"],
+    select {
+      width: 100%;
+      padding: 8px 10px;
+      border-radius: 8px;
+      border: 1px solid #30363d;
+      background: #0d1117;
+      color: #e6edf3;
+    }
+
+    input[type="range"] {
+      width: 100%;
+    }
+
+    .hint {
+      font-size: 12px;
+      color: #8b949e;
+    }
+
+    .actions {
+      display: flex;
+      gap: 12px;
+      margin-top: 16px;
+    }
+
+    button {
+      padding: 8px 14px;
+      border-radius: 999px;
+      border: none;
+      cursor: pointer;
+      font-size: 14px;
+    }
+
+    .btn-primary {
+      background: #238636;
+      color: #ffffff;
+    }
+
+    .btn-secondary {
+      background: #30363d;
+      color: #e6edf3;
+    }
+
+    .status {
+      margin-top: 12px;
+      font-size: 13px;
+      color: #9aa4ad;
+    }
+
+    audio {
+      margin-top: 16px;
+      width: 100%;
+    }
+  </style>
 </head>
 <body>
-<h1>Voice Studio</h1>
-<div class="card">
-  <label for="voiceText">Enter sample text:</label><br>
-  <textarea id="voiceText" rows="4" cols="60">Welcome to Alphine AI Voice Studio.</textarea><br>
-  <label for="language">Language:</label>
-  <select id="language">
-    <option value="en-US">English (US)</option>
-    <option value="ta-IN">Tamil (India)</option>
-    <option value="fr-FR">French (France)</option>
-  </select><br>
-  <button id="previewBtn">🔈 Preview Voice</button>
-  <audio id="previewAudio" controls></audio>
-</div>
+  <div class="container">
+    <h1>Voice Studio</h1>
+    <p class="hint">
+      Tune how your AI receptionist sounds to your callers. Changes are saved per tenant and language.
+    </p>
 
-<script>
-document.getElementById("previewBtn").addEventListener("click", async ()=>{
-  const text=document.getElementById("voiceText").value;
-  const lang=document.getElementById("language").value;
-  const btn=document.getElementById("previewBtn");
-  btn.disabled=true;btn.textContent="Generating...";
-  try{
-    const res=await fetch("/brain/query",{
-      method:"POST",
-      headers:{"Content-Type":"application/json"},
-      body:JSON.stringify({business_id:1,query:text,lang})
-    });
-    const data=await res.json();
-    if(data.audio){
-      const audio=document.getElementById("previewAudio");
-      audio.src="data:audio/mp3;base64,"+data.audio;
-      audio.play();
-    }else alert("No audio returned.");
-  }catch(e){
-    console.error(e);alert("Error generating voice preview.");
-  }finally{
-    btn.disabled=false;btn.textContent="🔈 Preview Voice";
-  }
-});
-</script>
-<script src="/dashboard/brand.js"></script>
+    <div class="field-group">
+      <label for="langCode">Language</label>
+      <select id="langCode">
+        <option value="en-US">English (US)</option>
+        <option value="ta-IN">Tamil (India)</option>
+        <option value="hi-IN">Hindi (India)</option>
+        <option value="fr-FR">French (France)</option>
+        <option value="es-ES">Spanish (Spain)</option>
+      </select>
+      <div class="hint">Mapped to ElevenLabs multilingual voices.</div>
+    </div>
 
+    <div class="field-group">
+      <label for="voiceId">ElevenLabs Voice ID (optional)</label>
+      <input
+        type="text"
+        id="voiceId"
+        placeholder="Leave empty to use default voice for this language"
+      />
+    </div>
+
+    <div class="field-group">
+      <label for="tonePreset">Tone</label>
+      <select id="tonePreset">
+        <option value="friendly">Friendly</option>
+        <option value="formal">Formal</option>
+        <option value="supportive">Supportive</option>
+      </select>
+    </div>
+
+    <div class="field-group">
+      <label for="regionCode">Region (optional)</label>
+      <input
+        type="text"
+        id="regionCode"
+        placeholder="Example: IN, FR, CA"
+      />
+    </div>
+
+    <div class="field-group">
+      <label for="stability">Stability</label>
+      <input type="range" id="stability" min="0" max="1" step="0.05" value="0.4" />
+      <div class="hint">Lower = more variation, Higher = more stable</div>
+    </div>
+
+    <div class="field-group">
+      <label for="similarity">Similarity Boost</label>
+      <input type="range" id="similarity" min="0" max="1" step="0.05" value="0.8" />
+    </div>
+
+    <div class="field-group">
+      <label for="speakingRate">Speaking Speed</label>
+      <input type="range" id="speakingRate" min="0.6" max="1.4" step="0.05" value="1.0" />
+    </div>
+
+    <div class="field-group">
+      <label for="sampleText">Sample Text (optional)</label>
+      <input
+        type="text"
+        id="sampleText"
+        placeholder="Type a sentence to preview this voice..."
+      />
+    </div>
+
+    <div class="actions">
+      <button class="btn-primary" id="btnSave">Save Settings</button>
+      <button class="btn-secondary" id="btnPreview">Preview Voice</button>
+    </div>
+
+    <div class="status" id="status"></div>
+
+    <audio id="previewAudio" controls style="display:none;"></audio>
+  </div>
+
+  <script src="voice.js"></script>
 </body>
 </html>
