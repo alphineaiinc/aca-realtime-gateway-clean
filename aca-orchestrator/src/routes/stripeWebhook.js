@@ -57,6 +57,9 @@ router.post(
     const type = event.type;
     const data = event.data.object;
 
+    console.log("🔔 Stripe webhook received:", type);
+
+
     fs.appendFileSync(
       logPath,
       `[${new Date().toISOString()}] Webhook received: ${type}\n`
