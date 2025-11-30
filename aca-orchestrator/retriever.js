@@ -3,7 +3,11 @@
 // (adds safeAxios wrapper + retry/backoff + resilience metrics)
 
 const path = require("path");
-require("dotenv").config({ path: path.resolve(__dirname, "../.env") });
+
+// ✅ Load orchestrator-level .env (same style as index.js)
+const dotenvPath = path.resolve(__dirname, "./.env");
+console.log("🧩 retriever.js loading .env from:", dotenvPath);
+require("dotenv").config({ path: dotenvPath, override: true });
 
 const { Pool } = require("pg");
 const OpenAI = require("openai");
@@ -18,20 +22,39 @@ const { observeHttpRetry } = require("./src/monitor/resilienceMetrics");
 // 🔐 Environment Validation
 // ------------------------------------------------------------------
 if (!process.env.OPENAI_API_KEY) {
-  console.error("❌ OPENAI_API_KEY not loaded. Check .env in project root.");
+  console.error("❌ OPENAI_API_KEY not loaded. Check .env in orchestrator root.");
+  process.exit(1);
+}
+
+// Prefer dedicated KB_DB_URL, but fall back to DATABASE_URL for safety
+const KB_CONN_STRING = process.env.KB_DB_URL || process.env.DATABASE_URL;
+if (!KB_CONN_STRING) {
+  console.error("❌ No KB_DB_URL or DATABASE_URL set for retriever.js database connection.");
   process.exit(1);
 }
 
 // ------------------------------------------------------------------
 // 🗄️ Database + OpenAI Clients
 // ------------------------------------------------------------------
-const pool = new Pool({ connectionString: process.env.KB_DB_URL });
+const pool = new Pool({ connectionString: KB_CONN_STRING });
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
 // ------------------------------------------------------------------
 // 🔍 Search KB by vector similarity
 // ------------------------------------------------------------------
 async function searchKB(query, businessId, topK = 1) {
+  // ✅ Always coerce query to string to avoid sending raw numbers to embeddings
+  const safeQuery = String(query ?? "");
+  if (typeof query !== "string") {
+    console.warn(
+      "⚠️ searchKB received non-string query:",
+      typeof query,
+      "value=",
+      query
+    );
+  }
+  console.log("🔎 searchKB embedding preview:", safeQuery.slice(0, 80));
+
   // --- Resilient embedding call ---
   const embeddingResponse = await requestWithRetry(
     {
@@ -41,7 +64,7 @@ async function searchKB(query, businessId, topK = 1) {
         Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
         "Content-Type": "application/json",
       },
-      data: { model: "text-embedding-3-small", input: query },
+      data: { model: "text-embedding-3-small", input: safeQuery },
     },
     { retries: 4, baseDelayMs: 300, maxDelayMs: 4000 }
   ).catch((err) => {
