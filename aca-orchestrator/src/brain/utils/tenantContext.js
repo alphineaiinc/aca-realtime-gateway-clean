@@ -14,23 +14,32 @@ const pool = require("../../db/pool");
 async function getTenantRegion(tenantId) {
   if (!tenantId) return null;
 
-  // Adjust table/columns if your schema differs.
-  // Assumes businesses table has tenant_id + country_code ISO-2.
-  const result = await pool.query(
-    `
+  try {
+    // NOTE:
+    // This assumes a "businesses" table with (tenant_id, country_code).
+    // If not present in this environment, we just return null and log once.
+    const result = await pool.query(
+      `
       SELECT country_code
       FROM businesses
       WHERE tenant_id = $1
       ORDER BY id ASC
       LIMIT 1
-    `,
-    [tenantId]
-  );
+      `,
+      [tenantId]
+    );
 
-  if (result.rowCount === 0) return null;
+    if (result.rowCount === 0) return null;
 
-  const row = result.rows[0];
-  return row.country_code || null;
+    const row = result.rows[0];
+    return row.country_code || null;
+  } catch (err) {
+    // Soft-fail: region lookup is optional, do not break the call.
+    console.warn(
+      `[tenantContext] Region lookup disabled for tenant=${tenantId}: ${err.message}`
+    );
+    return null;
+  }
 }
 
 module.exports = {
