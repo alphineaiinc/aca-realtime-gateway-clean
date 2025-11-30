@@ -7,6 +7,8 @@
 // ===============================================
 const express = require("express");
 const router = express.Router();
+router.use(express.json()); // ✅ Ensure JSON body parsing for /brain routes
+
 const OpenAI = require("openai");
 const fs = require("fs");
 const path = require("path");
