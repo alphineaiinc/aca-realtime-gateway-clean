@@ -15,10 +15,9 @@ const { getTenantRegion } = require("../brain/utils/tenantContext"); // ✅ tena
 require("dotenv").config({ path: path.resolve(__dirname, "../../.env") });
 
 /**
- * Voice webhook handler — called when a call starts.
- * Establishes live Twilio <Connect><Stream> to ACA orchestrator.
+ * Shared handler for Twilio voice webhook
  */
-router.post("/voice", (req, res) => {
+async function handleVoiceWebhook(req, res) {
   console.log("🛰️  Incoming Twilio Voice webhook:", req.body);
 
   const VoiceResponse = twilio.twiml.VoiceResponse;
@@ -48,12 +47,12 @@ router.post("/voice", (req, res) => {
   res.status(200);
   res.set("Content-Type", "text/xml");
   res.send(xmlResponse);
-});
+}
 
 /**
- * Status callback handler — called when Twilio reports call progress.
+ * Shared handler for Twilio status callback
  */
-router.post("/status", (req, res) => {
+function handleStatusWebhook(req, res) {
   const status = req.body?.CallStatus || "unknown";
   console.log("📡  Twilio Status update:", status);
 
@@ -65,7 +64,20 @@ router.post("/status", (req, res) => {
   }
 
   res.sendStatus(200);
-});
+}
+
+/**
+ * Voice webhook handler — Twilio may hit via GET (test) or POST (normal).
+ * Support both to avoid 404s.
+ */
+router.post("/voice", handleVoiceWebhook);
+router.get("/voice", handleVoiceWebhook);
+
+/**
+ * Status callback handler — same: support both GET and POST.
+ */
+router.post("/status", handleStatusWebhook);
+router.get("/status", handleStatusWebhook);
 
 /**
  * WebSocket route — Twilio will stream live audio here.
