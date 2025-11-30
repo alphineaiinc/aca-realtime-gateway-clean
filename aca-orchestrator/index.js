@@ -39,6 +39,7 @@ global.__ACA_STATE__ = { activeSessions: [], version: "5.3.A" };
 // Restore on boot
 const prior = loadSession();
 if (prior && prior.activeSessions) {
+  global.__ACA_STATE__.__proto__ = global.__ACA_STATE__.__proto__;
   global.__ACA_STATE__.activeSessions = prior.activeSessions;
   markRecovery();
   console.log("♻️  Restored session state:", prior.activeSessions.length, "items");
@@ -55,6 +56,14 @@ const express = require("express");
 const cors = require("cors");
 const bodyParser = require("body-parser");
 const app = express();
+
+// ✅ Initialize express-ws so WebSocket routes actually work
+try {
+  require("express-ws")(app);
+  console.log("✅ express-ws WebSocket support initialized");
+} catch (err) {
+  console.warn("⚠️ express-ws init failed:", err.message);
+}
 
 // Trust Render proxy and log runtime roots once
 app.set("trust proxy", 1);
@@ -140,11 +149,6 @@ const { loadLanguages } = require("./src/brain/utils/langLoader");
   console.log("🌐 Loaded", Object.keys(global.__LANG_REGISTRY__).length, "languages globally");
 })();
 
-
-
-
-
-
 // ============================================================
 // === Static File Hosting for Dashboards (Story 10.3) ===
 const publicPath = path.join(__dirname, "public");
@@ -181,7 +185,6 @@ try {
   console.warn("⚠️ partnerPayout routes not loaded (stack trace below):");
   console.error(err);
 }
-
 
 // ============================================================
 // === System & Health Routes ===
@@ -224,7 +227,6 @@ try {
 
 const voiceRouter = require("./src/routes/voice");
 app.use("/api/voice", voiceRouter);
-
 
 // ============================================================
 // 🪙 Story 10.2 — Partner Onboarding & Reward Referral Engine
@@ -294,17 +296,15 @@ try {
   console.warn("⚠️ brainRoutes not loaded:", err.message);
 }
 
-
 try {
-  const partnerPayout = require("./src/routes/partnerPayout");   // capital P here ⬅️
-  app.use("/api", partnerPayout);
-  console.log("✅ Mounted /api/partner/payout routes (Story 10.10)");
+  const partnerPayoutAgain = require("./src/routes/partnerPayout");   // capital P here ⬅️
+  app.use("/api", partnerPayoutAgain);
+  console.log("✅ Mounted /api/partner/payout routes (Story 10.10) - second mount");
 } catch (err) {
-  console.warn("⚠️ partnerPayout routes not loaded:", err.message);
+  console.warn("⚠️ partnerPayout routes not loaded (second mount):", err.message);
 }
 
 app.use("/api/billing", require("./src/routes/billing"));
-
 app.use("/api/test", require("./src/routes/envTest"));
 
 // ============================================================
@@ -329,7 +329,6 @@ try {
   console.warn("⚠️ stripeBillingWebhook not loaded:", err.message);
 }
 
-
 // Enable middleware globally
 app.use(cors());
 app.use(express.json({ limit: "10mb" }));
@@ -342,7 +341,7 @@ function listRoutes(app) {
     app._router.stack.forEach(layer => {
       if (layer.route && layer.route.path) {
         paths.push(layer.route.path);
-      } else if (layer.name === 'router' && Array.isArray(layer.handle?.stack)) {
+      } else if (layer.name === "router" && Array.isArray(layer.handle?.stack)) {
         layer.handle.stack.forEach(inner => {
           if (inner.route && inner.route.path) paths.push(inner.route.path);
         });
@@ -354,8 +353,6 @@ function listRoutes(app) {
   }
 }
 listRoutes(app);
-
-
 
 // ============================================================
 // === Server Start === 
