@@ -61,6 +61,13 @@ app.set("trust proxy", 1);
 console.log("🧭 process.cwd():", process.cwd());
 console.log("🧭 __dirname:", __dirname);
 
+
+const twilioRouter = require("./src/routes/twilio");
+app.use("/twilio", twilioRouter);
+console.log("✅ Mounted /twilio routes");
+
+
+
 // ---------------------------------------------------------------------------
 // ✅ Guaranteed serving of Marketplace manifest files (Render-safe absolute paths)
 //    We keep your explicit routes AND add a regex catch-all to cover all proxies.
