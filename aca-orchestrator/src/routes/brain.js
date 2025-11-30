@@ -29,12 +29,27 @@ try {
 router.post("/query", async (req, res) => {
   console.log("🟡 Story 2.9 adaptive tuning layer active");
 
-  const { tenant_id, business_id, query, language = "en-US", top_k = 3 } = req.body;
+  // ✅ Defensive: handle missing req.body safely
+  const body = req.body || {};
+  const {
+    tenant_id,
+    business_id,
+    query,
+    language = "en-US",
+    top_k = 3,
+  } = body;
+
   const resolvedId = tenant_id || business_id;
-  if (!resolvedId || !query)
-    return res
-      .status(400)
-      .json({ ok: false, error: "tenant_id (or business_id) and query required" });
+  if (!resolvedId || !query) {
+    console.warn(
+      "⚠️ /brain/query missing required fields. body=",
+      JSON.stringify(body)
+    );
+    return res.status(400).json({
+      ok: false,
+      error: "tenant_id (or business_id) and query required",
+    });
+  }
 
   try {
     // 1️⃣ Create embedding for the incoming query
