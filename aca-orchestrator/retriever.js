@@ -3,11 +3,7 @@
 // (adds safeAxios wrapper + retry/backoff + resilience metrics)
 
 const path = require("path");
-
-// ✅ Load orchestrator-level .env (same style as index.js)
-const dotenvPath = path.resolve(__dirname, "./.env");
-console.log("🧩 retriever.js loading .env from:", dotenvPath);
-require("dotenv").config({ path: dotenvPath, override: true });
+require("dotenv").config({ path: path.resolve(__dirname, "./.env") });
 
 const { Pool } = require("pg");
 const OpenAI = require("openai");
@@ -22,71 +18,71 @@ const { observeHttpRetry } = require("./src/monitor/resilienceMetrics");
 // 🔐 Environment Validation
 // ------------------------------------------------------------------
 if (!process.env.OPENAI_API_KEY) {
-  console.error("❌ OPENAI_API_KEY not loaded. Check .env in orchestrator root.");
+  console.error("❌ OPENAI_API_KEY not loaded. Check .env in aca-orchestrator.");
   process.exit(1);
 }
 
-// Prefer dedicated KB_DB_URL, but fall back to DATABASE_URL for safety
-const KB_CONN_STRING = process.env.KB_DB_URL || process.env.DATABASE_URL;
-if (!KB_CONN_STRING) {
-  console.error("❌ No KB_DB_URL or DATABASE_URL set for retriever.js database connection.");
+if (!process.env.KB_DB_URL) {
+  console.error("❌ KB_DB_URL not set. Point this to the Neon DB that holds kb_entries.");
   process.exit(1);
 }
 
 // ------------------------------------------------------------------
 // 🗄️ Database + OpenAI Clients
 // ------------------------------------------------------------------
-const pool = new Pool({ connectionString: KB_CONN_STRING });
+const pool = new Pool({ connectionString: process.env.KB_DB_URL });
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
 // ------------------------------------------------------------------
-// 🔍 Search KB by vector similarity
+// 🔍 Search KB by vector similarity (tenant-scoped)
+//   NOTE: DB schema:
+//     tenant_id  | integer
+//     query_text | text
+//     answer     | text
+//     embedding  | vector(1536)
 // ------------------------------------------------------------------
-async function searchKB(query, businessId, topK = 1) {
-  // ✅ Always coerce query to string to avoid sending raw numbers to embeddings
-  const safeQuery = String(query ?? "");
-  if (typeof query !== "string") {
-    console.warn(
-      "⚠️ searchKB received non-string query:",
-      typeof query,
-      "value=",
-      query
-    );
-  }
-  console.log("🔎 searchKB embedding preview:", safeQuery.slice(0, 80));
-
-  // --- Resilient embedding call ---
-  const embeddingResponse = await requestWithRetry(
-    {
-      method: "post",
-      url: "https://api.openai.com/v1/embeddings",
-      headers: {
-        Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
-        "Content-Type": "application/json",
+async function searchKB(query, tenantId, topK = 1) {
+  try {
+    // --- Resilient embedding call ---
+    const embeddingResponse = await requestWithRetry(
+      {
+        method: "post",
+        url: "https://api.openai.com/v1/embeddings",
+        headers: {
+          Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
+          "Content-Type": "application/json",
+        },
+        data: { model: "text-embedding-3-small", input: query },
       },
-      data: { model: "text-embedding-3-small", input: safeQuery },
-    },
-    { retries: 4, baseDelayMs: 300, maxDelayMs: 4000 }
-  ).catch((err) => {
-    console.error("❌ Failed to get embedding:", err.message);
+      { retries: 4, baseDelayMs: 300, maxDelayMs: 4000 }
+    );
+
+    const queryEmbedding = `[${embeddingResponse.data.data[0].embedding.join(",")}]`;
+
+    const { rows } = await pool.query(
+      `SELECT id,
+              query_text,
+              answer,
+              1 - (embedding <=> $1::vector) AS similarity
+       FROM kb_entries
+       WHERE tenant_id = $2
+       ORDER BY embedding <=> $1::vector
+       LIMIT $3`,
+      [queryEmbedding, tenantId, topK]
+    );
+
+    if (rows.length === 0) {
+      console.log("ℹ️ searchKB: no rows for tenant_id =", tenantId);
+      return null;
+    }
+
+    return { answer: rows[0].answer, similarity: rows[0].similarity };
+  } catch (err) {
+    console.error("❌ searchKB error (DB or embeddings):", err);
     observeHttpRetry();
-    throw err;
-  });
-
-  const queryEmbedding = `[${embeddingResponse.data.data[0].embedding.join(",")}]`;
-
-  const { rows } = await pool.query(
-    `SELECT id, answer, embedding
-            , 1 - (embedding <=> $1::vector) AS similarity
-     FROM kb_entries
-     WHERE business_id = $2
-     ORDER BY embedding <=> $1::vector
-     LIMIT $3`,
-    [queryEmbedding, businessId, topK]
-  );
-
-  if (rows.length === 0) return null;
-  return { answer: rows[0].answer, similarity: rows[0].similarity };
+    // Fail soft so the call doesn’t hard-crash
+    return null;
+  }
 }
 
 // ------------------------------------------------------------------
@@ -103,9 +99,11 @@ You are Alphine AI, replying in Tanglish (Tamil + English mix).
 - Avoid pure English or pure Tamil.
 - Sound modern and conversational, like a real person.`;
   } else if (langCode === "hi-IN") {
-    styleInstruction = "Reply in Hinglish (Hindi + English mix), casual daily speech.";
+    styleInstruction =
+      "Reply in Hinglish (Hindi + English mix), casual daily speech.";
   } else if (langCode === "es-ES") {
-    styleInstruction = "Reply in Spanish, casual and modern, allow some English words.";
+    styleInstruction =
+      "Reply in Spanish, casual and modern, allow some English words.";
   }
 
   // --- Resilient completion call ---
@@ -176,8 +174,11 @@ You are Alphine AI, replying in Tanglish (Tamil + English mix).
 
 // ------------------------------------------------------------------
 // 🔁 Retrieval Pipeline
+//   NOTE: second parameter is currently called `businessId` in callers,
+//   but it should actually be the tenant id that matches kb_entries.tenant_id.
 // ------------------------------------------------------------------
 async function retrieveAnswer(userQuery, businessId, langCode = "en-US") {
+  // Here businessId is effectively the tenant_id for kb_entries
   const result = await searchKB(userQuery, businessId);
   if (!result) return "I couldn’t find the answer right now.";
   return await polishAnswer(result.answer, userQuery, langCode);
