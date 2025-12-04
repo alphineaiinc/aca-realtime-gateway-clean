@@ -27,7 +27,7 @@ const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 console.log("🧩 retriever.js loaded – OpenAI client embeddings v2");
 
 // ------------------------------------------------------------------
-// 🧠 Simple in-memory call sessions (per Call SID)
+// 🧠 In-memory call sessions (per Call SID)
 // ------------------------------------------------------------------
 // Map<sessionId, { turns: Array<{user, bot, ts}>, createdAt: number }>
 const callSessions = new Map();
@@ -36,17 +36,17 @@ const callSessions = new Map();
 function getOrCreateSession(sessionId) {
   if (!sessionId) return null;
 
-  let session = callSessions.get(sessionId);
   const now = Date.now();
-
-  // basic TTL cleanup (30 minutes)
   const SESSION_TTL_MS = 30 * 60 * 1000;
+
+  // basic TTL cleanup
   for (const [id, s] of callSessions.entries()) {
     if (now - (s.createdAt || now) > SESSION_TTL_MS) {
       callSessions.delete(id);
     }
   }
 
+  let session = callSessions.get(sessionId);
   if (!session) {
     session = { turns: [], createdAt: now };
     callSessions.set(sessionId, session);
@@ -64,6 +64,20 @@ function postProcessAnswer(text) {
 
   // strip leading/trailing quotes
   cleaned = cleaned.replace(/^["'“”]+/, "").replace(/["'“”]+$/, "").trim();
+
+  // absolutely forbid some robotic phrases
+  const bannedPatterns = [
+    /how can i assist you today\??/i,
+    /what can i help you with(?: regarding that)?\??/i,
+    /how can i help you with your needs(?: today)?\??/i,
+    /i'm here to help!?$/i,
+  ];
+  for (const pattern of bannedPatterns) {
+    cleaned = cleaned.replace(pattern, "").trim();
+  }
+
+  // If we gutted the end and it ends with a dangling comma/and, tidy it
+  cleaned = cleaned.replace(/[,\s]+$/g, "").trim();
 
   // hard cap length to keep TTS snappy (roughly 2 short sentences)
   const MAX_LEN = 260;
@@ -156,6 +170,56 @@ async function searchKB(query, tenantId, topK = 1) {
 }
 
 // ------------------------------------------------------------------
+// 🎯 Domain-specific handler: “tell me about the service”
+// ------------------------------------------------------------------
+function isServiceIntent(lower, session) {
+  if (!lower) return false;
+
+  // Raw phrases
+  if (lower.includes("what kind of service")) return true;
+  if (lower.includes("know more about the service")) return true;
+  if (lower.includes("know more about your service")) return true;
+  if (lower === "service" || lower === "service." || lower === "offered" || lower === "offered.") {
+    return true;
+  }
+
+  // If user keeps mentioning "service" after we've already said "call orchestration",
+  // treat it as deepening that topic instead of asking for more clarification.
+  if (
+    lower.includes("service") &&
+    session &&
+    session.turns.length > 0 &&
+    session.turns.slice(-1)[0].bot &&
+    session.turns.slice(-1)[0].bot.toLowerCase().includes("call orchestration")
+  ) {
+    return true;
+  }
+
+  return false;
+}
+
+function serviceExplainer(turnsSoFar) {
+  // First time talking about the service
+  if (turnsSoFar === 0) {
+    return postProcessAnswer(
+      "We run an automated call assistant for businesses. It answers calls, routes them, and handles common questions so you don’t miss important callers. What would you like to know more about – features, pricing, or setup?"
+    );
+  }
+
+  // Second time / follow-ups – less intro, more direct
+  if (turnsSoFar === 1) {
+    return postProcessAnswer(
+      "In simple terms, we pick up your calls, understand what the caller wants, and either answer them or pass the call or message to the right place. Is your interest more about how it works day to day, or about getting it set up for your business?"
+    );
+  }
+
+  // Later: keep it short and focused
+  return postProcessAnswer(
+    "Our service is a smart call assistant that can greet callers, answer FAQs, and route calls. Tell me what you’re most curious about, and I’ll focus on that."
+  );
+}
+
+// ------------------------------------------------------------------
 // ⚡ Fast small-talk / meta / short follow-up handler (no KB)
 // ------------------------------------------------------------------
 async function quickPhoneReply(userQuery, langCode, convoMeta = {}) {
@@ -188,13 +252,18 @@ Rules:
 - Sound like a real person, not a script.
 - Keep replies very short and immediate.
 - Aim for 1 sentence; at most 2 short sentences.
-- Avoid generic phrases like "How can I assist you today?" unless it's the first real greeting.
-- Use light natural pauses with commas or ellipses, but keep text concise.`;
+- Do NOT say generic support phrases like:
+  "How can I assist you today?",
+  "How can I help you with your needs today?",
+  "What can I help you with regarding that?"
+- Instead, respond in a specific, grounded way based on what they just said.
+- If they already know you’re Alphine AI, don’t re-introduce yourself.`;
 
   if (lastBot) {
     system += `
 You previously said to the caller: "${lastBot}".
-The caller is now replying to that, so continue the same topic naturally. Do NOT restart or repeat your whole explanation.`;
+The caller is now replying to that, so continue the same topic naturally.
+Do NOT repeat the same idea you just said. Move the conversation forward.`;
   }
 
   if (turnsSoFar === 0) {
@@ -202,7 +271,7 @@ The caller is now replying to that, so continue the same topic naturally. Do NOT
 This is the first turn you are speaking. You may include a brief friendly greeting plus a short helpful question, but keep it under 2 short sentences.`;
   } else {
     system += `
-This is a continuing conversation. Do NOT re-introduce yourself and do NOT repeat the same question again and again.`;
+This is a continuing conversation. Do NOT re-introduce yourself and do NOT repeat your earlier greeting.`;
   }
 
   const completion = await requestWithRetry(
@@ -239,11 +308,11 @@ This is a continuing conversation. Do NOT re-introduce yourself and do NOT repea
 // 💬 Polishing step with Tanglish / Hinglish + per-call style
 // ------------------------------------------------------------------
 async function polishAnswer(rawText, userQuery, langCode, convoMeta = {}) {
-  const { turnsSoFar = 0 } = convoMeta;
+  const { turnsSoFar = 0, lastBot = null } = convoMeta;
   const isFirstTurn = turnsSoFar === 0;
 
   let styleInstruction =
-    "You are Alphine AI, speaking on a phone call. Reply politely in natural spoken style.";
+    "You are Alphine AI, speaking on a phone call. Reply politely in natural spoken style, like ChatGPT Voice.";
 
   if (langCode === "ta-IN") {
     styleInstruction = `
@@ -272,14 +341,21 @@ This is the first turn of the phone call.
 This is a continuing phone conversation.
 - The assistant has ALREADY greeted the caller earlier.
 - Answer directly to the latest user message.
-- Do NOT repeat generic phrases like "How can I assist you today?" or re-introduce yourself.
-- Prefer 1–2 short spoken-style sentences unless the user explicitly asks for details.`;
+- Do NOT repeat generic phrases like "How can I assist you today?", "What can I help you with regarding that?", or "I'm here to help."
+- Do NOT re-introduce yourself.
+- Prefer 1–2 short spoken-style sentences unless the user explicitly asks for detailed explanation.`;
   }
 
   styleInstruction += `
 If the user only says something like "hello", "are you there?", "yes", "ok", "thank you" or similar:
 - Respond with a VERY short confirmation (1 short sentence) and, if helpful, a tiny follow-up.
-Always sound like a real person on a live call, not like a chatbot script.`;
+Avoid repeating the same idea in different words in back-to-back turns. Move the conversation forward.`;
+
+  if (lastBot) {
+    styleInstruction += `
+Previously you said to the caller: "${lastBot}".
+Do NOT repeat that same content again. Only add something new or answer their latest question.`;
+  }
 
   const completion = await requestWithRetry(
     {
@@ -364,45 +440,79 @@ async function retrieveAnswer(userQuery, tenantId, langCode = "en-US", sessionId
     }
   }
 
-  const lower = (userQuery || "").toLowerCase().trim();
+  const text = (userQuery || "").trim();
+  const lower = text.toLowerCase();
 
+  // 🔎 Heuristic: treat very short meta phrases as small talk
   const smallTalkPhrases = [
     "hi",
+    "hi.",
     "hello",
+    "hello.",
     "hey",
+    "hey.",
     "are you there",
+    "are you there?",
     "can you hear me",
+    "can you hear me?",
     "you there",
+    "you there?",
     "ok",
+    "ok.",
     "okay",
+    "okay.",
     "thank you",
+    "thank you.",
     "thanks",
+    "thanks.",
     "bye",
+    "bye.",
     "goodbye",
+    "goodbye.",
     "see you",
+    "see you.",
     "hello?",
     "are you still there",
+    "are you still there?",
     "yes",
+    "yes.",
     "yeah",
+    "yeah.",
     "yep",
+    "yep.",
     "sure",
+    "sure.",
     "no",
+    "no.",
     "nope",
+    "nope.",
   ];
 
   const isSmallTalk =
     lower.length > 0 &&
-    smallTalkPhrases.some((phrase) => lower === phrase || lower.startsWith(phrase));
+    (smallTalkPhrases.includes(lower) || lower === "it's going good." || lower === "it's going good");
+
+  // 🎯 Domain-specific: service explainer path
+  if (isServiceIntent(lower, session)) {
+    const answer = serviceExplainer(turnsSoFar);
+    if (session) {
+      session.turns.push({ user: text, bot: answer, ts: Date.now() });
+      if (session.turns.length > 10) {
+        session.turns.splice(0, session.turns.length - 10);
+      }
+    }
+    return answer;
+  }
 
   // ⚡ Fast path: pure small-talk / short follow-up → skip KB + embeddings
   if (isSmallTalk) {
     try {
-      const quick = await quickPhoneReply(userQuery, langCode, {
+      const quick = await quickPhoneReply(text, langCode, {
         turnsSoFar,
         lastBot,
       });
       if (session) {
-        session.turns.push({ user: userQuery, bot: quick, ts: Date.now() });
+        session.turns.push({ user: text, bot: quick, ts: Date.now() });
         if (session.turns.length > 10) {
           session.turns.splice(0, session.turns.length - 10);
         }
@@ -415,22 +525,25 @@ async function retrieveAnswer(userQuery, tenantId, langCode = "en-US", sessionId
   }
 
   try {
-    const result = await searchKB(userQuery, tenantId);
+    const result = await searchKB(text, tenantId);
     if (!result) {
       console.log("ℹ️ No KB match found, returning fallback answer.");
-      const fallback = "I couldn’t find the answer right now.";
+      const fallback = postProcessAnswer(
+        "I couldn’t find that in my notes right now, but you can ask me something else about the service."
+      );
       if (session) {
-        session.turns.push({ user: userQuery, bot: fallback, ts: Date.now() });
+        session.turns.push({ user: text, bot: fallback, ts: Date.now() });
       }
       return fallback;
     }
 
-    const answer = await polishAnswer(result.answer, userQuery, langCode, {
+    const answer = await polishAnswer(result.answer, text, langCode, {
       turnsSoFar,
+      lastBot,
     });
 
     if (session) {
-      session.turns.push({ user: userQuery, bot: answer, ts: Date.now() });
+      session.turns.push({ user: text, bot: answer, ts: Date.now() });
       // cap memory to last 10 turns
       if (session.turns.length > 10) {
         session.turns.splice(0, session.turns.length - 10);
@@ -440,9 +553,11 @@ async function retrieveAnswer(userQuery, tenantId, langCode = "en-US", sessionId
     return answer;
   } catch (err) {
     console.error("❌ searchKB error (DB or embeddings):", err);
-    const fallback = "I’m having trouble looking that up right now.";
+    const fallback = postProcessAnswer(
+      "I’m having a bit of trouble looking that up right now, but I’m still here with you."
+    );
     if (session) {
-      session.turns.push({ user: userQuery, bot: fallback, ts: Date.now() });
+      session.turns.push({ user: text, bot: fallback, ts: Date.now() });
     }
     return fallback;
   }
