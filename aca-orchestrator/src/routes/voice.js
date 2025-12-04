@@ -84,9 +84,10 @@ function normalizeProfilePayload(body = {}) {
 }
 
 // ---------------------------------------------------------------------------
-// GET /api/voice/profile  (mount at /api → path here is /voice/profile)
+// GET /api/voice/profile
+// (mounted in index.js as app.use("/api/voice", router))
 // ---------------------------------------------------------------------------
-router.get("/voice/profile", authenticate, async (req, res) => {
+router.get("/profile", authenticate, async (req, res) => {
   const tenantId = req.tenant_id;
 
   try {
@@ -135,9 +136,9 @@ router.get("/voice/profile", authenticate, async (req, res) => {
 });
 
 // ---------------------------------------------------------------------------
-// POST /api/voice/profile  (mount at /api → path here is /voice/profile)
+// POST /api/voice/profile
 // ---------------------------------------------------------------------------
-router.post("/voice/profile", authenticate, async (req, res) => {
+router.post("/profile", authenticate, async (req, res) => {
   const tenantId = req.tenant_id;
   const payload = normalizeProfilePayload(req.body || {});
   const now = new Date().toISOString();
@@ -260,9 +261,9 @@ router.post("/voice/profile", authenticate, async (req, res) => {
 
 // ---------------------------------------------------------------------------
 // POST /api/voice/preview – stub route for dashboard preview
-// (mount at /api → path here is /voice/preview)
+// (mounted at /api/voice → final path /api/voice/preview)
 // ---------------------------------------------------------------------------
-router.post("/voice/preview", authenticate, async (req, res) => {
+router.post("/preview", authenticate, async (req, res) => {
   try {
     // For now, just return a JSON error so the dashboard shows a clear message.
     // This keeps the server from crashing and avoids using document/window.
