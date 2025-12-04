@@ -110,7 +110,7 @@ router.ws("/stream", async (ws, req) => {
           const tenantId = 1;
 
           // Retrieve GPT-generated response
-          const reply = await retrieveAnswer(tenantId, simulatedText);
+          const reply = await retrieveAnswer(simulatedText, tenantId, "en-US");
           console.log("💬  GPT reply:", reply);
 
           // Resolve tenant region (for accent shaping, etc.)
