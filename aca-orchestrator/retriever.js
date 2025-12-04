@@ -1,7 +1,3 @@
-// retriever.js
-// Story 5.3.A — Resilient Orchestrator Edition
-// (adds safeAxios wrapper + retry/backoff + resilience metrics)
-
 const path = require("path");
 require("dotenv").config({ path: path.resolve(__dirname, "../.env") });
 
@@ -135,13 +131,82 @@ async function searchKB(query, tenantId, topK = 1) {
 }
 
 // ------------------------------------------------------------------
+// ⚡ Fast small-talk / meta-talk handler (no KB, no embeddings)
+// ------------------------------------------------------------------
+async function quickPhoneReply(userQuery, langCode, convoMeta = {}) {
+  const { turnsSoFar = 0 } = convoMeta;
+
+  let system = "You are Alphine AI, speaking as a live phone agent. Reply in natural, spoken style.";
+
+  if (langCode === "ta-IN") {
+    system = `
+You are Alphine AI, replying in Tanglish (Tamil + English mix) on a phone call.
+Sound modern and conversational, not robotic.`;
+  } else if (langCode === "hi-IN") {
+    system =
+      "You are Alphine AI on a phone call. Reply in Hinglish (Hindi + English mix), casual daily speech.";
+  } else if (langCode === "es-ES") {
+    system =
+      "You are Alphine AI on a phone call. Reply in Spanish, casual and modern, allow some English words.";
+  }
+
+  system += `
+The caller is saying a short, simple phrase like hello, are you there, can you hear me, okay, thank you, bye, etc.
+
+Rules:
+- Keep replies very short and immediate, like a real person.
+- 1 short sentence, maximum 2 sentences.
+- Avoid phrases like "How can I assist you today?" unless this is the first real greeting.
+- Use natural pauses with commas or ellipses, but keep text concise.
+- If the user says "are you there", "can you hear me", "hello" → confirm and, if appropriate, add a tiny follow-up like "what can I help you with?".
+- If the user says "thank you", "okay", "bye" → acknowledge and, if it sounds like the end of call, keep it friendly and short.`;
+
+  if (turnsSoFar === 0) {
+    system += `
+This is the first turn you are speaking. You may include a brief friendly greeting plus a short helpful question, but keep it under 2 short sentences.`;
+  } else {
+    system += `
+This is a continuing conversation. Do NOT re-introduce yourself. Do NOT say the same closing phrase repeatedly.`;
+  }
+
+  const completion = await requestWithRetry(
+    {
+      method: "post",
+      url: "https://api.openai.com/v1/chat/completions",
+      headers: {
+        Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
+        "Content-Type": "application/json",
+      },
+      data: {
+        model: "gpt-4o-mini",
+        messages: [
+          { role: "system", content: system },
+          {
+            role: "user",
+            content: `Caller said (short phrase): "${userQuery}". Reply like a live phone agent, keep it brief.`,
+          },
+        ],
+      },
+    },
+    { retries: 3, baseDelayMs: 250, maxDelayMs: 3000 }
+  ).catch((err) => {
+    console.error("❌ quickPhoneReply failed:", err.message);
+    observeHttpRetry();
+    throw err;
+  });
+
+  return completion.data.choices[0].message.content.trim();
+}
+
+// ------------------------------------------------------------------
 // 💬 Polishing step with Tanglish / Hinglish + per-call style
 // ------------------------------------------------------------------
 async function polishAnswer(rawText, userQuery, langCode, convoMeta = {}) {
   const { turnsSoFar = 0 } = convoMeta;
   const isFirstTurn = turnsSoFar === 0;
 
-  let styleInstruction = "You are Alphine AI, speaking on a phone call. Reply politely in natural spoken style.";
+  let styleInstruction =
+    "You are Alphine AI, speaking on a phone call. Reply politely in natural spoken style.";
 
   if (langCode === "ta-IN") {
     styleInstruction = `
@@ -151,9 +216,11 @@ You are Alphine AI, replying in Tanglish (Tamil + English mix) on a phone call.
 - Avoid pure English or pure Tamil.
 - Sound modern and conversational, like a real person.`;
   } else if (langCode === "hi-IN") {
-    styleInstruction = "You are Alphine AI on a phone call. Reply in Hinglish (Hindi + English mix), casual daily speech.";
+    styleInstruction =
+      "You are Alphine AI on a phone call. Reply in Hinglish (Hindi + English mix), casual daily speech.";
   } else if (langCode === "es-ES") {
-    styleInstruction = "You are Alphine AI on a phone call. Reply in Spanish, casual and modern, allow some English words.";
+    styleInstruction =
+      "You are Alphine AI on a phone call. Reply in Spanish, casual and modern, allow some English words.";
   }
 
   // Conversation behavior based on turn index
@@ -244,7 +311,7 @@ Always sound like a real person on a live call, not like a chatbot script.`;
 }
 
 // ------------------------------------------------------------------
-// 🔁 Retrieval Pipeline with per-call session
+// 🔁 Retrieval Pipeline with per-call session & small-talk fast path
 // ------------------------------------------------------------------
 async function retrieveAnswer(userQuery, tenantId, langCode = "en-US", sessionId = null) {
   let session = null;
@@ -254,6 +321,45 @@ async function retrieveAnswer(userQuery, tenantId, langCode = "en-US", sessionId
     session = getOrCreateSession(sessionId);
     if (session) {
       turnsSoFar = session.turns.length;
+    }
+  }
+
+  const lower = (userQuery || "").toLowerCase().trim();
+
+  const isSmallTalk =
+    lower.length > 0 &&
+    [
+      "hi",
+      "hello",
+      "hey",
+      "are you there",
+      "can you hear me",
+      "you there",
+      "ok",
+      "okay",
+      "thank you",
+      "thanks",
+      "bye",
+      "goodbye",
+      "see you",
+      "hello?",
+      "are you still there",
+    ].some((phrase) => lower.startsWith(phrase));
+
+  // ⚡ Fast path: pure small-talk → skip KB + embeddings
+  if (isSmallTalk) {
+    try {
+      const quick = await quickPhoneReply(userQuery, langCode, { turnsSoFar });
+      if (session) {
+        session.turns.push({ user: userQuery, bot: quick, ts: Date.now() });
+        if (session.turns.length > 10) {
+          session.turns.splice(0, session.turns.length - 10);
+        }
+      }
+      return quick;
+    } catch (err) {
+      console.error("❌ quickPhoneReply path failed, falling back to KB:", err);
+      // fall through to normal KB flow
     }
   }
 

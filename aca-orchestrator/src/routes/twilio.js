@@ -115,7 +115,7 @@ router.ws("/stream", async (ws, req) => {
 
         // ✅ Simple cooldown: at most one reply every 5 seconds
         const now = Date.now();
-        const COOLDOWN_MS = 5000;
+        const COOLDOWN_MS = 1500;
         if (now - lastResponseAt < COOLDOWN_MS) {
           return;
         }
