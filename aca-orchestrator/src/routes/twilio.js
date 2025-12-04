@@ -12,7 +12,7 @@ const WebSocket = require("ws");
 const { retrieveAnswer } = require("../../retriever");
 const { synthesizeSpeech } = require("../../tts");
 const { getTenantRegion } = require("../brain/utils/tenantContext"); // ✅ tenant region helper
-const { transcribeMulaw } = require("../brain/utils/sttGoogle"); // ✅ NEW: Google STT helper
+const { transcribeMulaw } = require("../brain/utils/sttGoogle"); // ✅ Google STT helper
 require("dotenv").config({ path: path.resolve(__dirname, "../../.env") });
 
 /**
@@ -147,8 +147,8 @@ router.ws("/stream", async (ws, req) => {
         // For now we assume tenant 1; later this should come from call context / webhook
         const tenantId = 1;
 
-        // Retrieve GPT-generated response
-        const reply = await retrieveAnswer(userText, tenantId, "en-US");
+        // ✅ Retrieve GPT-generated response with per-call session (activeCallSid)
+        const reply = await retrieveAnswer(userText, tenantId, "en-US", activeCallSid);
         console.log("💬  GPT reply:", reply);
         console.log("💬 [conv]", {
           callSid: activeCallSid,

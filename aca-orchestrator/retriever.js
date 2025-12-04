@@ -1,3 +1,7 @@
+// retriever.js
+// Story 5.3.A — Resilient Orchestrator Edition
+// (adds safeAxios wrapper + retry/backoff + resilience metrics)
+
 const path = require("path");
 require("dotenv").config({ path: path.resolve(__dirname, "../.env") });
 
@@ -25,6 +29,34 @@ const pool = new Pool({ connectionString: process.env.KB_DB_URL });
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
 console.log("🧩 retriever.js loaded – OpenAI client embeddings v2");
+
+// ------------------------------------------------------------------
+// 🧠 Simple in-memory call sessions (per Call SID)
+// ------------------------------------------------------------------
+// Map<sessionId, { turns: Array<{user, bot, ts}>, createdAt: number }>
+const callSessions = new Map();
+
+// small cleanup helper so memory doesn't grow forever
+function getOrCreateSession(sessionId) {
+  if (!sessionId) return null;
+
+  let session = callSessions.get(sessionId);
+  const now = Date.now();
+
+  // basic TTL cleanup (30 minutes)
+  const SESSION_TTL_MS = 30 * 60 * 1000;
+  for (const [id, s] of callSessions.entries()) {
+    if (now - (s.createdAt || now) > SESSION_TTL_MS) {
+      callSessions.delete(id);
+    }
+  }
+
+  if (!session) {
+    session = { turns: [], createdAt: now };
+    callSessions.set(sessionId, session);
+  }
+  return session;
+}
 
 // ------------------------------------------------------------------
 // 🔍 Search KB by vector similarity (tenant-scoped)
@@ -67,7 +99,10 @@ async function searchKB(query, tenantId, topK = 1) {
     if (err.error) {
       console.error("❌ Embedding error detail (err.error):", err.error);
     } else if (err.response?.data?.error) {
-      console.error("❌ Embedding error detail (response.data.error):", err.response.data.error);
+      console.error(
+        "❌ Embedding error detail (response.data.error):",
+        err.response.data.error
+      );
     }
 
     observeHttpRetry();
@@ -100,23 +135,47 @@ async function searchKB(query, tenantId, topK = 1) {
 }
 
 // ------------------------------------------------------------------
-// 💬 Polishing step with Tanglish / Hinglish
+// 💬 Polishing step with Tanglish / Hinglish + per-call style
 // ------------------------------------------------------------------
-async function polishAnswer(rawText, userQuery, langCode) {
-  let styleInstruction = "Reply politely in natural spoken style.";
+async function polishAnswer(rawText, userQuery, langCode, convoMeta = {}) {
+  const { turnsSoFar = 0 } = convoMeta;
+  const isFirstTurn = turnsSoFar === 0;
+
+  let styleInstruction = "You are Alphine AI, speaking on a phone call. Reply politely in natural spoken style.";
 
   if (langCode === "ta-IN") {
     styleInstruction = `
-You are Alphine AI, replying in Tanglish (Tamil + English mix).
+You are Alphine AI, replying in Tanglish (Tamil + English mix) on a phone call.
 - Use Tamil script for Tamil words.
 - Keep common English words (days, times, numbers).
 - Avoid pure English or pure Tamil.
 - Sound modern and conversational, like a real person.`;
   } else if (langCode === "hi-IN") {
-    styleInstruction = "Reply in Hinglish (Hindi + English mix), casual daily speech.";
+    styleInstruction = "You are Alphine AI on a phone call. Reply in Hinglish (Hindi + English mix), casual daily speech.";
   } else if (langCode === "es-ES") {
-    styleInstruction = "Reply in Spanish, casual and modern, allow some English words.";
+    styleInstruction = "You are Alphine AI on a phone call. Reply in Spanish, casual and modern, allow some English words.";
   }
+
+  // Conversation behavior based on turn index
+  if (isFirstTurn) {
+    styleInstruction += `
+This is the first turn of the phone call.
+- Give a brief friendly greeting AND one very short question inviting the caller to share what they need.
+- Mention Alphine AI or the service once.
+- Do NOT be wordy; keep it within 1–2 sentences.`;
+  } else {
+    styleInstruction += `
+This is a continuing phone conversation.
+- The assistant has ALREADY greeted the caller earlier.
+- Answer directly to the latest user message.
+- Do NOT repeat generic phrases like "How can I assist you today?" or re-introduce yourself.
+- Keep responses concise unless the user explicitly asks for details.`;
+  }
+
+  styleInstruction += `
+If the user only says something like "hello", "are you there?", "can you hear me?" or similar:
+- Respond with a VERY short confirmation (1 short sentence) and, if helpful, a tiny follow-up question.
+Always sound like a real person on a live call, not like a chatbot script.`;
 
   // --- Resilient completion call via safeAxios ---
   const completion = await requestWithRetry(
@@ -133,7 +192,7 @@ You are Alphine AI, replying in Tanglish (Tamil + English mix).
           { role: "system", content: styleInstruction },
           {
             role: "user",
-            content: `User asked: "${userQuery}". KB says: "${rawText}". Reply naturally.`,
+            content: `Caller just said: "${userQuery}". The knowledge base says: "${rawText}". Reply as a live phone agent.`,
           },
         ],
       },
@@ -185,19 +244,50 @@ You are Alphine AI, replying in Tanglish (Tamil + English mix).
 }
 
 // ------------------------------------------------------------------
-// 🔁 Retrieval Pipeline
+// 🔁 Retrieval Pipeline with per-call session
 // ------------------------------------------------------------------
-async function retrieveAnswer(userQuery, tenantId, langCode = "en-US") {
+async function retrieveAnswer(userQuery, tenantId, langCode = "en-US", sessionId = null) {
+  let session = null;
+  let turnsSoFar = 0;
+
+  if (sessionId) {
+    session = getOrCreateSession(sessionId);
+    if (session) {
+      turnsSoFar = session.turns.length;
+    }
+  }
+
   try {
     const result = await searchKB(userQuery, tenantId);
     if (!result) {
       console.log("ℹ️ No KB match found, returning fallback answer.");
-      return "I couldn’t find the answer right now.";
+      const fallback = "I couldn’t find the answer right now.";
+      if (session) {
+        session.turns.push({ user: userQuery, bot: fallback, ts: Date.now() });
+      }
+      return fallback;
     }
-    return await polishAnswer(result.answer, userQuery, langCode);
+
+    const answer = await polishAnswer(result.answer, userQuery, langCode, {
+      turnsSoFar,
+    });
+
+    if (session) {
+      session.turns.push({ user: userQuery, bot: answer, ts: Date.now() });
+      // cap memory to last 10 turns
+      if (session.turns.length > 10) {
+        session.turns.splice(0, session.turns.length - 10);
+      }
+    }
+
+    return answer;
   } catch (err) {
     console.error("❌ searchKB error (DB or embeddings):", err);
-    return "I’m having trouble looking that up right now.";
+    const fallback = "I’m having trouble looking that up right now.";
+    if (session) {
+      session.turns.push({ user: userQuery, bot: fallback, ts: Date.now() });
+    }
+    return fallback;
   }
 }
 
