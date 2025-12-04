@@ -30,10 +30,19 @@ async function getOrCreateEmbeddingSpace(business_id) {
 // embedTextForBusiness — create an embedding for specific tenant
 // ---------------------------------------------------------------------------
 async function embedTextForBusiness(business_id, text) {
+  // ✅ Always coerce to string so we never send a raw number like 1
+  const safeText = String(text ?? "");
+  console.log(
+    "🔍 embedTextForBusiness input type:",
+    typeof text,
+    "| preview:",
+    safeText.slice(0, 80)
+  );
+
   const spaceId = await getOrCreateEmbeddingSpace(business_id);
   const embedding = await openai.embeddings.create({
     model: "text-embedding-3-small",
-    input: text,
+    input: safeText,
   });
   return { spaceId, vector: embedding.data[0].embedding };
 }
@@ -43,9 +52,18 @@ async function embedTextForBusiness(business_id, text) {
 // Used by uploadKnowledge.js for quick chunk embedding
 // ---------------------------------------------------------------------------
 async function embedText(text) {
+  // ✅ Always coerce to string so we never send a raw number like 1
+  const safeText = String(text ?? "");
+  console.log(
+    "🔍 embedText input type:",
+    typeof text,
+    "| preview:",
+    safeText.slice(0, 80)
+  );
+
   const embedding = await openai.embeddings.create({
     model: "text-embedding-3-small",
-    input: text,
+    input: safeText,
   });
   return embedding.data[0].embedding;
 }

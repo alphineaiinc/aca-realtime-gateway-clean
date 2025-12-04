@@ -70,6 +70,7 @@ function postProcessAnswer(text) {
     /how can i assist you today\??/i,
     /what can i help you with(?: regarding that)?\??/i,
     /how can i help you with your needs(?: today)?\??/i,
+    /what do you need assistance with(?: today)?\??/i,
     /i'm here to help!?$/i,
   ];
   for (const pattern of bannedPatterns) {
@@ -179,7 +180,12 @@ function isServiceIntent(lower, session) {
   if (lower.includes("what kind of service")) return true;
   if (lower.includes("know more about the service")) return true;
   if (lower.includes("know more about your service")) return true;
-  if (lower === "service" || lower === "service." || lower === "offered" || lower === "offered.") {
+  if (
+    lower === "service" ||
+    lower === "service." ||
+    lower === "offered" ||
+    lower === "offered."
+  ) {
     return true;
   }
 
@@ -311,8 +317,16 @@ async function polishAnswer(rawText, userQuery, langCode, convoMeta = {}) {
   const { turnsSoFar = 0, lastBot = null } = convoMeta;
   const isFirstTurn = turnsSoFar === 0;
 
-  let styleInstruction =
-    "You are Alphine AI, speaking on a phone call. Reply politely in natural spoken style, like ChatGPT Voice.";
+  let styleInstruction = `
+You are Alphine AI, a friendly voice assistant on a phone call.
+- Respond in 1–2 short sentences (max ~25 spoken words).
+- Answer the caller's last message as directly as possible.
+- Do NOT say generic phrases like "I'm here to help" or 
+  "How can I assist you today?" unless the caller explicitly asks 
+  if you're there or if you can help.
+- Do NOT repeat the same reassurance or question multiple times.
+- Sound natural and conversational, like a real person on the phone.
+`;
 
   if (langCode === "ta-IN") {
     styleInstruction = `
@@ -425,7 +439,12 @@ Do NOT repeat that same content again. Only add something new or answer their la
 // ------------------------------------------------------------------
 // 🔁 Retrieval Pipeline with per-call session & small-talk fast path
 // ------------------------------------------------------------------
-async function retrieveAnswer(userQuery, tenantId, langCode = "en-US", sessionId = null) {
+async function retrieveAnswer(
+  userQuery,
+  tenantId,
+  langCode = "en-US",
+  sessionId = null
+) {
   let session = null;
   let turnsSoFar = 0;
   let lastBot = null;
@@ -442,6 +461,24 @@ async function retrieveAnswer(userQuery, tenantId, langCode = "en-US", sessionId
 
   const text = (userQuery || "").trim();
   const lower = text.toLowerCase();
+
+  // 🔊 Direct presence / hearing checks → immediate, fixed reply
+  if (
+    /can you hear me\??/.test(lower) ||
+    /^are you there[?.!]*$/.test(lower) ||
+    /^are you still there[?.!]*$/.test(lower)
+  ) {
+    const direct = postProcessAnswer(
+      "Yes, I can hear you clearly. I’m right here with you. What would you like to know about the service?"
+    );
+    if (session) {
+      session.turns.push({ user: text, bot: direct, ts: Date.now() });
+      if (session.turns.length > 10) {
+        session.turns.splice(0, session.turns.length - 10);
+      }
+    }
+    return direct;
+  }
 
   // 🔎 Heuristic: treat very short meta phrases as small talk
   const smallTalkPhrases = [
@@ -490,7 +527,12 @@ async function retrieveAnswer(userQuery, tenantId, langCode = "en-US", sessionId
 
   const isSmallTalk =
     lower.length > 0 &&
-    (smallTalkPhrases.includes(lower) || lower === "it's going good." || lower === "it's going good");
+    (smallTalkPhrases.includes(lower) ||
+      lower === "it's going good." ||
+      lower === "it's going good" ||
+      // short “hear me” / “can you?” variants from the logs
+      (lower.length <= 20 && /hear me/.test(lower)) ||
+      (lower.length <= 20 && /can you\??$/.test(lower)));
 
   // 🎯 Domain-specific: service explainer path
   if (isServiceIntent(lower, session)) {
@@ -519,7 +561,10 @@ async function retrieveAnswer(userQuery, tenantId, langCode = "en-US", sessionId
       }
       return quick;
     } catch (err) {
-      console.error("❌ quickPhoneReply path failed, falling back to KB:", err);
+      console.error(
+        "❌ quickPhoneReply path failed, falling back to KB:",
+        err
+      );
       // fall through to normal KB flow
     }
   }
