@@ -115,7 +115,7 @@ router.ws("/stream", async (ws, req) => {
 
         // ✅ Simple cooldown: at most one reply every 5 seconds
         const now = Date.now();
-        const COOLDOWN_MS = 1500;
+        const COOLDOWN_MS = 1000;
         if (now - lastResponseAt < COOLDOWN_MS) {
           return;
         }
@@ -176,7 +176,7 @@ router.ws("/stream", async (ws, req) => {
             tenantId,
             regionCode,
             tonePreset: "friendly",
-            useFillers: true,
+            useFillers: false,
           });
         } catch (ttsErr) {
           console.error("❌  TTS synthesis failed:", ttsErr.message);

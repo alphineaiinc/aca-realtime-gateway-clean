@@ -55,6 +55,31 @@ function getOrCreateSession(sessionId) {
 }
 
 // ------------------------------------------------------------------
+// 🧹 Post-process GPT answers for phone use
+// ------------------------------------------------------------------
+function postProcessAnswer(text) {
+  if (!text) return "";
+
+  let cleaned = text.trim();
+
+  // strip leading/trailing quotes
+  cleaned = cleaned.replace(/^["'“”]+/, "").replace(/["'“”]+$/, "").trim();
+
+  // hard cap length to keep TTS snappy (roughly 2 short sentences)
+  const MAX_LEN = 260;
+  if (cleaned.length > MAX_LEN) {
+    const cut = cleaned.lastIndexOf(".", MAX_LEN);
+    if (cut > 80) {
+      cleaned = cleaned.slice(0, cut + 1);
+    } else {
+      cleaned = cleaned.slice(0, MAX_LEN) + "…";
+    }
+  }
+
+  return cleaned;
+}
+
+// ------------------------------------------------------------------
 // 🔍 Search KB by vector similarity (tenant-scoped)
 // ------------------------------------------------------------------
 async function searchKB(query, tenantId, topK = 1) {
@@ -131,12 +156,13 @@ async function searchKB(query, tenantId, topK = 1) {
 }
 
 // ------------------------------------------------------------------
-// ⚡ Fast small-talk / meta-talk handler (no KB, no embeddings)
+// ⚡ Fast small-talk / meta / short follow-up handler (no KB)
 // ------------------------------------------------------------------
 async function quickPhoneReply(userQuery, langCode, convoMeta = {}) {
-  const { turnsSoFar = 0 } = convoMeta;
+  const { turnsSoFar = 0, lastBot = null } = convoMeta;
 
-  let system = "You are Alphine AI, speaking as a live phone agent. Reply in natural, spoken style.";
+  let system =
+    "You are Alphine AI, speaking as a live phone agent. Reply in natural, spoken style.";
 
   if (langCode === "ta-IN") {
     system = `
@@ -151,22 +177,32 @@ Sound modern and conversational, not robotic.`;
   }
 
   system += `
-The caller is saying a short, simple phrase like hello, are you there, can you hear me, okay, thank you, bye, etc.
+The caller is saying a short phrase like:
+- greetings: hello, hi, hey
+- checks: are you there, can you hear me
+- acknowledgements: yes, okay, sure, sounds good
+- closings: thank you, bye
+or a very short follow-up to your previous answer.
 
 Rules:
-- Keep replies very short and immediate, like a real person.
-- 1 short sentence, maximum 2 sentences.
-- Avoid phrases like "How can I assist you today?" unless this is the first real greeting.
-- Use natural pauses with commas or ellipses, but keep text concise.
-- If the user says "are you there", "can you hear me", "hello" → confirm and, if appropriate, add a tiny follow-up like "what can I help you with?".
-- If the user says "thank you", "okay", "bye" → acknowledge and, if it sounds like the end of call, keep it friendly and short.`;
+- Sound like a real person, not a script.
+- Keep replies very short and immediate.
+- Aim for 1 sentence; at most 2 short sentences.
+- Avoid generic phrases like "How can I assist you today?" unless it's the first real greeting.
+- Use light natural pauses with commas or ellipses, but keep text concise.`;
+
+  if (lastBot) {
+    system += `
+You previously said to the caller: "${lastBot}".
+The caller is now replying to that, so continue the same topic naturally. Do NOT restart or repeat your whole explanation.`;
+  }
 
   if (turnsSoFar === 0) {
     system += `
 This is the first turn you are speaking. You may include a brief friendly greeting plus a short helpful question, but keep it under 2 short sentences.`;
   } else {
     system += `
-This is a continuing conversation. Do NOT re-introduce yourself. Do NOT say the same closing phrase repeatedly.`;
+This is a continuing conversation. Do NOT re-introduce yourself and do NOT repeat the same question again and again.`;
   }
 
   const completion = await requestWithRetry(
@@ -195,7 +231,8 @@ This is a continuing conversation. Do NOT re-introduce yourself. Do NOT say the 
     throw err;
   });
 
-  return completion.data.choices[0].message.content.trim();
+  const raw = completion.data.choices[0].message.content.trim();
+  return postProcessAnswer(raw);
 }
 
 // ------------------------------------------------------------------
@@ -228,23 +265,22 @@ You are Alphine AI, replying in Tanglish (Tamil + English mix) on a phone call.
     styleInstruction += `
 This is the first turn of the phone call.
 - Give a brief friendly greeting AND one very short question inviting the caller to share what they need.
-- Mention Alphine AI or the service once.
-- Do NOT be wordy; keep it within 1–2 sentences.`;
+- Mention Alphine AI or the service at most once.
+- Keep it within 1–2 short sentences.`;
   } else {
     styleInstruction += `
 This is a continuing phone conversation.
 - The assistant has ALREADY greeted the caller earlier.
 - Answer directly to the latest user message.
 - Do NOT repeat generic phrases like "How can I assist you today?" or re-introduce yourself.
-- Keep responses concise unless the user explicitly asks for details.`;
+- Prefer 1–2 short spoken-style sentences unless the user explicitly asks for details.`;
   }
 
   styleInstruction += `
-If the user only says something like "hello", "are you there?", "can you hear me?" or similar:
-- Respond with a VERY short confirmation (1 short sentence) and, if helpful, a tiny follow-up question.
+If the user only says something like "hello", "are you there?", "yes", "ok", "thank you" or similar:
+- Respond with a VERY short confirmation (1 short sentence) and, if helpful, a tiny follow-up.
 Always sound like a real person on a live call, not like a chatbot script.`;
 
-  // --- Resilient completion call via safeAxios ---
   const completion = await requestWithRetry(
     {
       method: "post",
@@ -307,7 +343,7 @@ Always sound like a real person on a live call, not like a chatbot script.`;
     answer = retry.data.choices[0].message.content.trim();
   }
 
-  return answer;
+  return postProcessAnswer(answer);
 }
 
 // ------------------------------------------------------------------
@@ -316,40 +352,55 @@ Always sound like a real person on a live call, not like a chatbot script.`;
 async function retrieveAnswer(userQuery, tenantId, langCode = "en-US", sessionId = null) {
   let session = null;
   let turnsSoFar = 0;
+  let lastBot = null;
 
   if (sessionId) {
     session = getOrCreateSession(sessionId);
     if (session) {
       turnsSoFar = session.turns.length;
+      if (turnsSoFar > 0) {
+        lastBot = session.turns[turnsSoFar - 1].bot;
+      }
     }
   }
 
   const lower = (userQuery || "").toLowerCase().trim();
 
+  const smallTalkPhrases = [
+    "hi",
+    "hello",
+    "hey",
+    "are you there",
+    "can you hear me",
+    "you there",
+    "ok",
+    "okay",
+    "thank you",
+    "thanks",
+    "bye",
+    "goodbye",
+    "see you",
+    "hello?",
+    "are you still there",
+    "yes",
+    "yeah",
+    "yep",
+    "sure",
+    "no",
+    "nope",
+  ];
+
   const isSmallTalk =
     lower.length > 0 &&
-    [
-      "hi",
-      "hello",
-      "hey",
-      "are you there",
-      "can you hear me",
-      "you there",
-      "ok",
-      "okay",
-      "thank you",
-      "thanks",
-      "bye",
-      "goodbye",
-      "see you",
-      "hello?",
-      "are you still there",
-    ].some((phrase) => lower.startsWith(phrase));
+    smallTalkPhrases.some((phrase) => lower === phrase || lower.startsWith(phrase));
 
-  // ⚡ Fast path: pure small-talk → skip KB + embeddings
+  // ⚡ Fast path: pure small-talk / short follow-up → skip KB + embeddings
   if (isSmallTalk) {
     try {
-      const quick = await quickPhoneReply(userQuery, langCode, { turnsSoFar });
+      const quick = await quickPhoneReply(userQuery, langCode, {
+        turnsSoFar,
+        lastBot,
+      });
       if (session) {
         session.turns.push({ user: userQuery, bot: quick, ts: Date.now() });
         if (session.turns.length > 10) {
