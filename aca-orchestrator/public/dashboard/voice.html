@@ -2,179 +2,1006 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>Voice Studio – Alphine AI</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta
+    name="viewport"
+    content="width=device-width, initial-scale=1.0"
+  />
+  <title>Alphine AI – Voice Studio</title>
 
   <style>
+    :root {
+      --bg: #020617;
+      --card: #020617;
+      --card-elevated: #020617;
+      --border-subtle: #1f2937;
+      --border-strong: #4b5563;
+      --accent: #38bdf8;
+      --accent-soft: rgba(56, 189, 248, 0.1);
+      --accent-strong: #0ea5e9;
+      --danger: #f97373;
+      --success: #22c55e;
+      --text: #e5e7eb;
+      --muted: #9ca3af;
+      --muted-strong: #6b7280;
+      --badge: #1e293b;
+      --badge-border: #334155;
+      --shadow-soft: 0 18px 45px rgba(15, 23, 42, 0.65);
+      --radius-xl: 18px;
+      --radius-lg: 14px;
+      --radius-pill: 999px;
+      --input-bg: #020617;
+      --input-border: #1f2937;
+      --input-focus: #38bdf8;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
     body {
-      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-      background: #0d1117;
-      color: #e6edf3;
       margin: 0;
-      padding: 0;
+      min-height: 100vh;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "SF Pro Text",
+        "Segoe UI", sans-serif;
+      background: radial-gradient(circle at top left, #0f172a, #020617 55%);
+      color: var(--text);
     }
 
-    .container {
-      max-width: 900px;
-      margin: 40px auto;
-      padding: 24px;
-      background: #161b22;
-      border-radius: 16px;
-      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4);
+    .page-shell {
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 24px 20px 40px;
     }
 
-    h1 {
-      margin-top: 0;
-      font-size: 24px;
-    }
-
-    .field-group {
-      margin-bottom: 16px;
-    }
-
-    label {
-      display: block;
-      margin-bottom: 6px;
-      font-size: 14px;
-      color: #9aa4ad;
-    }
-
-    input[type="text"],
-    select {
-      width: 100%;
-      padding: 8px 10px;
-      border-radius: 8px;
-      border: 1px solid #30363d;
-      background: #0d1117;
-      color: #e6edf3;
-    }
-
-    input[type="range"] {
-      width: 100%;
-    }
-
-    .hint {
-      font-size: 12px;
-      color: #8b949e;
-    }
-
-    .actions {
+    .page-header {
       display: flex;
-      gap: 12px;
-      margin-top: 16px;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      margin-bottom: 24px;
     }
 
-    button {
-      padding: 8px 14px;
+    .page-title-block {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .page-title-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .logo-pill {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 32px;
+      height: 32px;
       border-radius: 999px;
+      background: radial-gradient(circle at 30% 0%, #38bdf8, #0f172a 65%);
+      box-shadow: 0 10px 25px rgba(56, 189, 248, 0.35);
+      font-size: 18px;
+    }
+
+    .page-title {
+      font-size: 22px;
+      font-weight: 600;
+      letter-spacing: 0.02em;
+    }
+
+    .page-subtitle {
+      font-size: 13px;
+      color: var(--muted);
+      max-width: 560px;
+    }
+
+    .badge-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .pill-badge,
+    .pill-badge-soft {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 4px 10px;
+      border-radius: 999px;
+      font-size: 11px;
+      letter-spacing: 0.03em;
+      text-transform: uppercase;
+      border: 1px solid var(--badge-border);
+      background: var(--badge);
+      color: var(--muted-strong);
+    }
+
+    .pill-badge-soft {
+      background: rgba(15, 23, 42, 0.75);
+      border-style: dashed;
+    }
+
+    .pill-dot {
+      display: inline-flex;
+      width: 6px;
+      height: 6px;
+      border-radius: 999px;
+      background: var(--accent);
+      box-shadow: 0 0 12px rgba(56, 189, 248, 0.8);
+    }
+
+    .layout-grid {
+      display: grid;
+      grid-template-columns: minmax(0, 1.6fr) minmax(0, 1.1fr);
+      gap: 20px;
+    }
+
+    @media (max-width: 900px) {
+      .layout-grid {
+        grid-template-columns: minmax(0, 1fr);
+      }
+    }
+
+    .card {
+      background: radial-gradient(circle at top left, #020617, #020617 60%);
+      border-radius: var(--radius-xl);
+      border: 1px solid var(--border-subtle);
+      padding: 16px 16px 18px;
+      box-shadow: var(--shadow-soft);
+      position: relative;
+      overflow: hidden;
+    }
+
+    .card::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      opacity: 0.5;
+      pointer-events: none;
+    }
+
+    .card-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      margin-bottom: 12px;
+    }
+
+    .card-title-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .card-title {
+      font-size: 15px;
+      font-weight: 500;
+    }
+
+    .card-kicker {
+      font-size: 11px;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.16em;
+    }
+
+    .badge-mini {
+      border-radius: 999px;
+      border: 1px solid rgba(148, 163, 184, 0.45);
+      padding: 2px 8px;
+      font-size: 10px;
+      color: var(--muted);
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .badge-mini-dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 999px;
+      background: rgba(34, 197, 94, 0.7);
+    }
+
+    .card-body {
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+      position: relative;
+      z-index: 1;
+    }
+
+    .divider-soft {
       border: none;
+      border-top: 1px dashed rgba(31, 41, 55, 0.8);
+      margin: 4px 0 8px;
+    }
+
+    .section-label {
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.16em;
+      color: var(--muted);
+      margin-bottom: 6px;
+    }
+
+    .row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+    }
+
+    .row > * {
+      flex: 1;
+      min-width: 0;
+    }
+
+    .field {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .field-label-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .field-label {
+      font-size: 12px;
+      color: var(--muted-strong);
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .field-hint {
+      font-size: 11px;
+      color: var(--muted);
+    }
+
+    .field-value {
+      font-size: 11px;
+      color: var(--muted);
+      opacity: 0.9;
+    }
+
+    .chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 3px 8px;
+      border-radius: 999px;
+      background: var(--accent-soft);
+      border: 1px solid rgba(56, 189, 248, 0.5);
+      font-size: 11px;
+      color: var(--accent-strong);
+    }
+
+    .chip span {
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.16em;
+      opacity: 0.8;
+    }
+
+    .input,
+    .select,
+    .textarea {
+      width: 100%;
+      border-radius: 10px;
+      border: 1px solid var(--input-border);
+      background: radial-gradient(circle at top left, #020617, #020617 60%);
+      color: var(--text);
+      font-size: 13px;
+      padding: 7px 10px;
+      outline: none;
+      transition: border-color 0.12s ease, box-shadow 0.12s ease,
+        background 0.12s ease;
+    }
+
+    .textarea {
+      resize: vertical;
+      min-height: 90px;
+      max-height: 180px;
+      line-height: 1.5;
+    }
+
+    .input::placeholder,
+    .textarea::placeholder {
+      color: rgba(148, 163, 184, 0.7);
+    }
+
+    .input:focus,
+    .select:focus,
+    .textarea:focus {
+      border-color: var(--input-focus);
+      box-shadow: 0 0 0 1px rgba(56, 189, 248, 0.45);
+    }
+
+    .input-token {
+      font-family: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo,
+        Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+      font-size: 11px;
+      padding-right: 86px;
+    }
+
+    .token-wrapper {
+      position: relative;
+    }
+
+    .token-mask-btn {
+      position: absolute;
+      top: 4px;
+      right: 5px;
+      font-size: 10px;
+      border-radius: 999px;
+      border: 1px solid rgba(148, 163, 184, 0.6);
+      background: rgba(15, 23, 42, 0.95);
+      color: var(--muted);
+      padding: 3px 7px;
       cursor: pointer;
-      font-size: 14px;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+    }
+
+    .slider-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .slider-label {
+      font-size: 11px;
+      color: var(--muted);
+      min-width: 82px;
+    }
+
+    .slider {
+      flex: 1;
+      accent-color: var(--accent);
+    }
+
+    .slider-value {
+      font-size: 11px;
+      color: var(--muted);
+      min-width: 32px;
+      text-align: right;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .toggle-row {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 3px 8px;
+      border-radius: 999px;
+      border: 1px solid rgba(75, 85, 99, 0.8);
+      cursor: pointer;
+      font-size: 11px;
+      margin-top: 4px;
+      user-select: none;
+    }
+
+    .toggle-row input {
+      margin: 0;
+      accent-color: var(--accent);
+    }
+
+    .toggle-label {
+      color: var(--muted);
+    }
+
+    .btn-row-main {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 4px;
+    }
+
+    .btn {
+      border-radius: var(--radius-pill);
+      border: 1px solid var(--border-subtle);
+      background: rgba(15, 23, 42, 0.9);
+      color: var(--muted);
+      padding: 7px 14px;
+      font-size: 12px;
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      cursor: pointer;
+      transition: background 0.14s ease, border-color 0.14s ease,
+        transform 0.08s ease, box-shadow 0.08s ease;
+      white-space: nowrap;
     }
 
     .btn-primary {
-      background: #238636;
-      color: #ffffff;
+      background: radial-gradient(circle at 10% 0%, #38bdf8, #0369a1 70%);
+      border-color: rgba(56, 189, 248, 0.7);
+      color: #0b1120;
+      font-weight: 500;
+      box-shadow: 0 10px 22px rgba(56, 189, 248, 0.35);
     }
 
-    .btn-secondary {
-      background: #30363d;
-      color: #e6edf3;
+    .btn-ghost {
+      border-style: dashed;
     }
 
-    .status {
-      margin-top: 12px;
-      font-size: 13px;
-      color: #9aa4ad;
+    .btn-subtle {
+      border-style: dashed;
+      opacity: 0.9;
     }
 
-    audio {
-      margin-top: 16px;
+    .btn:disabled {
+      opacity: 0.6;
+      cursor: default;
+      box-shadow: none;
+      transform: none;
+    }
+
+    .btn:not(:disabled):active {
+      transform: translateY(1px);
+      box-shadow: none;
+    }
+
+    .btn span.icon {
+      font-size: 14px;
+    }
+
+    .pill-status-bar {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      align-items: center;
+      margin-top: 6px;
+      font-size: 11px;
+      color: var(--muted);
+    }
+
+    .status-dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 999px;
+      background: #4b5563;
+    }
+
+    .status-dot.ok {
+      background: #22c55e;
+      box-shadow: 0 0 10px rgba(34, 197, 94, 0.7);
+    }
+
+    .status-dot.warn {
+      background: #facc15;
+      box-shadow: 0 0 10px rgba(250, 204, 21, 0.7);
+    }
+
+    .status-dot.err {
+      background: #f97373;
+      box-shadow: 0 0 10px rgba(248, 113, 113, 0.7);
+    }
+
+    .status-text-soft {
+      color: var(--muted);
+    }
+
+    .status-text-strong {
+      color: #e5e7eb;
+    }
+
+    .audio-shell {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      margin-top: 6px;
+    }
+
+    .audio-shell audio {
       width: 100%;
+      outline: none;
+    }
+
+    .audio-caption {
+      font-size: 11px;
+      color: var(--muted);
+      display: flex;
+      justify-content: space-between;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .log-shell {
+      background: rgba(15, 23, 42, 0.95);
+      border-radius: var(--radius-lg);
+      border: 1px solid rgba(31, 41, 55, 0.95);
+      padding: 10px 11px;
+      max-height: 170px;
+      overflow: auto;
+      font-size: 11px;
+      font-family: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo,
+        Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+      color: var(--muted);
+    }
+
+    .log-line {
+      white-space: pre-wrap;
+    }
+
+    .log-line span.time {
+      opacity: 0.6;
+      margin-right: 6px;
+    }
+
+    .log-line.ok {
+      color: #4ade80;
+    }
+
+    .log-line.err {
+      color: #fca5a5;
+    }
+
+    .log-line.info {
+      color: #e5e7eb;
+    }
+
+    .log-line.dim {
+      opacity: 0.7;
+    }
+
+    .panel-inline {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      align-items: center;
+      margin-top: 4px;
+      font-size: 11px;
+      color: var(--muted);
+    }
+
+    .panel-inline strong {
+      color: #e5e7eb;
+      font-weight: 500;
+    }
+
+    .kv-row {
+      display: flex;
+      justify-content: space-between;
+      gap: 6px;
+      font-size: 11px;
+      color: var(--muted);
+    }
+
+    .kv-row span:first-child {
+      opacity: 0.8;
+    }
+
+    .tag-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 3px 9px;
+      border-radius: 999px;
+      border: 1px solid rgba(55, 65, 81, 0.9);
+      background: rgba(15, 23, 42, 0.9);
+      font-size: 11px;
+      color: var(--muted);
+    }
+
+    .tag-pill span.dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 999px;
+      background: var(--accent);
+      box-shadow: 0 0 10px rgba(56, 189, 248, 0.9);
+    }
+
+    .hint-subtle {
+      font-size: 10px;
+      color: var(--muted);
+      opacity: 0.85;
+      margin-top: 2px;
+    }
+
+    .badge-small-soft {
+      font-size: 10px;
+      padding: 2px 6px;
+      border-radius: 999px;
+      background: rgba(30, 64, 175, 0.4);
+      border: 1px solid rgba(30, 64, 175, 0.9);
+      color: #bfdbfe;
+    }
+
+    .stacked {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
     }
   </style>
 </head>
+
 <body>
-  <div class="container">
-    <h1>Voice Studio</h1>
-    <p class="hint">
-      Tune how your AI receptionist sounds to your callers. Changes are saved per tenant and language.
-    </p>
+  <div class="page-shell">
+    <header class="page-header">
+      <div class="page-title-block">
+        <div class="page-title-row">
+          <div class="logo-pill">A</div>
+          <div>
+            <div class="page-title">Alphine AI &mdash; Voice Studio</div>
+            <div class="page-subtitle">
+              Tune your tenant&rsquo;s default voice &amp; prosody profile.
+              All settings are stored at the tenant level and used by ACA
+              during live calls.
+            </div>
+          </div>
+        </div>
+        <div class="badge-row">
+          <div class="pill-badge">
+            <span class="pill-dot"></span>
+            EPIC 9 &middot; Story 9.5 &mdash; Per-Tenant Voice Profile
+          </div>
+          <div class="pill-badge-soft">
+            <span>Secure by design &mdash; token never leaves browser</span>
+          </div>
+        </div>
+      </div>
 
-    <div class="field-group">
-      <label for="langCode">Language</label>
-      <select id="langCode">
-        <option value="en-US">English (US)</option>
-        <option value="ta-IN">Tamil (India)</option>
-        <option value="hi-IN">Hindi (India)</option>
-        <option value="fr-FR">French (France)</option>
-        <option value="es-ES">Spanish (Spain)</option>
-      </select>
-      <div class="hint">Mapped to ElevenLabs multilingual voices.</div>
-    </div>
+      <div class="badge-row">
+        <div class="tag-pill">
+          <span class="dot"></span>
+          <span>Render &middot; ACA Orchestrator</span>
+        </div>
+      </div>
+    </header>
 
-    <div class="field-group">
-      <label for="voiceId">ElevenLabs Voice ID (optional)</label>
-      <input
-        type="text"
-        id="voiceId"
-        placeholder="Leave empty to use default voice for this language"
-      />
-    </div>
+    <main class="layout-grid">
+      <!-- LEFT: Core voice profile -->
+      <section class="card">
+        <div class="card-header">
+          <div class="card-title-row">
+            <div>
+              <div class="card-kicker">Voice Profile</div>
+              <div class="card-title">Tenant Defaults</div>
+            </div>
+          </div>
+          <div class="badge-mini">
+            <span class="badge-mini-dot"></span>
+            Live profile
+          </div>
+        </div>
 
-    <div class="field-group">
-      <label for="tonePreset">Tone</label>
-      <select id="tonePreset">
-        <option value="friendly">Friendly</option>
-        <option value="formal">Formal</option>
-        <option value="supportive">Supportive</option>
-      </select>
-    </div>
+        <div class="card-body">
+          <!-- Auth -->
+          <div>
+            <div class="section-label">Tenant authentication</div>
+            <div class="field">
+              <div class="field-label-row">
+                <div class="field-label">
+                  Tenant JWT (Bearer)
+                </div>
+                <div class="field-hint">
+                  Paste a partner / tenant JWT. Required for all actions.
+                </div>
+              </div>
+              <div class="token-wrapper">
+                <input
+                  id="jwt-token"
+                  class="input input-token"
+                  type="password"
+                  autocomplete="off"
+                  placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+                />
+                <button
+                  type="button"
+                  id="btn-toggle-token"
+                  class="token-mask-btn"
+                >
+                  SHOW
+                </button>
+              </div>
+              <div class="hint-subtle">
+                The token is used only in your browser and sent as
+                <code>Authorization: Bearer &lt;token&gt;</code> to the
+                orchestrator APIs.
+              </div>
+            </div>
+          </div>
 
-    <div class="field-group">
-      <label for="regionCode">Region (optional)</label>
-      <input
-        type="text"
-        id="regionCode"
-        placeholder="Example: IN, FR, CA"
-      />
-    </div>
+          <hr class="divider-soft" />
 
-    <div class="field-group">
-      <label for="stability">Stability</label>
-      <input type="range" id="stability" min="0" max="1" step="0.05" value="0.4" />
-      <div class="hint">Lower = more variation, Higher = more stable</div>
-    </div>
+          <!-- Provider / base voice -->
+          <div class="row">
+            <div class="field">
+              <div class="field-label-row">
+                <label for="tts-provider" class="field-label">
+                  TTS Provider
+                </label>
+                <span class="field-hint">Currently ElevenLabs in ACA</span>
+              </div>
+              <select id="tts-provider" class="select">
+                <option value="elevenlabs">ElevenLabs</option>
+              </select>
+              <div class="panel-inline">
+                <span>Provider config lives in server-side .env.</span>
+              </div>
+            </div>
 
-    <div class="field-group">
-      <label for="similarity">Similarity Boost</label>
-      <input type="range" id="similarity" min="0" max="1" step="0.05" value="0.8" />
-    </div>
+            <div class="field">
+              <div class="field-label-row">
+                <label for="language-code" class="field-label">
+                  Language / Locale
+                </label>
+                <span class="field-hint">Used by STT &amp; TTS routing</span>
+              </div>
+              <select id="language-code" class="select">
+                <!-- Keep aligned with languageRegistry.json high-level values -->
+                <option value="en-US">English (US)</option>
+                <option value="en-CA">English (Canada)</option>
+                <option value="en-IN">English (India)</option>
+                <option value="ta-IN">Tamil (India)</option>
+                <option value="fr-FR">French (France)</option>
+                <option value="fr-CA">French (Canada)</option>
+                <option value="es-ES">Spanish (Spain)</option>
+              </select>
+              <div class="hint-subtle">
+                ACA will still run language detection &amp; fallback; this is
+                the <strong>preferred</strong> tenant voice locale.
+              </div>
+            </div>
+          </div>
 
-    <div class="field-group">
-      <label for="speakingRate">Speaking Speed</label>
-      <input type="range" id="speakingRate" min="0.6" max="1.4" step="0.05" value="1.0" />
-    </div>
+          <div class="field">
+            <div class="field-label-row">
+              <label for="voice-id" class="field-label">
+                Base voice ID
+              </label>
+              <span class="field-hint">
+                ElevenLabs Voice ID (or provider-specific reference)
+              </span>
+            </div>
+            <input
+              id="voice-id"
+              class="input"
+              type="text"
+              autocomplete="off"
+              placeholder="e.g. 21m00Tcm4TlvDq8ikWAM"
+            />
+            <div class="panel-inline">
+              <span>TIP:</span>
+              <span>
+                Use a neutral, human assistant voice tuned for call centers.
+              </span>
+            </div>
+          </div>
 
-    <div class="field-group">
-      <label for="sampleText">Sample Text (optional)</label>
-      <input
-        type="text"
-        id="sampleText"
-        placeholder="Type a sentence to preview this voice..."
-      />
-    </div>
+          <!-- Sliders: prosody -->
+          <div>
+            <div class="section-label">Prosody tuning</div>
 
-    <div class="actions">
-      <button class="btn-primary" id="btnSave">Save Settings</button>
-      <button class="btn-secondary" id="btnPreview">Preview Voice</button>
-    </div>
+            <div class="stacked">
+              <div class="slider-row">
+                <div class="slider-label">Stability</div>
+                <input
+                  id="stability"
+                  class="slider"
+                  type="range"
+                  min="0"
+                  max="1"
+                  step="0.05"
+                  value="0.5"
+                />
+                <div class="slider-value" id="stability-value">0.50</div>
+              </div>
 
-    <div class="status" id="status"></div>
+              <div class="slider-row">
+                <div class="slider-label">Similarity boost</div>
+                <input
+                  id="similarity-boost"
+                  class="slider"
+                  type="range"
+                  min="0"
+                  max="1"
+                  step="0.05"
+                  value="0.75"
+                />
+                <div class="slider-value" id="similarity-boost-value">0.75</div>
+              </div>
 
-    <audio id="previewAudio" controls style="display:none;"></audio>
+              <div class="slider-row">
+                <div class="slider-label">Style</div>
+                <input
+                  id="style"
+                  class="slider"
+                  type="range"
+                  min="0"
+                  max="1"
+                  step="0.05"
+                  value="0.3"
+                />
+                <div class="slider-value" id="style-value">0.30</div>
+              </div>
+
+              <div class="slider-row">
+                <div class="slider-label">Speaking rate</div>
+                <input
+                  id="speaking-rate"
+                  class="slider"
+                  type="range"
+                  min="0.7"
+                  max="1.3"
+                  step="0.01"
+                  value="1.0"
+                />
+                <div class="slider-value" id="speaking-rate-value">1.00×</div>
+              </div>
+
+              <div class="slider-row">
+                <div class="slider-label">Pitch shift</div>
+                <input
+                  id="pitch-shift"
+                  class="slider"
+                  type="range"
+                  min="-6"
+                  max="6"
+                  step="1"
+                  value="0"
+                />
+                <div class="slider-value" id="pitch-shift-value">0 st</div>
+              </div>
+            </div>
+
+            <label class="toggle-row">
+              <input id="use-speaker-boost" type="checkbox" checked />
+              <span class="toggle-label">Enable speaker boost</span>
+            </label>
+            <div class="hint-subtle">
+              For call-center style voices, a <strong>stable</strong> profile
+              with mild style and speaker boost usually works best.
+            </div>
+          </div>
+
+          <!-- Buttons -->
+          <div>
+            <div class="btn-row-main">
+              <button type="button" id="btn-load" class="btn btn-subtle">
+                <span class="icon">⟳</span>
+                Load from tenant
+              </button>
+
+              <button type="button" id="btn-save" class="btn btn-primary">
+                <span class="icon">💾</span>
+                Save voice profile
+              </button>
+
+              <button type="button" id="btn-reset" class="btn btn-ghost">
+                <span class="icon">↺</span>
+                Reset to safe defaults
+              </button>
+            </div>
+
+            <div class="pill-status-bar">
+              <span
+                class="status-dot"
+                id="status-dot-profile"
+              ></span>
+              <span
+                class="status-text-soft"
+                id="status-text-profile"
+              >
+                Idle &mdash; no profile changes yet.
+              </span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- RIGHT: Preview + logs -->
+      <section class="card">
+        <div class="card-header">
+          <div class="card-title-row">
+            <div>
+              <div class="card-kicker">Live preview</div>
+              <div class="card-title">Speech Test Harness</div>
+            </div>
+          </div>
+          <div class="badge-mini">
+            <span class="badge-mini-dot"></span>
+            Uses current in-memory settings
+          </div>
+        </div>
+
+        <div class="card-body">
+          <div class="field">
+            <div class="field-label-row">
+              <label for="preview-text" class="field-label">
+                Sample phrase
+              </label>
+              <span class="field-hint">
+                Used to generate a one-off audio preview via orchestrator.
+              </span>
+            </div>
+            <textarea
+              id="preview-text"
+              class="textarea"
+              placeholder="Hi, this is the Alphine AI automated call assistant. How can I help you today?"
+            ></textarea>
+            <div class="panel-inline">
+              <span>Good preview lines:</span>
+              <span>
+                greeting + short menu + one fallback sentence.
+              </span>
+            </div>
+          </div>
+
+          <div>
+            <div class="btn-row-main">
+              <button type="button" id="btn-preview" class="btn btn-primary">
+                <span class="icon">▶</span>
+                Generate preview
+              </button>
+
+              <button type="button" id="btn-stop" class="btn btn-ghost">
+                <span class="icon">■</span>
+                Stop / clear
+              </button>
+            </div>
+
+            <div class="audio-shell">
+              <audio
+                id="preview-audio"
+                controls
+                preload="none"
+              ></audio>
+              <div class="audio-caption">
+                <span id="preview-caption-left">
+                  No preview generated yet.
+                </span>
+                <span id="preview-caption-right" class="badge-small-soft">
+                  Route: <span id="preview-route-label">/api/voice/preview</span>
+                </span>
+              </div>
+            </div>
+
+            <div class="pill-status-bar">
+              <span
+                class="status-dot"
+                id="status-dot-preview"
+              ></span>
+              <span
+                class="status-text-soft"
+                id="status-text-preview"
+              >
+                Idle &mdash; click <span class="status-text-strong">Generate
+                preview</span> to synthesize.
+              </span>
+            </div>
+          </div>
+
+          <hr class="divider-soft" />
+
+          <div>
+            <div class="section-label">Debug log</div>
+            <div class="log-shell" id="log-shell">
+              <!-- lines appended by JS -->
+            </div>
+            <div class="kv-row" style="margin-top: 6px;">
+              <span>Backend endpoints</span>
+              <span>
+                <code>/api/voice/profile</code> &middot;
+                <code>/api/voice/preview</code>
+              </span>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
   </div>
 
-  <script src="voice.js"></script>
+  <script src="./voice.js" type="module"></script>
 </body>
 </html>
