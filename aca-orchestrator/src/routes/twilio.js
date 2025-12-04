@@ -87,6 +87,7 @@ router.ws("/stream", async (ws, req) => {
   console.log("🌐  Twilio WebSocket connected");
 
   let activeCallSid = null;
+  let activeStreamSid = null; // ✅ track Twilio streamSid for replies
   let hasResponded = false; // ✅ Only respond once per call while debugging
 
   ws.on("message", async (msg) => {
@@ -95,7 +96,11 @@ router.ws("/stream", async (ws, req) => {
 
       if (data.event === "start") {
         activeCallSid = data.start.callSid;
-        console.log("🎬  Stream started for Call SID:", activeCallSid);
+        activeStreamSid = data.start.streamSid; // ✅ capture streamSid
+        console.log("🎬  Stream started:", {
+          callSid: activeCallSid,
+          streamSid: activeStreamSid,
+        });
       } else if (data.event === "media" && data.media.payload) {
         // Twilio sends base64 PCM16 audio in data.media.payload
         const audioBuffer = Buffer.from(data.media.payload, "base64");
@@ -146,13 +151,20 @@ router.ws("/stream", async (ws, req) => {
             console.error("❌  TTS synthesis failed:", ttsErr.message);
           }
 
-          if (ttsBuffer) {
-            // Send synthesized speech audio back to Twilio (base64)
+          if (ttsBuffer && activeStreamSid) {
+            // ✅ Send synthesized speech audio back to Twilio in proper stream protocol
             ws.send(
               JSON.stringify({
-                event: "speech",
-                audio: ttsBuffer.toString("base64"),
+                event: "media",
+                streamSid: activeStreamSid,
+                media: {
+                  payload: ttsBuffer.toString("base64"),
+                },
               })
+            );
+          } else if (!activeStreamSid) {
+            console.warn(
+              "⚠️  Skipping TTS send: activeStreamSid is missing, cannot send media event."
             );
           }
         }
