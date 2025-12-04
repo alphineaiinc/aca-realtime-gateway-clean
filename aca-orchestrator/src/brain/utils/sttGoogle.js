@@ -3,8 +3,46 @@
 
 const speech = require("@google-cloud/speech");
 
-// Uses GOOGLE_APPLICATION_CREDENTIALS env var for auth
-const client = new speech.SpeechClient();
+let cachedClient = null;
+
+function getSpeechClient() {
+  if (cachedClient) return cachedClient;
+
+  const credJson = process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON;
+  const projectId = process.env.GOOGLE_CLOUD_PROJECT_ID;
+
+  console.log("🔧 [stt] Env check:", {
+    hasJson: !!credJson,
+    hasProjectId: !!projectId,
+  });
+
+  if (credJson && projectId) {
+    try {
+      const credentials = JSON.parse(credJson);
+      cachedClient = new speech.SpeechClient({
+        projectId,
+        credentials,
+      });
+      console.log(
+        "✅ [stt] Google STT client initialized with explicit credentials."
+      );
+      return cachedClient;
+    } catch (e) {
+      console.error(
+        "❌ [stt] Failed to parse GOOGLE_APPLICATION_CREDENTIALS_JSON, falling back to default credentials:",
+        e.message
+      );
+    }
+  } else {
+    console.warn(
+      "⚠️ [stt] GOOGLE_APPLICATION_CREDENTIALS_JSON or GOOGLE_CLOUD_PROJECT_ID missing, using default credentials."
+    );
+  }
+
+  // Fallback: default credentials (will fail on Render until configured)
+  cachedClient = new speech.SpeechClient();
+  return cachedClient;
+}
 
 /**
  * Transcribe a single chunk of Twilio μ-law 8k audio.
@@ -19,6 +57,8 @@ async function transcribeMulaw(audioBuffer, { languageCode = "en-US" } = {}) {
     return "";
   }
 
+  const client = getSpeechClient();
+
   const audio = {
     content: audioBuffer.toString("base64"),
   };
@@ -27,7 +67,6 @@ async function transcribeMulaw(audioBuffer, { languageCode = "en-US" } = {}) {
     encoding: "MULAW",
     sampleRateHertz: 8000,
     languageCode,
-    // You can tune these later if needed:
     enableAutomaticPunctuation: true,
     model: "default",
   };
@@ -35,7 +74,13 @@ async function transcribeMulaw(audioBuffer, { languageCode = "en-US" } = {}) {
   const [response] = await client.recognize({ audio, config });
 
   const transcript = (response.results || [])
-    .map((r) => (r.alternatives && r.alternatives[0] && r.alternatives[0].transcript) || "")
+    .map(
+      (r) =>
+        (r.alternatives &&
+          r.alternatives[0] &&
+          r.alternatives[0].transcript) ||
+        ""
+    )
     .join(" ")
     .trim();
 
