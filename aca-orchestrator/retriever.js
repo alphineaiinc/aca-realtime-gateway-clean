@@ -3,7 +3,7 @@
 // (adds safeAxios wrapper + retry/backoff + resilience metrics)
 
 const path = require("path");
-require("dotenv").config({ path: path.resolve(__dirname, "./.env") });
+require("dotenv").config({ path: path.resolve(__dirname, "../.env") });
 
 const { Pool } = require("pg");
 const OpenAI = require("openai");
@@ -14,16 +14,14 @@ const OpenAI = require("openai");
 const { requestWithRetry } = require("./src/brain/utils/safeAxios");
 const { observeHttpRetry } = require("./src/monitor/resilienceMetrics");
 
+console.log("🧩 retriever.js loaded – OpenAI client embeddings v2");
+
+
 // ------------------------------------------------------------------
 // 🔐 Environment Validation
 // ------------------------------------------------------------------
 if (!process.env.OPENAI_API_KEY) {
-  console.error("❌ OPENAI_API_KEY not loaded. Check .env in aca-orchestrator.");
-  process.exit(1);
-}
-
-if (!process.env.KB_DB_URL) {
-  console.error("❌ KB_DB_URL not set. Point this to the Neon DB that holds kb_entries.");
+  console.error("❌ OPENAI_API_KEY not loaded. Check .env in project root.");
   process.exit(1);
 }
 
@@ -35,32 +33,34 @@ const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
 // ------------------------------------------------------------------
 // 🔍 Search KB by vector similarity (tenant-scoped)
-//   NOTE: DB schema:
-//     tenant_id  | integer
-//     query_text | text
-//     answer     | text
-//     embedding  | vector(1536)
 // ------------------------------------------------------------------
 async function searchKB(query, tenantId, topK = 1) {
+  // --- Embedding via official OpenAI client (no raw Axios) ---
+  let queryEmbeddingVector;
+
   try {
-    // --- Resilient embedding call ---
-    const embeddingResponse = await requestWithRetry(
-      {
-        method: "post",
-        url: "https://api.openai.com/v1/embeddings",
-        headers: {
-          Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
-          "Content-Type": "application/json",
-        },
-        data: { model: "text-embedding-3-small", input: query },
-      },
-      { retries: 4, baseDelayMs: 300, maxDelayMs: 4000 }
-    );
+    const embeddingResponse = await openai.embeddings.create({
+      model: "text-embedding-3-small",
+      input: query,
+    });
 
-    const queryEmbedding = `[${embeddingResponse.data.data[0].embedding.join(",")}]`;
+    queryEmbeddingVector = embeddingResponse.data[0].embedding;
+  } catch (err) {
+    console.error("❌ Failed to get embedding (OpenAI client):", err.message);
+    if (err.response?.data?.error) {
+      console.error("❌ Embedding error detail:", err.response.data.error);
+    }
+    observeHttpRetry();
+    throw err;
+  }
 
+  // pgvector expects a literal like '[1,2,3,...]'
+  const queryEmbedding = `[${queryEmbeddingVector.join(",")}]`;
+
+  try {
     const { rows } = await pool.query(
       `SELECT id,
+              tenant_id,
               query_text,
               answer,
               1 - (embedding <=> $1::vector) AS similarity
@@ -71,17 +71,11 @@ async function searchKB(query, tenantId, topK = 1) {
       [queryEmbedding, tenantId, topK]
     );
 
-    if (rows.length === 0) {
-      console.log("ℹ️ searchKB: no rows for tenant_id =", tenantId);
-      return null;
-    }
-
+    if (rows.length === 0) return null;
     return { answer: rows[0].answer, similarity: rows[0].similarity };
   } catch (err) {
-    console.error("❌ searchKB error (DB or embeddings):", err);
-    observeHttpRetry();
-    // Fail soft so the call doesn’t hard-crash
-    return null;
+    console.error("❌ searchKB DB error:", err.message);
+    throw err;
   }
 }
 
@@ -99,14 +93,12 @@ You are Alphine AI, replying in Tanglish (Tamil + English mix).
 - Avoid pure English or pure Tamil.
 - Sound modern and conversational, like a real person.`;
   } else if (langCode === "hi-IN") {
-    styleInstruction =
-      "Reply in Hinglish (Hindi + English mix), casual daily speech.";
+    styleInstruction = "Reply in Hinglish (Hindi + English mix), casual daily speech.";
   } else if (langCode === "es-ES") {
-    styleInstruction =
-      "Reply in Spanish, casual and modern, allow some English words.";
+    styleInstruction = "Reply in Spanish, casual and modern, allow some English words.";
   }
 
-  // --- Resilient completion call ---
+  // --- Resilient completion call via safeAxios ---
   const completion = await requestWithRetry(
     {
       method: "post",
@@ -174,14 +166,19 @@ You are Alphine AI, replying in Tanglish (Tamil + English mix).
 
 // ------------------------------------------------------------------
 // 🔁 Retrieval Pipeline
-//   NOTE: second parameter is currently called `businessId` in callers,
-//   but it should actually be the tenant id that matches kb_entries.tenant_id.
 // ------------------------------------------------------------------
-async function retrieveAnswer(userQuery, businessId, langCode = "en-US") {
-  // Here businessId is effectively the tenant_id for kb_entries
-  const result = await searchKB(userQuery, businessId);
-  if (!result) return "I couldn’t find the answer right now.";
-  return await polishAnswer(result.answer, userQuery, langCode);
+async function retrieveAnswer(userQuery, tenantId, langCode = "en-US") {
+  try {
+    const result = await searchKB(userQuery, tenantId);
+    if (!result) {
+      console.log("ℹ️ No KB match found, returning fallback answer.");
+      return "I couldn’t find the answer right now.";
+    }
+    return await polishAnswer(result.answer, userQuery, langCode);
+  } catch (err) {
+    console.error("❌ searchKB error (DB or embeddings):", err);
+    return "I’m having trouble looking that up right now.";
+  }
 }
 
 module.exports = { retrieveAnswer };
