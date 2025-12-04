@@ -88,7 +88,7 @@ router.ws("/stream", async (ws, req) => {
 
   let activeCallSid = null;
   let activeStreamSid = null; // ✅ track Twilio streamSid for replies
-  let hasResponded = false; // ✅ Only respond once per call while debugging
+  let lastResponseAt = 0; // ✅ cooldown between TTS replies (ms)
 
   ws.on("message", async (msg) => {
     try {
@@ -110,13 +110,15 @@ router.ws("/stream", async (ws, req) => {
         const simulatedText = "simulated transcription";
 
         if (simulatedText) {
-          console.log(`👂  Heard (Call ${activeCallSid}):`, simulatedText);
-
-          // ✅ Throttle: only generate + TTS one reply per call
-          if (hasResponded) {
+          // ✅ Simple cooldown: max one reply every 5 seconds
+          const now = Date.now();
+          const COOLDOWN_MS = 5000;
+          if (now - lastResponseAt < COOLDOWN_MS) {
             return;
           }
-          hasResponded = true;
+          lastResponseAt = now;
+
+          console.log(`👂  Heard (Call ${activeCallSid}):`, simulatedText);
 
           // For now we assume tenant 1; later this should come from call context / webhook
           const tenantId = 1;
@@ -124,6 +126,11 @@ router.ws("/stream", async (ws, req) => {
           // Retrieve GPT-generated response
           const reply = await retrieveAnswer(simulatedText, tenantId, "en-US");
           console.log("💬  GPT reply:", reply);
+          console.log("💬 [conv]", {
+            callSid: activeCallSid,
+            user: simulatedText,
+            bot: reply,
+          });
 
           // Resolve tenant region (for accent shaping, etc.)
           let regionCode = null;
@@ -152,6 +159,12 @@ router.ws("/stream", async (ws, req) => {
           }
 
           if (ttsBuffer && activeStreamSid) {
+            console.log("📡  Sending media back to Twilio:", {
+              callSid: activeCallSid,
+              streamSid: activeStreamSid,
+              bytes: ttsBuffer.length,
+            });
+
             // ✅ Send synthesized speech audio back to Twilio in proper stream protocol
             ws.send(
               JSON.stringify({
