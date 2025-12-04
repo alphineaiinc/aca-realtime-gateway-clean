@@ -1,7 +1,3 @@
-// retriever.js
-// Story 5.3.A — Resilient Orchestrator Edition
-// (adds safeAxios wrapper + retry/backoff + resilience metrics)
-
 const path = require("path");
 require("dotenv").config({ path: path.resolve(__dirname, "../.env") });
 
@@ -13,9 +9,6 @@ const OpenAI = require("openai");
 // ------------------------------------------------------------------
 const { requestWithRetry } = require("./src/brain/utils/safeAxios");
 const { observeHttpRetry } = require("./src/monitor/resilienceMetrics");
-
-console.log("🧩 retriever.js loaded – OpenAI client embeddings v2");
-
 
 // ------------------------------------------------------------------
 // 🔐 Environment Validation
@@ -31,25 +24,52 @@ if (!process.env.OPENAI_API_KEY) {
 const pool = new Pool({ connectionString: process.env.KB_DB_URL });
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
+console.log("🧩 retriever.js loaded – OpenAI client embeddings v2");
+
 // ------------------------------------------------------------------
 // 🔍 Search KB by vector similarity (tenant-scoped)
 // ------------------------------------------------------------------
 async function searchKB(query, tenantId, topK = 1) {
+  // --- Normalize query into a safe string for embeddings ---
+  let normalizedQuery;
+
+  if (typeof query === "string") {
+    normalizedQuery = query;
+  } else if (query == null) {
+    normalizedQuery = "";
+  } else if (Array.isArray(query)) {
+    // If somehow an array sneaks in, join it into a single string
+    normalizedQuery = query.map((x) => String(x ?? "")).join(" ");
+  } else {
+    // Objects / numbers / anything else → stringify
+    normalizedQuery = String(query);
+  }
+
+  console.log("🔍 searchKB embedding input preview:", {
+    originalType: typeof query,
+    normalizedLength: normalizedQuery.length,
+  });
+
   // --- Embedding via official OpenAI client (no raw Axios) ---
   let queryEmbeddingVector;
 
   try {
     const embeddingResponse = await openai.embeddings.create({
       model: "text-embedding-3-small",
-      input: query,
+      input: normalizedQuery,
     });
 
     queryEmbeddingVector = embeddingResponse.data[0].embedding;
   } catch (err) {
     console.error("❌ Failed to get embedding (OpenAI client):", err.message);
-    if (err.response?.data?.error) {
-      console.error("❌ Embedding error detail:", err.response.data.error);
+
+    // New OpenAI client error shape
+    if (err.error) {
+      console.error("❌ Embedding error detail (err.error):", err.error);
+    } else if (err.response?.data?.error) {
+      console.error("❌ Embedding error detail (response.data.error):", err.response.data.error);
     }
+
     observeHttpRetry();
     throw err;
   }
