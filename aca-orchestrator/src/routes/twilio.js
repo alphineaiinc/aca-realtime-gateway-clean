@@ -87,6 +87,7 @@ router.ws("/stream", async (ws, req) => {
   console.log("🌐  Twilio WebSocket connected");
 
   let activeCallSid = null;
+  let hasResponded = false; // ✅ Only respond once per call while debugging
 
   ws.on("message", async (msg) => {
     try {
@@ -105,6 +106,12 @@ router.ws("/stream", async (ws, req) => {
 
         if (simulatedText) {
           console.log(`👂  Heard (Call ${activeCallSid}):`, simulatedText);
+
+          // ✅ Throttle: only generate + TTS one reply per call
+          if (hasResponded) {
+            return;
+          }
+          hasResponded = true;
 
           // For now we assume tenant 1; later this should come from call context / webhook
           const tenantId = 1;
