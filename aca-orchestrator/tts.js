@@ -97,7 +97,7 @@ async function synthesizeSpeech(text, langCode = "en-US", options = {}) {
     // ---------------------------------
     // 1) Pre-process text for voice
     //    (accent shaping → prosody → fillers)
-// ---------------------------------
+    // ---------------------------------
     let processedText = text;
 
     try {
@@ -163,7 +163,10 @@ async function synthesizeSpeech(text, langCode = "en-US", options = {}) {
       }
     }
 
-    const url = `https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`;
+    // ---------------------------------
+    // 3) ElevenLabs API call (ulaw_8000 for Twilio)
+    // ---------------------------------
+    const url = `https://api.elevenlabs.io/v1/text-to-speech/${voiceId}?output_format=ulaw_8000`;
     console.log("📤 [tts] API Request:", {
       url,
       model_id: "eleven_multilingual_v2",
@@ -183,6 +186,7 @@ async function synthesizeSpeech(text, langCode = "en-US", options = {}) {
       {
         headers: {
           "xi-api-key": apiKey,
+          // Accept can remain audio/mpeg; ElevenLabs uses output_format to decide.
           Accept: "audio/mpeg",
           "Content-Type": "application/json",
         },
@@ -190,7 +194,9 @@ async function synthesizeSpeech(text, langCode = "en-US", options = {}) {
       }
     );
 
-    console.log("✅ [tts] ElevenLabs synthesis complete");
+    console.log("✅ [tts] ElevenLabs synthesis complete", {
+      bytes: response.data ? response.data.length : 0,
+    });
     return Buffer.from(response.data);
   } catch (err) {
     console.error(
