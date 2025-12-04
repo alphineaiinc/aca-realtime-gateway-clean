@@ -12,6 +12,7 @@ const WebSocket = require("ws");
 const { retrieveAnswer } = require("../../retriever");
 const { synthesizeSpeech } = require("../../tts");
 const { getTenantRegion } = require("../brain/utils/tenantContext"); // ✅ tenant region helper
+const { transcribeMulaw } = require("../brain/utils/sttGoogle"); // ✅ NEW: Google STT helper
 require("dotenv").config({ path: path.resolve(__dirname, "../../.env") });
 
 /**
@@ -89,6 +90,8 @@ router.ws("/stream", async (ws, req) => {
   let activeCallSid = null;
   let activeStreamSid = null; // ✅ track Twilio streamSid for replies
   let lastResponseAt = 0; // ✅ cooldown between TTS replies (ms)
+  let streamActive = true; // ✅ avoid sending after stop
+  let sttBuffers = []; // ✅ accumulate audio for the next STT chunk
 
   ws.on("message", async (msg) => {
     try {
@@ -97,92 +100,113 @@ router.ws("/stream", async (ws, req) => {
       if (data.event === "start") {
         activeCallSid = data.start.callSid;
         activeStreamSid = data.start.streamSid; // ✅ capture streamSid
+        streamActive = true;
+        sttBuffers = [];
         console.log("🎬  Stream started:", {
           callSid: activeCallSid,
           streamSid: activeStreamSid,
         });
       } else if (data.event === "media" && data.media.payload) {
-        // Twilio sends base64 PCM16 audio in data.media.payload
+        // Twilio sends base64 PCM16 μ-law audio in data.media.payload
         const audioBuffer = Buffer.from(data.media.payload, "base64");
 
-        // TODO: Replace with real-time STT engine (e.g., Google or Whisper)
-        // For now, simulate recognition for debugging
-        const simulatedText = "simulated transcription";
+        // ✅ Always accumulate audio into current chunk for STT
+        sttBuffers.push(audioBuffer);
 
-        if (simulatedText) {
-          // ✅ Simple cooldown: max one reply every 5 seconds
-          const now = Date.now();
-          const COOLDOWN_MS = 5000;
-          if (now - lastResponseAt < COOLDOWN_MS) {
-            return;
-          }
-          lastResponseAt = now;
+        // ✅ Simple cooldown: at most one reply every 5 seconds
+        const now = Date.now();
+        const COOLDOWN_MS = 5000;
+        if (now - lastResponseAt < COOLDOWN_MS) {
+          return;
+        }
+        lastResponseAt = now;
 
-          console.log(`👂  Heard (Call ${activeCallSid}):`, simulatedText);
+        // ----------------------------------
+        // 🔊 STT: convert audio → text
+        // ----------------------------------
+        let userText = "";
+        try {
+          const combined = Buffer.concat(sttBuffers);
+          sttBuffers = []; // reset for the next utterance
+          userText = await transcribeMulaw(combined, { languageCode: "en-US" });
+        } catch (sttErr) {
+          console.error(
+            "❌ [stt] Transcription failed, falling back to simulated text:",
+            sttErr.message
+          );
+          userText = "simulated transcription";
+        }
 
-          // For now we assume tenant 1; later this should come from call context / webhook
-          const tenantId = 1;
+        if (!userText) {
+          console.log("ℹ️ [stt] Empty transcript, skipping reply.");
+          return;
+        }
 
-          // Retrieve GPT-generated response
-          const reply = await retrieveAnswer(simulatedText, tenantId, "en-US");
-          console.log("💬  GPT reply:", reply);
-          console.log("💬 [conv]", {
+        console.log(`👂  Heard (Call ${activeCallSid}):`, userText);
+
+        // For now we assume tenant 1; later this should come from call context / webhook
+        const tenantId = 1;
+
+        // Retrieve GPT-generated response
+        const reply = await retrieveAnswer(userText, tenantId, "en-US");
+        console.log("💬  GPT reply:", reply);
+        console.log("💬 [conv]", {
+          callSid: activeCallSid,
+          user: userText,
+          bot: reply,
+        });
+
+        // Resolve tenant region (for accent shaping, etc.)
+        let regionCode = null;
+        try {
+          regionCode = await getTenantRegion(tenantId);
+        } catch (e) {
+          console.warn(
+            `⚠️  Failed to get tenant region for tenant=${tenantId}:`,
+            e.message
+          );
+        }
+
+        // Convert GPT reply to speech using conversational TTS
+        let ttsBuffer = null;
+        try {
+          // For now we assume English; later this can be detected dynamically
+          const langCode = "en-US";
+          ttsBuffer = await synthesizeSpeech(reply, langCode, {
+            tenantId,
+            regionCode,
+            tonePreset: "friendly",
+            useFillers: true,
+          });
+        } catch (ttsErr) {
+          console.error("❌  TTS synthesis failed:", ttsErr.message);
+        }
+
+        if (ttsBuffer && activeStreamSid && streamActive) {
+          console.log("📡  Sending media back to Twilio:", {
             callSid: activeCallSid,
-            user: simulatedText,
-            bot: reply,
+            streamSid: activeStreamSid,
+            bytes: ttsBuffer.length,
           });
 
-          // Resolve tenant region (for accent shaping, etc.)
-          let regionCode = null;
-          try {
-            regionCode = await getTenantRegion(tenantId);
-          } catch (e) {
-            console.warn(
-              `⚠️  Failed to get tenant region for tenant=${tenantId}:`,
-              e.message
-            );
-          }
-
-          // Convert GPT reply to speech using conversational TTS
-          let ttsBuffer = null;
-          try {
-            // For now we assume English; later this can be detected dynamically
-            const langCode = "en-US";
-            ttsBuffer = await synthesizeSpeech(reply, langCode, {
-              tenantId,
-              regionCode,
-              tonePreset: "friendly",
-              useFillers: true,
-            });
-          } catch (ttsErr) {
-            console.error("❌  TTS synthesis failed:", ttsErr.message);
-          }
-
-          if (ttsBuffer && activeStreamSid) {
-            console.log("📡  Sending media back to Twilio:", {
-              callSid: activeCallSid,
+          // ✅ Send synthesized speech audio back to Twilio in proper stream protocol
+          ws.send(
+            JSON.stringify({
+              event: "media",
               streamSid: activeStreamSid,
-              bytes: ttsBuffer.length,
-            });
-
-            // ✅ Send synthesized speech audio back to Twilio in proper stream protocol
-            ws.send(
-              JSON.stringify({
-                event: "media",
-                streamSid: activeStreamSid,
-                media: {
-                  payload: ttsBuffer.toString("base64"),
-                },
-              })
-            );
-          } else if (!activeStreamSid) {
-            console.warn(
-              "⚠️  Skipping TTS send: activeStreamSid is missing, cannot send media event."
-            );
-          }
+              media: {
+                payload: ttsBuffer.toString("base64"),
+              },
+            })
+          );
+        } else if (!activeStreamSid) {
+          console.warn(
+            "⚠️  Skipping TTS send: activeStreamSid is missing, cannot send media event."
+          );
         }
       } else if (data.event === "stop") {
         console.log("🛑  Stream stopped for Call SID:", data.stop.callSid);
+        streamActive = false;
       }
     } catch (err) {
       console.error("❌  Stream error:", err);
@@ -191,6 +215,7 @@ router.ws("/stream", async (ws, req) => {
 
   ws.on("close", () => {
     console.log("⚡  Twilio WebSocket disconnected");
+    streamActive = false;
   });
 });
 
