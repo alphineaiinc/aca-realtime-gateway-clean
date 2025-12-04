@@ -65,13 +65,19 @@ function postProcessAnswer(text) {
   // strip leading/trailing quotes
   cleaned = cleaned.replace(/^["'“”]+/, "").replace(/["'“”]+$/, "").trim();
 
-  // absolutely forbid some robotic phrases
+  // absolutely forbid some robotic / repetitive phrases
   const bannedPatterns = [
     /how can i assist you today\??/i,
     /what can i help you with(?: regarding that)?\??/i,
     /how can i help you with your needs(?: today)?\??/i,
-    /what do you need assistance with(?: today)?\??/i,
     /i'm here to help!?$/i,
+    /i am here to help!?$/i,
+    /i'?m here (?:and ready )?to help(?: you)?!?$/i,
+    /would you like to know more(?: about(?: the service)?)?\??$/i,
+    /what would you like to know(?: more)?(?: about(?: the service)?)?\??$/i,
+    /could you clarify what (?:you|you're) (?:asking|referring to|interested in)\??$/i,
+    /could you clarify what you'?d like to know more about\??/i,
+    /how can i assist you\??/i,
   ];
   for (const pattern of bannedPatterns) {
     cleaned = cleaned.replace(pattern, "").trim();
@@ -80,7 +86,7 @@ function postProcessAnswer(text) {
   // If we gutted the end and it ends with a dangling comma/and, tidy it
   cleaned = cleaned.replace(/[,\s]+$/g, "").trim();
 
-  // hard cap length to keep TTS snappy (roughly 2 short sentences)
+  // hard cap length to keep TTS snappy (roughly 1–2 short sentences)
   const MAX_LEN = 260;
   if (cleaned.length > MAX_LEN) {
     const cut = cleaned.lastIndexOf(".", MAX_LEN);
@@ -184,15 +190,18 @@ function isServiceIntent(lower, session) {
     lower === "service" ||
     lower === "service." ||
     lower === "offered" ||
-    lower === "offered."
+    lower === "offered." ||
+    lower === "offer" ||
+    lower === "offer."
   ) {
     return true;
   }
 
-  // If user keeps mentioning "service" after we've already said "call orchestration",
-  // treat it as deepening that topic instead of asking for more clarification.
+  // If user keeps mentioning "service" or "offer" after we've already said
+  // "call orchestration" or explained the service, treat it as deepening,
+  // not a fresh clarification.
   if (
-    lower.includes("service") &&
+    (lower.includes("service") || lower.includes("offer")) &&
     session &&
     session.turns.length > 0 &&
     session.turns.slice(-1)[0].bot &&
@@ -208,20 +217,20 @@ function serviceExplainer(turnsSoFar) {
   // First time talking about the service
   if (turnsSoFar === 0) {
     return postProcessAnswer(
-      "We run an automated call assistant for businesses. It answers calls, routes them, and handles common questions so you don’t miss important callers. What would you like to know more about – features, pricing, or setup?"
+      "We run an automated call assistant for businesses. It answers calls, routes them, and handles common questions so you don’t miss important callers. What would you like to know more about – day-to-day use, pricing, or setup?"
     );
   }
 
   // Second time / follow-ups – less intro, more direct
   if (turnsSoFar === 1) {
     return postProcessAnswer(
-      "In simple terms, we pick up your calls, understand what the caller wants, and either answer them or pass the call or message to the right place. Is your interest more about how it works day to day, or about getting it set up for your business?"
+      "Day to day, it picks up your calls, talks to customers, and passes real ones or messages to you. Are you more curious about how it works in practice or how to get it running for your business?"
     );
   }
 
   // Later: keep it short and focused
   return postProcessAnswer(
-    "Our service is a smart call assistant that can greet callers, answer FAQs, and route calls. Tell me what you’re most curious about, and I’ll focus on that."
+    "It’s a smart call assistant that greets callers, answers FAQs, and routes calls so you don’t have to. Tell me what you care most about and I’ll stay on that."
   );
 }
 
@@ -255,15 +264,17 @@ The caller is saying a short phrase like:
 or a very short follow-up to your previous answer.
 
 Rules:
-- Sound like a real person, not a script.
-- Keep replies very short and immediate.
-- Aim for 1 sentence; at most 2 short sentences.
-- Do NOT say generic support phrases like:
+- Sound like a real person, not a support script.
+- Keep replies very short and immediate (about 5–15 spoken words).
+- Aim for ONE sentence; at most TWO very short sentences.
+- Never use words like "assist", "assistance", or phrases like:
   "How can I assist you today?",
   "How can I help you with your needs today?",
-  "What can I help you with regarding that?"
-- Instead, respond in a specific, grounded way based on what they just said.
-- If they already know you’re Alphine AI, don’t re-introduce yourself.`;
+  "What can I help you with regarding that?".
+- Don’t repeat the same reassurance or question in different words.
+- If they already know you’re Alphine AI, don’t re-introduce yourself.
+- If they just checked "can you hear me?", briefly confirm and move forward,
+  e.g. "Yeah, I hear you. What are you curious about?"`;
 
   if (lastBot) {
     system += `
@@ -321,12 +332,15 @@ async function polishAnswer(rawText, userQuery, langCode, convoMeta = {}) {
 You are Alphine AI, a friendly voice assistant on a phone call.
 - Respond in 1–2 short sentences (max ~25 spoken words).
 - Answer the caller's last message as directly as possible.
-- Do NOT say generic phrases like "I'm here to help" or 
-  "How can I assist you today?" unless the caller explicitly asks 
-  if you're there or if you can help.
+- Avoid generic support language like "assist", "assistance", 
+  "needs today", or "regarding that".
+- Do NOT say phrases like:
+  "I'm here to help",
+  "How can I assist you today?",
+  "What can I help you with regarding that?",
+  "How can I help you with your needs today?"
 - Do NOT repeat the same reassurance or question multiple times.
-- Sound natural and conversational, like a real person on the phone.
-`;
+- Sound natural and conversational, like a real person on the phone.`;
 
   if (langCode === "ta-IN") {
     styleInstruction = `
@@ -355,7 +369,11 @@ This is the first turn of the phone call.
 This is a continuing phone conversation.
 - The assistant has ALREADY greeted the caller earlier.
 - Answer directly to the latest user message.
-- Do NOT repeat generic phrases like "How can I assist you today?", "What can I help you with regarding that?", or "I'm here to help."
+- Do NOT repeat generic phrases like "How can I assist you today?",
+  "What can I help you with regarding that?", or "I'm here to help."
+- Do NOT ask for clarification in a generic way if the user already gave a clear topic.
+  For example, if they said "I want to know more about the service", explain the service
+  instead of asking "what you'd like to know more about".
 - Do NOT re-introduce yourself.
 - Prefer 1–2 short spoken-style sentences unless the user explicitly asks for detailed explanation.`;
   }
@@ -462,24 +480,6 @@ async function retrieveAnswer(
   const text = (userQuery || "").trim();
   const lower = text.toLowerCase();
 
-  // 🔊 Direct presence / hearing checks → immediate, fixed reply
-  if (
-    /can you hear me\??/.test(lower) ||
-    /^are you there[?.!]*$/.test(lower) ||
-    /^are you still there[?.!]*$/.test(lower)
-  ) {
-    const direct = postProcessAnswer(
-      "Yes, I can hear you clearly. I’m right here with you. What would you like to know about the service?"
-    );
-    if (session) {
-      session.turns.push({ user: text, bot: direct, ts: Date.now() });
-      if (session.turns.length > 10) {
-        session.turns.splice(0, session.turns.length - 10);
-      }
-    }
-    return direct;
-  }
-
   // 🔎 Heuristic: treat very short meta phrases as small talk
   const smallTalkPhrases = [
     "hi",
@@ -529,10 +529,7 @@ async function retrieveAnswer(
     lower.length > 0 &&
     (smallTalkPhrases.includes(lower) ||
       lower === "it's going good." ||
-      lower === "it's going good" ||
-      // short “hear me” / “can you?” variants from the logs
-      (lower.length <= 20 && /hear me/.test(lower)) ||
-      (lower.length <= 20 && /can you\??$/.test(lower)));
+      lower === "it's going good");
 
   // 🎯 Domain-specific: service explainer path
   if (isServiceIntent(lower, session)) {
@@ -561,10 +558,7 @@ async function retrieveAnswer(
       }
       return quick;
     } catch (err) {
-      console.error(
-        "❌ quickPhoneReply path failed, falling back to KB:",
-        err
-      );
+      console.error("❌ quickPhoneReply path failed, falling back to KB:", err);
       // fall through to normal KB flow
     }
   }
