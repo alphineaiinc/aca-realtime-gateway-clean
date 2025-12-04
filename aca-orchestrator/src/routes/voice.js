@@ -84,9 +84,9 @@ function normalizeProfilePayload(body = {}) {
 }
 
 // ---------------------------------------------------------------------------
-// GET /api/voice/profile – fetch tenant voice profile
+// GET /api/voice/profile  (mount at /api → path here is /voice/profile)
 // ---------------------------------------------------------------------------
-router.get("/api/voice/profile", authenticate, async (req, res) => {
+router.get("/voice/profile", authenticate, async (req, res) => {
   const tenantId = req.tenant_id;
 
   try {
@@ -135,9 +135,9 @@ router.get("/api/voice/profile", authenticate, async (req, res) => {
 });
 
 // ---------------------------------------------------------------------------
-// POST /api/voice/profile – create/update tenant voice profile
+// POST /api/voice/profile  (mount at /api → path here is /voice/profile)
 // ---------------------------------------------------------------------------
-router.post("/api/voice/profile", authenticate, async (req, res) => {
+router.post("/voice/profile", authenticate, async (req, res) => {
   const tenantId = req.tenant_id;
   const payload = normalizeProfilePayload(req.body || {});
   const now = new Date().toISOString();
@@ -260,9 +260,9 @@ router.post("/api/voice/profile", authenticate, async (req, res) => {
 
 // ---------------------------------------------------------------------------
 // POST /api/voice/preview – stub route for dashboard preview
-// (We will wire this to ElevenLabs/tts.js later once we see tts.js structure.)
+// (mount at /api → path here is /voice/preview)
 // ---------------------------------------------------------------------------
-router.post("/api/voice/preview", authenticate, async (req, res) => {
+router.post("/voice/preview", authenticate, async (req, res) => {
   try {
     // For now, just return a JSON error so the dashboard shows a clear message.
     // This keeps the server from crashing and avoids using document/window.
