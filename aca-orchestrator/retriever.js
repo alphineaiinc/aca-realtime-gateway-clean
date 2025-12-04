@@ -76,8 +76,8 @@ async function searchKB(query, businessId, topK = 1) {
   const queryEmbedding = `[${embeddingResponse.data.data[0].embedding.join(",")}]`;
 
   const { rows } = await pool.query(
-    `SELECT id, question, answer,
-            1 - (embedding <=> $1::vector) AS similarity
+    `SELECT id, answer, embedding
+            , 1 - (embedding <=> $1::vector) AS similarity
      FROM kb_entries
      WHERE business_id = $2
      ORDER BY embedding <=> $1::vector
