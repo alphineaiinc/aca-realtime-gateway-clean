@@ -10,6 +10,9 @@ const { synthesizeSpeech } = require("../../tts");
 
 const router = express.Router();
 
+// Ensure JSON bodies are parsed for this router
+router.use(express.json());
+
 // ---------------------------------------------------------------------------
 // Middleware: verify JWT and extract tenant_id
 // ---------------------------------------------------------------------------
