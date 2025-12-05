@@ -287,10 +287,18 @@ router.post("/preview", authenticate, async (req, res) => {
         profile.language_code.trim()) ||
       "en-US";
 
+    const explicitVoiceId =
+      profile &&
+      typeof profile.voice_id === "string" &&
+      profile.voice_id.trim()
+        ? profile.voice_id.trim()
+        : null;
+
     console.log("🎧 [voice] Preview request:", {
       tenantId,
       langCode,
       hasProfilePayload: !!profile,
+      explicitVoiceId,
     });
 
     // For preview, request MP3 so the browser <audio> element can play it.
@@ -298,6 +306,7 @@ router.post("/preview", authenticate, async (req, res) => {
       tenantId,
       outputFormat: "mp3_44100_128",
       acceptMime: "audio/mpeg",
+      explicitVoiceId,
     });
 
     if (!audioBuffer || !audioBuffer.length) {

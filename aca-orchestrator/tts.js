@@ -64,6 +64,7 @@ const DEFAULT_VOICE_ID = "21m00Tcm4TlvDq8ikWAM";
  *   - useFillers     (boolean, default true)
  *   - outputFormat   (string, ElevenLabs output_format, default "ulaw_8000")
  *   - acceptMime     (string, Accept header, default "audio/mpeg")
+ *   - explicitVoiceId (string, overrides everything for voice selection)
  */
 async function synthesizeSpeech(text, langCode = "en-US", options = {}) {
   try {
@@ -77,6 +78,7 @@ async function synthesizeSpeech(text, langCode = "en-US", options = {}) {
       useFillers = true,
       outputFormat = "ulaw_8000",
       acceptMime = "audio/mpeg",
+      explicitVoiceId = null,
     } = options || {};
 
     // ---------------------------------
@@ -133,8 +135,13 @@ async function synthesizeSpeech(text, langCode = "en-US", options = {}) {
     // 2) Voice selection
     // ---------------------------------
     let voiceId = voiceMap[langCode] || DEFAULT_VOICE_ID;
+
     if (voiceProfile && voiceProfile.voice_id) {
       voiceId = voiceProfile.voice_id;
+    }
+
+    if (typeof explicitVoiceId === "string" && explicitVoiceId.trim()) {
+      voiceId = explicitVoiceId.trim();
     }
 
     const voiceLang = (langCode.split("-")[0] || "en").toLowerCase();
@@ -153,6 +160,7 @@ async function synthesizeSpeech(text, langCode = "en-US", options = {}) {
       tenantId,
       has_profile: !!voiceProfile,
       outputFormat,
+      explicitVoiceId: !!explicitVoiceId,
     });
 
     // Base voice settings (default)
