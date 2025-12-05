@@ -6,7 +6,7 @@ const express = require("express");
 const jwt = require("jsonwebtoken");
 const pool = require("../db/pool");
 // When we wire real preview, we can import synthesizeSpeech:
-// const { synthesizeSpeech } = require("../../tts");
+const { synthesizeSpeech } = require("../../tts");
 
 const router = express.Router();
 
@@ -260,21 +260,68 @@ router.post("/profile", authenticate, async (req, res) => {
 });
 
 // ---------------------------------------------------------------------------
-// POST /api/voice/preview – stub route for dashboard preview
+// POST /api/voice/preview – generate an audio preview via ElevenLabs
 // (mounted at /api/voice → final path /api/voice/preview)
 // ---------------------------------------------------------------------------
 router.post("/preview", authenticate, async (req, res) => {
+  const tenantId = req.tenant_id;
+  const { text, profile } = req.body || {};
+
   try {
-    // For now, just return a JSON error so the dashboard shows a clear message.
-    // This keeps the server from crashing and avoids using document/window.
-    return res
-      .status(501)
-      .json({ ok: false, error: "Voice preview is not yet implemented on server" });
+    const trimmedText =
+      typeof text === "string" ? text.trim() : "";
+
+    if (!trimmedText) {
+      return res
+        .status(400)
+        .json({ ok: false, error: "Missing or empty 'text' in request body" });
+    }
+
+    // Use language_code from profile if provided, else default to en-US
+    const langCode =
+      (profile &&
+        typeof profile.language_code === "string" &&
+        profile.language_code.trim()) ||
+      "en-US";
+
+    // For now we let tts.js load the stored tenant profile from DB using tenantId.
+    // The profile payload from the dashboard is logged for debugging, but not
+    // yet overriding DB values. (Dashboard already saves profile via /profile.)
+    console.log("🎧 [voice] Preview request:", {
+      tenantId,
+      langCode,
+      hasProfilePayload: !!profile,
+    });
+
+    // Call ElevenLabs via tts.js helper
+    const audioBuffer = await synthesizeSpeech(trimmedText, langCode, {
+      tenantId,
+      // These can be expanded later to use extra fields from profile:
+      // regionCode: profile?.region_code,
+      // tonePreset: profile?.tone_preset,
+      // useFillers: true,
+    });
+
+    if (!audioBuffer || !audioBuffer.length) {
+      console.error("❌ [voice] synthesizeSpeech returned empty buffer");
+      return res
+        .status(502)
+        .json({ ok: false, error: "TTS engine returned no audio" });
+    }
+
+    // Send raw audio back to browser for <audio> element
+    res.set({
+      "Content-Type": "audio/mpeg",
+      "Content-Length": audioBuffer.length,
+      "Cache-Control": "no-store",
+    });
+
+    return res.send(audioBuffer);
   } catch (err) {
-    console.error("❌ [voice] Error in preview stub:", err);
+    console.error("❌ [voice] Error generating preview:", err);
     return res
       .status(500)
-      .json({ ok: false, error: "Unexpected error in preview stub" });
+      .json({ ok: false, error: "Failed to generate voice preview" });
   }
 });
 
