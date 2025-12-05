@@ -18,42 +18,47 @@ const state = {
 const $ = (id) => document.getElementById(id);
 
 const els = {
-  jwt: $("jwt-token"),
-  btnToggleToken: $("btn-toggle-token"),
+  // JWT + controls
+  jwt: $("jwtInput"),
+  btnToggleToken: $("toggleJwtVisibilityBtn"),
+  jwtStatusDot: $("jwtStatusDot"),
+  jwtStatusText: $("jwtStatusText"),
 
-  ttsProvider: $("tts-provider"),
-  languageCode: $("language-code"),
-  voiceId: $("voice-id"),
+  // Profile controls
+  ttsProvider: $("ttsProviderSelect"),
+  languageCode: $("languageSelect"),
+  voiceId: $("voiceIdInput"),
 
-  stability: $("stability"),
-  stabilityValue: $("stability-value"),
-  similarityBoost: $("similarity-boost"),
-  similarityBoostValue: $("similarity-boost-value"),
-  style: $("style"),
-  styleValue: $("style-value"),
-  speakingRate: $("speaking-rate"),
-  speakingRateValue: $("speaking-rate-value"),
-  pitchShift: $("pitch-shift"),
-  pitchShiftValue: $("pitch-shift-value"),
-  useSpeakerBoost: $("use-speaker-boost"),
+  stability: $("stabilitySlider"),
+  stabilityValue: $("stabilityValue"),
+  similarityBoost: $("similaritySlider"),
+  similarityBoostValue: $("similarityValue"),
+  style: $("styleSlider"),
+  styleValue: $("styleValue"),
+  speakingRate: $("rateSlider"),
+  speakingRateValue: $("rateValue"),
+  pitchShift: $("pitchSlider"),
+  pitchShiftValue: $("pitchValue"),
+  useSpeakerBoost: $("speakerBoostCheckbox"),
 
-  btnLoad: $("btn-load"),
-  btnSave: $("btn-save"),
-  btnReset: $("btn-reset"),
+  btnLoad: $("loadProfileBtn"),
+  btnSave: $("saveProfileBtn"),
+  btnReset: $("resetDefaultsBtn"),
 
-  statusDotProfile: $("status-dot-profile"),
-  statusTextProfile: $("status-text-profile"),
+  statusDotProfile: $("profileStatusDot"),
+  statusTextProfile: $("profileStatusText"),
 
-  previewText: $("preview-text"),
-  btnPreview: $("btn-preview"),
+  // Preview + logs
+  previewText: $("previewText"),
+  btnPreview: $("generatePreviewBtn"),
   btnStop: $("btn-stop"),
-  audio: $("preview-audio"),
+  audio: $("previewAudio"),
   previewCaptionLeft: $("preview-caption-left"),
   previewRouteLabel: $("preview-route-label"),
-  statusDotPreview: $("status-dot-preview"),
-  statusTextPreview: $("status-text-preview"),
+  statusDotPreview: $("previewStatusDot"),
+  statusTextPreview: $("previewStatusText"),
 
-  logShell: $("log-shell"),
+  logShell: $("logPanel"),
 };
 
 // -----------------------------
@@ -146,12 +151,38 @@ function setPreviewStatus(mode, text) {
   label.textContent = text;
 }
 
+function setJwtStatus(mode, text) {
+  // mode: "idle" | "ok" | "warn" | "err"
+  const dot = els.jwtStatusDot;
+  const label = els.jwtStatusText;
+  if (!dot || !label) return;
+
+  dot.classList.remove("ok", "warn", "err");
+
+  switch (mode) {
+    case "ok":
+      dot.classList.add("ok");
+      break;
+    case "warn":
+      dot.classList.add("warn");
+      break;
+    case "err":
+      dot.classList.add("err");
+      break;
+    default:
+      // idle = grey
+      break;
+  }
+
+  label.textContent = text;
+}
+
 function setButtonsDisabled(disabled) {
-  els.btnLoad.disabled = disabled || state.loadingProfile;
-  els.btnSave.disabled = disabled || state.savingProfile;
-  els.btnReset.disabled = disabled;
-  els.btnPreview.disabled = disabled || state.previewing;
-  els.btnStop.disabled = disabled;
+  if (els.btnLoad) els.btnLoad.disabled = disabled || state.loadingProfile;
+  if (els.btnSave) els.btnSave.disabled = disabled || state.savingProfile;
+  if (els.btnReset) els.btnReset.disabled = disabled;
+  if (els.btnPreview) els.btnPreview.disabled = disabled || state.previewing;
+  if (els.btnStop) els.btnStop.disabled = disabled;
 }
 
 // -----------------------------
@@ -161,6 +192,7 @@ function setButtonsDisabled(disabled) {
 function ensureJwtOrWarn() {
   const raw = (els.jwt.value || "").trim();
   if (!raw) {
+    setJwtStatus("err", "Missing JWT – paste tenant token and try again.");
     setProfileStatus("warn", "Missing JWT. Paste a valid tenant token first.");
     setPreviewStatus("warn", "Missing JWT. Paste a valid tenant token first.");
     log("Missing JWT when trying to call an API.", "err");
@@ -181,20 +213,27 @@ function toggleTokenMask() {
 // -----------------------------
 
 function updateSliderDisplays() {
-  els.stabilityValue.textContent = Number(els.stability.value).toFixed(2);
-  els.similarityBoostValue.textContent = Number(
-    els.similarityBoost.value
-  ).toFixed(2);
-  els.styleValue.textContent = Number(els.style.value).toFixed(2);
+  if (els.stabilityValue && els.stability)
+    els.stabilityValue.textContent = Number(els.stability.value).toFixed(2);
+  if (els.similarityBoostValue && els.similarityBoost)
+    els.similarityBoostValue.textContent = Number(
+      els.similarityBoost.value
+    ).toFixed(2);
+  if (els.styleValue && els.style)
+    els.styleValue.textContent = Number(els.style.value).toFixed(2);
 
-  const rate = Number(els.speakingRate.value).toFixed(2);
-  els.speakingRateValue.textContent = `${rate}×`;
+  if (els.speakingRateValue && els.speakingRate) {
+    const rate = Number(els.speakingRate.value).toFixed(2);
+    els.speakingRateValue.textContent = `${rate}×`;
+  }
 
-  const pitch = Number(els.pitchShift.value);
-  const sign = pitch > 0 ? "+" : pitch < 0 ? "−" : "";
-  const abs = Math.abs(pitch);
-  els.pitchShiftValue.textContent =
-    abs === 0 ? "0 st" : `${sign}${abs} st`;
+  if (els.pitchShiftValue && els.pitchShift) {
+    const pitch = Number(els.pitchShift.value);
+    const sign = pitch > 0 ? "+" : pitch < 0 ? "−" : "";
+    const abs = Math.abs(pitch);
+    els.pitchShiftValue.textContent =
+      abs === 0 ? "0 st" : `${sign}${abs} st`;
+  }
 }
 
 // -----------------------------
@@ -293,6 +332,7 @@ async function loadProfileFromServer() {
         }`,
         "err"
       );
+      setJwtStatus("err", "JWT accepted by browser but API returned an error.");
       return;
     }
 
@@ -313,6 +353,7 @@ async function loadProfileFromServer() {
       const msg = (body && (body.error || body.message)) || "Unknown error";
       setProfileStatus("err", `Error from API: ${msg}`);
       log(`API error while loading profile: ${msg}`, "err");
+      setJwtStatus("err", "JWT accepted by server but profile load failed.");
       return;
     }
 
@@ -320,10 +361,12 @@ async function loadProfileFromServer() {
     applyProfileToUi(profile);
 
     const ts =
-      profile.updated_at || profile.created_at || new Date().toISOString();
+      (profile && (profile.updated_at || profile.created_at)) ||
+      new Date().toISOString();
     state.lastProfileUpdatedAt = ts;
 
     setProfileStatus("ok", "Profile loaded from tenant.");
+    setJwtStatus("ok", "JWT accepted and tenant profile loaded.");
     log("Profile successfully loaded from tenant.", "ok");
   } catch (err) {
     console.error(err);
@@ -331,6 +374,7 @@ async function loadProfileFromServer() {
       "err",
       "Unexpected error while loading profile. Check console/logs."
     );
+    setJwtStatus("err", "Unexpected error while calling profile API.");
     log(`Unexpected error while loading profile: ${String(err)}`, "err");
   } finally {
     state.loadingProfile = false;
@@ -437,7 +481,8 @@ async function generatePreview() {
     state.previewing = true;
     setButtonsDisabled(false);
     setPreviewStatus("idle", "Generating preview via orchestrator...");
-    els.previewCaptionLeft.textContent = "Synthesizing preview...";
+    if (els.previewCaptionLeft)
+      els.previewCaptionLeft.textContent = "Synthesizing preview...";
     log(`POST ${url} (expecting audio/mpeg)`, "dim");
 
     const res = await fetch(url, {
@@ -459,7 +504,7 @@ async function generatePreview() {
         "err",
         `Preview failed (${res.status}). See log for details.`
       );
-      els.previewCaptionLeft.textContent = "Preview failed.";
+      if (els.previewCaptionLeft) els.previewCaptionLeft.textContent = "Preview failed.";
       log(
         `Error generating preview [${res.status}]: ${
           textBody.slice(0, 400) || "<no body>"
@@ -482,8 +527,9 @@ async function generatePreview() {
           els.audio.play().catch(() => {
             /* ignore */
           });
-          els.previewCaptionLeft.textContent =
-            "Preview loaded from URL returned by API.";
+          if (els.previewCaptionLeft)
+            els.previewCaptionLeft.textContent =
+              "Preview loaded from URL returned by API.";
           setPreviewStatus("ok", "Preview ready.");
           log("Preview loaded from audio_url JSON field.", "ok");
           return;
@@ -493,8 +539,9 @@ async function generatePreview() {
           "err",
           "Preview response was not audio. Check server route."
         );
-        els.previewCaptionLeft.textContent =
-          "Preview response was not audio. See logs.";
+        if (els.previewCaptionLeft)
+          els.previewCaptionLeft.textContent =
+            "Preview response was not audio. See logs.";
         log(
           `Preview response content-type mismatch: ${contentType}`,
           "err"
@@ -505,8 +552,9 @@ async function generatePreview() {
           "err",
           "Failed to parse preview response. Check server."
         );
-        els.previewCaptionLeft.textContent =
-          "Cannot parse preview response. See logs.";
+        if (els.previewCaptionLeft)
+          els.previewCaptionLeft.textContent =
+            "Cannot parse preview response. See logs.";
         log(
           `Failed to parse non-audio preview response: ${String(e)}`,
           "err"
@@ -525,8 +573,9 @@ async function generatePreview() {
       // user might not interact yet; ignore autoplay issues
     }
 
-    els.previewCaptionLeft.textContent =
-      "Preview generated. Adjust sliders and try again as needed.";
+    if (els.previewCaptionLeft)
+      els.previewCaptionLeft.textContent =
+        "Preview generated. Adjust sliders and try again as needed.";
     setPreviewStatus("ok", "Preview ready and playing.");
     log("Preview audio generated and loaded into player.", "ok");
   } catch (err) {
@@ -535,7 +584,8 @@ async function generatePreview() {
       "err",
       "Unexpected error during preview. Check console/logs."
     );
-    els.previewCaptionLeft.textContent = "Preview error. See logs.";
+    if (els.previewCaptionLeft)
+      els.previewCaptionLeft.textContent = "Preview error. See logs.";
     log(`Unexpected error during preview: ${String(err)}`, "err");
   } finally {
     state.previewing = false;
@@ -551,8 +601,9 @@ function stopPreview() {
   } catch {
     // ignore
   }
-  els.previewCaptionLeft.textContent =
-    "Preview cleared. Generate again to hear changes.";
+  if (els.previewCaptionLeft)
+    els.previewCaptionLeft.textContent =
+      "Preview cleared. Generate again to hear changes.";
   setPreviewStatus("idle", "Preview stopped / cleared.");
   log("Preview playback stopped and audio cleared.", "dim");
 }
@@ -564,7 +615,8 @@ function stopPreview() {
 function wireEvents() {
   if (!els.jwt) return;
 
-  els.btnToggleToken.addEventListener("click", toggleTokenMask);
+  if (els.btnToggleToken)
+    els.btnToggleToken.addEventListener("click", toggleTokenMask);
 
   els.jwt.addEventListener("input", () => {
     // we just keep in DOM; ensureJwtOrWarn() reads it
@@ -578,29 +630,35 @@ function wireEvents() {
     els.speakingRate,
     els.pitchShift,
   ].forEach((slider) => {
+    if (!slider) return;
     slider.addEventListener("input", updateSliderDisplays);
   });
 
   // Buttons
-  els.btnLoad.addEventListener("click", () => {
-    loadProfileFromServer();
-  });
+  if (els.btnLoad)
+    els.btnLoad.addEventListener("click", () => {
+      loadProfileFromServer();
+    });
 
-  els.btnSave.addEventListener("click", () => {
-    saveProfileToServer();
-  });
+  if (els.btnSave)
+    els.btnSave.addEventListener("click", () => {
+      saveProfileToServer();
+    });
 
-  els.btnReset.addEventListener("click", () => {
-    resetProfileToDefaults();
-  });
+  if (els.btnReset)
+    els.btnReset.addEventListener("click", () => {
+      resetProfileToDefaults();
+    });
 
-  els.btnPreview.addEventListener("click", () => {
-    generatePreview();
-  });
+  if (els.btnPreview)
+    els.btnPreview.addEventListener("click", () => {
+      generatePreview();
+    });
 
-  els.btnStop.addEventListener("click", () => {
-    stopPreview();
-  });
+  if (els.btnStop)
+    els.btnStop.addEventListener("click", () => {
+      stopPreview();
+    });
 }
 
 // -----------------------------
@@ -613,6 +671,10 @@ function init() {
   setPreviewStatus(
     "idle",
     "Idle — enter text and click Generate preview."
+  );
+  setJwtStatus(
+    "warn",
+    "JWT not validated yet. Paste a token and load the profile."
   );
   log("Voice Studio dashboard loaded.", "info");
   wireEvents();

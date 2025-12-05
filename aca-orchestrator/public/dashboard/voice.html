@@ -690,7 +690,7 @@
               </div>
               <div class="token-wrapper">
                 <input
-                  id="jwt-token"
+                  id="jwtInput"
                   class="input input-token"
                   type="password"
                   autocomplete="off"
@@ -698,7 +698,7 @@
                 />
                 <button
                   type="button"
-                  id="btn-toggle-token"
+                  id="toggleJwtVisibilityBtn"
                   class="token-mask-btn"
                 >
                   SHOW
@@ -708,6 +708,14 @@
                 The token is used only in your browser and sent as
                 <code>Authorization: Bearer &lt;token&gt;</code> to the
                 orchestrator APIs.
+              </div>
+
+              <!-- NEW: JWT status bar for voice.js -->
+              <div class="pill-status-bar">
+                <span class="status-dot warn" id="jwtStatusDot"></span>
+                <span class="status-text-soft" id="jwtStatusText">
+                  JWT not validated yet. Paste a token and load the profile.
+                </span>
               </div>
             </div>
           </div>
@@ -723,7 +731,7 @@
                 </label>
                 <span class="field-hint">Currently ElevenLabs in ACA</span>
               </div>
-              <select id="tts-provider" class="select">
+              <select id="ttsProviderSelect" class="select">
                 <option value="elevenlabs">ElevenLabs</option>
               </select>
               <div class="panel-inline">
@@ -738,7 +746,7 @@
                 </label>
                 <span class="field-hint">Used by STT &amp; TTS routing</span>
               </div>
-              <select id="language-code" class="select">
+              <select id="languageSelect" class="select">
                 <!-- Keep aligned with languageRegistry.json high-level values -->
                 <option value="en-US">English (US)</option>
                 <option value="en-CA">English (Canada)</option>
@@ -765,7 +773,7 @@
               </span>
             </div>
             <input
-              id="voice-id"
+              id="voiceIdInput"
               class="input"
               type="text"
               autocomplete="off"
@@ -787,7 +795,7 @@
               <div class="slider-row">
                 <div class="slider-label">Stability</div>
                 <input
-                  id="stability"
+                  id="stabilitySlider"
                   class="slider"
                   type="range"
                   min="0"
@@ -795,13 +803,13 @@
                   step="0.05"
                   value="0.5"
                 />
-                <div class="slider-value" id="stability-value">0.50</div>
+                <div class="slider-value" id="stabilityValue">0.50</div>
               </div>
 
               <div class="slider-row">
                 <div class="slider-label">Similarity boost</div>
                 <input
-                  id="similarity-boost"
+                  id="similaritySlider"
                   class="slider"
                   type="range"
                   min="0"
@@ -809,13 +817,13 @@
                   step="0.05"
                   value="0.75"
                 />
-                <div class="slider-value" id="similarity-boost-value">0.75</div>
+                <div class="slider-value" id="similarityValue">0.75</div>
               </div>
 
               <div class="slider-row">
                 <div class="slider-label">Style</div>
                 <input
-                  id="style"
+                  id="styleSlider"
                   class="slider"
                   type="range"
                   min="0"
@@ -823,13 +831,13 @@
                   step="0.05"
                   value="0.3"
                 />
-                <div class="slider-value" id="style-value">0.30</div>
+                <div class="slider-value" id="styleValue">0.30</div>
               </div>
 
               <div class="slider-row">
                 <div class="slider-label">Speaking rate</div>
                 <input
-                  id="speaking-rate"
+                  id="rateSlider"
                   class="slider"
                   type="range"
                   min="0.7"
@@ -837,13 +845,13 @@
                   step="0.01"
                   value="1.0"
                 />
-                <div class="slider-value" id="speaking-rate-value">1.00×</div>
+                <div class="slider-value" id="rateValue">1.00×</div>
               </div>
 
               <div class="slider-row">
                 <div class="slider-label">Pitch shift</div>
                 <input
-                  id="pitch-shift"
+                  id="pitchSlider"
                   class="slider"
                   type="range"
                   min="-6"
@@ -851,12 +859,12 @@
                   step="1"
                   value="0"
                 />
-                <div class="slider-value" id="pitch-shift-value">0 st</div>
+                <div class="slider-value" id="pitchValue">0 st</div>
               </div>
             </div>
 
             <label class="toggle-row">
-              <input id="use-speaker-boost" type="checkbox" checked />
+              <input id="speakerBoostCheckbox" type="checkbox" checked />
               <span class="toggle-label">Enable speaker boost</span>
             </label>
             <div class="hint-subtle">
@@ -868,17 +876,17 @@
           <!-- Buttons -->
           <div>
             <div class="btn-row-main">
-              <button type="button" id="btn-load" class="btn btn-subtle">
+              <button type="button" id="loadProfileBtn" class="btn btn-subtle">
                 <span class="icon">⟳</span>
                 Load from tenant
               </button>
 
-              <button type="button" id="btn-save" class="btn btn-primary">
+              <button type="button" id="saveProfileBtn" class="btn btn-primary">
                 <span class="icon">💾</span>
                 Save voice profile
               </button>
 
-              <button type="button" id="btn-reset" class="btn btn-ghost">
+              <button type="button" id="resetDefaultsBtn" class="btn btn-ghost">
                 <span class="icon">↺</span>
                 Reset to safe defaults
               </button>
@@ -887,11 +895,11 @@
             <div class="pill-status-bar">
               <span
                 class="status-dot"
-                id="status-dot-profile"
+                id="profileStatusDot"
               ></span>
               <span
                 class="status-text-soft"
-                id="status-text-profile"
+                id="profileStatusText"
               >
                 Idle &mdash; no profile changes yet.
               </span>
@@ -926,7 +934,7 @@
               </span>
             </div>
             <textarea
-              id="preview-text"
+              id="previewText"
               class="textarea"
               placeholder="Hi, this is the Alphine AI automated call assistant. How can I help you today?"
             ></textarea>
@@ -940,7 +948,7 @@
 
           <div>
             <div class="btn-row-main">
-              <button type="button" id="btn-preview" class="btn btn-primary">
+              <button type="button" id="generatePreviewBtn" class="btn btn-primary">
                 <span class="icon">▶</span>
                 Generate preview
               </button>
@@ -953,7 +961,7 @@
 
             <div class="audio-shell">
               <audio
-                id="preview-audio"
+                id="previewAudio"
                 controls
                 preload="none"
               ></audio>
@@ -970,11 +978,11 @@
             <div class="pill-status-bar">
               <span
                 class="status-dot"
-                id="status-dot-preview"
+                id="previewStatusDot"
               ></span>
               <span
                 class="status-text-soft"
-                id="status-text-preview"
+                id="previewStatusText"
               >
                 Idle &mdash; click <span class="status-text-strong">Generate
                 preview</span> to synthesize.
@@ -986,7 +994,7 @@
 
           <div>
             <div class="section-label">Debug log</div>
-            <div class="log-shell" id="log-shell">
+            <div class="log-shell" id="logPanel">
               <!-- lines appended by JS -->
             </div>
             <div class="kv-row" style="margin-top: 6px;">
@@ -1002,6 +1010,6 @@
     </main>
   </div>
 
-  <script src="./voice.js" type="module"></script>
+  <script src="./voice.js"></script>
 </body>
 </html>
