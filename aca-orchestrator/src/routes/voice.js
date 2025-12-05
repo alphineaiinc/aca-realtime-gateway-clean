@@ -287,22 +287,17 @@ router.post("/preview", authenticate, async (req, res) => {
         profile.language_code.trim()) ||
       "en-US";
 
-    // For now we let tts.js load the stored tenant profile from DB using tenantId.
-    // The profile payload from the dashboard is logged for debugging, but not
-    // yet overriding DB values. (Dashboard already saves profile via /profile.)
     console.log("🎧 [voice] Preview request:", {
       tenantId,
       langCode,
       hasProfilePayload: !!profile,
     });
 
-    // Call ElevenLabs via tts.js helper
+    // For preview, request MP3 so the browser <audio> element can play it.
     const audioBuffer = await synthesizeSpeech(trimmedText, langCode, {
       tenantId,
-      // These can be expanded later to use extra fields from profile:
-      // regionCode: profile?.region_code,
-      // tonePreset: profile?.tone_preset,
-      // useFillers: true,
+      outputFormat: "mp3_44100_128",
+      acceptMime: "audio/mpeg",
     });
 
     if (!audioBuffer || !audioBuffer.length) {

@@ -62,6 +62,8 @@ const DEFAULT_VOICE_ID = "21m00Tcm4TlvDq8ikWAM";
  *   - regionCode     (e.g. "IN", "FR", "CA")
  *   - tonePreset     (e.g. "friendly", "formal", "supportive")
  *   - useFillers     (boolean, default true)
+ *   - outputFormat   (string, ElevenLabs output_format, default "ulaw_8000")
+ *   - acceptMime     (string, Accept header, default "audio/mpeg")
  */
 async function synthesizeSpeech(text, langCode = "en-US", options = {}) {
   try {
@@ -73,6 +75,8 @@ async function synthesizeSpeech(text, langCode = "en-US", options = {}) {
       regionCode = null,
       tonePreset = "friendly",
       useFillers = true,
+      outputFormat = "ulaw_8000",
+      acceptMime = "audio/mpeg",
     } = options || {};
 
     // ---------------------------------
@@ -148,6 +152,7 @@ async function synthesizeSpeech(text, langCode = "en-US", options = {}) {
       useFillers,
       tenantId,
       has_profile: !!voiceProfile,
+      outputFormat,
     });
 
     // Base voice settings (default)
@@ -164,9 +169,11 @@ async function synthesizeSpeech(text, langCode = "en-US", options = {}) {
     }
 
     // ---------------------------------
-    // 3) ElevenLabs API call (ulaw_8000 for Twilio)
+    // 3) ElevenLabs API call
+    //    For Twilio we use "ulaw_8000".
+    //    For browser preview we can override with "mp3_44100_128".
     // ---------------------------------
-    const url = `https://api.elevenlabs.io/v1/text-to-speech/${voiceId}?output_format=ulaw_8000`;
+    const url = `https://api.elevenlabs.io/v1/text-to-speech/${voiceId}?output_format=${outputFormat}`;
     console.log("📤 [tts] API Request:", {
       url,
       model_id: "eleven_multilingual_v2",
@@ -174,6 +181,7 @@ async function synthesizeSpeech(text, langCode = "en-US", options = {}) {
       text_preview: processedText.substring(0, 80) + "...",
       stability,
       similarity_boost,
+      outputFormat,
     });
 
     const response = await axios.post(
@@ -186,8 +194,7 @@ async function synthesizeSpeech(text, langCode = "en-US", options = {}) {
       {
         headers: {
           "xi-api-key": apiKey,
-          // Accept can remain audio/mpeg; ElevenLabs uses output_format to decide.
-          Accept: "audio/mpeg",
+          Accept: acceptMime,
           "Content-Type": "application/json",
         },
         responseType: "arraybuffer",
