@@ -1,5 +1,10 @@
 const path = require("path");
-require("dotenv").config({ path: path.resolve(__dirname, "../.env") });
+
+// ✅ Always load orchestrator-local .env first (prevents root .env overriding)
+require("dotenv").config({
+  path: path.resolve(__dirname, "./.env"),
+  override: true,
+});
 
 const { Pool } = require("pg");
 const OpenAI = require("openai");
@@ -14,17 +19,29 @@ const { observeHttpRetry } = require("./src/monitor/resilienceMetrics");
 // 🔐 Environment Validation
 // ------------------------------------------------------------------
 if (!process.env.OPENAI_API_KEY) {
-  console.error("❌ OPENAI_API_KEY not loaded. Check .env in project root.");
+  console.error("❌ OPENAI_API_KEY not loaded. Check .env in aca-orchestrator.");
   process.exit(1);
 }
 
 // ------------------------------------------------------------------
 // 🗄️ Database + OpenAI Clients
 // ------------------------------------------------------------------
-const pool = new Pool({ connectionString: process.env.KB_DB_URL });
+const kbConn =
+  process.env.KB_DB_URL ||
+  process.env.KB_DATABASE_URL ||
+  process.env.READONLY_DATABASE_URL ||
+  process.env.DATABASE_URL;
+
+if (!kbConn) {
+  console.error("❌ No KB database connection string found. Set DATABASE_URL (or KB_DB_URL).");
+  process.exit(1);
+}
+
+const pool = new Pool({ connectionString: kbConn });
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
 console.log("🧩 retriever.js loaded – OpenAI client embeddings v2");
+
 
 // ------------------------------------------------------------------
 // 🧠 In-memory call sessions (per Call SID)

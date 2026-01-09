@@ -1,9 +1,22 @@
 // index.js – Orchestrator with Tanglish detection + debug logging
-const { retrieveAnswer } = require("./retriever");
-const { synthesizeSpeech } = require("./tts");
-const OpenAI = require("openai");
+
 const path = require("path");
 const fs = require("fs");
+const OpenAI = require("openai");
+
+// ✅ Force-load orchestrator-level .env (absolute path) — MUST BE FIRST
+const dotenvPath = path.resolve(__dirname, "./.env");
+console.log("🧩 index.js loading .env from:", dotenvPath);
+require("dotenv").config({ path: dotenvPath, override: true });
+
+const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+
+
+const { retrieveAnswer } = require("./retriever");
+const { synthesizeSpeech } = require("./tts");
+
+const chatRoute = require("./src/routes/chat");
+
 
 // ---------------------------------------------------------------------------
 // 🧩 Story 9.6 – Unified Global Deployment & Testing Hook
@@ -23,12 +36,10 @@ try {
 }
 // ---------------------------------------------------------------------------
 
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+
 
 // ✅ Force-load orchestrator-level .env (absolute path)
-const dotenvPath = path.resolve(__dirname, "./.env");
-console.log("🧩 index.js loading .env from:", dotenvPath);
-require("dotenv").config({ path: dotenvPath, override: true });
+
 
 const { save: saveSession, load: loadSession } = require("./src/brain/utils/sessionState");
 const { getMetricsText, markRecovery } = require("./src/monitor/resilienceMetrics");
@@ -53,9 +64,13 @@ process.on("unhandledRejection", (err) => { console.error(err); saveSession(glob
 // ============================================================
 // EXPRESS APP INITIALIZATION (required for Render)
 const express = require("express");
+
 const cors = require("cors");
 const bodyParser = require("body-parser");
 const app = express();
+
+// ✅ FIX (Story 12.3): app must exist before any app.use(...)
+app.use(express.json({ limit: "1mb" }));
 
 // ✅ Initialize express-ws so WebSocket routes actually work
 try {
@@ -227,6 +242,10 @@ try {
 
 const voiceRouter = require("./src/routes/voice");
 app.use("/api/voice", voiceRouter);
+
+//const chatRoute = require("./src/routes/chat");
+app.use("/api/chat", chatRoute);
+
 
 // ============================================================
 // 🪙 Story 10.2 — Partner Onboarding & Reward Referral Engine
