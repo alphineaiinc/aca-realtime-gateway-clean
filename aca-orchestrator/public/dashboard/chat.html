@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>ACA Web Chat</title>
+  <link rel="stylesheet" href="/dashboard/chat.css" />
+</head>
+<body>
+  <div class="shell">
+    <header class="topbar">
+      <div class="brand">
+        <div class="logo">🏔️</div>
+        <div>
+          <div class="title">Alphine AI — ACA Web Chat</div>
+          <div class="subtitle">Secure tenant-aware chat session</div>
+        </div>
+      </div>
+
+      <div class="authbox">
+        <input id="jwt" type="password" placeholder="Paste Bearer JWT (no 'Bearer ')" />
+        <button id="saveJwt">Save</button>
+        <button id="clearJwt" class="ghost">Clear</button>
+      </div>
+    </header>
+
+    <main class="panel">
+      <section class="chat" id="chat"></section>
+
+      <footer class="composer">
+        <input id="msg" type="text" placeholder="Type a message…" autocomplete="off" />
+        <button id="send">Send</button>
+      </footer>
+
+      <div class="meta">
+        <div>Session: <span id="sessionId">webchat</span></div>
+        <div>Status: <span id="status">idle</span></div>
+      </div>
+    </main>
+  </div>
+
+  <script src="/dashboard/chat.js"></script>
+</body>
+</html>
