@@ -82,15 +82,14 @@ router.post("/", authenticate, rateLimit, async (req, res) => {
 
     // IMPORTANT: tenant isolation — pass tenant_id into brain layer
     // We follow the same pattern as your call flow: provide a context object.
-    const result = await retrieveAnswer({
-      tenant_id: req.tenant_id,
-      partner_id: req.partner_id,
-      role: req.role,
-      message,
-      session_id,
-      source: "web_chat",
-      locale: "en-US"
-    });
+   // retriever.js expects the first argument to be the userQuery string
+const result = await retrieveAnswer(
+  message,          // userQuery (string)
+  req.tenant_id,    // tenant context (used by your KB isolation)
+  session_id,       // stable web chat session id
+  "en-US"           // locale (safe default; we can wire a UI selector later)
+);
+
 
     // normalize output
     const reply =
