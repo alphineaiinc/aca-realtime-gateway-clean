@@ -90,6 +90,14 @@ const twilioRouter = require("./src/routes/twilio");
 app.use("/twilio", twilioRouter);
 console.log("✅ Mounted /twilio routes");
 
+// Story 12.4 — Explicit assets mount (Render/Linux path-safe)
+app.use(
+  "/dashboard/assets",
+  express.static(path.join(__dirname, "public", "dashboard", "assets"))
+);
+console.log("✅ Dashboard assets served from:", path.join(__dirname, "public", "dashboard", "assets"));
+
+
 
 
 // ---------------------------------------------------------------------------
