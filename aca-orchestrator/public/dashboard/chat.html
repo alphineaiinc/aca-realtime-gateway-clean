@@ -2,43 +2,78 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>ACA Web Chat</title>
-  <link rel="stylesheet" href="/dashboard/chat.css" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+
+  <title>Alphine AI — ACA Web Chat</title>
+
+  <!-- Cache-busted CSS -->
+  <link rel="stylesheet" href="/dashboard/chat.css?v=12.4.2" />
 </head>
+
 <body>
   <div class="shell">
+
+    <!-- ================= TOP BAR ================= -->
     <header class="topbar">
       <div class="brand">
-        <div class="logo">🏔️</div>
+
+        <!-- Alphine AI Logo -->
+        <div class="logo">
+          <a href="https://alphineai.com" target="_blank" rel="noopener">
+            <img src="/dashboard/assets/alphine-logo.png?v=12.4.3"
+              alt="Alphine AI"
+              loading="eager"
+            />
+          </a>
+        </div>
+
+        <!-- Title -->
         <div>
           <div class="title">Alphine AI — ACA Web Chat</div>
-          <div class="subtitle">Secure tenant-aware chat session</div>
+          <div class="subtitle">Secure tenant-aware conversation</div>
         </div>
       </div>
 
+      <!-- JWT Controls -->
       <div class="authbox">
-        <input id="jwt" type="password" placeholder="Paste Bearer JWT (no 'Bearer ')" />
+        <input
+          id="jwt"
+          type="password"
+          placeholder="Paste JWT (without 'Bearer ')"
+          autocomplete="off"
+        />
         <button id="saveJwt">Save</button>
         <button id="clearJwt" class="ghost">Clear</button>
       </div>
     </header>
 
+    <!-- ================= CHAT PANEL ================= -->
     <main class="panel">
+
+      <!-- Messages -->
       <section class="chat" id="chat"></section>
 
+      <!-- Composer -->
       <footer class="composer">
-        <input id="msg" type="text" placeholder="Type a message…" autocomplete="off" />
+        <input
+          id="msg"
+          type="text"
+          placeholder="Type your message…"
+          autocomplete="off"
+        />
         <button id="send">Send</button>
       </footer>
 
+      <!-- Meta -->
       <div class="meta">
         <div>Session: <span id="sessionId">webchat</span></div>
         <div>Status: <span id="status">idle</span></div>
       </div>
+
     </main>
   </div>
 
-  <script src="/dashboard/chat.js"></script>
+  <!-- Cache-busted JS -->
+  <script src="/dashboard/chat.js?v=12.4.2"></script>
 </body>
 </html>
