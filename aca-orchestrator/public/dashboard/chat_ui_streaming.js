@@ -1,26 +1,19 @@
 // public/dashboard/chat_ui_streaming.js
-// Story 12.5 — Streaming hook for ACA Web Chat UI + Reset Session button support
-// Works with chat.html IDs: #chat, #msg, #send, #jwt, #saveJwt, #clearJwt, #status, #sessionId, #resetSession (new)
-// Requires /dashboard/chat_stream.js loaded BEFORE this file.
-// Safety: textContent only (no innerHTML). Tenant-safe session_id reused via localStorage.
-// Compatibility: uses CAPTURE listeners + stopImmediatePropagation() to override any handlers from chat.js.
+// Story 12.5 — Streaming hook for ACA Web Chat UI
+// FIX: Only streaming pipeline (no chat.js). Adds AbortController + timeout + clearer errors.
 
 (function () {
-  // -----------------------------
-  // DOM
-  // -----------------------------
-  const chatEl = document.getElementById("chat");         // message list container
-  const msgEl = document.getElementById("msg");           // input
-  const sendBtn = document.getElementById("send");        // send button
+  const chatEl = document.getElementById("chat");
+  const msgEl = document.getElementById("msg");
+  const sendBtn = document.getElementById("send");
 
-  const jwtEl = document.getElementById("jwt");           // JWT input (without "Bearer ")
+  const jwtEl = document.getElementById("jwt");
   const saveJwtBtn = document.getElementById("saveJwt");
   const clearJwtBtn = document.getElementById("clearJwt");
 
   const statusEl = document.getElementById("status");
   const sessionIdEl = document.getElementById("sessionId");
-
-  const resetBtn = document.getElementById("resetSession"); // NEW (added in chat.html)
+  const resetBtn = document.getElementById("resetSession");
 
   if (!chatEl || !msgEl || !sendBtn) {
     console.error("[chat_ui_streaming] Missing required DOM nodes (#chat, #msg, #send).");
@@ -31,10 +24,7 @@
     return;
   }
 
-  // -----------------------------
-  // Session + auth storage
-  // -----------------------------
-  const LS_JWT_KEY = "aca_jwt";          // stored WITHOUT "Bearer "
+  const LS_JWT_KEY = "aca_jwt";
   const LS_SESSION_KEY = "aca_session_id";
 
   function newSessionId() {
@@ -59,10 +49,8 @@
     else localStorage.removeItem(LS_JWT_KEY);
   }
 
-  // Prefill JWT input (masked)
   if (jwtEl) jwtEl.value = getJwt();
 
-  // Save / Clear JWT
   if (saveJwtBtn && jwtEl) {
     saveJwtBtn.addEventListener("click", (e) => {
       e.preventDefault();
@@ -81,9 +69,6 @@
     });
   }
 
-  // -----------------------------
-  // UI helpers
-  // -----------------------------
   function scrollToBottom() {
     chatEl.scrollTop = chatEl.scrollHeight;
   }
@@ -99,7 +84,6 @@
     row.appendChild(bubble);
     chatEl.appendChild(row);
     scrollToBottom();
-
     return bubble;
   }
 
@@ -113,9 +97,6 @@
     return "en-US";
   }
 
-  // -----------------------------
-  // Reset session (server memory + local id)
-  // -----------------------------
   async function clearServerSessionMemory(oldSessionId) {
     const jwt = getJwt();
     if (!jwt) return;
@@ -129,7 +110,6 @@
       body: JSON.stringify({ session_id: oldSessionId })
     });
 
-    // If it fails, we still proceed with local reset (best-effort)
     try { await resp.json(); } catch (e) {}
   }
 
@@ -139,11 +119,7 @@
     setStatus("resetting…");
     setSending(true);
 
-    try {
-      await clearServerSessionMemory(oldSessionId);
-    } catch (e) {
-      // ignore — best effort
-    }
+    try { await clearServerSessionMemory(oldSessionId); } catch (e) {}
 
     session_id = newSessionId();
     localStorage.setItem(LS_SESSION_KEY, session_id);
@@ -157,15 +133,10 @@
   if (resetBtn) {
     resetBtn.addEventListener("click", (e) => {
       e.preventDefault();
-      e.stopPropagation();
-      e.stopImmediatePropagation();
       resetSession();
-    }, true);
+    });
   }
 
-  // -----------------------------
-  // Streaming send
-  // -----------------------------
   async function sendStreaming(message) {
     const jwt = getJwt();
     if (!jwt) {
@@ -175,18 +146,32 @@
     }
 
     makeMessage("user", message);
-
-    // Assistant bubble EMPTY
     const assistantBubble = makeMessage("assistant", "");
 
     setSending(true);
-    setStatus("thinking…");
+    setStatus("connecting…");
+
+    // ✅ AbortController + timeout so we see why it stops
+    const controller = new AbortController();
+    const TIMEOUT_MS = 60_000; // 60s (retrieveAnswer can be slow)
+    const timeout = setTimeout(() => {
+      controller.abort();
+    }, TIMEOUT_MS);
 
     await window.streamChatReply({
       token: jwt,
       message,
       session_id,
       locale: getLocale(),
+      signal: controller.signal,
+
+      onConnected: () => {
+        setStatus("thinking…");
+      },
+
+      onStart: () => {
+        setStatus("thinking…");
+      },
 
       onToken: (t) => {
         assistantBubble.textContent += t;
@@ -194,11 +179,13 @@
       },
 
       onDone: () => {
+        clearTimeout(timeout);
         setStatus("idle");
         setSending(false);
       },
 
       onError: (err) => {
+        clearTimeout(timeout);
         assistantBubble.textContent += `\n[Error: ${err}]`;
         setStatus("error");
         setSending(false);
@@ -209,29 +196,21 @@
   async function handleSend() {
     const message = (msgEl.value || "").trim();
     if (!message) return;
-
     msgEl.value = "";
     await sendStreaming(message);
   }
 
-  // -----------------------------
-  // Override any existing handlers from chat.js
-  // -----------------------------
   sendBtn.addEventListener("click", (e) => {
     e.preventDefault();
-    e.stopPropagation();
-    e.stopImmediatePropagation();
     handleSend();
-  }, true);
+  });
 
   msgEl.addEventListener("keydown", (e) => {
     if (e.key === "Enter") {
       e.preventDefault();
-      e.stopPropagation();
-      e.stopImmediatePropagation();
       handleSend();
     }
-  }, true);
+  });
 
   setStatus(getJwt() ? "idle" : "jwt missing");
 })();

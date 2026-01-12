@@ -7,7 +7,7 @@
   <title>Alphine AI — ACA Web Chat</title>
 
   <!-- Cache-busted CSS -->
-  <link rel="stylesheet" href="/dashboard/chat.css?v=12.4.2" />
+  <link rel="stylesheet" href="/dashboard/chat.css?v=12.5.20" />
 </head>
 
 <body>
@@ -68,8 +68,6 @@
       <div class="meta">
         <div>Session: <span id="sessionId">webchat</span></div>
         <div>Status: <span id="status">idle</span></div>
-
-        <!-- Story 12.5: Reset session memory + regenerate session_id -->
         <div>
           <button id="resetSession" class="ghost">Reset</button>
         </div>
@@ -78,11 +76,9 @@
     </main>
   </div>
 
-  <!-- Cache-busted JS -->
-  <script src="/dashboard/chat.js?v=12.4.2"></script>
-<script src="/dashboard/chat_stream.js?v=12.5.2"></script>
-<script src="/dashboard/chat_ui_streaming.js?v=12.5.2"></script>
-
+  <!-- IMPORTANT: Do NOT load /dashboard/chat.js on streaming page -->
+  <script src="/dashboard/chat_stream.js?v=12.5.20"></script>
+  <script src="/dashboard/chat_ui_streaming.js?v=12.5.20"></script>
 
 </body>
 </html>

@@ -1,10 +1,22 @@
 // public/dashboard/chat_stream.js
 // Story 12.5 — Robust SSE reader for /api/chat/stream
 // Fixes:
-// - Never trim token data
-// - Never crash parsing (prevents browser abort -> "client closed early")
+// - Supports AbortController (so UI can cancel safely)
+// - Does not trim token data
+// - Emits clear errors when aborted
 
-async function streamChatReply({ token, message, session_id, locale, onToken, onDone, onError, onConnected, onStart }) {
+async function streamChatReply({
+  token,
+  message,
+  session_id,
+  locale,
+  signal,          // AbortController signal (optional)
+  onToken,
+  onDone,
+  onError,
+  onConnected,
+  onStart
+}) {
   let reader;
 
   try {
@@ -15,9 +27,11 @@ async function streamChatReply({ token, message, session_id, locale, onToken, on
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "Authorization": bearer
+        "Authorization": bearer,
+        "Accept": "text/event-stream"
       },
-      body: JSON.stringify({ message, session_id, locale })
+      body: JSON.stringify({ message, session_id, locale }),
+      signal
     });
 
     if (!resp.ok || !resp.body) {
@@ -44,10 +58,10 @@ async function streamChatReply({ token, message, session_id, locale, onToken, on
 
         if (!frame || frame.startsWith(":")) continue;
 
-        try {
-          let eventName = "";
-          let data = "";
+        let eventName = "";
+        let data = "";
 
+        try {
           const lines = frame.split("\n");
           for (const line of lines) {
             if (line.startsWith("event:")) {
@@ -55,10 +69,9 @@ async function streamChatReply({ token, message, session_id, locale, onToken, on
               if (eventName.startsWith(" ")) eventName = eventName.slice(1);
             }
             if (line.startsWith("data:")) {
-              // only remove the single protocol space if present; keep real spaces intact
               let chunk = line.slice(5);
-              if (chunk.startsWith(" ")) chunk = chunk.slice(1);
-              data += chunk;
+              if (chunk.startsWith(" ")) chunk = chunk.slice(1); // remove ONLY protocol space
+              data += chunk; // preserve real spaces
             }
           }
 
@@ -75,7 +88,12 @@ async function streamChatReply({ token, message, session_id, locale, onToken, on
       }
     }
   } catch (e) {
-    onError && onError(e.message || "stream error");
+    // AbortError is very common when something cancels the request
+    if (e && e.name === "AbortError") {
+      onError && onError("Request aborted by browser/client.");
+    } else {
+      onError && onError(e.message || "stream error");
+    }
   } finally {
     try { if (reader) reader.releaseLock(); } catch (e) {}
   }
