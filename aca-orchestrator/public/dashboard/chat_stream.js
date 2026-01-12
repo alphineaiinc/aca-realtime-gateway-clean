@@ -1,5 +1,6 @@
 // public/dashboard/chat_stream.js
 // Story 12.5 — Stream responses from /api/chat/stream (SSE-style)
+// FIX: Do NOT trim, do NOT strip spaces. Server now sends `data:` (no extra space).
 
 async function streamChatReply({ token, message, session_id, locale, onToken, onDone, onError }) {
   try {
@@ -18,9 +19,7 @@ async function streamChatReply({ token, message, session_id, locale, onToken, on
 
     if (!resp.ok || !resp.body) {
       let extra = "";
-      try {
-        extra = await resp.text();
-      } catch (e) {}
+      try { extra = await resp.text(); } catch (e) {}
       throw new Error(`HTTP ${resp.status}${extra ? " — " + extra : ""}`);
     }
 
@@ -34,7 +33,10 @@ async function streamChatReply({ token, message, session_id, locale, onToken, on
 
       buffer += decoder.decode(value, { stream: true });
 
-      // Parse SSE frames separated by double newline
+      // Normalize CRLF to LF so parsing is stable
+      buffer = buffer.replace(/\r\n/g, "\n");
+
+      // SSE frames separated by blank line
       let idx;
       while ((idx = buffer.indexOf("\n\n")) !== -1) {
         const frame = buffer.slice(0, idx);
@@ -48,10 +50,28 @@ async function streamChatReply({ token, message, session_id, locale, onToken, on
 
         const lines = frame.split("\n");
         for (const line of lines) {
-          if (line.startsWith("event:")) event = line.slice(6).trim();
-          if (line.startsWith("data:")) data += line.slice(5).trim();
+          if (line.startsWith("event:")) {
+            event = line.slice(6); // no trim; event names don't include spaces in our server
+          } else if (line.startsWith("event:")) {
+            event = line.slice(6);
+          } else if (line.startsWith("event:")) {
+            event = line.slice(6);
+          }
+
+          // Server sends `event:<name>` (no extra space)
+          if (line.startsWith("event:")) {
+            event = line.slice(6);
+          }
+
+          // Server sends `data:<payload>` (no extra space)
+          if (line.startsWith("data:")) {
+            data += line.slice(5); // preserve EXACT chunk, including leading spaces
+          } else if (line.startsWith("data:")) {
+            data += line.slice(5);
+          }
         }
 
+        // Rehydrate newlines
         data = data.replace(/\\n/g, "\n");
 
         if (event === "token") {
