@@ -68,26 +68,37 @@ const express = require("express");
 const cors = require("cors");
 const bodyParser = require("body-parser");
 const app = express();
-const compression = require("compression");
+
+// ✅ Optional compression (Render-safe). If not installed, we continue without it.
+let compression = null;
+try {
+  compression = require("compression");
+  console.log("✅ compression middleware loaded");
+} catch (err) {
+  console.warn("⚠️ compression not installed; continuing without compression:", err.message);
+}
 
 // ✅ Story 12.5 — Apply CORS early (SSE-friendly ordering; safe even if repeated later)
 app.use(cors());
 
 // Story 12.5 — SSE must not be compressed/buffered (Render/proxy safe)
-app.use(compression({
-  filter: (req, res) => {
-    try {
-      const p = req.originalUrl || req.url || "";
-      const accept = String(req.headers?.accept || "");
+// Only apply if compression is available.
+if (compression) {
+  app.use(compression({
+    filter: (req, res) => {
+      try {
+        const p = req.originalUrl || req.url || "";
+        const accept = String(req.headers?.accept || "");
 
-      // ✅ Never compress SSE
-      if (p.startsWith("/api/chat/stream")) return false;
-      if (accept.includes("text/event-stream")) return false;
-    } catch (e) {}
+        // ✅ Never compress SSE
+        if (p.startsWith("/api/chat/stream")) return false;
+        if (accept.includes("text/event-stream")) return false;
+      } catch (e) {}
 
-    return compression.filter(req, res);
-  }
-}));
+      return compression.filter(req, res);
+    }
+  }));
+}
 
 // ✅ FIX (Story 12.3): app must exist before any app.use(...)
 app.use(express.json({ limit: "1mb" }));
