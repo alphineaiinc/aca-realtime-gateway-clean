@@ -1,5 +1,6 @@
 // public/dashboard/chat_ui_streaming.js
-// Story 12.5 — Streaming hook using WebSocket (Render-safe)
+// Story 12.5 — WebSocket streaming UI (Render-safe)
+// Fix: do not send before WS is open+authed (handled by chat_ws_client queue)
 
 (function () {
   const chatEl = document.getElementById("chat");
@@ -47,6 +48,9 @@
       setJwt(jwtEl.value);
       setStatus(getJwt() ? "jwt saved" : "jwt missing");
       jwtEl.value = getJwt();
+      // reset client so it re-auths with the new token
+      try { if (wsClient) wsClient.close(); } catch (e2) {}
+      wsClient = null;
     });
   }
 
@@ -56,6 +60,8 @@
       setJwt("");
       jwtEl.value = "";
       setStatus("jwt cleared");
+      try { if (wsClient) wsClient.close(); } catch (e2) {}
+      wsClient = null;
     });
   }
 
@@ -88,8 +94,9 @@
   }
 
   let wsClient = null;
+  let activeAssistantBubble = null;
 
-  function ensureWs() {
+  function ensureClient() {
     const jwt = getJwt();
     if (!jwt) {
       makeMessage("assistant", "Missing JWT. Paste JWT and click Save.");
@@ -97,22 +104,48 @@
       return null;
     }
 
-    // create a fresh connection each time (simplest + avoids stale socket)
+    if (wsClient) return wsClient;
+
+    setStatus("connecting…");
+
     wsClient = createChatWsClient({
       token: jwt,
       session_id,
       locale: getLocale(),
-      onConnected: () => setStatus("idle"),
-      onStart: () => setStatus("thinking…"),
-      onToken: (t) => {
-        // the active assistant bubble is handled per-send below
-        // this is a no-op here
+
+      onConnected: () => {
+        setStatus("idle");
       },
-      onDone: () => {},
+
+      onStart: () => {
+        setStatus("thinking…");
+      },
+
+      onToken: (t) => {
+        if (!activeAssistantBubble) return;
+        activeAssistantBubble.textContent += t; // preserves spaces
+        scrollToBottom();
+      },
+
+      onDone: () => {
+        setStatus("idle");
+        setSending(false);
+        activeAssistantBubble = null;
+      },
+
       onError: (err) => {
-        makeMessage("assistant", `[Error: ${err}]`);
+        if (activeAssistantBubble) {
+          activeAssistantBubble.textContent += `\n[Error: ${err}]`;
+        } else {
+          makeMessage("assistant", `[Error: ${err}]`);
+        }
         setStatus("error");
         setSending(false);
+        activeAssistantBubble = null;
+
+        // reset socket on error so next send reconnects cleanly
+        try { if (wsClient) wsClient.close(); } catch (e2) {}
+        wsClient = null;
       }
     });
 
@@ -123,14 +156,22 @@
     setStatus("resetting…");
     setSending(true);
 
-    // tell server to clear (best effort)
-    try { if (wsClient) wsClient.clearSession(); } catch (e) {}
+    // best effort clear on server
+    try {
+      const c = ensureClient();
+      if (c) c.clearSession();
+    } catch (e) {}
 
     session_id = newSessionId();
     localStorage.setItem(LS_SESSION_KEY, session_id);
     if (sessionIdEl) sessionIdEl.textContent = session_id;
 
     makeMessage("assistant", `Session reset. New session_id: ${session_id}`);
+
+    // recreate socket so auth uses new session_id
+    try { if (wsClient) wsClient.close(); } catch (e2) {}
+    wsClient = null;
+
     setStatus("idle");
     setSending(false);
   }
@@ -148,61 +189,17 @@
 
     msgEl.value = "";
 
-    const jwt = getJwt();
-    if (!jwt) {
-      makeMessage("assistant", "Missing JWT. Paste JWT and click Save.");
-      setStatus("jwt missing");
-      return;
-    }
+    const c = ensureClient();
+    if (!c) return;
 
-    // Build bubbles
     makeMessage("user", message);
-    const assistantBubble = makeMessage("assistant", "");
+    activeAssistantBubble = makeMessage("assistant", "");
 
     setSending(true);
     setStatus("connecting…");
 
-    // Create socket
-    const client = ensureWs();
-    if (!client) {
-      setSending(false);
-      return;
-    }
-
-    // Rewire token handlers for this send
-    // (simple approach: close + reopen per message is also fine, but this works)
-    const originalOnMessage = client.sendUser;
-
-    // Patch token handling by listening on global ws events via window handler style:
-    // Easiest: attach a temporary listener directly to ws via closure is not exposed;
-    // So we do a simpler pattern: open a new WS per message with per-message handlers.
-    try { if (wsClient) wsClient.close(); } catch (e) {}
-
-    wsClient = createChatWsClient({
-      token: jwt,
-      session_id,
-      locale: getLocale(),
-      onConnected: () => setStatus("thinking…"),
-      onStart: () => setStatus("thinking…"),
-      onToken: (t) => {
-        assistantBubble.textContent += t; // preserves spaces, avoids merged words
-        scrollToBottom();
-      },
-      onDone: () => {
-        setStatus("idle");
-        setSending(false);
-        try { if (wsClient) wsClient.close(); } catch (e) {}
-      },
-      onError: (err) => {
-        assistantBubble.textContent += `\n[Error: ${err}]`;
-        setStatus("error");
-        setSending(false);
-        try { if (wsClient) wsClient.close(); } catch (e) {}
-      }
-    });
-
-    // Send the message
-    wsClient.sendUser(message);
+    // ✅ safe: client queues until OPEN + authed
+    c.sendUser(message);
   }
 
   sendBtn.addEventListener("click", (e) => {
