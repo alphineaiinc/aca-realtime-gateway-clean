@@ -70,13 +70,21 @@ const bodyParser = require("body-parser");
 const app = express();
 const compression = require("compression");
 
-// Story 12.5 — SSE must not be compressed/buffered
+// ✅ Story 12.5 — Apply CORS early (SSE-friendly ordering; safe even if repeated later)
+app.use(cors());
+
+// Story 12.5 — SSE must not be compressed/buffered (Render/proxy safe)
 app.use(compression({
   filter: (req, res) => {
     try {
       const p = req.originalUrl || req.url || "";
+      const accept = String(req.headers?.accept || "");
+
+      // ✅ Never compress SSE
       if (p.startsWith("/api/chat/stream")) return false;
+      if (accept.includes("text/event-stream")) return false;
     } catch (e) {}
+
     return compression.filter(req, res);
   }
 }));
