@@ -68,6 +68,18 @@ const express = require("express");
 const cors = require("cors");
 const bodyParser = require("body-parser");
 const app = express();
+const compression = require("compression");
+
+// Story 12.5 — SSE must not be compressed/buffered
+app.use(compression({
+  filter: (req, res) => {
+    try {
+      const p = req.originalUrl || req.url || "";
+      if (p.startsWith("/api/chat/stream")) return false;
+    } catch (e) {}
+    return compression.filter(req, res);
+  }
+}));
 
 // ✅ FIX (Story 12.3): app must exist before any app.use(...)
 app.use(express.json({ limit: "1mb" }));

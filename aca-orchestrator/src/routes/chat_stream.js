@@ -1,7 +1,9 @@
 // src/routes/chat_stream.js
 // Story 12.5 — SSE-style streaming chat endpoint with session memory + guardrails
-// FIX: Immediately emit a first SSE frame to prevent early client abort.
-// FIX: Send SSE `event:` and `data:` with no extra trimming logic.
+// Fixes:
+// - Force flush after each SSE frame (res.flush if available)
+// - Strong anti-buffer headers
+// - Immediate connected/start frames
 
 const express = require("express");
 const jwt = require("jsonwebtoken");
@@ -20,7 +22,7 @@ const router = express.Router();
 const MAX_INCOMING_CHARS = 2000;
 const MAX_STREAMS_PER_TENANT = 6;
 const STREAM_WINDOW_MS = 10_000;
-const HEARTBEAT_MS = 10_000; // a bit more frequent for Render/proxies
+const HEARTBEAT_MS = 10_000;
 
 // tenant_id -> { count, resetAt }
 const streamLimiter = new Map();
@@ -62,15 +64,20 @@ function authenticate(req, res, next) {
 }
 
 // ---------------------------------------------------------------------------
-// Helper: SSE write
-// IMPORTANT: Use `event: <name>` and `data: <payload>` (space after colon is fine),
-// but NEVER trim payload; replace newlines so frames stay single-line.
+// Helper: SSE write + flush
 // ---------------------------------------------------------------------------
 function sseWrite(res, eventName, data) {
   if (res.writableEnded) return;
+
   const safe = String(data ?? "").replace(/\r?\n/g, "\\n");
+
   res.write(`event: ${String(eventName)}\n`);
   res.write(`data: ${safe}\n\n`);
+
+  // ✅ CRITICAL: flush if compression/proxy buffering is in play
+  if (typeof res.flush === "function") {
+    try { res.flush(); } catch (e) {}
+  }
 }
 
 // Chunking: simulate token streaming from a final text
@@ -108,13 +115,14 @@ router.post("/chat/stream", authenticate, async (req, res) => {
     return res.status(429).json({ ok: false, error: "Too many streaming requests (rate limited)" });
   }
 
-  // SSE headers
+  // SSE headers (anti-buffer)
   res.setHeader("Content-Type", "text/event-stream; charset=utf-8");
   res.setHeader("Cache-Control", "no-cache, no-transform");
   res.setHeader("Connection", "keep-alive");
   res.setHeader("X-Accel-Buffering", "no");
+  res.setHeader("Content-Encoding", "identity"); // prevent gzip from being forced somewhere
+  res.setHeader("Vary", "Accept-Encoding");
 
-  // flush headers early
   if (typeof res.flushHeaders === "function") res.flushHeaders();
 
   const reqId = `sse_${Date.now()}_${Math.random().toString(16).slice(2)}`;
@@ -124,17 +132,16 @@ router.post("/chat/stream", authenticate, async (req, res) => {
     clientClosed = true;
   });
 
-  // ✅ CRITICAL: send first bytes immediately (prevents early browser abort)
-  // Also useful for debugging: DevTools should show this instantly.
-  try {
-    sseWrite(res, "connected", "ok");
-  } catch (e) {}
+  // ✅ send first bytes immediately
+  sseWrite(res, "connected", "ok");
+  sseWrite(res, "start", "");
 
   // Heartbeat to keep proxies happy
   const heartbeat = setInterval(() => {
     if (clientClosed || res.writableEnded) return;
     try {
       res.write(": ping\n\n");
+      if (typeof res.flush === "function") res.flush();
     } catch (e) {}
   }, HEARTBEAT_MS);
 
@@ -162,9 +169,6 @@ router.post("/chat/stream", authenticate, async (req, res) => {
 
     // Store user turn
     pushTurn(tenant_id, session_id, "user", message);
-
-    // Let UI know we started processing (optional)
-    sseWrite(res, "start", "");
 
     // Memory prefix (no brain signature changes)
     const prefix = buildMemoryPrefix(tenant_id, session_id);
