@@ -111,6 +111,16 @@ try {
   console.warn("⚠️ express-ws init failed:", err.message);
 }
 
+// Story 12.5 — WebSocket streaming chat (Render-safe alternative to SSE)
+try {
+  const { registerChatWs } = require("./src/routes/chat_ws");
+  registerChatWs(app);
+  console.log("✅ Mounted WebSocket streaming route at /ws/chat (Story 12.5)");
+} catch (err) {
+  console.warn("⚠️ chat_ws not loaded:", err.message);
+}
+
+
 // Story 12.5 — streaming web chat route
 const chatStreamRoute = require("./src/routes/chat_stream");
 app.use("/api", chatStreamRoute);

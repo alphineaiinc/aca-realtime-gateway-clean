@@ -1,6 +1,5 @@
 // public/dashboard/chat_ui_streaming.js
-// Story 12.5 — Streaming hook for ACA Web Chat UI
-// FIX: Only streaming pipeline (no chat.js). Adds AbortController + timeout + clearer errors.
+// Story 12.5 — Streaming hook using WebSocket (Render-safe)
 
 (function () {
   const chatEl = document.getElementById("chat");
@@ -14,15 +13,6 @@
   const statusEl = document.getElementById("status");
   const sessionIdEl = document.getElementById("sessionId");
   const resetBtn = document.getElementById("resetSession");
-
-  if (!chatEl || !msgEl || !sendBtn) {
-    console.error("[chat_ui_streaming] Missing required DOM nodes (#chat, #msg, #send).");
-    return;
-  }
-  if (typeof window.streamChatReply !== "function") {
-    console.error("[chat_ui_streaming] streamChatReply() not found. Ensure /dashboard/chat_stream.js is loaded first.");
-    return;
-  }
 
   const LS_JWT_KEY = "aca_jwt";
   const LS_SESSION_KEY = "aca_session_id";
@@ -97,29 +87,44 @@
     return "en-US";
   }
 
-  async function clearServerSessionMemory(oldSessionId) {
-    const jwt = getJwt();
-    if (!jwt) return;
+  let wsClient = null;
 
-    const resp = await fetch("/api/chat/session/clear", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "Authorization": `Bearer ${jwt}`
+  function ensureWs() {
+    const jwt = getJwt();
+    if (!jwt) {
+      makeMessage("assistant", "Missing JWT. Paste JWT and click Save.");
+      setStatus("jwt missing");
+      return null;
+    }
+
+    // create a fresh connection each time (simplest + avoids stale socket)
+    wsClient = createChatWsClient({
+      token: jwt,
+      session_id,
+      locale: getLocale(),
+      onConnected: () => setStatus("idle"),
+      onStart: () => setStatus("thinking…"),
+      onToken: (t) => {
+        // the active assistant bubble is handled per-send below
+        // this is a no-op here
       },
-      body: JSON.stringify({ session_id: oldSessionId })
+      onDone: () => {},
+      onError: (err) => {
+        makeMessage("assistant", `[Error: ${err}]`);
+        setStatus("error");
+        setSending(false);
+      }
     });
 
-    try { await resp.json(); } catch (e) {}
+    return wsClient;
   }
 
   async function resetSession() {
-    const oldSessionId = session_id;
-
     setStatus("resetting…");
     setSending(true);
 
-    try { await clearServerSessionMemory(oldSessionId); } catch (e) {}
+    // tell server to clear (best effort)
+    try { if (wsClient) wsClient.clearSession(); } catch (e) {}
 
     session_id = newSessionId();
     localStorage.setItem(LS_SESSION_KEY, session_id);
@@ -137,7 +142,12 @@
     });
   }
 
-  async function sendStreaming(message) {
+  async function handleSend() {
+    const message = (msgEl.value || "").trim();
+    if (!message) return;
+
+    msgEl.value = "";
+
     const jwt = getJwt();
     if (!jwt) {
       makeMessage("assistant", "Missing JWT. Paste JWT and click Save.");
@@ -145,59 +155,54 @@
       return;
     }
 
+    // Build bubbles
     makeMessage("user", message);
     const assistantBubble = makeMessage("assistant", "");
 
     setSending(true);
     setStatus("connecting…");
 
-    // ✅ AbortController + timeout so we see why it stops
-    const controller = new AbortController();
-    const TIMEOUT_MS = 60_000; // 60s (retrieveAnswer can be slow)
-    const timeout = setTimeout(() => {
-      controller.abort();
-    }, TIMEOUT_MS);
+    // Create socket
+    const client = ensureWs();
+    if (!client) {
+      setSending(false);
+      return;
+    }
 
-    await window.streamChatReply({
+    // Rewire token handlers for this send
+    // (simple approach: close + reopen per message is also fine, but this works)
+    const originalOnMessage = client.sendUser;
+
+    // Patch token handling by listening on global ws events via window handler style:
+    // Easiest: attach a temporary listener directly to ws via closure is not exposed;
+    // So we do a simpler pattern: open a new WS per message with per-message handlers.
+    try { if (wsClient) wsClient.close(); } catch (e) {}
+
+    wsClient = createChatWsClient({
       token: jwt,
-      message,
       session_id,
       locale: getLocale(),
-      signal: controller.signal,
-
-      onConnected: () => {
-        setStatus("thinking…");
-      },
-
-      onStart: () => {
-        setStatus("thinking…");
-      },
-
+      onConnected: () => setStatus("thinking…"),
+      onStart: () => setStatus("thinking…"),
       onToken: (t) => {
-        assistantBubble.textContent += t;
+        assistantBubble.textContent += t; // preserves spaces, avoids merged words
         scrollToBottom();
       },
-
       onDone: () => {
-        clearTimeout(timeout);
         setStatus("idle");
         setSending(false);
+        try { if (wsClient) wsClient.close(); } catch (e) {}
       },
-
       onError: (err) => {
-        clearTimeout(timeout);
         assistantBubble.textContent += `\n[Error: ${err}]`;
         setStatus("error");
         setSending(false);
+        try { if (wsClient) wsClient.close(); } catch (e) {}
       }
     });
-  }
 
-  async function handleSend() {
-    const message = (msgEl.value || "").trim();
-    if (!message) return;
-    msgEl.value = "";
-    await sendStreaming(message);
+    // Send the message
+    wsClient.sendUser(message);
   }
 
   sendBtn.addEventListener("click", (e) => {
