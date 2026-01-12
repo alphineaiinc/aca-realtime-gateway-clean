@@ -68,6 +68,11 @@
       <div class="meta">
         <div>Session: <span id="sessionId">webchat</span></div>
         <div>Status: <span id="status">idle</span></div>
+
+        <!-- Story 12.5: Reset session memory + regenerate session_id -->
+        <div>
+          <button id="resetSession" class="ghost">Reset</button>
+        </div>
       </div>
 
     </main>
@@ -75,5 +80,8 @@
 
   <!-- Cache-busted JS -->
   <script src="/dashboard/chat.js?v=12.4.2"></script>
+  <script src="/dashboard/chat_stream.js"></script>
+  <script src="/dashboard/chat_ui_streaming.js"></script>
+
 </body>
 </html>

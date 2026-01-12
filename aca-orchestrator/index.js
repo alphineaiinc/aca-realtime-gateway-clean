@@ -80,6 +80,11 @@ try {
   console.warn("⚠️ express-ws init failed:", err.message);
 }
 
+// Story 12.5 — streaming web chat route
+const chatStreamRoute = require("./src/routes/chat_stream");
+app.use("/api", chatStreamRoute);
+
+
 // Trust Render proxy and log runtime roots once
 app.set("trust proxy", 1);
 console.log("🧭 process.cwd():", process.cwd());
