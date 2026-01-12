@@ -1,8 +1,10 @@
 // public/dashboard/chat_stream.js
-// Story 12.5 — Stream responses from /api/chat/stream (SSE-style)
-// FIX: Do NOT trim, do NOT strip spaces. Server now sends `data:` (no extra space).
+// Story 12.5 — Robust SSE reader for /api/chat/stream
+// FIX: Preserve whitespace (no trim) and prevent parser exceptions that abort the stream.
 
-async function streamChatReply({ token, message, session_id, locale, onToken, onDone, onError }) {
+async function streamChatReply({ token, message, session_id, locale, onToken, onDone, onError, onConnected, onStart }) {
+  let reader;
+
   try {
     const bearer = String(token || "").trim().startsWith("Bearer ")
       ? String(token || "").trim()
@@ -23,8 +25,9 @@ async function streamChatReply({ token, message, session_id, locale, onToken, on
       throw new Error(`HTTP ${resp.status}${extra ? " — " + extra : ""}`);
     }
 
-    const reader = resp.body.getReader();
+    reader = resp.body.getReader();
     const decoder = new TextDecoder("utf-8");
+
     let buffer = "";
 
     while (true) {
@@ -33,57 +36,62 @@ async function streamChatReply({ token, message, session_id, locale, onToken, on
 
       buffer += decoder.decode(value, { stream: true });
 
-      // Normalize CRLF to LF so parsing is stable
+      // Normalize CRLF -> LF for stable parsing
       buffer = buffer.replace(/\r\n/g, "\n");
 
-      // SSE frames separated by blank line
-      let idx;
-      while ((idx = buffer.indexOf("\n\n")) !== -1) {
-        const frame = buffer.slice(0, idx);
-        buffer = buffer.slice(idx + 2);
+      // Process complete frames (split by blank line)
+      let sepIndex;
+      while ((sepIndex = buffer.indexOf("\n\n")) !== -1) {
+        const frame = buffer.slice(0, sepIndex);
+        buffer = buffer.slice(sepIndex + 2);
 
-        // ignore comments/heartbeats
+        // Heartbeats/comments start with ":"
         if (!frame || frame.startsWith(":")) continue;
 
-        let event = "message";
-        let data = "";
+        // Parse frame lines
+        try {
+          let eventName = "";
+          let data = "";
 
-        const lines = frame.split("\n");
-        for (const line of lines) {
-          if (line.startsWith("event:")) {
-            event = line.slice(6); // no trim; event names don't include spaces in our server
-          } else if (line.startsWith("event:")) {
-            event = line.slice(6);
-          } else if (line.startsWith("event:")) {
-            event = line.slice(6);
+          const lines = frame.split("\n");
+          for (const line of lines) {
+            if (line.startsWith("event:")) {
+              // keep exact after "event:" then trim single leading space if present
+              eventName = line.slice(6);
+              if (eventName.startsWith(" ")) eventName = eventName.slice(1);
+            } else if (line.startsWith("data:")) {
+              // keep exact payload including leading spaces
+              let chunk = line.slice(5);
+              if (chunk.startsWith(" ")) chunk = chunk.slice(1); // removes only the protocol space
+              data += chunk;
+            }
           }
 
-          // Server sends `event:<name>` (no extra space)
-          if (line.startsWith("event:")) {
-            event = line.slice(6);
+          data = data.replace(/\\n/g, "\n");
+
+          if (eventName === "connected") {
+            onConnected && onConnected(data);
+          } else if (eventName === "start") {
+            onStart && onStart(data);
+          } else if (eventName === "token") {
+            onToken && onToken(data);
+          } else if (eventName === "done") {
+            onDone && onDone();
+          } else if (eventName === "error") {
+            onError && onError(data || "error");
           }
-
-          // Server sends `data:<payload>` (no extra space)
-          if (line.startsWith("data:")) {
-            data += line.slice(5); // preserve EXACT chunk, including leading spaces
-          } else if (line.startsWith("data:")) {
-            data += line.slice(5);
-          }
-        }
-
-        // Rehydrate newlines
-        data = data.replace(/\\n/g, "\n");
-
-        if (event === "token") {
-          onToken && onToken(data);
-        } else if (event === "done") {
-          onDone && onDone();
-        } else if (event === "error") {
-          onError && onError(data || "error");
+        } catch (parseErr) {
+          // DO NOT abort the connection due to a parse glitch
+          // Just surface it and keep going.
+          onError && onError(`SSE parse error: ${parseErr.message || "unknown"}`);
         }
       }
     }
   } catch (e) {
     onError && onError(e.message || "stream error");
+  } finally {
+    try {
+      if (reader) reader.releaseLock();
+    } catch (e) {}
   }
 }

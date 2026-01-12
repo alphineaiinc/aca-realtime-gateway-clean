@@ -1,6 +1,7 @@
 // src/routes/chat_stream.js
 // Story 12.5 — SSE-style streaming chat endpoint with session memory + guardrails
-// FIX: Send SSE data with `data:` (no extra space) so leading spaces in chunks are preserved.
+// FIX: Immediately emit a first SSE frame to prevent early client abort.
+// FIX: Send SSE `event:` and `data:` with no extra trimming logic.
 
 const express = require("express");
 const jwt = require("jsonwebtoken");
@@ -19,7 +20,7 @@ const router = express.Router();
 const MAX_INCOMING_CHARS = 2000;
 const MAX_STREAMS_PER_TENANT = 6;
 const STREAM_WINDOW_MS = 10_000;
-const HEARTBEAT_MS = 15_000;
+const HEARTBEAT_MS = 10_000; // a bit more frequent for Render/proxies
 
 // tenant_id -> { count, resetAt }
 const streamLimiter = new Map();
@@ -62,18 +63,14 @@ function authenticate(req, res, next) {
 
 // ---------------------------------------------------------------------------
 // Helper: SSE write
-// FIX: DO NOT add a space after "data:".
-// This preserves leading spaces in payload chunks perfectly.
+// IMPORTANT: Use `event: <name>` and `data: <payload>` (space after colon is fine),
+// but NEVER trim payload; replace newlines so frames stay single-line.
 // ---------------------------------------------------------------------------
 function sseWrite(res, eventName, data) {
   if (res.writableEnded) return;
-
-  // SSE allows: event:<name> and data:<payload>
-  // Keep payload single-line safe; rehydrate \n client-side.
   const safe = String(data ?? "").replace(/\r?\n/g, "\\n");
-
-  res.write(`event:${String(eventName)}\n`);
-  res.write(`data:${safe}\n\n`);
+  res.write(`event: ${String(eventName)}\n`);
+  res.write(`data: ${safe}\n\n`);
 }
 
 // Chunking: simulate token streaming from a final text
@@ -117,6 +114,7 @@ router.post("/chat/stream", authenticate, async (req, res) => {
   res.setHeader("Connection", "keep-alive");
   res.setHeader("X-Accel-Buffering", "no");
 
+  // flush headers early
   if (typeof res.flushHeaders === "function") res.flushHeaders();
 
   const reqId = `sse_${Date.now()}_${Math.random().toString(16).slice(2)}`;
@@ -126,9 +124,18 @@ router.post("/chat/stream", authenticate, async (req, res) => {
     clientClosed = true;
   });
 
+  // ✅ CRITICAL: send first bytes immediately (prevents early browser abort)
+  // Also useful for debugging: DevTools should show this instantly.
+  try {
+    sseWrite(res, "connected", "ok");
+  } catch (e) {}
+
+  // Heartbeat to keep proxies happy
   const heartbeat = setInterval(() => {
     if (clientClosed || res.writableEnded) return;
-    try { res.write(":ping\n\n"); } catch (e) {}
+    try {
+      res.write(": ping\n\n");
+    } catch (e) {}
   }, HEARTBEAT_MS);
 
   try {
@@ -156,14 +163,17 @@ router.post("/chat/stream", authenticate, async (req, res) => {
     // Store user turn
     pushTurn(tenant_id, session_id, "user", message);
 
-    // Prepend memory (no brain signature changes)
+    // Let UI know we started processing (optional)
+    sseWrite(res, "start", "");
+
+    // Memory prefix (no brain signature changes)
     const prefix = buildMemoryPrefix(tenant_id, session_id);
     const brainInput = prefix + message;
 
     // Call ACA brain
     const result = await retrieveAnswer(brainInput, tenant_id, session_id, locale);
 
-    if (clientClosed) {
+    if (clientClosed || res.writableEnded) {
       console.log(`[chat_stream] client closed early ${reqId} tenant=${tenant_id} session=${session_id}`);
       clearInterval(heartbeat);
       return res.end();
@@ -175,8 +185,6 @@ router.post("/chat/stream", authenticate, async (req, res) => {
       (result && typeof result.answer === "string") ? result.answer :
       (result && result.data && typeof result.data.reply === "string") ? result.data.reply :
       JSON.stringify(result);
-
-    sseWrite(res, "start", "");
 
     for (const chunk of chunkText(reply, 18)) {
       if (clientClosed || res.writableEnded) break;
