@@ -14,7 +14,10 @@ const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
 const { retrieveAnswer } = require("./retriever");
 const { synthesizeSpeech } = require("./tts");
-const { bindWebSocket } = require("./socket_handler");
+// const { bindWebSocket } = require("./socket_handler"); 
+// ✅ Story 12.6 fix: DO NOT load socket_handler here.
+// Reason: any raw ws.Server() / upgrade listeners inside socket_handler (even as side-effects) can intercept
+// WebSocket upgrades intended for express-ws route /ws/chat, causing the UI to stay stuck on "connecting…".
 
 
 const chatRoute = require("./src/routes/chat");
@@ -66,11 +69,15 @@ process.on("unhandledRejection", (err) => { console.error(err); saveSession(glob
 // ============================================================
 // EXPRESS APP INITIALIZATION (required for Render)
 const express = require("express");
-const http = require("http"); // ✅ Story 12.6 — needed to bind WebSocket at the HTTP server layer
+const http = require("http"); // ✅ Needed so express-ws binds to the same server that listens
 
 const cors = require("cors");
 const bodyParser = require("body-parser");
 const app = express();
+
+// ✅ Story 12.5/12.6 — Create HTTP server EARLY so express-ws binds correctly
+// (This fixes “connecting…” in chat UI because WS upgrades now hit the right server.)
+const server = http.createServer(app);
 
 // ✅ Optional compression (Render-safe). If not installed, we continue without it.
 let compression = null;
@@ -108,7 +115,7 @@ app.use(express.json({ limit: "1mb" }));
 
 // ✅ Initialize express-ws so WebSocket routes actually work
 try {
-  require("express-ws")(app);
+  require("express-ws")(app, server); // ✅ bind to the real listening server
   console.log("✅ express-ws WebSocket support initialized");
 } catch (err) {
   console.warn("⚠️ express-ws init failed:", err.message);
@@ -434,21 +441,14 @@ listRoutes(app);
 // === Server Start === 
 const PORT = process.env.PORT || 8080;
 
-// ✅ Story 12.6 — Create HTTP server so we can bind tenant-safe WebSocket guards
-const server = http.createServer(app);
-
-// ✅ Story 12.6 — Bind WebSocket hardening layer (rate limit, max conns, TTL, safe audit)
-try {
-  bindWebSocket(server);
-  console.log("✅ bindWebSocket(server) attached (Story 12.6)");
-} catch (err) {
-  console.warn("⚠️ bindWebSocket attach failed:", err.message);
-}
-
-// Start server (Render-safe)
+// ✅ IMPORTANT: use server.listen (not app.listen) so express-ws works on the same server
 server.listen(PORT, () => {
   console.log(`🧠 Orchestrator live on port ${PORT}`);
 });
+
+// NOTE: We intentionally do NOT call bindWebSocket(server) here.
+// It can intercept upgrades intended for /ws/chat (Story 12.5).
+// Story 12.6 hardening will be applied inside the /ws/chat route file next.
 
 global.__EXPRESS_APP__ = app; // keep for any module reuse
 // ============================================================
