@@ -92,7 +92,7 @@ function postProcessAnswer(text) {
     /i'?m here (?:and ready )?to help(?: you)?!?$/i,
     /would you like to know more(?: about(?: the service)?)?\??$/i,
     /what would you like to know(?: more)?(?: about(?: the service)?)?\??$/i,
-    /could you clarify what (?:you|you're) (?:asking|referring to|interested in)\??$/i,
+    /could you clarify what (?:you|you're) (?:asking|referring to|interested in)\??/i,
     /could you clarify what you'?d like to know more about\??/i,
     /how can i assist you\??/i,
   ];
@@ -619,4 +619,37 @@ async function retrieveAnswer(
   }
 }
 
-module.exports = { retrieveAnswer };
+// ------------------------------------------------------------------
+// 🛡️ Story 12.6 — Hard timeout guard for retrieveAnswer()
+// ------------------------------------------------------------------
+function withTimeout(promise, ms, label = "retrieveAnswer") {
+  let timer = null;
+  const timeoutErr = new Error(`${label}_timeout_${ms}ms`);
+  timeoutErr.code = "TIMEOUT";
+
+  return Promise.race([
+    promise,
+    new Promise((_, reject) => {
+      timer = setTimeout(() => reject(timeoutErr), ms);
+    }),
+  ]).finally(() => {
+    if (timer) clearTimeout(timer);
+  });
+}
+
+// Wrapper export: same signature as retrieveAnswer()
+async function retrieveAnswerWithTimeout(
+  userQuery,
+  tenantId,
+  langCode = "en-US",
+  sessionId = null
+) {
+  const timeoutMs = parseInt(process.env.RETRIEVE_TIMEOUT_MS || "20000", 10);
+  return withTimeout(
+    retrieveAnswer(userQuery, tenantId, langCode, sessionId),
+    timeoutMs,
+    "retrieveAnswer"
+  );
+}
+
+module.exports = { retrieveAnswer, retrieveAnswerWithTimeout };

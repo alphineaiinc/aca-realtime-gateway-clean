@@ -14,6 +14,8 @@ const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
 const { retrieveAnswer } = require("./retriever");
 const { synthesizeSpeech } = require("./tts");
+const { bindWebSocket } = require("./socket_handler");
+
 
 const chatRoute = require("./src/routes/chat");
 
@@ -64,6 +66,7 @@ process.on("unhandledRejection", (err) => { console.error(err); saveSession(glob
 // ============================================================
 // EXPRESS APP INITIALIZATION (required for Render)
 const express = require("express");
+const http = require("http"); // ✅ Story 12.6 — needed to bind WebSocket at the HTTP server layer
 
 const cors = require("cors");
 const bodyParser = require("body-parser");
@@ -331,7 +334,7 @@ try {
   app.use("/", partnerLeaderboard);
   console.log("✅ Mounted /partnerLeaderboard routes (Story 10.4)");
 } catch (err) {
-  console.warn("⚠️ partnerLeaderboard routes not loaded:", err.message);
+  console.warn("⚠️ partnerLeaderboard not loaded:", err.message);
 }
 
 // ============================================================
@@ -430,7 +433,20 @@ listRoutes(app);
 // ============================================================
 // === Server Start === 
 const PORT = process.env.PORT || 8080;
-app.listen(PORT, () => {
+
+// ✅ Story 12.6 — Create HTTP server so we can bind tenant-safe WebSocket guards
+const server = http.createServer(app);
+
+// ✅ Story 12.6 — Bind WebSocket hardening layer (rate limit, max conns, TTL, safe audit)
+try {
+  bindWebSocket(server);
+  console.log("✅ bindWebSocket(server) attached (Story 12.6)");
+} catch (err) {
+  console.warn("⚠️ bindWebSocket attach failed:", err.message);
+}
+
+// Start server (Render-safe)
+server.listen(PORT, () => {
   console.log(`🧠 Orchestrator live on port ${PORT}`);
 });
 
