@@ -154,6 +154,15 @@ try {
 const chatStreamRoute = require("./src/routes/chat_stream");
 app.use("/api", chatStreamRoute);
 
+// ✅ Story 12.7 — Memory Debug Endpoint (tenant-scoped)
+try {
+  app.use("/api", require("./src/routes/memoryDebug"));
+  console.log("✅ Mounted /api/chat/debug-memory (Story 12.7)");
+} catch (err) {
+  console.warn("⚠️ memoryDebug route not loaded:", err.message);
+}
+
+
 // ✅ Story 12.7 — Safe debug endpoint for session memory (JWT protected)
 // Note: the actual memory wiring (append turns + pass memoryCtx) happens inside chat_stream/chat_ws handlers.
 try {
