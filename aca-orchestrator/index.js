@@ -149,6 +149,30 @@ try {
   console.warn("⚠️ chat_ws not loaded:", err.message);
 }
 
+// ✅ Global JSON parse error handler (prevents noisy stack traces)
+// If any request sends invalid JSON with Content-Type: application/json,
+// Express/body-parser throws SyntaxError. Catch and return 400 cleanly.
+app.use((err, req, res, next) => {
+  const isJsonSyntax =
+    err &&
+    err instanceof SyntaxError &&
+    typeof err.message === "string" &&
+    err.message.toLowerCase().includes("json");
+
+  if (isJsonSyntax) {
+    console.warn("⚠️ Invalid JSON received:", {
+      path: req.originalUrl || req.url,
+      method: req.method,
+      ip: req.ip,
+      contentType: req.headers["content-type"],
+    });
+    return res.status(400).send("Bad Request");
+  }
+
+  return next(err);
+});
+
+
 
 // Story 12.5 — streaming web chat route
 const chatStreamRoute = require("./src/routes/chat_stream");

@@ -11,7 +11,8 @@ const express = require("express");
 const jwt = require("jsonwebtoken");
 
 // Reuse existing ACA brain
-const { retrieveAnswer } = require("../../retriever");
+const { retrieveAnswerWithTimeout: retrieveAnswer } = require("../../retriever");
+
 
 // Memory
 const { pushTurn, buildMemoryPrefix, clearSession } = require("../brain/utils/sessionMemory");
