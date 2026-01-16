@@ -13,7 +13,7 @@ const jwt = require("jsonwebtoken");
 // Reuse existing ACA brain
 const { retrieveAnswer } = require("../../retriever");
 
-// Memory (existing v12.5 session prefix memory — keep intact)
+// Memory
 const { pushTurn, buildMemoryPrefix, clearSession } = require("../brain/utils/sessionMemory");
 
 // ✅ Story 12.7 — New session memory + intent carryover + memory-aware context
@@ -35,12 +35,31 @@ const MAX_INCOMING_CHARS = 2000;
 const HEARTBEAT_MS = 10_000;
 
 // ---------------------------------------------------------------------------
+// ✅ JWT verify with fallback secret (token rotation safe)
+// ---------------------------------------------------------------------------
+function verifyJwtWithFallback(authHeader) {
+  const raw = String(authHeader || "").trim();
+  const token = raw.replace(/^Bearer\s+/i, "").trim();
+  if (!token) throw new Error("Unauthorized");
+
+  const secrets = [process.env.JWT_SECRET, process.env.JWT_SECRET_OLD].filter(Boolean);
+
+  for (const s of secrets) {
+    try {
+      return jwt.verify(token, s);
+    } catch (e) {}
+  }
+
+  throw new Error("Unauthorized");
+}
+
+// ---------------------------------------------------------------------------
 // Middleware: verify JWT (tenant-safe)
 // ---------------------------------------------------------------------------
 function authenticate(req, res, next) {
   try {
-    const token = (req.headers.authorization || "").replace("Bearer ", "");
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    const decoded = verifyJwtWithFallback(req.headers.authorization);
+
     req.tenant_id = decoded.tenant_id;
     req.partner_id = decoded.partner_id;
     req.role = decoded.role;
@@ -94,7 +113,6 @@ router.post("/chat/session/clear", authenticate, (req, res) => {
     const tenant_id = req.tenant_id;
     const session_id = (req.body && req.body.session_id) ? String(req.body.session_id) : "web";
 
-    // Existing memory clear (keep)
     clearSession(tenant_id, session_id);
 
     // ✅ Story 12.7 memory clear (if loaded)
@@ -179,14 +197,10 @@ router.post("/chat/stream", authenticate, async (req, res) => {
       return res.end();
     }
 
-    // -------------------------------------------------------------------
-    // Store user turn (existing v12.5 memory — keep)
-    // -------------------------------------------------------------------
+    // Store user turn
     pushTurn(tenant_id, session_id, "user", message);
 
-    // -------------------------------------------------------------------
     // ✅ Story 12.7: session memory + intent carryover (tenant/session isolated)
-    // -------------------------------------------------------------------
     let memoryCtx = null;
     try {
       if (memory && resolveActiveIntent && buildContext) {
@@ -208,7 +222,7 @@ router.post("/chat/stream", authenticate, async (req, res) => {
     // Tell client we started processing
     sseEvent(res, "start", "");
 
-    // Memory prefix (keep for backward compatibility)
+    // Memory prefix (no brain signature changes)
     const prefix = buildMemoryPrefix(tenant_id, session_id);
     const brainInput = prefix + message;
 
@@ -240,12 +254,12 @@ router.post("/chat/stream", authenticate, async (req, res) => {
       sseEvent(res, "done", "");
     }
 
-    // Store assistant turn (existing v12.5 memory — keep)
+    // Store assistant turn
     pushTurn(tenant_id, session_id, "assistant", reply);
 
     // ✅ Story 12.7 store assistant turn (if loaded)
     try {
-      if (memory && resolveActiveIntent) {
+      if (memory) {
         const st2 = memory.getState(tenant_id, session_id);
         const active = st2.activeIntent || "";
         memory.appendTurn(tenant_id, session_id, "assistant", reply, { intentTag: active });

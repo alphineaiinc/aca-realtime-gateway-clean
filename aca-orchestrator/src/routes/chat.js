@@ -52,14 +52,30 @@ function rateLimit(req, res, next) {
 }
 
 // -------------------------------
+// ✅ JWT verify with fallback secret (token rotation safe)
+// -------------------------------
+function verifyJwtWithFallback(authHeader) {
+  const raw = String(authHeader || "").trim();
+  const token = raw.replace(/^Bearer\s+/i, "").trim();
+  if (!token) throw new Error("Unauthorized");
+
+  const secrets = [process.env.JWT_SECRET, process.env.JWT_SECRET_OLD].filter(Boolean);
+
+  for (const s of secrets) {
+    try {
+      return jwt.verify(token, s);
+    } catch (e) {}
+  }
+
+  throw new Error("Unauthorized");
+}
+
+// -------------------------------
 // Auth middleware: JWT required
 // -------------------------------
 function authenticate(req, res, next) {
   try {
-    const token = (req.headers.authorization || "").replace("Bearer ", "").trim();
-    if (!token) return res.status(401).json({ ok: false, error: "Unauthorized" });
-
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    const decoded = verifyJwtWithFallback(req.headers.authorization);
 
     // keep it flexible: your tokens sometimes contain tenant_id + partner_id + role
     req.tenant_id = decoded.tenant_id;
@@ -110,9 +126,9 @@ router.post("/", authenticate, rateLimit, async (req, res) => {
     // ✅ FIX: correct argument order + pass memoryCtx
     // retrieveAnswer(userQuery, tenantId, langCode="en-US", sessionId=null, memoryCtx=null)
     const result = await retrieveAnswer(
-      message,        // userQuery (string)
-      req.tenant_id,  // tenant context
-      locale,         // langCode / locale
+      message,        // userQuery
+      req.tenant_id,  // tenantId
+      locale,         // langCode/locale
       session_id,     // sessionId
       memoryCtx       // Story 12.7 memory context
     );
