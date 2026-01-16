@@ -49,6 +49,25 @@ try {
 const { save: saveSession, load: loadSession } = require("./src/brain/utils/sessionState");
 const { getMetricsText, markRecovery } = require("./src/monitor/resilienceMetrics");
 
+// ✅ Story 12.7 — Session memory store (tenant/session isolated) + TTL pruning
+let memory = null;
+try {
+  memory = require("./src/brain/memory/sessionMemory");
+  console.log("✅ Story 12.7 memory store loaded (sessionMemory.js)");
+
+  // Periodic TTL prune (keeps memory bounded; safe even on Render)
+  // NOTE: This does NOT store anything to disk.
+  setInterval(() => {
+    try {
+      memory.pruneExpired({
+        ttlMs: parseInt(process.env.MEMORY_TTL_MS || "3600000", 10), // default 60 min
+      });
+    } catch (e) {}
+  }, 5 * 60 * 1000).unref(); // every 5 minutes
+} catch (err) {
+  console.warn("⚠️ Story 12.7 memory store not loaded:", err.message);
+}
+
 // Global in-memory session placeholder (align with your actual objects)
 global.__ACA_STATE__ = { activeSessions: [], version: "5.3.A" };
 
@@ -134,6 +153,16 @@ try {
 // Story 12.5 — streaming web chat route
 const chatStreamRoute = require("./src/routes/chat_stream");
 app.use("/api", chatStreamRoute);
+
+// ✅ Story 12.7 — Safe debug endpoint for session memory (JWT protected)
+// Note: the actual memory wiring (append turns + pass memoryCtx) happens inside chat_stream/chat_ws handlers.
+try {
+  const memoryDebug = require("./src/routes/memoryDebug");
+  app.use("/api/chat", memoryDebug);
+  console.log("✅ Mounted /api/chat/debug-memory (Story 12.7)");
+} catch (err) {
+  console.warn("⚠️ memoryDebug route not loaded (Story 12.7):", err.message);
+}
 
 
 // Trust Render proxy and log runtime roots once

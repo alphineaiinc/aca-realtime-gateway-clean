@@ -13,8 +13,21 @@ const jwt = require("jsonwebtoken");
 // Reuse existing ACA brain
 const { retrieveAnswer } = require("../../retriever");
 
-// Memory
+// Memory (existing v12.5 session prefix memory — keep intact)
 const { pushTurn, buildMemoryPrefix, clearSession } = require("../brain/utils/sessionMemory");
+
+// ✅ Story 12.7 — New session memory + intent carryover + memory-aware context
+let memory = null;
+let resolveActiveIntent = null;
+let buildContext = null;
+try {
+  memory = require("../brain/memory/sessionMemory");
+  ({ resolveActiveIntent } = require("../brain/memory/intentCarryover"));
+  ({ buildContext } = require("../brain/memory/contextBuilder"));
+  console.log("✅ [chat_stream] Story 12.7 memory modules loaded");
+} catch (err) {
+  console.warn("⚠️ [chat_stream] Story 12.7 memory modules not loaded:", err.message);
+}
 
 const router = express.Router();
 
@@ -80,7 +93,17 @@ router.post("/chat/session/clear", authenticate, (req, res) => {
   try {
     const tenant_id = req.tenant_id;
     const session_id = (req.body && req.body.session_id) ? String(req.body.session_id) : "web";
+
+    // Existing memory clear (keep)
     clearSession(tenant_id, session_id);
+
+    // ✅ Story 12.7 memory clear (if loaded)
+    try {
+      if (memory && typeof memory.resetSession === "function") {
+        memory.resetSession(tenant_id, session_id);
+      }
+    } catch (e) {}
+
     console.log(`[chat_stream] session cleared tenant=${tenant_id} session=${session_id}`);
     return res.json({ ok: true, cleared: true, tenant_id, session_id });
   } catch (err) {
@@ -156,18 +179,42 @@ router.post("/chat/stream", authenticate, async (req, res) => {
       return res.end();
     }
 
-    // Store user turn
+    // -------------------------------------------------------------------
+    // Store user turn (existing v12.5 memory — keep)
+    // -------------------------------------------------------------------
     pushTurn(tenant_id, session_id, "user", message);
+
+    // -------------------------------------------------------------------
+    // ✅ Story 12.7: session memory + intent carryover (tenant/session isolated)
+    // -------------------------------------------------------------------
+    let memoryCtx = null;
+    try {
+      if (memory && resolveActiveIntent && buildContext) {
+        const st = memory.touch(tenant_id, session_id);
+
+        const nextIntent = resolveActiveIntent({
+          userText: message,
+          priorActiveIntent: st.activeIntent || "",
+        });
+        if (nextIntent) memory.setActiveIntent(tenant_id, session_id, nextIntent);
+
+        memory.appendTurn(tenant_id, session_id, "user", message, { intentTag: nextIntent });
+
+        const latest = memory.getState(tenant_id, session_id);
+        memoryCtx = buildContext(latest, { recentTurns: 8, summarizeBeyond: 10 });
+      }
+    } catch (e) {}
 
     // Tell client we started processing
     sseEvent(res, "start", "");
 
-    // Memory prefix (no brain signature changes)
+    // Memory prefix (keep for backward compatibility)
     const prefix = buildMemoryPrefix(tenant_id, session_id);
     const brainInput = prefix + message;
 
-    // Call ACA brain (this is where you see searchKB logs)
-    const result = await retrieveAnswer(brainInput, tenant_id, session_id, locale);
+    // ✅ FIX: correct argument order + pass memoryCtx (Story 12.7)
+    // retrieveAnswer(userQuery, tenantId, langCode="en-US", sessionId=null, memoryCtx=null)
+    const result = await retrieveAnswer(brainInput, tenant_id, locale, session_id, memoryCtx);
 
     if (clientClosed || res.writableEnded) {
       console.log(`[chat_stream] client closed early ${reqId} tenant=${tenant_id} session=${session_id}`);
@@ -193,8 +240,17 @@ router.post("/chat/stream", authenticate, async (req, res) => {
       sseEvent(res, "done", "");
     }
 
-    // Store assistant turn
+    // Store assistant turn (existing v12.5 memory — keep)
     pushTurn(tenant_id, session_id, "assistant", reply);
+
+    // ✅ Story 12.7 store assistant turn (if loaded)
+    try {
+      if (memory && resolveActiveIntent) {
+        const st2 = memory.getState(tenant_id, session_id);
+        const active = st2.activeIntent || "";
+        memory.appendTurn(tenant_id, session_id, "assistant", reply, { intentTag: active });
+      }
+    } catch (e) {}
 
     console.log(`[chat_stream] done ${reqId} tenant=${tenant_id} session=${session_id}`);
 

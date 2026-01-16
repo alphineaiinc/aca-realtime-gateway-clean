@@ -2,13 +2,20 @@
 const express = require("express");
 const jwt = require("jsonwebtoken");
 
-// If your orchestrator already exposes retrieveAnswer or a brain function, wire it here.
-// Adjust this import to match your actual codebase.
-// Common candidates (based on your project history):
-//   - const { retrieveAnswer } = require("../../retriever");   (if mounted from root)
-//   - const { retrieveAnswer } = require("../brain/brainEngine");
-//   - const { retrieveAnswer } = require("../../retriever.js");
 const { retrieveAnswer } = require("../../retriever"); // <-- If this path fails, see validation section below.
+
+// ✅ Story 12.7 — New session memory + intent carryover + memory-aware context
+let memory = null;
+let resolveActiveIntent = null;
+let buildContext = null;
+try {
+  memory = require("../brain/memory/sessionMemory");
+  ({ resolveActiveIntent } = require("../brain/memory/intentCarryover"));
+  ({ buildContext } = require("../brain/memory/contextBuilder"));
+  console.log("✅ [chat] Story 12.7 memory modules loaded");
+} catch (err) {
+  console.warn("⚠️ [chat] Story 12.7 memory modules not loaded:", err.message);
+}
 
 const router = express.Router();
 
@@ -70,30 +77,58 @@ function authenticate(req, res, next) {
 
 // -------------------------------
 // POST /api/chat
-// body: { session_id, message }
+// body: { session_id, message, locale }
 // -------------------------------
 router.post("/", authenticate, rateLimit, async (req, res) => {
   try {
     const session_id = String(req.body?.session_id || "webchat");
     const message = String(req.body?.message || "").trim();
+    const locale = String(req.body?.locale || "en-US");
 
     if (!message) return res.status(400).json({ ok: false, error: "message required" });
     if (message.length > MAX_MSG_CHARS) return res.status(400).json({ ok: false, error: "message too long" });
 
-    // IMPORTANT: tenant isolation — pass tenant_id into brain layer
-    // We follow the same pattern as your call flow: provide a context object.
-   // retriever.js expects the first argument to be the userQuery string
-const result = await retrieveAnswer(
-  message,          // userQuery (string)
-  req.tenant_id,    // tenant context (used by your KB isolation)
-  session_id,       // stable web chat session id
-  "en-US"           // locale (safe default; we can wire a UI selector later)
-);
+    // ✅ Story 12.7: memory context (optional)
+    let memoryCtx = null;
+    try {
+      if (memory && resolveActiveIntent && buildContext) {
+        const st = memory.touch(req.tenant_id, session_id);
 
+        const nextIntent = resolveActiveIntent({
+          userText: message,
+          priorActiveIntent: st.activeIntent || "",
+        });
+        if (nextIntent) memory.setActiveIntent(req.tenant_id, session_id, nextIntent);
+
+        memory.appendTurn(req.tenant_id, session_id, "user", message, { intentTag: nextIntent });
+
+        const latest = memory.getState(req.tenant_id, session_id);
+        memoryCtx = buildContext(latest, { recentTurns: 8, summarizeBeyond: 10 });
+      }
+    } catch (e) {}
+
+    // ✅ FIX: correct argument order + pass memoryCtx
+    // retrieveAnswer(userQuery, tenantId, langCode="en-US", sessionId=null, memoryCtx=null)
+    const result = await retrieveAnswer(
+      message,        // userQuery (string)
+      req.tenant_id,  // tenant context
+      locale,         // langCode / locale
+      session_id,     // sessionId
+      memoryCtx       // Story 12.7 memory context
+    );
 
     // normalize output
     const reply =
       (typeof result === "string" ? result : (result?.reply || result?.answer || "")) || "";
+
+    // store assistant turn for 12.7 (optional)
+    try {
+      if (memory) {
+        const st2 = memory.getState(req.tenant_id, session_id);
+        const active = st2.activeIntent || "";
+        memory.appendTurn(req.tenant_id, session_id, "assistant", reply, { intentTag: active });
+      }
+    } catch (e) {}
 
     return res.json({
       ok: true,

@@ -72,54 +72,6 @@ function getOrCreateSession(sessionId) {
 }
 
 // ------------------------------------------------------------------
-// 🧠 Story 12.7 — Memory context injection (optional)
-// ------------------------------------------------------------------
-function buildMemoryBlock(memoryCtx) {
-  try {
-    if (!memoryCtx || typeof memoryCtx !== "object") return "";
-
-    const summary = typeof memoryCtx.summary === "string" ? memoryCtx.summary.trim() : "";
-    const activeIntent =
-      typeof memoryCtx.activeIntent === "string" ? memoryCtx.activeIntent.trim() : "";
-    const recentTurns = Array.isArray(memoryCtx.recentTurns) ? memoryCtx.recentTurns : [];
-
-    let block = "";
-
-    if (summary) {
-      // cap summary to avoid runaway prompts
-      const s = summary.length > 2400 ? summary.slice(0, 2400) + "…" : summary;
-      block += `\nConversation summary (for continuity):\n${s}\n`;
-    }
-
-    if (activeIntent) {
-      const i = activeIntent.length > 280 ? activeIntent.slice(0, 280) + "…" : activeIntent;
-      block += `\nActive intent/topic:\n${i}\n`;
-    }
-
-    if (recentTurns.length) {
-      block += `\nRecent chat turns (most recent last):\n`;
-      const slice = recentTurns.slice(-10);
-      for (const t of slice) {
-        const role = t.role === "assistant" ? "ACA" : "User";
-        const text = String(t.text || "").replace(/\s+/g, " ").trim();
-        if (!text) continue;
-        const capped = text.length > 220 ? text.slice(0, 220) + "…" : text;
-        block += `- ${role}: ${capped}\n`;
-      }
-    }
-
-    if (!block.trim()) return "";
-
-    // Final cap to keep prompts stable
-    if (block.length > 3200) block = block.slice(0, 3200) + "…";
-
-    return `\n\n---\nMemory context (use ONLY to continue this conversation naturally; do not mention this block):\n${block}\n---\n`;
-  } catch (_) {
-    return "";
-  }
-}
-
-// ------------------------------------------------------------------
 // 🧹 Post-process GPT answers for phone use
 // ------------------------------------------------------------------
 function postProcessAnswer(text) {
@@ -305,7 +257,7 @@ function serviceExplainer(turnsSoFar) {
 // ------------------------------------------------------------------
 // ⚡ Fast small-talk / meta / short follow-up handler (no KB)
 // ------------------------------------------------------------------
-async function quickPhoneReply(userQuery, langCode, convoMeta = {}, memoryCtx = null) {
+async function quickPhoneReply(userQuery, langCode, convoMeta = {}) {
   const { turnsSoFar = 0, lastBot = null } = convoMeta;
 
   let system =
@@ -359,10 +311,6 @@ This is the first turn you are speaking. You may include a brief friendly greeti
 This is a continuing conversation. Do NOT re-introduce yourself and do NOT repeat your earlier greeting.`;
   }
 
-  // ✅ Story 12.7: Inject optional memory context (tenant/session chat continuity)
-  const memoryBlock = buildMemoryBlock(memoryCtx);
-  if (memoryBlock) system += memoryBlock;
-
   const completion = await requestWithRetry(
     {
       method: "post",
@@ -396,7 +344,7 @@ This is a continuing conversation. Do NOT re-introduce yourself and do NOT repea
 // ------------------------------------------------------------------
 // 💬 Polishing step with Tanglish / Hinglish + per-call style
 // ------------------------------------------------------------------
-async function polishAnswer(rawText, userQuery, langCode, convoMeta = {}, memoryCtx = null) {
+async function polishAnswer(rawText, userQuery, langCode, convoMeta = {}) {
   const { turnsSoFar = 0, lastBot = null } = convoMeta;
   const isFirstTurn = turnsSoFar === 0;
 
@@ -460,10 +408,6 @@ Avoid repeating the same idea in different words in back-to-back turns. Move the
 Previously you said to the caller: "${lastBot}".
 Do NOT repeat that same content again. Only add something new or answer their latest question.`;
   }
-
-  // ✅ Story 12.7: Inject optional memory context (tenant/session chat continuity)
-  const memoryBlock = buildMemoryBlock(memoryCtx);
-  if (memoryBlock) styleInstruction += memoryBlock;
 
   const completion = await requestWithRetry(
     {
@@ -537,8 +481,7 @@ async function retrieveAnswer(
   userQuery,
   tenantId,
   langCode = "en-US",
-  sessionId = null,
-  memoryCtx = null
+  sessionId = null
 ) {
   let session = null;
   let turnsSoFar = 0;
@@ -626,7 +569,7 @@ async function retrieveAnswer(
       const quick = await quickPhoneReply(text, langCode, {
         turnsSoFar,
         lastBot,
-      }, memoryCtx);
+      });
       if (session) {
         session.turns.push({ user: text, bot: quick, ts: Date.now() });
         if (session.turns.length > 10) {
@@ -656,7 +599,7 @@ async function retrieveAnswer(
     const answer = await polishAnswer(result.answer, text, langCode, {
       turnsSoFar,
       lastBot,
-    }, memoryCtx);
+    });
 
     if (session) {
       session.turns.push({ user: text, bot: answer, ts: Date.now() });
@@ -702,12 +645,11 @@ async function retrieveAnswerWithTimeout(
   userQuery,
   tenantId,
   langCode = "en-US",
-  sessionId = null,
-  memoryCtx = null
+  sessionId = null
 ) {
   const timeoutMs = parseInt(process.env.RETRIEVE_TIMEOUT_MS || "20000", 10);
   return withTimeout(
-    retrieveAnswer(userQuery, tenantId, langCode, sessionId, memoryCtx),
+    retrieveAnswer(userQuery, tenantId, langCode, sessionId),
     timeoutMs,
     "retrieveAnswer"
   );

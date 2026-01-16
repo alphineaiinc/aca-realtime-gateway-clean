@@ -13,8 +13,21 @@ const jwt = require("jsonwebtoken");
 // Reuse existing ACA brain
 const { retrieveAnswer } = require("../../retriever");
 
-// Memory
+// Memory (existing v12.5 session prefix memory — keep intact)
 const { pushTurn, buildMemoryPrefix, clearSession } = require("../brain/utils/sessionMemory");
+
+// ✅ Story 12.7 — New session memory + intent carryover + memory-aware context
+let memory = null;
+let resolveActiveIntent = null;
+let buildContext = null;
+try {
+  memory = require("../brain/memory/sessionMemory");
+  ({ resolveActiveIntent } = require("../brain/memory/intentCarryover"));
+  ({ buildContext } = require("../brain/memory/contextBuilder"));
+  console.log("✅ [chat_ws] Story 12.7 memory modules loaded");
+} catch (err) {
+  console.warn("⚠️ [chat_ws] Story 12.7 memory modules not loaded:", err.message);
+}
 
 const MAX_INCOMING_CHARS = 2000;
 
@@ -157,6 +170,14 @@ function registerChatWs(app) {
       if (msg.type === "clear") {
         try {
           clearSession(tenant_id, session_id);
+
+          // ✅ Story 12.7 memory clear (if loaded)
+          try {
+            if (memory && typeof memory.resetSession === "function") {
+              memory.resetSession(tenant_id, session_id);
+            }
+          } catch (e) {}
+
           safeSend(ws, { type: "cleared", ok: true, session_id });
           console.log(`[chat_ws] cleared ${connId} tenant=${tenant_id} session=${session_id}`);
         } catch (e) {
@@ -185,10 +206,29 @@ function registerChatWs(app) {
       // ✅ Safe log: do NOT log raw content
       console.log(`[chat_ws] start ${connId} tenant=${tenant_id} session=${session_id} locale=${locale} msg_len=${text.length}`);
 
-      // Store user turn (sessionMemory module should handle its own trimming)
+      // Store user turn (existing v12.5 memory — keep)
       pushTurn(tenant_id, session_id, "user", text);
 
-      // Build memory prefix (no brain signature changes)
+      // ✅ Story 12.7: session memory + intent carryover + memory-aware context
+      let memoryCtx = null;
+      try {
+        if (memory && resolveActiveIntent && buildContext) {
+          const st = memory.touch(tenant_id, session_id);
+
+          const nextIntent = resolveActiveIntent({
+            userText: text,
+            priorActiveIntent: st.activeIntent || "",
+          });
+          if (nextIntent) memory.setActiveIntent(tenant_id, session_id, nextIntent);
+
+          memory.appendTurn(tenant_id, session_id, "user", text, { intentTag: nextIntent });
+
+          const latest = memory.getState(tenant_id, session_id);
+          memoryCtx = buildContext(latest, { recentTurns: 8, summarizeBeyond: 10 });
+        }
+      } catch (e) {}
+
+      // Build memory prefix (keep for backward compatibility)
       const prefix = buildMemoryPrefix(tenant_id, session_id);
       const brainInput = prefix + text;
 
@@ -196,11 +236,9 @@ function registerChatWs(app) {
 
       try {
         // ✅ Story 12.6 — timeout guard
-        // IMPORTANT: retrieveAnswer signature in retriever.js is:
-        // retrieveAnswer(userQuery, tenantId, langCode="en-US", sessionId=null)
-        // So we call as (brainInput, tenant_id, locale, session_id)
+        // ✅ Story 12.7 — pass memoryCtx as 5th param
         const result = await withTimeout(
-          Promise.resolve(retrieveAnswer(brainInput, tenant_id, locale, session_id)),
+          Promise.resolve(retrieveAnswer(brainInput, tenant_id, locale, session_id, memoryCtx)),
           RETRIEVE_TIMEOUT_MS,
           "retrieve_timeout"
         );
@@ -219,8 +257,17 @@ function registerChatWs(app) {
 
         safeSend(ws, { type: "done" });
 
-        // Store assistant turn
+        // Store assistant turn (existing v12.5 memory — keep)
         pushTurn(tenant_id, session_id, "assistant", reply);
+
+        // ✅ Story 12.7 store assistant turn (if loaded)
+        try {
+          if (memory && resolveActiveIntent) {
+            const st2 = memory.getState(tenant_id, session_id);
+            const active = st2.activeIntent || "";
+            memory.appendTurn(tenant_id, session_id, "assistant", reply, { intentTag: active });
+          }
+        } catch (e) {}
 
         console.log(`[chat_ws] done ${connId} tenant=${tenant_id} session=${session_id} reply_len=${String(reply || "").length}`);
       } catch (err) {
