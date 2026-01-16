@@ -23,7 +23,7 @@ async function detectIntent(text) {
 }
 
 // --- Import the orchestrator's executor ---
-const { executeOrderIntent } = require("../../../aca-orchestrator/src/brain/actions/order_executor");
+const { executeOrderIntent } = require("../actions/order_executor");
 
 // --- Wrapper: detect + execute ---
 async function detectAndExecuteIntent(business_id, text) {

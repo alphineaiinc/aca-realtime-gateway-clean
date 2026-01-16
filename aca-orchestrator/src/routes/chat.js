@@ -2,20 +2,8 @@
 const express = require("express");
 const jwt = require("jsonwebtoken");
 
-const { retrieveAnswer } = require("../../retriever"); // <-- If this path fails, see validation section below.
-
-// ✅ Story 12.7 — New session memory + intent carryover + memory-aware context
-let memory = null;
-let resolveActiveIntent = null;
-let buildContext = null;
-try {
-  memory = require("../brain/memory/sessionMemory");
-  ({ resolveActiveIntent } = require("../brain/memory/intentCarryover"));
-  ({ buildContext } = require("../brain/memory/contextBuilder"));
-  console.log("✅ [chat] Story 12.7 memory modules loaded");
-} catch (err) {
-  console.warn("⚠️ [chat] Story 12.7 memory modules not loaded:", err.message);
-}
+// ✅ Use timeout-guarded brain wrapper
+const { retrieveAnswerWithTimeout: retrieveAnswer } = require("../../retriever");
 
 const router = express.Router();
 
@@ -52,30 +40,14 @@ function rateLimit(req, res, next) {
 }
 
 // -------------------------------
-// ✅ JWT verify with fallback secret (token rotation safe)
-// -------------------------------
-function verifyJwtWithFallback(authHeader) {
-  const raw = String(authHeader || "").trim();
-  const token = raw.replace(/^Bearer\s+/i, "").trim();
-  if (!token) throw new Error("Unauthorized");
-
-  const secrets = [process.env.JWT_SECRET, process.env.JWT_SECRET_OLD].filter(Boolean);
-
-  for (const s of secrets) {
-    try {
-      return jwt.verify(token, s);
-    } catch (e) {}
-  }
-
-  throw new Error("Unauthorized");
-}
-
-// -------------------------------
 // Auth middleware: JWT required
 // -------------------------------
 function authenticate(req, res, next) {
   try {
-    const decoded = verifyJwtWithFallback(req.headers.authorization);
+    const token = (req.headers.authorization || "").replace(/^Bearer\s+/i, "").trim();
+    if (!token) return res.status(401).json({ ok: false, error: "Unauthorized" });
+
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
 
     // keep it flexible: your tokens sometimes contain tenant_id + partner_id + role
     req.tenant_id = decoded.tenant_id;
@@ -87,69 +59,41 @@ function authenticate(req, res, next) {
     }
     next();
   } catch (err) {
+    console.warn("🔐 [chat] JWT verify failed:", err?.message || err);
+    console.warn("🔐 [chat] JWT_SECRET present?", !!process.env.JWT_SECRET);
     return res.status(401).json({ ok: false, error: "Unauthorized" });
   }
 }
 
 // -------------------------------
 // POST /api/chat
-// body: { session_id, message, locale }
+// body: { session_id, locale, message }
 // -------------------------------
 router.post("/", authenticate, rateLimit, async (req, res) => {
   try {
     const session_id = String(req.body?.session_id || "webchat");
-    const message = String(req.body?.message || "").trim();
     const locale = String(req.body?.locale || "en-US");
+    const message = String(req.body?.message || "").trim();
 
     if (!message) return res.status(400).json({ ok: false, error: "message required" });
     if (message.length > MAX_MSG_CHARS) return res.status(400).json({ ok: false, error: "message too long" });
 
-    // ✅ Story 12.7: memory context (optional)
-    let memoryCtx = null;
-    try {
-      if (memory && resolveActiveIntent && buildContext) {
-        const st = memory.touch(req.tenant_id, session_id);
-
-        const nextIntent = resolveActiveIntent({
-          userText: message,
-          priorActiveIntent: st.activeIntent || "",
-        });
-        if (nextIntent) memory.setActiveIntent(req.tenant_id, session_id, nextIntent);
-
-        memory.appendTurn(req.tenant_id, session_id, "user", message, { intentTag: nextIntent });
-
-        const latest = memory.getState(req.tenant_id, session_id);
-        memoryCtx = buildContext(latest, { recentTurns: 8, summarizeBeyond: 10 });
-      }
-    } catch (e) {}
-
-    // ✅ FIX: correct argument order + pass memoryCtx
-    // retrieveAnswer(userQuery, tenantId, langCode="en-US", sessionId=null, memoryCtx=null)
+    // ✅ FIX: retriever signature is (userQuery, tenantId, langCode, sessionId)
     const result = await retrieveAnswer(
       message,        // userQuery
-      req.tenant_id,  // tenantId
+      req.tenant_id,  // tenant_id
       locale,         // langCode/locale
-      session_id,     // sessionId
-      memoryCtx       // Story 12.7 memory context
+      session_id      // sessionId
     );
 
-    // normalize output
     const reply =
       (typeof result === "string" ? result : (result?.reply || result?.answer || "")) || "";
-
-    // store assistant turn for 12.7 (optional)
-    try {
-      if (memory) {
-        const st2 = memory.getState(req.tenant_id, session_id);
-        const active = st2.activeIntent || "";
-        memory.appendTurn(req.tenant_id, session_id, "assistant", reply, { intentTag: active });
-      }
-    } catch (e) {}
 
     return res.json({
       ok: true,
       reply,
-      session_id
+      session_id,
+      locale,
     });
   } catch (err) {
     // Log minimization: don’t dump full user content

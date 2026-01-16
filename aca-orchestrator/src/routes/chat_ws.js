@@ -1,104 +1,66 @@
-// src/routes/chat_stream.js
-// Story 12.5 — SSE streaming chat endpoint with session memory + Render/proxy hardening
-// Fixes:
-// - Send 2KB padding immediately (defeats proxy buffering on Render)
-// - Socket keep-alive + no-delay
-// - Heartbeat comments every 10s
-// - Preserve whitespace in streamed chunks (no trimming of payload)
-// - Tenant-safe short-term memory prefix (no brain signature changes)
+// src/routes/chat_ws.js
+// Story 12.5 — Streaming Web Chat over WebSocket (Render-safe)
+// Why: Render/Cloudflare proxy path can buffer/kill SSE streams. WebSockets are the reliable alternative.
+//
+// Protocol:
+// Client connects to ws(s)://<host>/ws/chat
+// Client sends: { type:"auth", token:"<JWT>", session_id:"...", locale:"en-US" }
+// Then for each message: { type:"user", message:"..." }
+// Server streams: { type:"token", data:"..." } ... then { type:"done" } or { type:"error", error:"..." }
 
-const express = require("express");
 const jwt = require("jsonwebtoken");
 
-// Reuse existing ACA brain
+// ✅ Use timeout-guarded brain wrapper
 const { retrieveAnswerWithTimeout: retrieveAnswer } = require("../../retriever");
 
-
-// Memory
-const { pushTurn, buildMemoryPrefix, clearSession } = require("../brain/utils/sessionMemory");
-
-// ✅ Story 12.7 — New session memory + intent carryover + memory-aware context
-let memory = null;
-let resolveActiveIntent = null;
-let buildContext = null;
+// Memory (Story 12.7) — prefer new memory store; fallback to old if needed
+let pushTurn, buildMemoryPrefix, clearSession;
 try {
-  memory = require("../brain/memory/sessionMemory");
-  ({ resolveActiveIntent } = require("../brain/memory/intentCarryover"));
-  ({ buildContext } = require("../brain/memory/contextBuilder"));
-  console.log("✅ [chat_stream] Story 12.7 memory modules loaded");
-} catch (err) {
-  console.warn("⚠️ [chat_stream] Story 12.7 memory modules not loaded:", err.message);
+  ({ pushTurn, buildMemoryPrefix, clearSession } = require("../brain/memory/sessionMemory"));
+  console.log("✅ [chat_ws] Using Story 12.7 memory store (src/brain/memory/sessionMemory.js)");
+} catch (e) {
+  ({ pushTurn, buildMemoryPrefix, clearSession } = require("../brain/utils/sessionMemory"));
+  console.log("⚠️ [chat_ws] Falling back to legacy memory store (src/brain/utils/sessionMemory.js)");
 }
-
-const router = express.Router();
 
 const MAX_INCOMING_CHARS = 2000;
-const HEARTBEAT_MS = 10_000;
 
-// ---------------------------------------------------------------------------
-// ✅ JWT verify with fallback secret (token rotation safe)
-// ---------------------------------------------------------------------------
-function verifyJwtWithFallback(authHeader) {
-  const raw = String(authHeader || "").trim();
-  const token = raw.replace(/^Bearer\s+/i, "").trim();
-  if (!token) throw new Error("Unauthorized");
+// ------------------------------------------------------------------
+// Story 12.6 — Web Chat Production Hardening Pack (WS-layer)
+// - Per-tenant WS rate limiting
+// - Max concurrent WS connections per tenant
+// - Timeout guard for retrieveAnswer()
+// - Safe audit logs (no raw message content)
+// ------------------------------------------------------------------
+const WS_MAX_CONN_PER_TENANT = parseInt(process.env.WS_MAX_CONN_PER_TENANT || "5", 10);
+const WS_RATE_WINDOW_MS = parseInt(process.env.WS_RATE_WINDOW_MS || "10000", 10); // 10s
+const WS_RATE_MAX_MSGS = parseInt(process.env.WS_RATE_MAX_MSGS || "30", 10); // per window
 
-  const secrets = [process.env.JWT_SECRET, process.env.JWT_SECRET_OLD].filter(Boolean);
+// tenant_id -> Set(connId)
+const tenantConnSet = new Map();
 
-  for (const s of secrets) {
-    try {
-      return jwt.verify(token, s);
-    } catch (e) {}
+// tenant_id -> { count, resetAt }
+const tenantRateBucket = new Map();
+
+function getTenantSet(tenantId) {
+  const key = String(tenantId || "");
+  if (!tenantConnSet.has(key)) tenantConnSet.set(key, new Set());
+  return tenantConnSet.get(key);
+}
+
+function rateLimitTenant(tenantId) {
+  const key = String(tenantId || "");
+  const now = Date.now();
+  const bucket = tenantRateBucket.get(key) || { count: 0, resetAt: now + WS_RATE_WINDOW_MS };
+  if (now > bucket.resetAt) {
+    bucket.count = 0;
+    bucket.resetAt = now + WS_RATE_WINDOW_MS;
   }
-
-  throw new Error("Unauthorized");
+  bucket.count += 1;
+  tenantRateBucket.set(key, bucket);
+  return bucket.count <= WS_RATE_MAX_MSGS;
 }
 
-// ---------------------------------------------------------------------------
-// Middleware: verify JWT (tenant-safe)
-// ---------------------------------------------------------------------------
-function authenticate(req, res, next) {
-  try {
-    const decoded = verifyJwtWithFallback(req.headers.authorization);
-
-    req.tenant_id = decoded.tenant_id;
-    req.partner_id = decoded.partner_id;
-    req.role = decoded.role;
-
-    if (!req.tenant_id) {
-      return res.status(401).json({ ok: false, error: "Unauthorized (no tenant_id)" });
-    }
-    next();
-  } catch (err) {
-    return res.status(401).json({ ok: false, error: "Unauthorized" });
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Helper: SSE write (safe single-line payload)
-// NOTE: Keep standard SSE formatting: "event: X" + "data: Y" + blank line.
-// We replace newlines with \n and rehydrate on client.
-// ---------------------------------------------------------------------------
-function sseEvent(res, eventName, data) {
-  if (res.writableEnded) return;
-
-  const safe = String(data ?? "").replace(/\r?\n/g, "\\n");
-  res.write(`event: ${String(eventName)}\n`);
-  res.write(`data: ${safe}\n\n`);
-}
-
-// ---------------------------------------------------------------------------
-// Proxy-buffer buster: send a big comment block immediately (~2KB)
-// This is the Render-safe trick that makes the browser receive bytes instantly.
-// ---------------------------------------------------------------------------
-function sseKickstart(res) {
-  // comment lines begin with ":" per SSE spec and are ignored by the client parser
-  // 2048+ bytes tends to defeat buffering proxies
-  const pad = " ".repeat(2048);
-  res.write(`: kickstart${pad}\n\n`);
-}
-
-// Chunker (keep simple; whitespace preserved because we do NOT trim chunks)
 function* chunkText(text, chunkSize = 18) {
   const t = String(text || "");
   for (let i = 0; i < t.length; i += chunkSize) {
@@ -106,182 +68,187 @@ function* chunkText(text, chunkSize = 18) {
   }
 }
 
-// ---------------------------------------------------------------------------
-// POST /api/chat/session/clear
-// ---------------------------------------------------------------------------
-router.post("/chat/session/clear", authenticate, (req, res) => {
+function safeSend(ws, obj) {
   try {
-    const tenant_id = req.tenant_id;
-    const session_id = (req.body && req.body.session_id) ? String(req.body.session_id) : "web";
-
-    clearSession(tenant_id, session_id);
-
-    // ✅ Story 12.7 memory clear (if loaded)
-    try {
-      if (memory && typeof memory.resetSession === "function") {
-        memory.resetSession(tenant_id, session_id);
-      }
-    } catch (e) {}
-
-    console.log(`[chat_stream] session cleared tenant=${tenant_id} session=${session_id}`);
-    return res.json({ ok: true, cleared: true, tenant_id, session_id });
-  } catch (err) {
-    return res.status(500).json({ ok: false, error: "Failed to clear session" });
-  }
-});
-
-// ---------------------------------------------------------------------------
-// POST /api/chat/stream
-// ---------------------------------------------------------------------------
-router.post("/chat/stream", authenticate, async (req, res) => {
-  const tenant_id = req.tenant_id;
-
-  // SSE headers (anti-buffer)
-  res.status(200);
-  res.setHeader("Content-Type", "text/event-stream; charset=utf-8");
-  res.setHeader("Cache-Control", "no-cache, no-transform");
-  res.setHeader("Connection", "keep-alive");
-  res.setHeader("X-Accel-Buffering", "no");
-  res.setHeader("Vary", "Accept-Encoding");
-
-  // Socket hardening (helps on some platforms)
-  try {
-    if (res.socket) {
-      res.socket.setTimeout(0);
-      res.socket.setNoDelay(true);
-      res.socket.setKeepAlive(true, 60_000);
-    }
+    if (ws && ws.readyState === 1) ws.send(JSON.stringify(obj));
   } catch (e) {}
+}
 
-  if (typeof res.flushHeaders === "function") res.flushHeaders();
+function parseJsonSafe(s) {
+  try { return JSON.parse(s); } catch (e) { return null; }
+}
 
-  const reqId = `sse_${Date.now()}_${Math.random().toString(16).slice(2)}`;
-  let clientClosed = false;
+function registerChatWs(app) {
+  app.ws("/ws/chat", (ws, req) => {
+    const connId = `ws_${Date.now()}_${Math.random().toString(16).slice(2)}`;
 
-  req.on("close", () => {
-    clientClosed = true;
+    let authed = false;
+    let tenant_id = null;
+    let session_id = "web";
+    let locale = "en-US";
+
+    // ✅ Safe proof logs (no tokens, no raw message content)
+    console.log(`[chat_ws] connected ${connId}`);
+    console.log(`[chat_ws] /ws/chat WS CONNECT attempt ${new Date().toISOString()}`);
+
+    ws.on("message", async (raw) => {
+      const msg = parseJsonSafe(String(raw || ""));
+      if (!msg || typeof msg !== "object") {
+        return safeSend(ws, { type: "error", error: "Invalid JSON message" });
+      }
+
+      // ---------------------------
+      // AUTH (first message)
+      // ---------------------------
+      if (!authed) {
+        if (msg.type !== "auth") {
+          return safeSend(ws, { type: "error", error: "Must auth first" });
+        }
+
+        try {
+          const token = String(msg.token || "").replace(/^Bearer\s+/i, "").trim();
+          const decoded = jwt.verify(token, process.env.JWT_SECRET);
+
+          tenant_id = decoded.tenant_id;
+          if (!tenant_id) {
+            return safeSend(ws, { type: "error", error: "Unauthorized (no tenant_id)" });
+          }
+
+          // Enforce max concurrent connections per tenant (Story 12.6)
+          const set = getTenantSet(tenant_id);
+          if (set.size >= WS_MAX_CONN_PER_TENANT) {
+            safeSend(ws, { type: "error", error: "Tenant connection limit reached" });
+            console.log(`[chat_ws] reject_max_conn ${connId} tenant=${tenant_id} max=${WS_MAX_CONN_PER_TENANT} current=${set.size}`);
+            try { ws.close(1013, "tenant_max_connections"); } catch (e) {}
+            return;
+          }
+          set.add(connId);
+
+          session_id = String(msg.session_id || "web");
+          locale = String(msg.locale || "en-US");
+
+          authed = true;
+          safeSend(ws, { type: "connected", ok: true, tenant_id, session_id, locale });
+          console.log(`[chat_ws] authed ${connId} tenant=${tenant_id} session=${session_id} locale=${locale}`);
+          return;
+        } catch (e) {
+          console.warn("🔐 [chat_ws] JWT verify failed:", e?.message || e);
+          console.warn("🔐 [chat_ws] JWT_SECRET present?", !!process.env.JWT_SECRET);
+          return safeSend(ws, { type: "error", error: "Unauthorized" });
+        }
+      }
+
+      // Per-tenant rate limit (Story 12.6) — applies after auth
+      if (tenant_id && !rateLimitTenant(tenant_id)) {
+        safeSend(ws, { type: "error", error: "Rate limited" });
+        safeSend(ws, { type: "done" });
+        console.log(`[chat_ws] rate_limited ${connId} tenant=${tenant_id} window_ms=${WS_RATE_WINDOW_MS} max_msgs=${WS_RATE_MAX_MSGS}`);
+        return;
+      }
+
+      // ---------------------------
+      // CLEAR SESSION (optional)
+      // ---------------------------
+      if (msg.type === "clear") {
+        try {
+          clearSession(tenant_id, session_id);
+          safeSend(ws, { type: "cleared", ok: true, session_id });
+          console.log(`[chat_ws] cleared ${connId} tenant=${tenant_id} session=${session_id}`);
+        } catch (e) {
+          safeSend(ws, { type: "error", error: "Failed to clear session" });
+        }
+        return;
+      }
+
+      // ---------------------------
+      // USER MESSAGE
+      // ---------------------------
+      if (msg.type !== "user") {
+        return safeSend(ws, { type: "error", error: "Unknown message type" });
+      }
+
+      const textRaw = String(msg.message || "");
+      const text = textRaw.trim();
+
+      if (!text) {
+        return safeSend(ws, { type: "error", error: "Empty message" });
+      }
+      if (text.length > MAX_INCOMING_CHARS) {
+        return safeSend(ws, { type: "error", error: `Message too long (max ${MAX_INCOMING_CHARS})` });
+      }
+
+      // ✅ Safe log: do NOT log raw content
+      console.log(`[chat_ws] start ${connId} tenant=${tenant_id} session=${session_id} locale=${locale} msg_len=${text.length}`);
+
+      // Store user turn
+      try {
+        pushTurn(tenant_id, session_id, "user", text);
+      } catch (e) {
+        console.warn("⚠️ [chat_ws] pushTurn failed:", e?.message || e);
+      }
+
+      // Build memory prefix
+      let prefix = "";
+      try {
+        prefix = buildMemoryPrefix(tenant_id, session_id) || "";
+      } catch (e) {
+        console.warn("⚠️ [chat_ws] buildMemoryPrefix failed:", e?.message || e);
+        prefix = "";
+      }
+      const brainInput = prefix + text;
+
+      safeSend(ws, { type: "start" });
+
+      try {
+        // ✅ FIX: retriever signature is (userQuery, tenantId, langCode, sessionId)
+        const result = await Promise.resolve(retrieveAnswer(brainInput, tenant_id, locale, session_id));
+
+        const reply =
+          (typeof result === "string") ? result :
+          (result && typeof result.reply === "string") ? result.reply :
+          (result && typeof result.answer === "string") ? result.answer :
+          (result && result.data && typeof result.data.reply === "string") ? result.data.reply :
+          JSON.stringify(result);
+
+        for (const chunk of chunkText(reply, 18)) {
+          safeSend(ws, { type: "token", data: chunk });
+          await new Promise(r => setTimeout(r, 15));
+        }
+
+        safeSend(ws, { type: "done" });
+
+        // Store assistant turn
+        try {
+          pushTurn(tenant_id, session_id, "assistant", reply);
+        } catch (e) {
+          console.warn("⚠️ [chat_ws] pushTurn(assistant) failed:", e?.message || e);
+        }
+
+        console.log(`[chat_ws] done ${connId} tenant=${tenant_id} session=${session_id} reply_len=${String(reply || "").length}`);
+      } catch (err) {
+        const msgSafe = err?.message || "unknown";
+        console.log(`[chat_ws] error ${connId} tenant=${tenant_id} session=${session_id} err=${msgSafe}`);
+        safeSend(ws, { type: "error", error: msgSafe });
+        safeSend(ws, { type: "done" });
+      }
+    });
+
+    ws.on("close", () => {
+      // Remove from tenant set if authed
+      try {
+        if (tenant_id) {
+          const set = getTenantSet(tenant_id);
+          set.delete(connId);
+        }
+      } catch (e) {}
+
+      console.log(`[chat_ws] closed ${connId}`);
+    });
+
+    ws.on("error", (e) => {
+      console.log(`[chat_ws] ws error ${connId}:`, e?.message || e);
+    });
   });
+}
 
-  // ✅ MUST: kickstart immediately so client receives bytes and won’t abort
-  sseKickstart(res);
-
-  // Also send an early “connected” event so UI can flip from "connecting" to "thinking"
-  sseEvent(res, "connected", "ok");
-
-  // Heartbeat comments (keep proxies happy while retrieveAnswer runs)
-  const heartbeat = setInterval(() => {
-    if (clientClosed || res.writableEnded) return;
-    try {
-      res.write(`: ping ${Date.now()}\n\n`);
-    } catch (e) {}
-  }, HEARTBEAT_MS);
-
-  try {
-    const messageRaw = (req.body && req.body.message) ? String(req.body.message) : "";
-    const session_id = (req.body && req.body.session_id) ? String(req.body.session_id) : "web";
-    const locale = (req.body && req.body.locale) ? String(req.body.locale) : "en-US";
-
-    console.log(`[chat_stream] start ${reqId} tenant=${tenant_id} session=${session_id} locale=${locale}`);
-
-    const message = messageRaw.trim();
-    if (!message) {
-      sseEvent(res, "error", "Empty message");
-      sseEvent(res, "done", "");
-      clearInterval(heartbeat);
-      return res.end();
-    }
-
-    if (message.length > MAX_INCOMING_CHARS) {
-      sseEvent(res, "error", `Message too long (max ${MAX_INCOMING_CHARS} chars)`);
-      sseEvent(res, "done", "");
-      clearInterval(heartbeat);
-      return res.end();
-    }
-
-    // Store user turn
-    pushTurn(tenant_id, session_id, "user", message);
-
-    // ✅ Story 12.7: session memory + intent carryover (tenant/session isolated)
-    let memoryCtx = null;
-    try {
-      if (memory && resolveActiveIntent && buildContext) {
-        const st = memory.touch(tenant_id, session_id);
-
-        const nextIntent = resolveActiveIntent({
-          userText: message,
-          priorActiveIntent: st.activeIntent || "",
-        });
-        if (nextIntent) memory.setActiveIntent(tenant_id, session_id, nextIntent);
-
-        memory.appendTurn(tenant_id, session_id, "user", message, { intentTag: nextIntent });
-
-        const latest = memory.getState(tenant_id, session_id);
-        memoryCtx = buildContext(latest, { recentTurns: 8, summarizeBeyond: 10 });
-      }
-    } catch (e) {}
-
-    // Tell client we started processing
-    sseEvent(res, "start", "");
-
-    // Memory prefix (no brain signature changes)
-    const prefix = buildMemoryPrefix(tenant_id, session_id);
-    const brainInput = prefix + message;
-
-    // ✅ FIX: correct argument order + pass memoryCtx (Story 12.7)
-    // retrieveAnswer(userQuery, tenantId, langCode="en-US", sessionId=null, memoryCtx=null)
-    const result = await retrieveAnswer(brainInput, tenant_id, locale, session_id, memoryCtx);
-
-    if (clientClosed || res.writableEnded) {
-      console.log(`[chat_stream] client closed early ${reqId} tenant=${tenant_id} session=${session_id}`);
-      clearInterval(heartbeat);
-      return res.end();
-    }
-
-    const reply =
-      (typeof result === "string") ? result :
-      (result && typeof result.reply === "string") ? result.reply :
-      (result && typeof result.answer === "string") ? result.answer :
-      (result && result.data && typeof result.data.reply === "string") ? result.data.reply :
-      JSON.stringify(result);
-
-    // Stream tokens
-    for (const chunk of chunkText(reply, 18)) {
-      if (clientClosed || res.writableEnded) break;
-      sseEvent(res, "token", chunk);
-      await new Promise(r => setTimeout(r, 15));
-    }
-
-    if (!clientClosed && !res.writableEnded) {
-      sseEvent(res, "done", "");
-    }
-
-    // Store assistant turn
-    pushTurn(tenant_id, session_id, "assistant", reply);
-
-    // ✅ Story 12.7 store assistant turn (if loaded)
-    try {
-      if (memory) {
-        const st2 = memory.getState(tenant_id, session_id);
-        const active = st2.activeIntent || "";
-        memory.appendTurn(tenant_id, session_id, "assistant", reply, { intentTag: active });
-      }
-    } catch (e) {}
-
-    console.log(`[chat_stream] done ${reqId} tenant=${tenant_id} session=${session_id}`);
-
-    clearInterval(heartbeat);
-    return res.end();
-  } catch (err) {
-    console.log(`[chat_stream] error ${reqId} tenant=${tenant_id} msg=${err?.message || "unknown"}`);
-
-    try {
-      sseEvent(res, "error", err?.message || "Server error");
-      sseEvent(res, "done", "");
-    } catch (e) {}
-
-    clearInterval(heartbeat);
-    return res.end();
-  }
-});
-
-module.exports = router;
+module.exports = { registerChatWs };

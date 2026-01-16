@@ -1,46 +1,29 @@
 ﻿// src/routes/memoryDebug.js
-// Story 12.7 — Memory Debug Endpoint (JWT protected, tenant-scoped)
-// GET /api/chat/debug-memory?session_id=memtest_1
-// Shows current in-memory session state for the tenant/session (redacted).
+// Story 12.7 — Tenant-isolated session memory debug endpoint (safe)
+// GET /api/chat/debug-memory?session_id=...
 
 const express = require("express");
 const jwt = require("jsonwebtoken");
 
-let memory = null;
-try {
-  memory = require("../brain/memory/sessionMemory");
-  console.log("✅ [memoryDebug] sessionMemory loaded");
-} catch (err) {
-  console.warn("⚠️ [memoryDebug] sessionMemory not loaded:", err.message);
-}
-
 const router = express.Router();
 
-// ---------------------------------------------------------------------------
-// ✅ JWT verify with fallback secret (token rotation safe)
-// ---------------------------------------------------------------------------
-function verifyJwtWithFallback(authHeader) {
-  const raw = String(authHeader || "").trim();
-  const token = raw.replace(/^Bearer\s+/i, "").trim();
-  if (!token) throw new Error("Unauthorized");
-
-  const secrets = [process.env.JWT_SECRET, process.env.JWT_SECRET_OLD].filter(Boolean);
-
-  for (const s of secrets) {
-    try {
-      return jwt.verify(token, s);
-    } catch (e) {}
-  }
-
-  throw new Error("Unauthorized");
+// Prefer Story 12.7 store; fallback to older store
+let getSessionState;
+try {
+  ({ getSessionState } = require("../brain/memory/sessionMemory"));
+  console.log("✅ [memoryDebug] Using Story 12.7 memory store (src/brain/memory/sessionMemory.js)");
+} catch (e) {
+  ({ getSessionState } = require("../brain/utils/sessionMemory"));
+  console.log("⚠️ [memoryDebug] Falling back to legacy memory store (src/brain/utils/sessionMemory.js)");
 }
 
 // ---------------------------------------------------------------------------
-// Auth middleware
+// Middleware: verify JWT (tenant-safe)
 // ---------------------------------------------------------------------------
 function authenticate(req, res, next) {
   try {
-    const decoded = verifyJwtWithFallback(req.headers.authorization);
+    const token = (req.headers.authorization || "").replace(/^Bearer\s+/i, "").trim();
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
 
     req.tenant_id = decoded.tenant_id;
     req.partner_id = decoded.partner_id;
@@ -51,40 +34,34 @@ function authenticate(req, res, next) {
     }
     next();
   } catch (err) {
+    console.warn("🔐 [memoryDebug] JWT verify failed:", err?.message || err);
+    console.warn("🔐 [memoryDebug] JWT_SECRET present?", !!process.env.JWT_SECRET);
     return res.status(401).json({ ok: false, error: "Unauthorized" });
   }
 }
 
 // ---------------------------------------------------------------------------
-// GET /api/chat/debug-memory?session_id=xxx
+// GET /api/chat/debug-memory?session_id=...
 // ---------------------------------------------------------------------------
 router.get("/chat/debug-memory", authenticate, (req, res) => {
   try {
-    if (!memory) {
-      return res.status(503).json({
-        ok: false,
-        error: "sessionMemory module not loaded on server",
-      });
-    }
-
     const tenant_id = req.tenant_id;
     const session_id = String(req.query?.session_id || "web");
 
-    const st = memory.getState(tenant_id, session_id) || null;
+    const state = (typeof getSessionState === "function")
+      ? getSessionState(tenant_id, session_id)
+      : null;
 
-    // Return safe diagnostic only
     return res.json({
       ok: true,
       tenant_id,
       session_id,
-      state: st,
+      state: state || { tenant_id, session_id, turns: [], summary: "", activeIntent: "" },
       now: new Date().toISOString(),
     });
   } catch (err) {
-    return res.status(500).json({
-      ok: false,
-      error: err?.message || "debug failed",
-    });
+    console.error("❌ [memoryDebug] error:", err?.message || err);
+    return res.status(500).json({ ok: false, error: "Server error" });
   }
 });
 
