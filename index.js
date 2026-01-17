@@ -22,6 +22,11 @@ const { synthesizeSpeech } = require("./tts");
 
 const chatRoute = require("./src/routes/chat");
 
+// Demo mode route
+const demoRouter = require("./src/routes/demo");
+
+
+
 
 // ---------------------------------------------------------------------------
 // 🧩 Story 9.6 – Unified Global Deployment & Testing Hook
@@ -109,6 +114,8 @@ try {
 
 // ✅ Story 12.5 — Apply CORS early (SSE-friendly ordering; safe even if repeated later)
 app.use(cors());
+
+app.use("/api/demo", demoRouter);
 
 // Story 12.5 — SSE must not be compressed/buffered (Render/proxy safe)
 // Only apply if compression is available.

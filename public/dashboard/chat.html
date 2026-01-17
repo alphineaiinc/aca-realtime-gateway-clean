@@ -1,0 +1,182 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+
+  <title>Alphine AI — ACA Web Chat</title>
+
+  <!-- Cache-busted CSS -->
+  <link rel="stylesheet" href="/dashboard/chat.css?v=12.5.21" />
+</head>
+
+<body>
+  <div class="shell">
+
+    <!-- ================= TOP BAR ================= -->
+    <header class="topbar">
+      <div class="brand">
+
+        <!-- Alphine AI Logo -->
+        <div class="logo">
+          <a href="https://alphineai.com" target="_blank" rel="noopener">
+            <img src="/dashboard/assets/alphine-logo.png?v=12.4.3"
+              alt="Alphine AI"
+              loading="eager"
+            />
+          </a>
+        </div>
+
+        <!-- Title -->
+        <div>
+          <div class="title">Alphine AI — ACA Web Chat</div>
+          <div class="subtitle">
+            Secure tenant-aware conversation
+            <span id="demoPill" style="display:none; margin-left:10px; padding:3px 8px; border-radius:999px; font-size:12px; border:1px solid rgba(255,255,255,.25); opacity:.9;">
+              Demo Mode
+            </span>
+          </div>
+        </div>
+      </div>
+
+      <!-- JWT Controls -->
+      <div class="authbox" id="authbox">
+        <input
+          id="jwt"
+          type="password"
+          placeholder="Paste JWT (without 'Bearer ')"
+          autocomplete="off"
+        />
+        <button id="saveJwt">Save</button>
+        <button id="clearJwt" class="ghost">Clear</button>
+      </div>
+    </header>
+
+    <!-- ================= CHAT PANEL ================= -->
+    <main class="panel">
+
+      <!-- Messages -->
+      <section class="chat" id="chat"></section>
+
+      <!-- Composer -->
+      <footer class="composer">
+        <input
+          id="msg"
+          type="text"
+          placeholder="Type your message…"
+          autocomplete="off"
+        />
+        <button id="send">Send</button>
+      </footer>
+
+      <!-- Meta -->
+      <div class="meta">
+        <div>Session: <span id="sessionId">webchat</span></div>
+        <div>Status: <span id="status">idle</span></div>
+        <div>
+          <button id="resetSession" class="ghost">Reset</button>
+        </div>
+      </div>
+
+    </main>
+  </div>
+
+  <!-- =========================================================
+       Story 12.8.2 (part of demo enablement): Demo boot strapper
+       - If ?demo=1, mint demo token and store in localStorage
+       - Then load the WS + UI scripts (so they see token already)
+       ========================================================= -->
+  <script>
+    (function () {
+      const params = new URLSearchParams(window.location.search || "");
+      const isDemo = params.get("demo") === "1" || params.get("demo") === "true";
+
+      // Shared JWT key (keep consistent across pages)
+      const tokenKey = "aca_webchat_jwt";
+
+      const demoPill = document.getElementById("demoPill");
+      const authbox = document.getElementById("authbox");
+      const statusEl = document.getElementById("status");
+      const jwtInput = document.getElementById("jwt");
+
+      function setStatus(s) {
+        try { if (statusEl) statusEl.textContent = s; } catch (e) {}
+      }
+
+      function loadScripts() {
+        // IMPORTANT: Do NOT load /dashboard/chat.js on streaming page
+        const s1 = document.createElement("script");
+        s1.src = "/dashboard/chat_ws_client.js?v=12.5.61";
+        s1.defer = true;
+
+        const s2 = document.createElement("script");
+        s2.src = "/dashboard/chat_ui_streaming.js?v=12.5.61";
+        s2.defer = true;
+
+        document.body.appendChild(s1);
+        document.body.appendChild(s2);
+      }
+
+      // Normal mode: show whatever token is currently stored (masked) for convenience
+      if (!isDemo) {
+        try {
+          if (jwtInput) jwtInput.value = (localStorage.getItem(tokenKey) || "");
+        } catch (e) {}
+        return loadScripts();
+      }
+
+      // Demo mode UX
+      try {
+        if (demoPill) demoPill.style.display = "inline-block";
+        if (authbox) authbox.style.display = "none"; // hide JWT paste box in demo mode
+      } catch (e) {}
+
+      setStatus("demo: preparing");
+
+      // Reuse existing demo token on quick reload (server-side TTL still applies)
+      let existing = "";
+      try { existing = (localStorage.getItem(tokenKey) || "").trim(); } catch (e) {}
+      if (existing) {
+        setStatus("demo: token ready");
+        return loadScripts();
+      }
+
+      setStatus("demo: minting token");
+
+      // Mint demo token (same-origin call; server enforces strict Origin allowlist)
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 8000);
+
+      fetch("/api/demo/token", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: "{}",
+        signal: controller.signal
+      })
+        .then(async (r) => {
+          const data = await r.json().catch(() => null);
+          if (!r.ok || !data || !data.ok || !data.token) {
+            // No console logs (security posture). Just UI status.
+            setStatus("demo: failed (token)");
+            loadScripts(); // load anyway so UI can show error state
+            return;
+          }
+
+          try { localStorage.setItem(tokenKey, String(data.token || "")); } catch (e) {}
+
+          setStatus("demo: token ready");
+          loadScripts();
+        })
+        .catch(() => {
+          // No console logs (security posture). Just UI status.
+          setStatus("demo: failed (token)");
+          loadScripts();
+        })
+        .finally(() => {
+          clearTimeout(timeout);
+        });
+    })();
+  </script>
+
+</body>
+</html>
