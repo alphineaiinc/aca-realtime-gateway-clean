@@ -1,4 +1,6 @@
 // index.js – Orchestrator with Tanglish detection + debug logging
+console.log("🧭 process.cwd():", process.cwd());
+console.log("🧭 __dirname:", __dirname);
 
 const path = require("path");
 const fs = require("fs");
