@@ -1,6 +1,8 @@
-// src/brain/utils/demoGuards.js
+// src/db/demoGuards.js
+
 const crypto = require("crypto");
-const { demoConfig } = require("./demoConfig");
+const demoConfig = require("../brain/utils/demoConfig");
+
 
 const ipBucket = new Map();     // ip -> {count, resetAt}
 const tokenBucket = new Map();  // jti -> {count, resetAt}
