@@ -5,6 +5,8 @@ console.log("🧭 __dirname:", __dirname);
 const path = require("path");
 const fs = require("fs");
 const OpenAI = require("openai");
+const { safeRequire } = require("./src/brain/utils/safeRequire");
+
 
 // ✅ Force-load orchestrator-level .env (absolute path) — MUST BE FIRST
 const dotenvPath = path.resolve(__dirname, "./.env");
@@ -20,7 +22,6 @@ const { synthesizeSpeech } = require("./tts");
 // ✅ Story 12.6 fix: DO NOT load socket_handler here.
 // Reason: any raw ws.Server() / upgrade listeners inside socket_handler (even as side-effects) can intercept
 // WebSocket upgrades intended for express-ws route /ws/chat, causing the UI to stay stuck on "connecting…".
-
 
 const chatRoute = require("./src/routes/chat");
 
@@ -53,8 +54,48 @@ try {
 // ✅ Force-load orchestrator-level .env (absolute path)
 
 
-const { save: saveSession, load: loadSession } = require("./src/brain/memory/sessionMemory");
-const { getMetricsText, markRecovery } = require("./src/monitor/resilienceMetrics");
+// ---------------------------------------------------------------------------
+// ✅ Story 12.x — Robust session memory wiring (prevents startup crashes)
+// ---------------------------------------------------------------------------
+const memA = safeRequire("./src/brain/memory/sessionMemory", "memory/sessionMemory") || {};
+const memB = safeRequire("./src/brain/utils/sessionMemory", "utils/sessionMemory") || {};
+const mem = Object.keys(memA).length ? memA : memB;
+
+// Normalize function names across variants (ONLY accept real functions to prevent TypeError)
+const loadSession =
+  (typeof mem.loadSession === "function" && mem.loadSession) ||
+  (typeof mem.load === "function" && mem.load) ||
+  (typeof mem.restore === "function" && mem.restore) ||
+  (typeof mem.loadState === "function" && mem.loadState) ||
+  null;
+
+const saveSession =
+  (typeof mem.saveSession === "function" && mem.saveSession) ||
+  (typeof mem.save === "function" && mem.save) ||
+  (typeof mem.persist === "function" && mem.persist) ||
+  (typeof mem.saveState === "function" && mem.saveState) ||
+  null;
+
+// Some builds expose pruneExpired, others expose prune/cleanup
+const pruneExpired =
+  (typeof mem.pruneExpired === "function" && mem.pruneExpired) ||
+  (typeof mem.prune === "function" && mem.prune) ||
+  (typeof mem.cleanup === "function" && mem.cleanup) ||
+  (typeof mem.gc === "function" && mem.gc) ||
+  null;
+
+// Optional "recovery marker" (some older variants had this)
+const markRecovery =
+  mem.markRecovery || global.markRecovery || null;
+// ---------------------------------------------------------------------------
+
+
+const rm = safeRequire("./src/monitor/resilienceMetrics", "resilienceMetrics") || {};
+const { observeHttpRetry } = rm;
+// Ensure /monitor/resilience never crashes if metrics module is absent
+const getMetricsText = (typeof rm.getMetricsText === "function") ? rm.getMetricsText : (() => "");
+
+
 
 // ✅ Story 12.7 — Session memory store (tenant/session isolated) + TTL pruning
 let memory = null;
@@ -66,9 +107,16 @@ try {
   // NOTE: This does NOT store anything to disk.
   setInterval(() => {
     try {
-      memory.pruneExpired({
-        ttlMs: parseInt(process.env.MEMORY_TTL_MS || "3600000", 10), // default 60 min
-      });
+      // Prefer memory.pruneExpired if present; fallback to normalized pruneExpired
+      const fn = (typeof memory.pruneExpired === "function")
+        ? memory.pruneExpired
+        : (typeof pruneExpired === "function" ? pruneExpired : null);
+
+      if (fn) {
+        fn({
+          ttlMs: parseInt(process.env.MEMORY_TTL_MS || "3600000", 10), // default 60 min
+        });
+      }
     } catch (e) {}
   }, 5 * 60 * 1000).unref(); // every 5 minutes
 } catch (err) {
@@ -79,18 +127,43 @@ try {
 global.__ACA_STATE__ = { activeSessions: [], version: "5.3.A" };
 
 // Restore on boot
-const prior = loadSession();
+let prior = null;
+try {
+  prior = (typeof loadSession === "function") ? loadSession() : null;
+} catch (e) {
+  console.warn("⚠️ loadSession failed (non-fatal):", e && e.message ? e.message : String(e));
+  prior = null;
+}
+
 if (prior && prior.activeSessions) {
   global.__ACA_STATE__.__proto__ = global.__ACA_STATE__.__proto__;
   global.__ACA_STATE__.activeSessions = prior.activeSessions;
-  markRecovery();
+  if (typeof markRecovery === "function") markRecovery();
   console.log("♻️  Restored session state:", prior.activeSessions.length, "items");
 }
 
 // Graceful snapshot on shutdown/crash
-process.on("SIGINT", () => { try { saveSession(global.__ACA_STATE__); } finally { process.exit(0); } });
-process.on("uncaughtException", (err) => { console.error(err); saveSession(global.__ACA_STATE__); process.exit(1); });
-process.on("unhandledRejection", (err) => { console.error(err); saveSession(global.__ACA_STATE__); process.exit(1); });
+process.on("SIGINT", () => {
+  try {
+    if (typeof saveSession === "function") saveSession(global.__ACA_STATE__);
+  } finally {
+    process.exit(0);
+  }
+});
+process.on("uncaughtException", (err) => {
+  console.error(err);
+  try {
+    if (typeof saveSession === "function") saveSession(global.__ACA_STATE__);
+  } catch (e) {}
+  process.exit(1);
+});
+process.on("unhandledRejection", (err) => {
+  console.error(err);
+  try {
+    if (typeof saveSession === "function") saveSession(global.__ACA_STATE__);
+  } catch (e) {}
+  process.exit(1);
+});
 
 // ============================================================
 // EXPRESS APP INITIALIZATION (required for Render)
@@ -490,9 +563,17 @@ app.use(bodyParser.urlencoded({ extended: true }));
 
 // --- Safe Diagnostic: list all mounted routes (Express 4/5 compatible) ---
 function listRoutes(app) {
-  try {
+    try {
     const paths = [];
-    app._router.stack.forEach(layer => {
+
+    const stack = app && app._router && Array.isArray(app._router.stack) ? app._router.stack : null;
+    if (!stack) {
+      console.warn("⚠️ Route-list diagnostic skipped: app._router.stack not available");
+      return;
+    }
+
+    stack.forEach(layer => {
+
       if (layer.route && layer.route.path) {
         paths.push(layer.route.path);
       } else if (layer.name === "router" && Array.isArray(layer.handle?.stack)) {
