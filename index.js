@@ -53,7 +53,7 @@ try {
 // ✅ Force-load orchestrator-level .env (absolute path)
 
 
-const { save: saveSession, load: loadSession } = require("./src/brain/utils/sessionState");
+const { save: saveSession, load: loadSession } = require("./src/brain/memory/sessionMemory");
 const { getMetricsText, markRecovery } = require("./src/monitor/resilienceMetrics");
 
 // ✅ Story 12.7 — Session memory store (tenant/session isolated) + TTL pruning
