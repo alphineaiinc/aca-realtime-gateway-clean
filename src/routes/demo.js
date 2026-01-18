@@ -3,7 +3,7 @@ const express = require("express");
 const jwt = require("jsonwebtoken");
 const crypto = require("crypto");
 const { demoConfig } = require("../brain/utils/demoConfig");
-const { strictOriginCheck, rateLimitDemo, getClientIp, hashIp } = require("../brain/utils/demoGuards");
+const { strictOriginCheck, rateLimitDemo, getClientIp, hashIp } = require("../db/demoGuards");
 
 const router = express.Router();
 
