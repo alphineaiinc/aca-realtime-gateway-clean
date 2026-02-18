@@ -1,30 +1,33 @@
 ﻿"use strict";
 
 /**
- * Root shim for Render runtime:
- * root index.js requires "./src/brain/utils/safeRequire"
- * but the real implementation may live under aca-orchestrator.
- * This shim preserves backwards compatibility without touching index.js.
+ * Root shim for Render/runtime.
+ * Goal: export { safeRequire } with the same signature your code expects,
+ * but prefer orchestrator's implementation when present.
  */
+
+let warned = false;
+
 function fallbackSafeRequire(modPath, label) {
   try {
     return require(modPath);
   } catch (err) {
-    const tag = label ? ` (${label})` : "";
-    console.warn(`⚠️ safeRequire fallback could not load${tag}:`, modPath, "-", err && err.message ? err.message : String(err));
+    // Only warn once to avoid log spam
+    if (!warned) {
+      warned = true;
+      const tag = label ? ` (${label})` : "";
+      console.warn(
+        `⚠️ safeRequire fallback active${tag}. Some optional modules may be absent; continuing.`
+      );
+    }
     return null;
   }
 }
 
 try {
-  // Try local implementation first (if you later add it here)
-  module.exports = require("./safeRequire.local");
-} catch (e1) {
-  try {
-    // Most likely location in your repo
-    module.exports = require("../../../aca-orchestrator/src/brain/utils/safeRequire");
-  } catch (e2) {
-    // Last resort: export a compatible function so code can keep running
-    module.exports = { safeRequire: fallbackSafeRequire };
-  }
+  // Prefer orchestrator implementation (most accurate)
+  module.exports = require("../../../aca-orchestrator/src/brain/utils/safeRequire");
+} catch (e) {
+  // Fallback: export compatible function
+  module.exports = { safeRequire: fallbackSafeRequire };
 }
