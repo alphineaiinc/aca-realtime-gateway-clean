@@ -16,6 +16,17 @@ const pool = require("../db/pool");
 const { synthesizeSpeech } = require("../../tts"); // ✅ TTS handler
 const { getTenantRegion } = require("../brain/utils/tenantContext"); // ✅ Tenant region helper
 
+// ✅ Story 12.8 — rate limiting + safe tenant resolution (JWT override if verifiable)
+let rateLimitIP = null;
+try {
+  ({ rateLimitIP } = require("../brain/utils/rateLimiters"));
+} catch (e) {}
+
+let jwt = null;
+try {
+  jwt = require("jsonwebtoken");
+} catch (e) {}
+
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
 console.log("🔥 Story 2.9 adaptive router executing");
@@ -26,6 +37,40 @@ try {
   if (!fs.existsSync(logDir)) fs.mkdirSync(logDir, { recursive: true });
 } catch (e) {
   console.warn("⚠️ Log dir check failed:", e.message);
+}
+
+// ✅ Story 12.8 — basic abuse control on /brain/query (IP-based)
+if (typeof rateLimitIP === "function") {
+  router.use("/query", rateLimitIP({ windowMs: 60_000, max: parseInt(process.env.BRAIN_QUERY_MAX_PER_MIN || "30", 10), keyPrefix: "brain_q" }));
+}
+
+// ✅ Story 12.8 — safe parser for JWT tenant override (only if verifiable)
+function tryResolveTenantFromJwt(req) {
+  try {
+    if (!jwt) return null;
+
+    const auth = String(req.headers.authorization || "").trim();
+    if (!auth.toLowerCase().startsWith("bearer ")) return null;
+
+    const token = auth.slice("bearer ".length).trim();
+    if (!token) return null;
+
+    // For demo, we verify with DEMO_JWT_SECRET (same issuer/aud if set)
+    const secret = String(process.env.DEMO_JWT_SECRET || "").trim();
+    if (!secret) return null;
+
+    const issuer = String(process.env.JWT_ISSUER || "alphine-ai").trim();
+    const audience = String(process.env.JWT_AUDIENCE || "aca-demo").trim();
+
+    const payload = jwt.verify(token, secret, { issuer, audience });
+    const tid = payload && (payload.tenant_id || payload.tenantId);
+    const parsed = parseInt(String(tid || ""), 10);
+    if (!parsed || parsed < 1) return null;
+
+    return parsed;
+  } catch (e) {
+    return null;
+  }
 }
 
 router.post("/query", async (req, res) => {
@@ -41,8 +86,32 @@ router.post("/query", async (req, res) => {
     top_k = 3,
   } = body;
 
-  const resolvedId = tenant_id || business_id;
-  if (!resolvedId || !query) {
+  // ✅ Story 12.8 — input validation caps (secure defaults)
+  const q = String(query || "").trim();
+  const lang = String(language || "en-US").trim();
+  const topK = Math.max(1, Math.min(parseInt(String(top_k || 3), 10) || 3, 5)); // hard cap 5
+  if (!q) {
+    console.warn(
+      "⚠️ /brain/query missing required fields. body=",
+      JSON.stringify(body)
+    );
+    return res.status(400).json({
+      ok: false,
+      error: "tenant_id (or business_id) and query required",
+    });
+  }
+  if (q.length > 2000) {
+    return res.status(413).json({ ok: false, error: "query_too_large" });
+  }
+  if (lang.length > 24) {
+    return res.status(400).json({ ok: false, error: "invalid_language" });
+  }
+
+  // ✅ Prefer verified tenant from JWT if possible (demo/public)
+  const jwtTenant = tryResolveTenantFromJwt(req);
+
+  const resolvedId = jwtTenant || tenant_id || business_id;
+  if (!resolvedId) {
     console.warn(
       "⚠️ /brain/query missing required fields. body=",
       JSON.stringify(body)
@@ -57,7 +126,7 @@ router.post("/query", async (req, res) => {
     // 1️⃣ Create embedding for the incoming query
     const emb = await openai.embeddings.create({
       model: "text-embedding-3-small",
-      input: query,
+      input: q,
     });
     const vector = emb.data[0].embedding;
     const vectorLiteral = "[" + vector.join(",") + "]";
@@ -72,7 +141,7 @@ router.post("/query", async (req, res) => {
     ORDER BY embedding <=> $1::vector
        LIMIT $3;
       `,
-      [vectorLiteral, resolvedId, top_k]
+      [vectorLiteral, resolvedId, topK]
     );
 
     const rows = result.rows;
@@ -86,12 +155,12 @@ router.post("/query", async (req, res) => {
 
       if (confidence < 0.88) {
         const adaptivePrompt = `
-Caller asked: "${query}"
-Language: ${language}
+Caller asked: "${q}"
+Language: ${lang}
 Closest KB answer (candidate): "${top.answer}"
 Similarity score: ${confidence}
 
-Rewrite this answer naturally for a ${language} phone conversation.
+Rewrite this answer naturally for a ${lang} phone conversation.
 Be friendly and concise. If unsure, add something like
 "I believe so" or "Let me confirm that for you."
 `;
@@ -120,7 +189,7 @@ Be friendly and concise. If unsure, add something like
         "I’m not sure about that. Would you like me to connect you with someone from our team?";
     }
 
-    await logAdaptiveResponse(query, tunedResponse, confidence, resolvedId, language);
+    await logAdaptiveResponse(q, tunedResponse, confidence, resolvedId, lang);
 
     // ✅ 3️⃣ Voice Studio / TTS integration block (tenant + region aware)
     let audioBase64 = null;
@@ -135,7 +204,7 @@ Be friendly and concise. If unsure, add something like
         );
       }
 
-      const audioBuffer = await synthesizeSpeech(tunedResponse, language, {
+      const audioBuffer = await synthesizeSpeech(tunedResponse, lang, {
         tenantId: resolvedId,
         regionCode,
         tonePreset: "friendly", // can later be driven from business profile
@@ -153,7 +222,7 @@ Be friendly and concise. If unsure, add something like
     res.json({
       ok: true,
       tenant_id: resolvedId,
-      language,
+      language: lang,
       confidence,
       tuned_response: tunedResponse,
       audio: audioBase64, // 👈 Voice Studio now receives this

@@ -11,7 +11,9 @@ const { safeRequire } = require("./src/brain/utils/safeRequire");
 // ✅ Force-load orchestrator-level .env (absolute path) — MUST BE FIRST
 const dotenvPath = path.resolve(__dirname, "./.env");
 console.log("🧩 index.js loading .env from:", dotenvPath);
-require("dotenv").config({ path: dotenvPath, override: true });
+const isProd = String(process.env.NODE_ENV || "").toLowerCase() === "production";
+require("dotenv").config({ path: dotenvPath, override: !isProd });
+
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
@@ -173,6 +175,41 @@ const http = require("http"); // ✅ Needed so express-ws binds to the same serv
 const cors = require("cors");
 const bodyParser = require("body-parser");
 const app = express();
+
+// ✅ Story 12.8 — security headers + origin allowlist guard (fail-closed in prod)
+try {
+  const { securityHeaders } = require("./src/brain/utils/securityHeaders");
+  app.disable("x-powered-by");
+  app.use(securityHeaders({ isProd }));
+  console.log("✅ Story 12.8 securityHeaders enabled");
+} catch (e) {
+  console.warn("⚠️ Story 12.8 securityHeaders not loaded:", e && e.message ? e.message : String(e));
+}
+
+// ✅ Story 12.8 — Origin allowlist guard (because app.use(cors()) appears permissive later)
+// Secure default: if production and origin is present, it MUST be in ALLOWED_ORIGINS (or RENDER_BASE_URL).
+app.use((req, res, next) => {
+  try {
+    if (!isProd) return next();
+
+    const origin = String(req.headers.origin || "").trim();
+    if (!origin) return next(); // non-browser or same-origin fetch with no Origin
+
+    const raw = String(process.env.ALLOWED_ORIGINS || "").trim();
+    const allow = raw.split(",").map(s => s.trim()).filter(Boolean);
+
+    const renderBase = String(process.env.RENDER_BASE_URL || "").trim();
+    if (renderBase && !allow.includes(renderBase)) allow.push(renderBase);
+
+    if (allow.length && allow.includes(origin)) return next();
+
+    // Fail closed for browser cross-origin
+    return res.status(403).send("Forbidden");
+  } catch (e) {
+    // Fail-open to avoid prod crash due to guard bug
+    return next();
+  }
+});
 
 // ✅ Story 12.5/12.6 — Create HTTP server EARLY so express-ws binds correctly
 // (This fixes “connecting…” in chat UI because WS upgrades now hit the right server.)
@@ -413,6 +450,21 @@ try {
 // === System & Health Routes ===
 app.get("/", (req, res) => {
   res.status(200).send("Welcome to Alphine AI. The call orchestration service is active.");
+});
+
+// ✅ Story 12.8 — Marketplace-friendly health check
+app.get("/health", (req, res) => {
+  try {
+    res.set("Cache-Control", "no-store");
+    res.status(200).json({
+      ok: true,
+      service: "ACA-Orchestrator",
+      environment: process.env.NODE_ENV || "production",
+      ts: new Date().toISOString(),
+    });
+  } catch (e) {
+    res.status(200).json({ ok: true });
+  }
 });
 
 app.get("/monitor/resilience", (req, res) => {

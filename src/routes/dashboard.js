@@ -65,7 +65,10 @@ router.get("/brain-status", async (req, res) => {
   try {
     res.set("Cache-Control", "no-store");
 
-    const response = await axios.get("http://localhost:8080/brain/diagnostics", {
+    const port = process.env.PORT || "8080";
+    const url = `http://127.0.0.1:${port}/brain/diagnostics`;
+
+    const response = await axios.get(url, {
       timeout: 3000,
     });
 
