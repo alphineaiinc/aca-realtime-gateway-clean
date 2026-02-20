@@ -10,8 +10,13 @@
 
 const jwt = require("jsonwebtoken");
 
-// ✅ Use timeout-guarded brain wrapper
-const { retrieveAnswerWithTimeout: retrieveAnswer } = require("../../retriever");
+// ✅ Use timeout-guarded brain wrapper (fallback-safe)
+const retriever = require("../../retriever");
+const retrieveAnswer =
+  (retriever && typeof retriever.retrieveAnswerWithTimeout === "function" && retriever.retrieveAnswerWithTimeout) ||
+  (retriever && typeof retriever.retrieveAnswer === "function" && retriever.retrieveAnswer) ||
+  null;
+
 
 // Memory (Story 12.7) — prefer new memory store; fallback to old if needed
 let pushTurn, buildMemoryPrefix, clearSession;
@@ -358,8 +363,18 @@ function registerChatWs(app) {
       safeSend(ws, { type: "start" });
 
       try {
-        // ✅ FIX: retriever signature is (userQuery, tenantId, langCode, sessionId)
-        const result = await Promise.resolve(retrieveAnswer(brainInput, tenant_id, locale, session_id));
+       // ✅ Story 12.8 — Guard retriever availability
+if (typeof retrieveAnswer !== "function") {
+  safeSend(ws, { type: "error", error: "Server misconfig: retriever not available" });
+  safeSend(ws, { type: "done" });
+  console.warn("[chat_ws] retriever missing: expected retrieveAnswerWithTimeout or retrieveAnswer export");
+  return;
+}
+
+const result = await Promise.resolve(
+  retrieveAnswer(brainInput, tenant_id, locale, session_id)
+);
+
 
         const reply =
           (typeof result === "string") ? result :
