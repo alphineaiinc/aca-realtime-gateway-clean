@@ -38,14 +38,17 @@ const WS_RATE_MAX_MSGS = parseInt(process.env.WS_RATE_MAX_MSGS || "30", 10); // 
 
 // ------------------------------------------------------------------
 // Story 12.8.1 — Public Demo Mode Architecture (WS-layer add-on)
+// - Align demo JWT verification with /api/demo/token (DEMO_JWT_SECRET + issuer/audience)
+// - Force tenant_id = DEMO_TENANT_ID (if set)
+// - Optional ip_hash binding if token + helper exist (do not require)
 // - Per-demo-token (jti) rate limiting without changing tenant limiter
-// Defaults:
-// - 60s window
-// - max per window = DEMO_RATE_PER_MIN_TOKEN (fallback 60)
 // ------------------------------------------------------------------
-let demoConfig;
+let demoConfig, getClientIp, hashIp;
 try {
   ({ demoConfig } = require("../brain/utils/demoConfig"));
+} catch (e) {}
+try {
+  ({ getClientIp, hashIp } = require("../db/demoGuards"));
 } catch (e) {}
 
 const DEMO_TOKEN_RATE_WINDOW_MS = parseInt(process.env.DEMO_TOKEN_RATE_WINDOW_MS || "60000", 10); // 60s
@@ -127,6 +130,46 @@ function parseJsonSafe(s) {
   try { return JSON.parse(s); } catch (e) { return null; }
 }
 
+// ✅ Story 12.8 — locale + session safeguards (minimal)
+function normalizeLocale(x) {
+  const s = String(x || "en-US").trim();
+  if (!s) return "en-US";
+  if (s.length > 24) return "en-US";
+  if (!/^[a-zA-Z]{2,3}(-[a-zA-Z0-9]{2,8})*$/.test(s)) return "en-US";
+  return s;
+}
+
+function normalizeSessionId(x) {
+  const s = String(x || "web").trim();
+  if (!s) return "web";
+  return s.length > 128 ? s.slice(0, 128) : s;
+}
+
+// ✅ Story 12.8 — Verify JWT using either JWT_SECRET (normal) or DEMO_JWT_SECRET (demo)
+function verifyAnyToken(tokenRaw) {
+  const token = String(tokenRaw || "").replace(/^Bearer\s+/i, "").trim();
+  if (!token) return null;
+
+  // 1) normal
+  try {
+    if (process.env.JWT_SECRET) {
+      return jwt.verify(token, process.env.JWT_SECRET);
+    }
+  } catch (e) {}
+
+  // 2) demo
+  try {
+    const demoSecret = String(process.env.DEMO_JWT_SECRET || "").trim();
+    if (demoSecret) {
+      const issuer = String(process.env.JWT_ISSUER || "alphine-ai").trim();
+      const audience = String(process.env.JWT_AUDIENCE || "aca-demo").trim();
+      return jwt.verify(token, demoSecret, { issuer, audience });
+    }
+  } catch (e) {}
+
+  return null;
+}
+
 function registerChatWs(app) {
   app.ws("/ws/chat", (ws, req) => {
     const connId = `ws_${Date.now()}_${Math.random().toString(16).slice(2)}`;
@@ -145,6 +188,16 @@ function registerChatWs(app) {
     console.log(`[chat_ws] /ws/chat WS CONNECT attempt ${new Date().toISOString()}`);
 
     ws.on("message", async (raw) => {
+      // ✅ Story 12.8 — basic frame size guard (prevents huge JSON abuse)
+      try {
+        const sraw = String(raw || "");
+        if (sraw.length > 64_000) {
+          safeSend(ws, { type: "error", error: "Message too large" });
+          try { ws.close(1009, "frame_too_large"); } catch (e) {}
+          return;
+        }
+      } catch (e) {}
+
       const msg = parseJsonSafe(String(raw || ""));
       if (!msg || typeof msg !== "object") {
         return safeSend(ws, { type: "error", error: "Invalid JSON message" });
@@ -159,19 +212,56 @@ function registerChatWs(app) {
         }
 
         try {
-          const token = String(msg.token || "").replace(/^Bearer\s+/i, "").trim();
-          const decoded = jwt.verify(token, process.env.JWT_SECRET);
+          const decoded = verifyAnyToken(msg.token);
 
-          tenant_id = decoded.tenant_id;
-          if (!tenant_id) {
-            return safeSend(ws, { type: "error", error: "Unauthorized (no tenant_id)" });
+          if (!decoded) {
+            return safeSend(ws, { type: "error", error: "Unauthorized" });
           }
 
-          // Story 12.8.1: capture demo identity if this is a demo token
+          // Capture demo identity if this is a demo token
           role = decoded.role || "unknown";
-          if (role === "demo" || decoded.demo === true) {
+          const isDemo = (role === "demo" || decoded.demo === true);
+
+          if (isDemo) {
             role = "demo";
             demo_jti = decoded.demo_jti || decoded.jti || null;
+
+            // Secure default: demo is only valid if DEMO_JWT_SECRET exists
+            const demoSecret = String(process.env.DEMO_JWT_SECRET || "").trim();
+            if (!demoSecret) {
+              return safeSend(ws, { type: "error", error: "Unauthorized" });
+            }
+
+            // Optional config (if exists)
+            const cfg = (typeof demoConfig === "function") ? demoConfig() : null;
+            if (cfg && cfg.enabled === false) {
+              return safeSend(ws, { type: "error", error: "Unauthorized" });
+            }
+
+            // Optional ip_hash binding (ONLY if token has ip_hash AND helper exists)
+            try {
+              if (decoded.ip_hash && typeof getClientIp === "function" && typeof hashIp === "function") {
+                const ip = getClientIp(req);
+                const expected = hashIp(ip);
+                if (decoded.ip_hash !== expected) {
+                  return safeSend(ws, { type: "error", error: "Unauthorized" });
+                }
+              }
+            } catch (e) {}
+
+            // Force demo tenant id (env wins)
+            const envDemoTenant = parseInt(process.env.DEMO_TENANT_ID || "0", 10);
+            const forcedTenant = (envDemoTenant && envDemoTenant > 0)
+              ? envDemoTenant
+              : (cfg && cfg.tenantId ? cfg.tenantId : null);
+
+            tenant_id = forcedTenant || decoded.tenant_id;
+          } else {
+            tenant_id = decoded.tenant_id;
+          }
+
+          if (!tenant_id) {
+            return safeSend(ws, { type: "error", error: "Unauthorized (no tenant_id)" });
           }
 
           // Enforce max concurrent connections per tenant (Story 12.6)
@@ -184,16 +274,15 @@ function registerChatWs(app) {
           }
           set.add(connId);
 
-          session_id = String(msg.session_id || "web");
-          locale = String(msg.locale || "en-US");
+          session_id = normalizeSessionId(msg.session_id || "web");
+          locale = normalizeLocale(msg.locale || "en-US");
 
           authed = true;
           safeSend(ws, { type: "connected", ok: true, tenant_id, session_id, locale });
-          console.log(`[chat_ws] authed ${connId} tenant=${tenant_id} session=${session_id} locale=${locale}`);
+          console.log(`[chat_ws] authed ${connId} tenant=${tenant_id} session=${session_id} locale=${locale} role=${role}`);
           return;
         } catch (e) {
           console.warn("🔐 [chat_ws] JWT verify failed:", e?.message || e);
-          console.warn("🔐 [chat_ws] JWT_SECRET present?", !!process.env.JWT_SECRET);
           return safeSend(ws, { type: "error", error: "Unauthorized" });
         }
       }
