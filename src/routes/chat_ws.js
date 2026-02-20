@@ -157,15 +157,14 @@ function verifyAnyToken(tokenRaw) {
     }
   } catch (e) {}
 
-  // 2) demo
+      // 2) demo (Story 12.8) — verify signature only (issuer/audience optional)
   try {
     const demoSecret = String(process.env.DEMO_JWT_SECRET || "").trim();
     if (demoSecret) {
-      const issuer = String(process.env.JWT_ISSUER || "alphine-ai").trim();
-      const audience = String(process.env.JWT_AUDIENCE || "aca-demo").trim();
-      return jwt.verify(token, demoSecret, { issuer, audience });
+      return jwt.verify(token, demoSecret);
     }
   } catch (e) {}
+
 
   return null;
 }
