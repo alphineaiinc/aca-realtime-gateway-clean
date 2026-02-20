@@ -31,7 +31,10 @@ function createChatWsClient({
 
   let isOpen = false;
   let isAuthed = false;
+
+  // ✅ Story 12.8: differentiate intentional close vs unexpected break
   let closed = false;
+  let intentionalClose = false;
 
   // ✅ Safety: bounded queue so a broken connection can’t grow memory forever
   const MAX_QUEUE = 50;
@@ -127,6 +130,9 @@ function createChatWsClient({
   ws.addEventListener("close", (ev) => {
     closed = true;
 
+    // ✅ Story 12.8: if we intentionally closed, never show errors
+    if (intentionalClose) return;
+
     // Only surface as error if it closed unexpectedly
     // 1000 = normal closure
     // 1013 = Try again later (server overload / tenant_max_connections, etc.)
@@ -141,8 +147,8 @@ function createChatWsClient({
 
   ws.addEventListener("error", () => {
     // Browser doesn't expose detail. Often occurs when send() fails or socket breaks.
-    // Do NOT spam errors if we are already closed.
-    if (!closed) safeEmitError("WebSocket error");
+    // ✅ Story 12.8: do not surface if we intentionally closed
+    if (!closed && !intentionalClose) safeEmitError("WebSocket error");
   });
 
   return {
@@ -153,6 +159,9 @@ function createChatWsClient({
       sendJson({ type: "clear" });
     },
     close() {
+      // ✅ Story 12.8: mark as intentional before closing to avoid 1006 spam
+      intentionalClose = true;
+      closed = true;
       try { ws.close(1000, "client close"); } catch (e) {}
     }
   };

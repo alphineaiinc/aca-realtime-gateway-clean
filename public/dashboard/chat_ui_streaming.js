@@ -179,11 +179,11 @@
     setStatus("resetting…");
     setSending(true);
 
-    // best effort clear on server
-    try {
-      const c = ensureClient();
-      if (c) c.clearSession();
-    } catch (e) {}
+   // ✅ Story 12.8: best effort clear ONLY if a client already exists
+// Do NOT create a new WS during reset (causes 1006 + WebSocket error)
+try {
+  if (wsClient) wsClient.clearSession();
+} catch (e) {}
 
     session_id = newSessionId();
     localStorage.setItem(LS_SESSION_KEY, session_id);
