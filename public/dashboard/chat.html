@@ -133,13 +133,45 @@
 
       setStatus("demo: preparing");
 
-      // Reuse existing demo token on quick reload (server-side TTL still applies)
-      let existing = "";
-      try { existing = (localStorage.getItem(tokenKey) || "").trim(); } catch (e) {}
-      if (existing) {
-        setStatus("demo: token ready");
-        return loadScripts();
-      }
+      // Reuse existing demo token only if it is truly a demo token AND not expired
+function parseJwtPayload(jwtStr) {
+  try {
+    const parts = String(jwtStr || "").split(".");
+    if (parts.length !== 3) return null;
+    const b64 = parts[1].replace(/-/g, "+").replace(/_/g, "/");
+    const pad = "=".repeat((4 - (b64.length % 4)) % 4);
+    const json = atob(b64 + pad);
+    return JSON.parse(json);
+  } catch (e) {
+    return null;
+  }
+}
+
+function isValidDemoToken(jwtStr) {
+  const p = parseJwtPayload(jwtStr);
+  if (!p) return false;
+
+  const isDemo = (p.role === "demo" || p.demo === true);
+  if (!isDemo) return false;
+
+  const exp = Number(p.exp || 0);
+  if (!exp || !Number.isFinite(exp)) return false;
+
+  // give a small buffer (30s) so near-expiry tokens don’t get reused
+  return (exp * 1000) > (Date.now() + 30_000);
+}
+
+let existing = "";
+try { existing = (localStorage.getItem(tokenKey) || "").trim(); } catch (e) {}
+
+if (existing && isValidDemoToken(existing)) {
+  setStatus("demo: token ready");
+  return loadScripts();
+}
+
+// If an old partner token / expired token is present, delete it so demo can mint cleanly
+try { localStorage.removeItem(tokenKey); } catch (e) {}
+
 
       setStatus("demo: minting token");
 
