@@ -28,15 +28,19 @@ try {
 
 const router = express.Router();
 
+// ✅ Story 12.8 — cap JSON body size for this router (prevents abuse)
+try {
+  router.use(express.json({ limit: "64kb" }));
+} catch (e) {}
+
 const MAX_INCOMING_CHARS = 2000;
 const HEARTBEAT_MS = 10_000;
 
 // ------------------------------------------------------------------
 // Story 12.8.1 — Public Demo Mode Architecture (SSE enforcement)
-// - If token role=demo or demo=true:
-//   - require DEMO_MODE_ENABLED
-//   - enforce ip_hash binding to client IP
-//   - force tenant_id = DEMO_TENANT_ID
+// - Align demo JWT verification with /api/demo/token (DEMO_JWT_SECRET + issuer/audience)
+// - Force tenant_id = DEMO_TENANT_ID (if set)
+// - Optional ip_hash binding if token + helper exist (do not require)
 // - Add per-demo-token (jti) rate limiting without changing tenant logic
 // ------------------------------------------------------------------
 let demoConfig, getClientIp, hashIp;
@@ -47,6 +51,27 @@ try {
   ({ getClientIp, hashIp } = require("../db/demoGuards"));
 } catch (e) {}
 
+// ✅ Story 12.8 — generic in-memory rate limiter (IP-based)
+let rateLimitIP = null;
+try {
+  ({ rateLimitIP } = require("../brain/utils/rateLimiters"));
+} catch (e) {}
+
+// Apply basic IP limiter to SSE endpoints (Render-safe, fail-open if limiter missing)
+if (typeof rateLimitIP === "function") {
+  router.use("/chat/stream", rateLimitIP({
+    windowMs: parseInt(process.env.CHAT_STREAM_RATE_WINDOW_MS || "60000", 10),
+    max: parseInt(process.env.CHAT_STREAM_RATE_MAX || "60", 10),
+    keyPrefix: "sse_stream",
+  }));
+
+  router.use("/chat/session/clear", rateLimitIP({
+    windowMs: parseInt(process.env.CHAT_CLEAR_RATE_WINDOW_MS || "60000", 10),
+    max: parseInt(process.env.CHAT_CLEAR_RATE_MAX || "30", 10),
+    keyPrefix: "sse_clear",
+  }));
+}
+
 const DEMO_TOKEN_RATE_WINDOW_MS = parseInt(process.env.DEMO_TOKEN_RATE_WINDOW_MS || "60000", 10); // 60s
 const DEMO_TOKEN_RATE_MAX_MSGS_DEFAULT = 60;
 
@@ -55,6 +80,10 @@ const demoTokenRate = new Map();
 
 function nowMs() {
   return Date.now();
+}
+
+function isProd() {
+  return String(process.env.NODE_ENV || "").toLowerCase() === "production";
 }
 
 function getDemoTokenMaxMsgs() {
@@ -84,13 +113,55 @@ function rateLimitDemoToken(demo_jti) {
   return bucket.count <= maxMsgs;
 }
 
+// ✅ Story 12.8 — locale sanitization (prevent insane input; keep behavior minimal)
+function normalizeLocale(x) {
+  const s = String(x || "en-US").trim();
+  if (!s) return "en-US";
+  if (s.length > 24) return "en-US";
+  // allow basic BCP-47-ish
+  if (!/^[a-zA-Z]{2,3}(-[a-zA-Z0-9]{2,8})*$/.test(s)) return "en-US";
+  return s;
+}
+
 // ---------------------------------------------------------------------------
 // Middleware: verify JWT (tenant-safe)
+// ✅ Story 12.8 — accept either:
+//   - standard tokens signed with JWT_SECRET
+//   - demo tokens signed with DEMO_JWT_SECRET (issuer/audience)
 // ---------------------------------------------------------------------------
 function authenticate(req, res, next) {
   try {
     const token = (req.headers.authorization || "").replace(/^Bearer\s+/i, "").trim();
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    if (!token) return res.status(401).json({ ok: false, error: "Unauthorized" });
+
+    let decoded = null;
+
+    // 1) Try normal JWT_SECRET first (existing behavior)
+    try {
+      if (process.env.JWT_SECRET) {
+        decoded = jwt.verify(token, process.env.JWT_SECRET);
+      }
+    } catch (e) {
+      decoded = null;
+    }
+
+    // 2) If not verified, try DEMO_JWT_SECRET with issuer/audience
+    if (!decoded) {
+      try {
+        const demoSecret = String(process.env.DEMO_JWT_SECRET || "").trim();
+        if (demoSecret) {
+          const issuer = String(process.env.JWT_ISSUER || "alphine-ai").trim();
+          const audience = String(process.env.JWT_AUDIENCE || "aca-demo").trim();
+          decoded = jwt.verify(token, demoSecret, { issuer, audience });
+        }
+      } catch (e) {
+        decoded = null;
+      }
+    }
+
+    if (!decoded) {
+      return res.status(401).json({ ok: false, error: "Unauthorized" });
+    }
 
     // default identity
     req.tenant_id = decoded.tenant_id;
@@ -98,30 +169,43 @@ function authenticate(req, res, next) {
     req.role = decoded.role;
 
     // ------------------------------------------------------------------
-    // ✅ Story 12.8.1 — demo enforcement
+    // ✅ Story 12.8 — demo enforcement (aligned with /api/demo/token)
     // ------------------------------------------------------------------
     const isDemo = (decoded && (decoded.role === "demo" || decoded.demo === true));
     if (isDemo) {
+      // Secure default: demo is only valid if DEMO_JWT_SECRET exists
+      const demoSecret = String(process.env.DEMO_JWT_SECRET || "").trim();
+      if (!demoSecret) {
+        return res.status(401).json({ ok: false, error: "Unauthorized" });
+      }
+
+      // Optional config (if demoConfig exists)
       const cfg = (typeof demoConfig === "function") ? demoConfig() : null;
 
-      if (!cfg || !cfg.enabled) {
+      // If demoConfig exists and says disabled, enforce it. Otherwise, allow (env gating already exists).
+      if (cfg && cfg.enabled === false) {
         return res.status(401).json({ ok: false, error: "Unauthorized" });
       }
 
-      if (typeof getClientIp !== "function" || typeof hashIp !== "function") {
-        console.warn("🔐 [chat_stream] demo guards not available (getClientIp/hashIp missing)");
-        return res.status(401).json({ ok: false, error: "Unauthorized" });
-      }
+      // Optional ip_hash binding (ONLY if token has ip_hash AND helper exists)
+      // We do NOT require it because /api/demo/token may not mint ip_hash today.
+      try {
+        if (decoded.ip_hash && typeof getClientIp === "function" && typeof hashIp === "function") {
+          const ip = getClientIp(req);
+          const expected = hashIp(ip);
+          if (decoded.ip_hash !== expected) {
+            return res.status(401).json({ ok: false, error: "Unauthorized" });
+          }
+        }
+      } catch (e) {}
 
-      const ip = getClientIp(req);
-      const expected = hashIp(ip);
+      // Force demo tenant if configured by env
+      const envDemoTenant = parseInt(process.env.DEMO_TENANT_ID || "0", 10);
+      const forcedTenant = (envDemoTenant && envDemoTenant > 0)
+        ? envDemoTenant
+        : (cfg && cfg.tenantId ? cfg.tenantId : null);
 
-      if (!decoded.ip_hash || decoded.ip_hash !== expected) {
-        return res.status(401).json({ ok: false, error: "Unauthorized" });
-      }
-
-      // Force demo tenant + role
-      req.tenant_id = cfg.tenantId;
+      req.tenant_id = forcedTenant || decoded.tenant_id;
       req.partner_id = null;
       req.role = "demo";
       req.demo_jti = decoded.demo_jti || decoded.jti || null;
@@ -140,7 +224,6 @@ function authenticate(req, res, next) {
   } catch (err) {
     // ✅ Safe debug (no token, no secret values)
     console.warn("🔐 [chat_stream] JWT verify failed:", err?.message || err);
-    console.warn("🔐 [chat_stream] JWT_SECRET present?", !!process.env.JWT_SECRET);
     return res.status(401).json({ ok: false, error: "Unauthorized" });
   }
 }
@@ -184,9 +267,13 @@ router.post("/chat/session/clear", authenticate, (req, res) => {
   try {
     const tenant_id = req.tenant_id;
     const session_id = (req.body && req.body.session_id) ? String(req.body.session_id) : "web";
-    clearSession(tenant_id, session_id);
-    console.log(`[chat_stream] session cleared tenant=${tenant_id} session=${session_id}`);
-    return res.json({ ok: true, cleared: true, tenant_id, session_id });
+
+    // ✅ Story 12.8 — cap session_id length (prevent abuse)
+    const sid = session_id.length > 128 ? session_id.slice(0, 128) : session_id;
+
+    clearSession(tenant_id, sid);
+    console.log(`[chat_stream] session cleared tenant=${tenant_id} session=${sid}`);
+    return res.json({ ok: true, cleared: true, tenant_id, session_id: sid });
   } catch (err) {
     return res.status(500).json({ ok: false, error: "Failed to clear session" });
   }
@@ -255,8 +342,14 @@ router.post("/chat/stream", authenticate, async (req, res) => {
     }
 
     const messageRaw = (req.body && req.body.message) ? String(req.body.message) : "";
-    const session_id = (req.body && req.body.session_id) ? String(req.body.session_id) : "web";
-    const locale = (req.body && req.body.locale) ? String(req.body.locale) : "en-US";
+    const session_id_raw = (req.body && req.body.session_id) ? String(req.body.session_id) : "web";
+    const locale_raw = (req.body && req.body.locale) ? String(req.body.locale) : "en-US";
+
+    // ✅ Story 12.8 — cap session_id length
+    const session_id = session_id_raw.length > 128 ? session_id_raw.slice(0, 128) : session_id_raw;
+
+    // ✅ Story 12.8 — sanitize locale
+    const locale = normalizeLocale(locale_raw);
 
     console.log(`[chat_stream] start ${reqId} tenant=${tenant_id} session=${session_id} locale=${locale}`);
 
@@ -295,8 +388,18 @@ router.post("/chat/stream", authenticate, async (req, res) => {
     }
     const brainInput = prefix + message;
 
-    // ✅ FIX: retriever signature is (userQuery, tenantId, langCode, sessionId)
-    const result = await retrieveAnswer(brainInput, tenant_id, locale, session_id);
+   // ✅ Story 12.8 — Guard retriever availability
+if (typeof retrieveAnswer !== "function") {
+  sseEvent(res, "error", "Server misconfig: retriever not available");
+  sseEvent(res, "done", "");
+  console.warn("[chat_stream] retriever missing: expected retrieveAnswerWithTimeout or retrieveAnswer export");
+  clearInterval(heartbeat);
+  return res.end();
+}
+
+// ✅ FIX: retriever signature is (userQuery, tenantId, langCode, sessionId)
+const result = await retrieveAnswer(brainInput, tenant_id, locale, session_id);
+
 
     if (clientClosed || res.writableEnded) {
       console.log(`[chat_stream] client closed early ${reqId} tenant=${tenant_id} session=${session_id}`);
