@@ -4,6 +4,7 @@
 // + Story 9.6 — Multilingual / Tenant-Aware Query Layer
 // + Story 9.5 / 10.3 — Voice Studio Audio Integration
 // + Story 9.X — Tenant-Aware Conversational TTS
+// + Story 12.8.3 — Strict Tenant Isolation Hardening (JWT-tenant-only)
 // ===============================================
 const express = require("express");
 const router = express.Router();
@@ -12,11 +13,12 @@ router.use(express.json()); // ✅ Ensure JSON body parsing for /brain routes
 const OpenAI = require("openai");
 const fs = require("fs");
 const path = require("path");
+const crypto = require("crypto");
 const pool = require("../db/pool");
 const { synthesizeSpeech } = require("../../tts"); // ✅ TTS handler
 const { getTenantRegion } = require("../brain/utils/tenantContext"); // ✅ Tenant region helper
 
-// ✅ Story 12.8 — rate limiting + safe tenant resolution (JWT override if verifiable)
+// ✅ Story 12.8 — rate limiting + safe tenant resolution (JWT only)
 let rateLimitIP = null;
 try {
   ({ rateLimitIP } = require("../brain/utils/rateLimiters"));
@@ -41,36 +43,104 @@ try {
 
 // ✅ Story 12.8 — basic abuse control on /brain/query (IP-based)
 if (typeof rateLimitIP === "function") {
-  router.use("/query", rateLimitIP({ windowMs: 60_000, max: parseInt(process.env.BRAIN_QUERY_MAX_PER_MIN || "30", 10), keyPrefix: "brain_q" }));
+  router.use(
+    "/query",
+    rateLimitIP({
+      windowMs: 60_000,
+      max: parseInt(process.env.BRAIN_QUERY_MAX_PER_MIN || "30", 10),
+      keyPrefix: "brain_q",
+    })
+  );
 }
 
-// ✅ Story 12.8 — safe parser for JWT tenant override (only if verifiable)
-function tryResolveTenantFromJwt(req) {
+// ---------------------------------------------------------
+// Story 12.8.3 — Strict tenant isolation helpers (minimal)
+// - derive tenant_id ONLY from JWT (never from body/query)
+// - verify with JWT_SECRET first, fallback to DEMO_JWT_SECRET
+// - demo tokens force tenant_id = DEMO_TENANT_ID (env)
+// ---------------------------------------------------------
+function safeHash(value) {
   try {
-    if (!jwt) return null;
+    return crypto.createHash("sha256").update(String(value)).digest("hex").slice(0, 16);
+  } catch {
+    return "hash_error";
+  }
+}
 
-    const auth = String(req.headers.authorization || "").trim();
-    if (!auth.toLowerCase().startsWith("bearer ")) return null;
+function extractToken(req) {
+  // Query param: ?jwt=... or ?token=...
+  try {
+    const url = new URL(req.originalUrl || req.url, "http://localhost");
+    const t1 = url.searchParams.get("jwt");
+    const t2 = url.searchParams.get("token");
+    if (t1) return t1;
+    if (t2) return t2;
+  } catch (e) {}
 
-    const token = auth.slice("bearer ".length).trim();
-    if (!token) return null;
+  // Authorization: Bearer ...
+  const auth = String(req.headers.authorization || req.headers.Authorization || "").trim();
+  if (auth.toLowerCase().startsWith("bearer ")) {
+    return auth.slice("bearer ".length).trim();
+  }
 
-    // For demo, we verify with DEMO_JWT_SECRET (same issuer/aud if set)
-    const secret = String(process.env.DEMO_JWT_SECRET || "").trim();
-    if (!secret) return null;
+  return "";
+}
 
-    const issuer = String(process.env.JWT_ISSUER || "alphine-ai").trim();
-    const audience = String(process.env.JWT_AUDIENCE || "aca-demo").trim();
+function verifyJwtAnySecret(token) {
+  try {
+    if (!jwt || !token) return null;
 
-    const payload = jwt.verify(token, secret, { issuer, audience });
-    const tid = payload && (payload.tenant_id || payload.tenantId);
-    const parsed = parseInt(String(tid || ""), 10);
-    if (!parsed || parsed < 1) return null;
+    // 1) Primary secret
+    try {
+      if (process.env.JWT_SECRET) {
+        return jwt.verify(token, process.env.JWT_SECRET);
+      }
+    } catch (e) {}
 
-    return parsed;
+    // 2) Demo secret fallback
+    try {
+      const demoSecret = String(process.env.DEMO_JWT_SECRET || "").trim();
+      if (demoSecret) {
+        return jwt.verify(token, demoSecret);
+      }
+    } catch (e) {}
+
+    return null;
   } catch (e) {
     return null;
   }
+}
+
+function deriveTenantIdFromJwt(decoded) {
+  if (!decoded) return null;
+
+  const isDemo = decoded && (decoded.role === "demo" || decoded.demo === true);
+
+  if (isDemo) {
+    const demoEnabled =
+      String(process.env.DEMO_MODE_ENABLED || "").toLowerCase() === "true" ||
+      String(process.env.DEMO_MODE_ENABLED || "") === "1";
+    if (!demoEnabled) return null;
+
+    const demoTenant = process.env.DEMO_TENANT_ID != null ? String(process.env.DEMO_TENANT_ID) : null;
+    if (!demoTenant) return null;
+
+    const n = Number(demoTenant);
+    return Number.isFinite(n) && n > 0 ? n : null;
+  }
+
+  const raw =
+    decoded.tenant_id != null
+      ? decoded.tenant_id
+      : decoded.business_id != null
+      ? decoded.business_id
+      : decoded.tenantId != null
+      ? decoded.tenantId
+      : null;
+
+  const n = Number(raw);
+  if (!Number.isFinite(n) || n <= 0) return null;
+  return n;
 }
 
 router.post("/query", async (req, res) => {
@@ -79,8 +149,8 @@ router.post("/query", async (req, res) => {
   // ✅ Defensive: handle missing req.body safely
   const body = req.body || {};
   const {
-    tenant_id,
-    business_id,
+    tenant_id,     // ⚠️ will NOT be trusted (kept only for override detection)
+    business_id,   // ⚠️ will NOT be trusted (kept only for override detection)
     query,
     language = "en-US",
     top_k = 3,
@@ -90,15 +160,10 @@ router.post("/query", async (req, res) => {
   const q = String(query || "").trim();
   const lang = String(language || "en-US").trim();
   const topK = Math.max(1, Math.min(parseInt(String(top_k || 3), 10) || 3, 5)); // hard cap 5
+
   if (!q) {
-    console.warn(
-      "⚠️ /brain/query missing required fields. body=",
-      JSON.stringify(body)
-    );
-    return res.status(400).json({
-      ok: false,
-      error: "tenant_id (or business_id) and query required",
-    });
+    // Important: strict isolation no longer requires tenant in body; only query required at this stage
+    return res.status(400).json({ ok: false, error: "query required" });
   }
   if (q.length > 2000) {
     return res.status(413).json({ ok: false, error: "query_too_large" });
@@ -107,19 +172,36 @@ router.post("/query", async (req, res) => {
     return res.status(400).json({ ok: false, error: "invalid_language" });
   }
 
-  // ✅ Prefer verified tenant from JWT if possible (demo/public)
-  const jwtTenant = tryResolveTenantFromJwt(req);
+  // ---------------------------------------------------------
+  // Story 12.8.3 — AUTH + TENANT ISOLATION (fail closed)
+  // ---------------------------------------------------------
+  const token = extractToken(req);
+  const decoded = verifyJwtAnySecret(token);
 
-  const resolvedId = jwtTenant || tenant_id || business_id;
+  if (!decoded) {
+    return res.status(401).json({ ok: false, error: "unauthorized" });
+  }
+
+  const resolvedId = deriveTenantIdFromJwt(decoded);
   if (!resolvedId) {
-    console.warn(
-      "⚠️ /brain/query missing required fields. body=",
-      JSON.stringify(body)
-    );
-    return res.status(400).json({
-      ok: false,
-      error: "tenant_id (or business_id) and query required",
+    return res.status(403).json({ ok: false, error: "tenant_required" });
+  }
+
+  // If client tries to override tenant in body, reject
+  const bodyTenant =
+    tenant_id != null
+      ? Number(tenant_id)
+      : business_id != null
+      ? Number(business_id)
+      : null;
+
+  if (bodyTenant && Number.isFinite(bodyTenant) && bodyTenant !== resolvedId) {
+    console.warn("⚠️ /brain/query tenant override blocked:", {
+      token_tenant: resolvedId,
+      body_tenant: bodyTenant,
+      q_len: q.length,
     });
+    return res.status(403).json({ ok: false, error: "tenant_mismatch" });
   }
 
   try {
@@ -131,7 +213,7 @@ router.post("/query", async (req, res) => {
     const vector = emb.data[0].embedding;
     const vectorLiteral = "[" + vector.join(",") + "]";
 
-    // 2️⃣ Query Postgres using cosine distance
+    // 2️⃣ Query Postgres using cosine distance (tenant-scoped)
     const result = await pool.query(
       `
       SELECT id, query_text AS question, answer,
@@ -207,7 +289,7 @@ Be friendly and concise. If unsure, add something like
       const audioBuffer = await synthesizeSpeech(tunedResponse, lang, {
         tenantId: resolvedId,
         regionCode,
-        tonePreset: "friendly", // can later be driven from business profile
+        tonePreset: "friendly",
         useFillers: true,
       });
 
@@ -221,11 +303,11 @@ Be friendly and concise. If unsure, add something like
     // 4️⃣ Send response (text + optional audio)
     res.json({
       ok: true,
-      tenant_id: resolvedId,
+      tenant_id: resolvedId, // ✅ always JWT-derived
       language: lang,
       confidence,
       tuned_response: tunedResponse,
-      audio: audioBase64, // 👈 Voice Studio now receives this
+      audio: audioBase64,
       matches: rows,
     });
   } catch (err) {
@@ -236,7 +318,15 @@ Be friendly and concise. If unsure, add something like
 
 async function logAdaptiveResponse(query, response, confidence, id, lang) {
   try {
-    const logEntry = `[${new Date().toISOString()}] tenant=${id} lang=${lang} confidence=${confidence} | query="${query}" | response="${response}"\n`;
+    // Story 12.8.3 secure logging default: NO raw query/response persisted
+    const q = typeof query === "string" ? query : String(query || "");
+    const r = typeof response === "string" ? response : String(response || "");
+
+    const logEntry =
+      `[${new Date().toISOString()}] tenant=${id} lang=${lang} confidence=${confidence}` +
+      ` q_len=${q.length} r_len=${r.length}` +
+      ` q_hash=${safeHash(q)} r_hash=${safeHash(r)}\n`;
+
     await fs.promises.appendFile(LOG_PATH, logEntry, { encoding: "utf8" });
   } catch (err) {
     console.error("⚠️ Log write failed:", err.message);
