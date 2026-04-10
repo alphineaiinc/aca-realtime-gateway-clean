@@ -1,0 +1,26 @@
+﻿openapi: 3.0.1
+info:
+  title: Alphine AI API
+  description: ACA conversational API
+  version: "1.0.0"
+
+servers:
+  - url: https://aca-realtime-gateway-clean.onrender.com
+
+paths:
+  /api/chat:
+    post:
+      operationId: chat
+      summary: Send a message to ACA
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                message:
+                  type: string
+      responses:
+        "200":
+          description: Successful response
