@@ -14,7 +14,17 @@ require("dotenv").config({ path: dotenvPath });
 
 // --- Base connection URL ---
 let baseUrl = process.env.DATABASE_URL || "";
-console.log("🔍 Using DATABASE_URL =", baseUrl);
+function redactDbUrl(raw) {
+  if (!raw) return "(missing)";
+  try {
+    return raw.replace(/:\/\/([^:]+):([^@]+)@/, "://$1:***@");
+  } catch {
+    return "(unreadable)";
+  }
+}
+
+console.log("🔍 Using DATABASE_URL =", redactDbUrl(process.env.DATABASE_URL));
+
 
 // --- Detect environment type ---
 const isRender =

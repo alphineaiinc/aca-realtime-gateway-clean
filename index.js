@@ -14,6 +14,26 @@ console.log("🧩 index.js loading .env from:", dotenvPath);
 const isProd = String(process.env.NODE_ENV || "").toLowerCase() === "production";
 require("dotenv").config({ path: dotenvPath, override: !isProd });
 
+// ========================================================
+// 🔐 FINAL SECURITY: ENV VALIDATION (Story 12.8)
+// ========================================================
+const REQUIRED_ENV = [
+  "OPENAI_API_KEY",
+  "DATABASE_URL",
+  "JWT_SECRET",
+  "STRIPE_SECRET_KEY"
+];
+
+for (const key of REQUIRED_ENV) {
+  if (!process.env[key]) {
+    console.error(`❌ Missing required env: ${key}`);
+    process.exit(1); // HARD STOP
+  }
+}
+
+console.log("🔐 Env validation passed");
+
+
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
