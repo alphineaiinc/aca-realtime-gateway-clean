@@ -14,24 +14,21 @@ const OpenAI = require("openai");
 const fs = require("fs");
 const path = require("path");
 const crypto = require("crypto");
+const jwt = require("jsonwebtoken");
 const pool = require("../db/pool");
 const { synthesizeSpeech } = require("../../tts"); // ✅ TTS handler
 const { getTenantRegion } = require("../brain/utils/tenantContext"); // ✅ Tenant region helper
 
-// ✅ Story 12.8 — rate limiting + safe tenant resolution (JWT only)
+// ✅ Story 12.8 — optional rate limiting utility
 let rateLimitIP = null;
 try {
   ({ rateLimitIP } = require("../brain/utils/rateLimiters"));
 } catch (e) {}
 
-let jwt = null;
-try {
-  jwt = require("jsonwebtoken");
-} catch (e) {}
-
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
 console.log("🔥 Story 2.9 adaptive router executing");
+console.log("🧪 12.8.3 ORCH brain.js active build=2026-02-24T03:40Z");
 
 const LOG_PATH = path.join(__dirname, "..", "logs", "response_tuning.log");
 try {
@@ -56,7 +53,7 @@ if (typeof rateLimitIP === "function") {
 // ---------------------------------------------------------
 // Story 12.8.3 — Strict tenant isolation helpers (minimal)
 // - derive tenant_id ONLY from JWT (never from body/query)
-// - verify with JWT_SECRET first, fallback to DEMO_JWT_SECRET
+// - demo tokens can be verified with DEMO_JWT_SECRET
 // - demo tokens force tenant_id = DEMO_TENANT_ID (env)
 // ---------------------------------------------------------
 function safeHash(value) {
@@ -68,47 +65,31 @@ function safeHash(value) {
 }
 
 function extractToken(req) {
-  // Query param: ?jwt=... or ?token=...
-  try {
-    const url = new URL(req.originalUrl || req.url, "http://localhost");
-    const t1 = url.searchParams.get("jwt");
-    const t2 = url.searchParams.get("token");
-    if (t1) return t1;
-    if (t2) return t2;
-  } catch (e) {}
-
   // Authorization: Bearer ...
-  const auth = String(req.headers.authorization || req.headers.Authorization || "").trim();
-  if (auth.toLowerCase().startsWith("bearer ")) {
-    return auth.slice("bearer ".length).trim();
+  const auth = req.headers["authorization"] || req.headers["Authorization"];
+  if (auth && String(auth).startsWith("Bearer ")) {
+    return String(auth).slice(7).trim();
   }
 
   return "";
 }
 
 function verifyJwtAnySecret(token) {
+  if (!token) return null;
+
+  // 1) Primary secret
   try {
-    if (!jwt || !token) return null;
+    return jwt.verify(token, process.env.JWT_SECRET);
+  } catch (e) {}
 
-    // 1) Primary secret
-    try {
-      if (process.env.JWT_SECRET) {
-        return jwt.verify(token, process.env.JWT_SECRET);
-      }
-    } catch (e) {}
+  // 2) Demo secret fallback (optional)
+  try {
+    if (process.env.DEMO_JWT_SECRET) {
+      return jwt.verify(token, process.env.DEMO_JWT_SECRET);
+    }
+  } catch (e) {}
 
-    // 2) Demo secret fallback
-    try {
-      const demoSecret = String(process.env.DEMO_JWT_SECRET || "").trim();
-      if (demoSecret) {
-        return jwt.verify(token, demoSecret);
-      }
-    } catch (e) {}
-
-    return null;
-  } catch (e) {
-    return null;
-  }
+  return null;
 }
 
 function deriveTenantIdFromJwt(decoded) {
@@ -116,19 +97,23 @@ function deriveTenantIdFromJwt(decoded) {
 
   const isDemo = decoded && (decoded.role === "demo" || decoded.demo === true);
 
+  // Demo tokens force tenant_id to DEMO_TENANT_ID (secure default)
   if (isDemo) {
     const demoEnabled =
       String(process.env.DEMO_MODE_ENABLED || "").toLowerCase() === "true" ||
       String(process.env.DEMO_MODE_ENABLED || "") === "1";
+
     if (!demoEnabled) return null;
 
-    const demoTenant = process.env.DEMO_TENANT_ID != null ? String(process.env.DEMO_TENANT_ID) : null;
+    const demoTenant =
+      process.env.DEMO_TENANT_ID != null ? String(process.env.DEMO_TENANT_ID) : null;
     if (!demoTenant) return null;
 
     const n = Number(demoTenant);
     return Number.isFinite(n) && n > 0 ? n : null;
   }
 
+  // Non-demo: require tenant_id (or business_id) in token
   const raw =
     decoded.tenant_id != null
       ? decoded.tenant_id
@@ -149,20 +134,19 @@ router.post("/query", async (req, res) => {
   // ✅ Defensive: handle missing req.body safely
   const body = req.body || {};
   const {
-    tenant_id,     // ⚠️ will NOT be trusted (kept only for override detection)
-    business_id,   // ⚠️ will NOT be trusted (kept only for override detection)
+    tenant_id,   // ⚠️ will NOT be trusted (kept only for override detection)
+    business_id, // ⚠️ will NOT be trusted (kept only for override detection)
     query,
     language = "en-US",
     top_k = 3,
   } = body;
 
-  // ✅ Story 12.8 — input validation caps (secure defaults)
+  // ✅ Secure validation caps
   const q = String(query || "").trim();
   const lang = String(language || "en-US").trim();
-  const topK = Math.max(1, Math.min(parseInt(String(top_k || 3), 10) || 3, 5)); // hard cap 5
+  const topK = Math.max(1, Math.min(parseInt(String(top_k || 3), 10) || 3, 5));
 
   if (!q) {
-    // Important: strict isolation no longer requires tenant in body; only query required at this stage
     return res.status(400).json({ ok: false, error: "query required" });
   }
   if (q.length > 2000) {
@@ -260,6 +244,7 @@ Be friendly and concise. If unsure, add something like
             max_tokens: 120,
             temperature: 0.8,
           });
+
           tunedResponse =
             completion.choices?.[0]?.message?.content?.trim() || top.answer;
         } catch (gptErr) {
@@ -271,6 +256,7 @@ Be friendly and concise. If unsure, add something like
         "I’m not sure about that. Would you like me to connect you with someone from our team?";
     }
 
+    // ✅ Minimal safe logging (no raw query/response persisted)
     await logAdaptiveResponse(q, tunedResponse, confidence, resolvedId, lang);
 
     // ✅ 3️⃣ Voice Studio / TTS integration block (tenant + region aware)
@@ -312,13 +298,12 @@ Be friendly and concise. If unsure, add something like
     });
   } catch (err) {
     console.error("❌ /brain/query failed:", err.message);
-    res.status(500).json({ ok: false, error: err.message });
+    res.status(500).json({ ok: false, error: "internal_error" });
   }
 });
 
 async function logAdaptiveResponse(query, response, confidence, id, lang) {
   try {
-    // Story 12.8.3 secure logging default: NO raw query/response persisted
     const q = typeof query === "string" ? query : String(query || "");
     const r = typeof response === "string" ? response : String(response || "");
 

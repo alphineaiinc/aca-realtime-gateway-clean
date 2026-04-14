@@ -6,7 +6,7 @@ const path = require("path");
 const fs = require("fs");
 const OpenAI = require("openai");
 const { safeRequire } = require("./src/brain/utils/safeRequire");
-
+const jwt = require("jsonwebtoken");
 
 // ✅ Force-load orchestrator-level .env (absolute path) — MUST BE FIRST
 const dotenvPath = path.resolve(__dirname, "./.env");
@@ -22,7 +22,7 @@ const REQUIRED_ENV = [
   "DATABASE_URL",
   "JWT_SECRET",
   "STRIPE_SECRET_KEY",
-   "STRIPE_WEBHOOK_SECRET",
+  "STRIPE_WEBHOOK_SECRET",
 ];
 
 for (const key of REQUIRED_ENV) {
@@ -34,14 +34,11 @@ for (const key of REQUIRED_ENV) {
 
 console.log("🔐 Env validation passed");
 
-
-
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-
 
 const { retrieveAnswer } = require("./retriever");
 const { synthesizeSpeech } = require("./tts");
-// const { bindWebSocket } = require("./socket_handler"); 
+// const { bindWebSocket } = require("./socket_handler");
 // ✅ Story 12.6 fix: DO NOT load socket_handler here.
 // Reason: any raw ws.Server() / upgrade listeners inside socket_handler (even as side-effects) can intercept
 // WebSocket upgrades intended for express-ws route /ws/chat, causing the UI to stay stuck on "connecting…".
@@ -50,9 +47,6 @@ const chatRoute = require("./src/routes/chat");
 
 // Demo mode route
 const demoRouter = require("./src/routes/demo");
-
-
-
 
 // ---------------------------------------------------------------------------
 // 🧩 Story 9.6 – Unified Global Deployment & Testing Hook
@@ -71,11 +65,6 @@ try {
   console.warn("⚠️ Unable to write deploy tracker log:", err.message);
 }
 // ---------------------------------------------------------------------------
-
-
-
-// ✅ Force-load orchestrator-level .env (absolute path)
-
 
 // ---------------------------------------------------------------------------
 // ✅ Story 12.x — Robust session memory wiring (prevents startup crashes)
@@ -108,17 +97,14 @@ const pruneExpired =
   null;
 
 // Optional "recovery marker" (some older variants had this)
-const markRecovery =
-  mem.markRecovery || global.markRecovery || null;
+const markRecovery = mem.markRecovery || global.markRecovery || null;
 // ---------------------------------------------------------------------------
-
 
 const rm = safeRequire("./src/monitor/resilienceMetrics", "resilienceMetrics") || {};
 const { observeHttpRetry } = rm;
 // Ensure /monitor/resilience never crashes if metrics module is absent
-const getMetricsText = (typeof rm.getMetricsText === "function") ? rm.getMetricsText : (() => "");
-
-
+const getMetricsText =
+  typeof rm.getMetricsText === "function" ? rm.getMetricsText : () => "";
 
 // ✅ Story 12.7 — Session memory store (tenant/session isolated) + TTL pruning
 let memory = null;
@@ -131,9 +117,12 @@ try {
   setInterval(() => {
     try {
       // Prefer memory.pruneExpired if present; fallback to normalized pruneExpired
-      const fn = (typeof memory.pruneExpired === "function")
-        ? memory.pruneExpired
-        : (typeof pruneExpired === "function" ? pruneExpired : null);
+      const fn =
+        typeof memory.pruneExpired === "function"
+          ? memory.pruneExpired
+          : typeof pruneExpired === "function"
+          ? pruneExpired
+          : null;
 
       if (fn) {
         fn({
@@ -152,7 +141,7 @@ global.__ACA_STATE__ = { activeSessions: [], version: "5.3.A" };
 // Restore on boot
 let prior = null;
 try {
-  prior = (typeof loadSession === "function") ? loadSession() : null;
+  prior = typeof loadSession === "function" ? loadSession() : null;
 } catch (e) {
   console.warn("⚠️ loadSession failed (non-fatal):", e && e.message ? e.message : String(e));
   prior = null;
@@ -207,6 +196,11 @@ try {
   console.warn("⚠️ Story 12.8 securityHeaders not loaded:", e && e.message ? e.message : String(e));
 }
 
+// ✅ Story 12.8 — Marketplace Plugin (.well-known) Binding
+const wellKnownPath = path.join(__dirname, "public", "wellknown");
+app.use("/.well-known", express.static(wellKnownPath));
+console.log("✅ .well-known bound to:", wellKnownPath);
+
 // ✅ Story 12.8 — Origin allowlist guard (because app.use(cors()) appears permissive later)
 // Secure default: if production and origin is present, it MUST be in ALLOWED_ORIGINS (or RENDER_BASE_URL).
 app.use((req, res, next) => {
@@ -217,7 +211,7 @@ app.use((req, res, next) => {
     if (!origin) return next(); // non-browser or same-origin fetch with no Origin
 
     const raw = String(process.env.ALLOWED_ORIGINS || "").trim();
-    const allow = raw.split(",").map(s => s.trim()).filter(Boolean);
+    const allow = raw.split(",").map((s) => s.trim()).filter(Boolean);
 
     const renderBase = String(process.env.RENDER_BASE_URL || "").trim();
     if (renderBase && !allow.includes(renderBase)) allow.push(renderBase);
@@ -230,6 +224,92 @@ app.use((req, res, next) => {
     // Fail-open to avoid prod crash due to guard bug
     return next();
   }
+});
+
+// ✅ Story 12.8 — protect monitoring/admin-only endpoints
+function requireAdmin(req, res, next) {
+  try {
+    const auth = req.headers.authorization || "";
+    if (!auth.startsWith("Bearer ")) {
+      return res.status(401).json({ ok: false, error: "unauthorized" });
+    }
+
+    const token = auth.slice(7).trim();
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+
+    if (String(decoded?.role || "").toLowerCase() !== "admin") {
+      return res.status(403).json({ ok: false, error: "forbidden" });
+    }
+
+    req.user = decoded;
+    next();
+  } catch {
+    return res.status(401).json({ ok: false, error: "unauthorized" });
+  }
+}
+
+function createRateLimiter({ windowMs, max, keyFn }) {
+  const hits = new Map();
+
+  setInterval(() => {
+    const now = Date.now();
+    for (const [key, value] of hits.entries()) {
+      if (now - value.windowStart >= windowMs) {
+        hits.delete(key);
+      }
+    }
+  }, Math.max(30000, windowMs)).unref();
+
+  return function rateLimit(req, res, next) {
+    try {
+      const key = keyFn ? keyFn(req) : req.ip || "unknown";
+      const now = Date.now();
+
+      const existing = hits.get(key);
+      if (!existing || now - existing.windowStart >= windowMs) {
+        hits.set(key, { count: 1, windowStart: now });
+        return next();
+      }
+
+      existing.count += 1;
+
+      if (existing.count > max) {
+        return res.status(429).json({
+          ok: false,
+          error: "rate_limited",
+        });
+      }
+
+      return next();
+    } catch (err) {
+      console.warn("⚠️ rate limiter error:", err.message);
+      return next();
+    }
+  };
+}
+
+const publicRateLimit = createRateLimiter({
+  windowMs: 60 * 1000,
+  max: 20,
+  keyFn: (req) => req.ip || "unknown",
+});
+
+const demoRateLimit = createRateLimiter({
+  windowMs: 60 * 1000,
+  max: 10,
+  keyFn: (req) => {
+    const auth = req.headers.authorization || "";
+    return `${req.ip || "unknown"}:${auth.slice(0, 80)}`;
+  },
+});
+
+const authRateLimit = createRateLimiter({
+  windowMs: 60 * 1000,
+  max: 30,
+  keyFn: (req) => {
+    const auth = req.headers.authorization || "";
+    return `${req.ip || "unknown"}:${auth.slice(0, 80)}`;
+  },
 });
 
 // ✅ Story 12.5/12.6 — Create HTTP server EARLY so express-ws binds correctly
@@ -247,26 +327,35 @@ try {
 
 // ✅ Story 12.5 — Apply CORS early (SSE-friendly ordering; safe even if repeated later)
 app.use(cors());
+app.use("/api/demo", demoRateLimit);
+app.use("/api/chat", authRateLimit);
+app.use("/api/billing", authRateLimit);
+app.use("/brain", authRateLimit);
+app.use("/partner/register", publicRateLimit);
+app.use("/public/login", publicRateLimit);
+app.use("/public/signup", publicRateLimit);
 
 app.use("/api/demo", demoRouter);
 
 // Story 12.5 — SSE must not be compressed/buffered (Render/proxy safe)
 // Only apply if compression is available.
 if (compression) {
-  app.use(compression({
-    filter: (req, res) => {
-      try {
-        const p = req.originalUrl || req.url || "";
-        const accept = String(req.headers?.accept || "");
+  app.use(
+    compression({
+      filter: (req, res) => {
+        try {
+          const p = req.originalUrl || req.url || "";
+          const accept = String(req.headers?.accept || "");
 
-        // ✅ Never compress SSE
-        if (p.startsWith("/api/chat/stream")) return false;
-        if (accept.includes("text/event-stream")) return false;
-      } catch (e) {}
+          // ✅ Never compress SSE
+          if (p.startsWith("/api/chat/stream")) return false;
+          if (accept.includes("text/event-stream")) return false;
+        } catch (e) {}
 
-      return compression.filter(req, res);
-    }
-  }));
+        return compression.filter(req, res);
+      },
+    })
+  );
 }
 
 // ✅ FIX (Story 12.3): app must exist before any app.use(...)
@@ -312,8 +401,6 @@ app.use((err, req, res, next) => {
   return next(err);
 });
 
-
-
 // Story 12.5 — streaming web chat route
 const chatStreamRoute = require("./src/routes/chat_stream");
 app.use("/api", chatStreamRoute);
@@ -326,7 +413,6 @@ try {
   console.warn("⚠️ memoryDebug route not loaded:", err.message);
 }
 
-
 // ✅ Story 12.7 — Safe debug endpoint for session memory (JWT protected)
 // Note: the actual memory wiring (append turns + pass memoryCtx) happens inside chat_stream/chat_ws handlers.
 try {
@@ -337,12 +423,10 @@ try {
   console.warn("⚠️ memoryDebug route not loaded (Story 12.7):", err.message);
 }
 
-
 // Trust Render proxy and log runtime roots once
 app.set("trust proxy", 1);
 console.log("🧭 process.cwd():", process.cwd());
 console.log("🧭 __dirname:", __dirname);
-
 
 const twilioRouter = require("./src/routes/twilio");
 app.use("/twilio", twilioRouter);
@@ -353,17 +437,16 @@ app.use(
   "/dashboard/assets",
   express.static(path.join(__dirname, "public", "dashboard", "assets"))
 );
-console.log("✅ Dashboard assets served from:", path.join(__dirname, "public", "dashboard", "assets"));
-
-
-
+console.log(
+  "✅ Dashboard assets served from:",
+  path.join(__dirname, "public", "dashboard", "assets")
+);
 
 // ---------------------------------------------------------------------------
 // ✅ Guaranteed serving of Marketplace manifest files (Render-safe absolute paths)
 //    We keep your explicit routes AND add a regex catch-all to cover all proxies.
 // ---------------------------------------------------------------------------
 const wellKnownAbsolute = path.resolve(__dirname, "public", "wellknown");
-
 
 // Your explicit endpoints (kept intact)
 app.get("/.well-known/ai-plugin.json", (req, res) => {
@@ -449,16 +532,15 @@ try {
 // ============================================================
 // 🏦 Story 10.10 — Global Partner Payout Gateway
 // ============================================================
-// Added redundancy check to ensure route loads only once
-// ============================================================
-// 🏦 Story 10.10 — Global Partner Payout Gateway (Debug Mode)
-// ============================================================
 try {
   const partnerPayout = require("./src/routes/partnerPayout");
 
   // 🔍 Detailed introspection
   console.log("🧩 partnerPayout require result type:", typeof partnerPayout);
-  console.log("🧩 partnerPayout keys:", partnerPayout ? Object.keys(partnerPayout) : "undefined or null");
+  console.log(
+    "🧩 partnerPayout keys:",
+    partnerPayout ? Object.keys(partnerPayout) : "undefined or null"
+  );
 
   app.use("/api", partnerPayout);
   console.log("✅ Mounted /api/partner/payout routes (Story 10.10)");
@@ -488,7 +570,7 @@ app.get("/health", (req, res) => {
   }
 });
 
-app.get("/monitor/resilience", (req, res) => {
+app.get("/monitor/resilience", requireAdmin, (req, res) => {
   res.set("Content-Type", "text/plain; version=0.0.4");
   res.send(getMetricsText());
 });
@@ -524,9 +606,7 @@ try {
 const voiceRouter = require("./src/routes/voice");
 app.use("/api/voice", voiceRouter);
 
-//const chatRoute = require("./src/routes/chat");
 app.use("/api/chat", chatRoute);
-
 
 // ============================================================
 // 🪙 Story 10.2 — Partner Onboarding & Reward Referral Engine
@@ -564,11 +644,15 @@ try {
 // ============================================================
 // === Story 9.6 — Global Matrix Health Endpoint ===
 // ============================================================
-app.get("/monitor/deploy-matrix", async (req, res) => {
+app.get("/monitor/deploy-matrix", requireAdmin, async (req, res) => {
   try {
-    const dashboardUrl = process.env.DASHBOARD_URL || "https://alphine-dashboard.vercel.app";
-    const backendUrl = process.env.RENDER_BASE_URL || "https://aca-realtime-gateway-clean.onrender.com";
-    const supported = (process.env.SUPPORTED_LANGUAGES_GLOBAL || "en,ta,es,fr,hi").split(",");
+    const dashboardUrl =
+      process.env.DASHBOARD_URL || "https://alphine-dashboard.vercel.app";
+    const backendUrl =
+      process.env.RENDER_BASE_URL || "https://aca-realtime-gateway-clean.onrender.com";
+    const supported = (
+      process.env.SUPPORTED_LANGUAGES_GLOBAL || "en,ta,es,fr,hi"
+    ).split(",");
 
     const result = {
       service: "ACA-Orchestrator",
@@ -582,30 +666,22 @@ app.get("/monitor/deploy-matrix", async (req, res) => {
     res.status(200).json({ ok: true, matrix: result });
   } catch (err) {
     console.error("❌ /monitor/deploy-matrix error:", err);
-    res.status(500).json({ ok: false, error: err.message });
+    res.status(500).json({ ok: false, error: "internal_error" });
   }
 });
 
 // ============================================================
 // === Knowledge Brain Query Route (for test_multilang.ps1) ===
 try {
-  const brainRoutes = require("./src/routes/brain");
+  const path = require("path");
+  const brainRoutes = require(path.join(__dirname, "src", "routes", "brain.js"));
   app.use("/brain", brainRoutes);
   console.log("✅ Mounted /brain routes for global matrix test");
 } catch (err) {
   console.warn("⚠️ brainRoutes not loaded:", err.message);
 }
 
-try {
-  const partnerPayoutAgain = require("./src/routes/partnerPayout");   // capital P here ⬅️
-  app.use("/api", partnerPayoutAgain);
-  console.log("✅ Mounted /api/partner/payout routes (Story 10.10) - second mount");
-} catch (err) {
-  console.warn("⚠️ partnerPayout routes not loaded (second mount):", err.message);
-}
-
 app.use("/api/billing", require("./src/routes/billing"));
-app.use("/api/test", require("./src/routes/envTest"));
 
 // ============================================================
 // 🧾 Story 11.6 — Stripe Webhook Integration
@@ -636,7 +712,7 @@ app.use(bodyParser.urlencoded({ extended: true }));
 
 // --- Safe Diagnostic: list all mounted routes (Express 4/5 compatible) ---
 function listRoutes(app) {
-    try {
+  try {
     const paths = [];
 
     const stack = app && app._router && Array.isArray(app._router.stack) ? app._router.stack : null;
@@ -645,12 +721,11 @@ function listRoutes(app) {
       return;
     }
 
-    stack.forEach(layer => {
-
+    stack.forEach((layer) => {
       if (layer.route && layer.route.path) {
         paths.push(layer.route.path);
       } else if (layer.name === "router" && Array.isArray(layer.handle?.stack)) {
-        layer.handle.stack.forEach(inner => {
+        layer.handle.stack.forEach((inner) => {
           if (inner.route && inner.route.path) paths.push(inner.route.path);
         });
       }
@@ -663,7 +738,7 @@ function listRoutes(app) {
 listRoutes(app);
 
 // ============================================================
-// === Server Start === 
+// === Server Start ===
 const PORT = process.env.PORT || 8080;
 
 // ✅ IMPORTANT: use server.listen (not app.listen) so express-ws works on the same server
@@ -694,11 +769,24 @@ async function detectTamilSmart(transcript) {
   }
 
   const phoneticHints = [
-    "epo", "epoo", "epdi", "sapadu", "saapadu",
-    "iruka", "irukka", "unga", "ungal", "illai",
-    "seri", "aama", "amma", "appa", "open aa", "close aa"
+    "epo",
+    "epoo",
+    "epdi",
+    "sapadu",
+    "saapadu",
+    "iruka",
+    "irukka",
+    "unga",
+    "ungal",
+    "illai",
+    "seri",
+    "aama",
+    "amma",
+    "appa",
+    "open aa",
+    "close aa",
   ];
-  if (phoneticHints.some(h => transcript.toLowerCase().includes(h))) {
+  if (phoneticHints.some((h) => transcript.toLowerCase().includes(h))) {
     console.log("🔎 Tamil phonetic hint detected in transcript.");
     return true;
   }
@@ -710,9 +798,10 @@ async function detectTamilSmart(transcript) {
       messages: [
         {
           role: "system",
-          content: "Detect if this text is Tamil (Tanglish) even if written in English letters. Reply only 'ta-IN' or 'en-US'."
+          content:
+            "Detect if this text is Tamil (Tanglish) even if written in English letters. Reply only 'ta-IN' or 'en-US'.",
         },
-        { role: "user", content: transcript }
+        { role: "user", content: transcript },
       ],
     });
     const guess = r.choices[0].message.content.trim();
@@ -731,9 +820,10 @@ async function detectLanguageWithOpenAI(transcript) {
     messages: [
       {
         role: "system",
-        content: "Detect the language of this text. Reply only with a BCP-47 code (en-US, hi-IN, es-ES, ta-IN)."
+        content:
+          "Detect the language of this text. Reply only with a BCP-47 code (en-US, hi-IN, es-ES, ta-IN).",
       },
-      { role: "user", content: transcript }
+      { role: "user", content: transcript },
     ],
   });
   return r.choices[0].message.content.trim();
@@ -764,7 +854,12 @@ async function onStreamEnd(businessId, ws) {
 
 // --- Main pipeline: transcript → KB → GPT → TTS ---
 async function onFinalTranscript(transcript, langCode, businessId, ws) {
-  console.log("🛠 onFinalTranscript called with transcript:", transcript, "incoming langCode:", langCode);
+  console.log(
+    "🛠 onFinalTranscript called with transcript:",
+    transcript,
+    "incoming langCode:",
+    langCode
+  );
 
   try {
     if (FORCE_LANG) {
@@ -802,20 +897,25 @@ async function onFinalTranscript(transcript, langCode, businessId, ws) {
     console.log("🔈 Sending to TTS with langCode:", langCode);
     const audioBuffer = await synthesizeSpeech(answer, langCode);
 
-    ws.send(JSON.stringify({
-      event: "media",
-      media: { payload: audioBuffer.toString("base64") }
-    }));
+    ws.send(
+      JSON.stringify({
+        event: "media",
+        media: { payload: audioBuffer.toString("base64") },
+      })
+    );
 
     sessionLang = langCode;
     console.log("✅ Spoke in", langCode);
-
   } catch (err) {
     console.error("❌ Error in onFinalTranscript:", err);
-    ws.send(JSON.stringify({
-      event: "media",
-      media: { payload: Buffer.from('Sorry, something went wrong.').toString('base64') }
-    }));
+    ws.send(
+      JSON.stringify({
+        event: "media",
+        media: {
+          payload: Buffer.from("Sorry, something went wrong.").toString("base64"),
+        },
+      })
+    );
   }
 }
 

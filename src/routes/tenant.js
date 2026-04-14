@@ -13,9 +13,9 @@ async function insertTenantDynamic(client, payload) {
     FROM information_schema.columns
     WHERE table_schema='public' AND table_name='master_tenants'
   `);
+
   const allowed = new Set(cols.map(c => c.column_name));
 
-  // Always include a valid email because the DB requires NOT NULL
   const candidateFields = {
     email:
       payload.email ||
@@ -41,7 +41,6 @@ async function insertTenantDynamic(client, payload) {
     }
   }
 
-  // ✅ Fallback: if no dynamic fields found, insert default row
   if (fields.length === 0) {
     const { rows } = await client.query(
       `INSERT INTO master_tenants DEFAULT VALUES RETURNING id`
@@ -49,18 +48,18 @@ async function insertTenantDynamic(client, payload) {
     return rows[0].id;
   }
 
-  // ✅ Normal insert
   const sql = `
     INSERT INTO master_tenants (${fields.join(", ")})
     VALUES (${params.join(", ")})
     RETURNING id
   `;
+
   const { rows } = await client.query(sql, values);
   return rows[0].id;
 }
 
 // ---------------------------------------------------------------------------
-// Utility: create or update business row with same id (1:1 mapping)
+// Utility: create or update business row
 // ---------------------------------------------------------------------------
 async function insertBusiness(client, tenantId, businessName) {
   const { rows: cols } = await client.query(`
@@ -68,6 +67,7 @@ async function insertBusiness(client, tenantId, businessName) {
     FROM information_schema.columns
     WHERE table_schema='public' AND table_name='businesses'
   `);
+
   const hasName = cols.some(c => c.column_name === "name");
 
   if (hasName) {
@@ -88,7 +88,7 @@ async function insertBusiness(client, tenantId, businessName) {
 }
 
 // ---------------------------------------------------------------------------
-// Utility: ensure a default embedding space exists (if table present)
+// Utility: ensure embedding space
 // ---------------------------------------------------------------------------
 async function ensureDefaultEmbeddingSpace(client, tenantId) {
   const { rows: tcols } = await client.query(`
@@ -96,10 +96,12 @@ async function ensureDefaultEmbeddingSpace(client, tenantId) {
     FROM information_schema.columns
     WHERE table_schema='public' AND table_name='embedding_spaces'
   `);
+
   if (tcols.length === 0) return;
 
   const hasBusinessId = tcols.some(c => c.column_name === "business_id");
   const hasName = tcols.some(c => c.column_name === "name");
+
   if (!hasBusinessId) return;
 
   const { rows: existing } = await client.query(
@@ -108,6 +110,7 @@ async function ensureDefaultEmbeddingSpace(client, tenantId) {
       : `SELECT id FROM embedding_spaces WHERE business_id=$1 LIMIT 1`,
     [tenantId]
   );
+
   if (existing.length > 0) return existing[0].id;
 
   if (hasName) {
@@ -130,18 +133,16 @@ async function ensureDefaultEmbeddingSpace(client, tenantId) {
 }
 
 // ---------------------------------------------------------------------------
-// POST /tenant/provision  (secured by PROVISION_API_KEY)
+// POST /tenant/provision (secured via header API key)
 // ---------------------------------------------------------------------------
 router.post("/provision", async (req, res) => {
-  const key = req.body?.api_key || "";
+  const key = req.headers["x-api-key"] || "";
+
   if (!process.env.PROVISION_API_KEY || key !== process.env.PROVISION_API_KEY) {
-    return res.status(401).json({ ok: false, error: "Unauthorized" });
+    return res.status(401).json({ ok: false, error: "unauthorized" });
   }
 
   const businessName = req.body?.business_name || null;
-  const { registerLanguage } = require("../brain/utils/langLoader");
-registerLanguage(preferred_lang, tenant_region);
-
 
   try {
     await pool.query("BEGIN");
@@ -151,6 +152,7 @@ registerLanguage(preferred_lang, tenant_region);
     await ensureDefaultEmbeddingSpace(pool, tenantId);
 
     await pool.query("COMMIT");
+
     return res.json({
       ok: true,
       tenant_id: tenantId,
@@ -159,48 +161,61 @@ registerLanguage(preferred_lang, tenant_region);
   } catch (err) {
     console.error("Provision error:", err);
     await pool.query("ROLLBACK").catch(() => {});
+
     return res.status(500).json({
       ok: false,
-      error: err.message || "Provision failed",
+      error: "internal_error",
     });
   }
 });
 
 // ---------------------------------------------------------------------------
-// POST /tenant/login  -> returns JWT {tenant_id}
+// POST /tenant/login
 // ---------------------------------------------------------------------------
 router.post("/login", async (req, res) => {
   try {
     const tenantId = Number(req.body?.tenant_id);
-    if (!tenantId)
+
+    if (!tenantId) {
       return res.status(400).json({ ok: false, error: "tenant_id required" });
+    }
 
     const { rows } = await pool.query(
       `SELECT id FROM master_tenants WHERE id=$1`,
       [tenantId]
     );
-    if (rows.length === 0)
-      return res.status(404).json({ ok: false, error: "Tenant not found" });
 
-    const token = jwt.sign({ tenant_id: tenantId }, process.env.JWT_SECRET, {
-      expiresIn: "12h",
-    });
+    if (rows.length === 0) {
+      return res.status(404).json({ ok: false, error: "tenant_not_found" });
+    }
+
+    const token = jwt.sign(
+      { tenant_id: tenantId },
+      process.env.JWT_SECRET,
+      { expiresIn: "12h" }
+    );
+
     return res.json({ ok: true, token });
   } catch (err) {
     console.error("Login error:", err);
-    return res
-      .status(500)
-      .json({ ok: false, error: err.message || "Login failed" });
+    return res.status(500).json({ ok: false, error: "internal_error" });
   }
 });
 
 // ---------------------------------------------------------------------------
-// GET /tenant/profile  (JWT required)
+// GET /tenant/profile (JWT required)
 // ---------------------------------------------------------------------------
 router.get("/profile", async (req, res) => {
   try {
-    const auth = (req.headers.authorization || "").replace("Bearer ", "");
-    const decoded = jwt.verify(auth, process.env.JWT_SECRET);
+    const auth = req.headers.authorization || "";
+
+    if (!auth.startsWith("Bearer ")) {
+      return res.status(401).json({ ok: false, error: "unauthorized" });
+    }
+
+    const token = auth.slice(7).trim();
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+
     const tenantId = decoded.tenant_id;
 
     const { rows } = await pool.query(
@@ -215,15 +230,14 @@ router.get("/profile", async (req, res) => {
       [tenantId]
     );
 
-    if (rows.length === 0)
-      return res.status(404).json({ ok: false, error: "Tenant not found" });
+    if (rows.length === 0) {
+      return res.status(404).json({ ok: false, error: "tenant_not_found" });
+    }
 
     return res.json({ ok: true, profile: rows[0] });
   } catch (err) {
     console.error("Profile error:", err);
-    return res
-      .status(401)
-      .json({ ok: false, error: err.message || "Unauthorized" });
+    return res.status(401).json({ ok: false, error: "unauthorized" });
   }
 });
 
