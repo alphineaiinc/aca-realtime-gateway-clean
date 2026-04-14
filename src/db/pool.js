@@ -6,14 +6,19 @@ const { Pool } = require("pg");
 
 // --- Confirm correct .env path ---
 console.log("🧩 pool.js is running from:", __dirname);
-const dotenvPath = path.resolve(__dirname, "../../.env"); // ✅ points to orchestrator-level .env
+const dotenvPath = path.resolve(__dirname, "../../.env");
 console.log("🧩 Loading .env from:", dotenvPath);
 
 // --- Load environment variables ---
 require("dotenv").config({ path: dotenvPath });
 
-// --- Base connection URL ---
-let baseUrl = process.env.DATABASE_URL || "";
+// --- Helpers ---
+function sanitizeEnvValue(value) {
+  return String(value || "")
+    .trim()
+    .replace(/^['"]+|['"]+$/g, "");
+}
+
 function redactDbUrl(raw) {
   if (!raw) return "(missing)";
   try {
@@ -23,8 +28,10 @@ function redactDbUrl(raw) {
   }
 }
 
-console.log("🔍 Using DATABASE_URL =", redactDbUrl(process.env.DATABASE_URL));
+// --- Base connection URL ---
+let baseUrl = sanitizeEnvValue(process.env.DATABASE_URL);
 
+console.log("🔍 Using DATABASE_URL =", redactDbUrl(baseUrl));
 
 // --- Detect environment type ---
 const isRender =
@@ -33,8 +40,18 @@ const isRender =
   baseUrl.includes("sslmode=require");
 
 // --- Append sslmode if missing for cloud ---
-if (isRender && !baseUrl.includes("sslmode")) {
-  baseUrl += "?sslmode=require";
+if (isRender && baseUrl && !baseUrl.includes("sslmode")) {
+  baseUrl += baseUrl.includes("?") ? "&sslmode=require" : "?sslmode=require";
+}
+
+// --- Validate URL early so startup log is clearer ---
+try {
+  if (!baseUrl) {
+    throw new Error("DATABASE_URL is missing");
+  }
+  new URL(baseUrl);
+} catch (err) {
+  console.error("❌ DATABASE_URL validation failed:", err.message);
 }
 
 // --- Pool configuration ---
