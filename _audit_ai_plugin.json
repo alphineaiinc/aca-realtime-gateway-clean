@@ -1,0 +1,17 @@
+﻿{
+  "schema_version": "v1",
+  "name_for_human": "Alphine AI",
+  "name_for_model": "alphine_ai",
+  "description_for_human": "AI-powered automated call assistant",
+  "description_for_model": "Handles conversations, customer queries, and automated call workflows",
+  "auth": {
+    "type": "none"
+  },
+  "api": {
+    "type": "openapi",
+    "url": "https://aca-realtime-gateway-clean.onrender.com/.well-known/openapi.yaml"
+  },
+  "logo_url": "https://aca-realtime-gateway-clean.onrender.com/dashboard/assets/alphine-logo.png",
+  "contact_email": "support@alphine.ai",
+  "legal_info_url": "https://alphine.ai/legal"
+}
