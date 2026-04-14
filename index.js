@@ -413,16 +413,6 @@ try {
   console.warn("⚠️ memoryDebug route not loaded:", err.message);
 }
 
-// ✅ Story 12.7 — Safe debug endpoint for session memory (JWT protected)
-// Note: the actual memory wiring (append turns + pass memoryCtx) happens inside chat_stream/chat_ws handlers.
-try {
-  const memoryDebug = require("./src/routes/memoryDebug");
-  app.use("/api/chat", memoryDebug);
-  console.log("✅ Mounted /api/chat/debug-memory (Story 12.7)");
-} catch (err) {
-  console.warn("⚠️ memoryDebug route not loaded (Story 12.7):", err.message);
-}
-
 // Trust Render proxy and log runtime roots once
 app.set("trust proxy", 1);
 console.log("🧭 process.cwd():", process.cwd());
@@ -682,28 +672,6 @@ try {
 }
 
 app.use("/api/billing", require("./src/routes/billing"));
-
-// ============================================================
-// 🧾 Story 11.6 — Stripe Webhook Integration
-// ============================================================
-try {
-  const stripeWebhook = require("./src/routes/stripeWebhook");
-  app.use("/api/stripe", stripeWebhook);
-  console.log("✅ Mounted /api/stripe/webhook route (Story 11.6)");
-} catch (err) {
-  console.warn("⚠️ stripeWebhook route not loaded:", err.message);
-}
-
-// ============================================================
-// 🧾 Story 11.9 — Stripe Billing Notification Webhook  (ADDED)
-// ============================================================
-try {
-  const stripeBillingWebhook = require("./src/routes/stripeWebhook");
-  app.use("/api/stripe", stripeBillingWebhook);
-  console.log("✅ Mounted /api/stripe webhook routes (Story 11.9)");
-} catch (err) {
-  console.warn("⚠️ stripeBillingWebhook not loaded:", err.message);
-}
 
 // Enable middleware globally
 app.use(cors());
