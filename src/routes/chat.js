@@ -227,9 +227,18 @@ router.post("/", authenticate, rateLimit, async (req, res) => {
       session_id,
       locale,
     });
-  } catch (err) {
-    // Log minimization: don’t dump full user content
-    console.error("chat error:", err?.message || err);
+    } catch (err) {
+    console.error("❌ [chat] route failed:", err);
+    console.error("❌ [chat] tenant_id:", req.tenant_id);
+    console.error("❌ [chat] partner_id:", req.partner_id);
+    console.error("❌ [chat] role:", req.role);
+    console.error("❌ [chat] body:", {
+      session_id: req.body?.session_id,
+      locale: req.body?.locale,
+      hasMessage: !!req.body?.message,
+      messageLength: String(req.body?.message || "").length,
+    });
+
     return res.status(500).json({ ok: false, error: "Server error" });
   }
 });
