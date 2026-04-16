@@ -227,7 +227,7 @@ router.post("/", authenticate, rateLimit, async (req, res) => {
       session_id,
       locale,
     });
-    } catch (err) {
+      } catch (err) {
     console.error("❌ [chat] route failed:", err);
     console.error("❌ [chat] tenant_id:", req.tenant_id);
     console.error("❌ [chat] partner_id:", req.partner_id);
