@@ -420,6 +420,30 @@ async function handleTwilioStream(ws, req) {
           streamSid: activeStreamSid,
         });
 
+                // Story 13.1.8 — test-only ack for manual WS probes
+        if (
+          String(activeCallSid || "").startsWith("CA_TEST_") ||
+          String(activeCallSid || "").startsWith("CA_LOCAL_")
+        ) {
+          try {
+            ws.send(
+              JSON.stringify({
+                event: "debug_ack",
+                ok: true,
+                callSid: activeCallSid,
+                streamSid: activeStreamSid,
+                source: "handleTwilioStream:start",
+              })
+            );
+            console.log("🧪 [twilio_test_ack] sent", {
+              callSid: activeCallSid,
+              streamSid: activeStreamSid,
+            });
+          } catch (ackErr) {
+            console.error("❌ [twilio_test_ack] failed:", ackErr.message);
+          }
+        }
+
         console.log(
           `${VOICE_LOG_PREFIX} init`,
           JSON.stringify({
