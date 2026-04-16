@@ -172,7 +172,7 @@ function smallTalkReply(text) {
   if (t.includes("how are you") || t.includes("how r u")) {
     return "Doing great. Tell me what you need and I’ll handle it.";
   }
-  return "Hi! How can I help you today?";
+  return "Hi! I’m Alphine AI — your automated call assistant. I can help answer customer questions, simulate call conversations, and guide workflows. What would you like to try?";
 }
 
 // ------------------------------------------------------------------
