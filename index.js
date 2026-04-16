@@ -260,6 +260,20 @@ function detectGptChatScenarioFromText(text) {
     return { scenario: "customer_support", intent: "support_request" };
   }
 
+  // ✅ Generic service / appointment / scheduling fallback
+  if (
+    t.includes("appointment") ||
+    t.includes("schedule") ||
+    t.includes("meeting") ||
+    t.includes("service") ||
+    t.includes("consultation") ||
+    t.includes("visit") ||
+    t.includes("book") ||
+    t.includes("reserve")
+  ) {
+    return { scenario: "generic_service", intent: "service_request" };
+  }
+
   return { scenario: null, intent: null };
 }
 
@@ -276,18 +290,25 @@ function extractGptChatSlotsFromText(text, scenario) {
     input.match(/\b(\d{1,2})\s+(people|persons|guests|guest)\b/i);
 
   if (scenario === "restaurant_reservation" && countMatch) {
-    slots.party_size = countMatch[1];
-  }
+  slots.party_size = countMatch[1];
+}
 
-  if (scenario === "hotel_booking" && countMatch) {
-    slots.guests = countMatch[1];
-  }
+if (scenario === "hotel_booking" && countMatch) {
+  slots.guests = countMatch[1];
+}
+
+if (scenario === "generic_service" && countMatch) {
+  slots.participants = countMatch[1];
+}
 
   // Time
   const timeMatch = input.match(/\b(\d{1,2})(?::(\d{2}))?\s?(am|pm)\b/i);
-  if (scenario === "restaurant_reservation" && timeMatch) {
-    slots.time = timeMatch[0];
-  }
+if (
+  (scenario === "restaurant_reservation" || scenario === "generic_service") &&
+  timeMatch
+) {
+  slots.time = timeMatch[0];
+}
 
   // Restaurant date-like words
   if (scenario === "restaurant_reservation") {
@@ -361,21 +382,22 @@ function buildGptChatContextSummary(session) {
 function buildGptChatFollowUp(session) {
   if (!session || !session.scenario) return null;
 
- if (session.scenario === "restaurant_reservation") {
-  if (!session.slots.date) return "Sure — what day would you like the reservation?";
-  if (!session.slots.time) return "What time should I note for the table?";
-  if (!session.slots.party_size) return "How many people will be joining?";
-  if (!session.slots.name) return "Got it. What name should I put on the reservation?";
+  if (session.scenario === "restaurant_reservation") {
+    if (!session.slots.date) return "Sure — what day would you like the reservation?";
+    if (!session.slots.time) return "What time should I note for the table?";
+    if (!session.slots.party_size) return "How many people will be joining?";
+    if (!session.slots.name) return "Got it. What name should I put on the reservation?";
 
-  return `Thanks, ${session.slots.name} — I’ve noted your request for ${session.slots.date} at ${session.slots.time} for ${session.slots.party_size} people.`;
-}
+    return `Thanks, ${session.slots.name} — I’ve noted your request for ${session.slots.date} at ${session.slots.time} for ${session.slots.party_size} people.`;
+  }
 
   if (session.scenario === "hotel_booking") {
     if (!session.slots.check_in) return "Sure — when would you like to check in?";
     if (!session.slots.nights) return "How many nights will you be staying?";
     if (!session.slots.guests) return "How many guests should I note?";
     if (!session.slots.name) return "What name should I place on the booking request?";
-    return `Thanks — I have check-in ${session.slots.check_in}, ${session.slots.nights} nights, for ${session.slots.guests} guests under ${session.slots.name}.`;
+
+    return `Thanks, ${session.slots.name} — I’ve noted your request for check-in ${session.slots.check_in} for ${session.slots.nights} nights for ${session.slots.guests} guests.`;
   }
 
   if (session.scenario === "customer_support") {
@@ -385,9 +407,36 @@ function buildGptChatFollowUp(session) {
     if (!session.slots.issue_summary) {
       return "Understood. Could you briefly tell me what happened?";
     }
+
     return "Thanks — I’ve noted that. Would you like a short summary of the issue?";
   }
 
+  // ✅ 👉 INSERT PATCH 3 RIGHT HERE 👇
+  if (session.scenario === "generic_service") {
+    if (!session.slots.service_type) {
+      return "Sure — what kind of service would you like to arrange?";
+    }
+
+    if (!session.slots.date) {
+      return "What day would you like me to note for this?";
+    }
+
+    if (!session.slots.time) {
+      return "What time works best for you?";
+    }
+
+    if (!session.slots.participants) {
+      return "How many people should I include?";
+    }
+
+    if (!session.slots.name) {
+      return "Got it. What name should I note for this request?";
+    }
+
+    return `Thanks, ${session.slots.name} — I’ve noted your request for ${session.slots.service_type} on ${session.slots.date} at ${session.slots.time} for ${session.slots.participants} people.`;
+  }
+
+  // 👇 DO NOT REMOVE THIS
   return null;
 }
 
@@ -751,12 +800,18 @@ app.post("/api/gpt/chat", async (req, res) => {
 
    finalReply = String(finalReply || "").trim().replace(/\s+/g, " ");
 
-if (session?.scenario === "restaurant_reservation") {
+if (
+  session?.scenario === "restaurant_reservation" ||
+  session?.scenario === "generic_service" ||
+  session?.scenario === "hotel_booking"
+) {
   finalReply = finalReply
     .replace(/\byou(?:'re| are) all set\b/gi, "I’ve noted the request")
     .replace(/\bconfirmed\b/gi, "noted")
+    .replace(/\bbooked\b/gi, "noted")
     .replace(/\byour table is set\b/gi, "your request is noted")
-    .replace(/\bbooked\b/gi, "noted");
+    .replace(/\byour booking is set\b/gi, "your request is noted")
+    .replace(/\breservation confirmed\b/gi, "reservation request noted");
 }
 
     // Safety fallback
