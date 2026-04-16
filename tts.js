@@ -202,7 +202,7 @@ async function synthesizeSpeech(text, langCode = "en-US", options = {}) {
       tonePreset = "friendly",
       useFillers = true,
       outputFormat = "ulaw_8000",
-      acceptMime = "audio/mpeg",
+      acceptMime = outputFormat === "ulaw_8000" ? "audio/basic" : "audio/mpeg";
       explicitVoiceId = null,
     } = options || {};
 
@@ -318,10 +318,10 @@ async function synthesizeSpeech(text, langCode = "en-US", options = {}) {
       },
       {
         headers: {
-          "xi-api-key": apiKey,
-          Accept: acceptMime,
-          "Content-Type": "application/json",
-        },
+  "xi-api-key": apiKey,
+  Accept: acceptMime,
+  "Content-Type": "application/json",
+},
         responseType: "arraybuffer",
       }
     );
