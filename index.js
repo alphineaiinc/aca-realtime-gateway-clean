@@ -11,8 +11,7 @@ const jwt = require("jsonwebtoken");
 // ✅ Force-load orchestrator-level .env (absolute path) — MUST BE FIRST
 const dotenvPath = path.resolve(__dirname, "./.env");
 console.log("🧩 index.js loading .env from:", dotenvPath);
-const isProd = String(process.env.NODE_ENV || "").toLowerCase() === "production";
-require("dotenv").config({ path: dotenvPath, override: !isProd });
+require("dotenv").config({ path: dotenvPath, override: false });
 
 // ========================================================
 // 🔐 FINAL SECURITY: ENV VALIDATION (Story 12.8)
