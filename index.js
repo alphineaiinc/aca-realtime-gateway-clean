@@ -361,6 +361,48 @@ if (compression) {
 // ✅ FIX (Story 12.3): app must exist before any app.use(...)
 app.use(express.json({ limit: "1mb" }));
 
+app.post("/api/gpt/chat", async (req, res) => {
+  try {
+    const rawMessage = req.body?.message;
+    const message = typeof rawMessage === "string" ? rawMessage.trim() : "";
+
+    if (!message) {
+      return res.status(400).json({
+        ok: false,
+        error: "Message is required",
+      });
+    }
+
+    if (message.length > 2000) {
+      return res.status(400).json({
+        ok: false,
+        error: "Message is too long",
+      });
+    }
+
+    const sessionId = `gpt_demo_${Date.now()}`;
+
+    // Demo-safe Marketplace route:
+    // - no JWT required
+    // - fixed safe business/tenant context
+    // - no side effects
+    const reply = await retrieveAnswer(message, 1, "en-US");
+
+    return res.status(200).json({
+      ok: true,
+      reply: typeof reply === "string" ? reply : String(reply || ""),
+      session_id: sessionId,
+      source: "brain",
+    });
+  } catch (err) {
+    console.error("❌ /api/gpt/chat error:", err);
+    return res.status(500).json({
+      ok: false,
+      error: "Internal server error",
+    });
+  }
+});
+
 // ✅ Initialize express-ws so WebSocket routes actually work
 try {
   require("express-ws")(app, server); // ✅ bind to the real listening server
