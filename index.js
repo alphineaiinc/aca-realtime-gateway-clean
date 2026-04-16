@@ -408,9 +408,47 @@ app.post("/api/gpt/chat", async (req, res) => {
       /temporary issue|try again|knowledge base|something went wrong/i.test(finalReply);
 
     if (looksLikeErrorReply) {
-      finalReply =
-        "Alphine AI helps businesses automate customer conversations such as answering service questions, handling booking inquiries, guiding customers through offerings, and supporting real-world call workflows.";
-    }
+  const lower = message.toLowerCase();
+
+  // 🍽 Restaurant scenario
+  if (
+    lower.includes("table") ||
+    lower.includes("reservation") ||
+    lower.includes("restaurant") ||
+    lower.includes("menu")
+  ) {
+    finalReply =
+      "Sure, I can help with that. What date and time would you like to book, and how many people should I reserve for?";
+  }
+
+  // 🏨 Hotel scenario
+  else if (
+    lower.includes("room") ||
+    lower.includes("hotel") ||
+    lower.includes("stay") ||
+    lower.includes("check-in")
+  ) {
+    finalReply =
+      "Of course. Let me check that for you—what dates are you planning to stay, and how many guests will be traveling?";
+  }
+
+  // 📞 Support scenario
+  else if (
+    lower.includes("issue") ||
+    lower.includes("problem") ||
+    lower.includes("help") ||
+    lower.includes("support")
+  ) {
+    finalReply =
+      "I can help with that. Could you tell me a bit more about the issue you're facing so I can guide you better?";
+  }
+
+  // 💼 Default business response
+  else {
+    finalReply =
+      "We handle customer inquiries, booking requests, service questions, and general support—just like a real call assistant. What would you like help with today?";
+  }
+}
 
     return res.status(200).json({
       ok: true,
