@@ -58,7 +58,9 @@ try {
   }
   fs.appendFileSync(
     deployLogPath,
-    `\n[${new Date().toISOString()}] Deployment started for ${process.env.NODE_ENV || "production"}`
+    `\n[${new Date().toISOString()}] Deployment started for ${
+      process.env.NODE_ENV || "production"
+    }`
   );
   console.log("📦 Deployment tracker log updated:", deployLogPath);
 } catch (err) {
@@ -138,6 +140,261 @@ try {
 // Global in-memory session placeholder (align with your actual objects)
 global.__ACA_STATE__ = { activeSessions: [], version: "5.3.A" };
 
+// ---------------------------------------------------------------------------
+// ✅ Marketplace-safe short-term session continuity for /api/gpt/chat
+// Minimal additive layer only; no DB persistence; Render-safe ephemeral memory
+// ---------------------------------------------------------------------------
+const GPT_CHAT_SESSION_TTL_MS = parseInt(
+  process.env.GPT_CHAT_SESSION_TTL_MS || "1200000",
+  10
+); // 20 min
+const GPT_CHAT_SESSION_SWEEP_MS = parseInt(
+  process.env.GPT_CHAT_SESSION_SWEEP_MS || "300000",
+  10
+); // 5 min
+const GPT_CHAT_SESSION_MAX_HISTORY = parseInt(
+  process.env.GPT_CHAT_SESSION_MAX_HISTORY || "8",
+  10
+);
+
+const gptChatSessions = new Map();
+
+function safeGptChatSessionId(value) {
+  const raw = String(value || "").trim();
+  if (!raw) return null;
+  return raw.replace(/[^a-zA-Z0-9._:-]/g, "").slice(0, 128) || null;
+}
+
+function getOrCreateGptChatSession(sessionId) {
+  const id = safeGptChatSessionId(sessionId);
+  if (!id) return null;
+
+  const now = Date.now();
+  const existing = gptChatSessions.get(id);
+
+  if (existing && existing.expires_at > now) {
+    existing.last_seen_at = now;
+    existing.expires_at = now + GPT_CHAT_SESSION_TTL_MS;
+    return existing;
+  }
+
+  const fresh = {
+    session_id: id,
+    scenario: null,
+    last_intent: null,
+    slots: {},
+    history: [],
+    last_seen_at: now,
+    expires_at: now + GPT_CHAT_SESSION_TTL_MS,
+  };
+
+  gptChatSessions.set(id, fresh);
+  return fresh;
+}
+
+function pruneGptChatSessions() {
+  const now = Date.now();
+  for (const [id, session] of gptChatSessions.entries()) {
+    if (!session || session.expires_at <= now) {
+      gptChatSessions.delete(id);
+    }
+  }
+}
+
+setInterval(pruneGptChatSessions, GPT_CHAT_SESSION_SWEEP_MS).unref();
+
+function pushGptChatHistory(session, role, content) {
+  if (!session || !role || !content) return;
+  session.history.push({
+    role,
+    content: String(content).trim().slice(0, 500),
+  });
+  if (session.history.length > GPT_CHAT_SESSION_MAX_HISTORY) {
+    session.history = session.history.slice(-GPT_CHAT_SESSION_MAX_HISTORY);
+  }
+}
+
+function setGptChatSlot(session, key, value) {
+  if (!session || !key) return;
+  if (value === undefined || value === null) return;
+
+  const clean = String(value).trim();
+  if (!clean) return;
+
+  session.slots[key] = clean.slice(0, 120);
+}
+
+function detectGptChatScenarioFromText(text) {
+  const t = String(text || "").toLowerCase();
+
+  if (
+    t.includes("table") ||
+    t.includes("reservation") ||
+    t.includes("book a table") ||
+    t.includes("restaurant") ||
+    t.includes("dinner") ||
+    t.includes("lunch")
+  ) {
+    return { scenario: "restaurant_reservation", intent: "book_table" };
+  }
+
+  if (
+    t.includes("room") ||
+    t.includes("hotel") ||
+    t.includes("stay") ||
+    t.includes("check-in") ||
+    t.includes("check in") ||
+    t.includes("booking a room")
+  ) {
+    return { scenario: "hotel_booking", intent: "book_room" };
+  }
+
+  if (
+    t.includes("issue") ||
+    t.includes("problem") ||
+    t.includes("help") ||
+    t.includes("support") ||
+    t.includes("not working") ||
+    t.includes("complaint")
+  ) {
+    return { scenario: "customer_support", intent: "support_request" };
+  }
+
+  return { scenario: null, intent: null };
+}
+
+function extractGptChatSlotsFromText(text, scenario) {
+  const input = String(text || "").trim();
+  const lower = input.toLowerCase();
+  const slots = {};
+
+  if (!scenario) return slots;
+
+  // Common count patterns
+  const countMatch =
+    input.match(/\bfor\s+(\d{1,2})\b/i) ||
+    input.match(/\b(\d{1,2})\s+(people|persons|guests|guest)\b/i);
+
+  if (scenario === "restaurant_reservation" && countMatch) {
+    slots.party_size = countMatch[1];
+  }
+
+  if (scenario === "hotel_booking" && countMatch) {
+    slots.guests = countMatch[1];
+  }
+
+  // Time
+  const timeMatch = input.match(/\b(\d{1,2})(?::(\d{2}))?\s?(am|pm)\b/i);
+  if (scenario === "restaurant_reservation" && timeMatch) {
+    slots.time = timeMatch[0];
+  }
+
+  // Restaurant date-like words
+  if (scenario === "restaurant_reservation") {
+    if (/\btoday\b/i.test(input)) slots.date = "today";
+    if (/\btomorrow\b/i.test(input)) slots.date = "tomorrow";
+
+    const dayMatch = input.match(
+      /\b(monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b/i
+    );
+    if (dayMatch) slots.date = dayMatch[1];
+  }
+
+  // Hotel stay details
+  if (scenario === "hotel_booking") {
+    if (/\btonight\b/i.test(input)) slots.check_in = "tonight";
+    if (/\btomorrow\b/i.test(input)) slots.check_in = "tomorrow";
+
+    const nightsMatch = input.match(/\b(\d{1,2})\s+night[s]?\b/i);
+    if (nightsMatch) slots.nights = nightsMatch[1];
+  }
+
+  // Support type
+  if (scenario === "customer_support") {
+    if (lower.includes("refund")) slots.issue_type = "refund";
+    else if (lower.includes("cancel")) slots.issue_type = "cancellation";
+    else if (lower.includes("billing")) slots.issue_type = "billing";
+    else if (lower.includes("login")) slots.issue_type = "login";
+    else if (lower.includes("booking")) slots.issue_type = "booking_issue";
+
+    if (
+      input.length >= 12 &&
+      !/^(help|support|issue|problem)$/i.test(input)
+    ) {
+      slots.issue_summary = input.slice(0, 160);
+    }
+  }
+
+  // Name capture
+  const nameMatch =
+    input.match(/\bmy name is\s+([a-z][a-z .'-]{1,40})$/i) ||
+    input.match(/\bunder\s+the\s+name\s+([a-z][a-z .'-]{1,40})$/i) ||
+    input.match(/\bunder\s+([a-z][a-z .'-]{1,40})$/i) ||
+    input.match(/\bit'?s\s+([a-z][a-z .'-]{1,40})$/i);
+
+  if (nameMatch) {
+    slots.name = nameMatch[1].trim();
+  }
+
+  return slots;
+}
+
+function buildGptChatContextSummary(session) {
+  if (!session) return "";
+
+  const parts = [];
+
+  if (session.scenario) parts.push(`scenario=${session.scenario}`);
+  if (session.last_intent) parts.push(`intent=${session.last_intent}`);
+
+  const slotEntries = Object.entries(session.slots || {})
+    .filter(([, value]) => !!value)
+    .map(([key, value]) => `${key}:${value}`);
+
+  if (slotEntries.length) {
+    parts.push(`slots=${slotEntries.join(", ")}`);
+  }
+
+  return parts.join(" | ");
+}
+
+function buildGptChatFollowUp(session) {
+  if (!session || !session.scenario) return null;
+
+  if (session.scenario === "restaurant_reservation") {
+    if (!session.slots.date) return "Sure — what day would you like the reservation?";
+    if (!session.slots.time) return "What time should I note for the table?";
+    if (!session.slots.party_size) return "How many people will be joining?";
+    if (!session.slots.name) return "Got it. What name should I put on the reservation?";
+    return `Thanks — I have ${session.slots.date}, ${session.slots.time}, for ${session.slots.party_size} people under ${session.slots.name}.`;
+  }
+
+  if (session.scenario === "hotel_booking") {
+    if (!session.slots.check_in) return "Sure — when would you like to check in?";
+    if (!session.slots.nights) return "How many nights will you be staying?";
+    if (!session.slots.guests) return "How many guests should I note?";
+    if (!session.slots.name) return "What name should I place on the booking request?";
+    return `Thanks — I have check-in ${session.slots.check_in}, ${session.slots.nights} nights, for ${session.slots.guests} guests under ${session.slots.name}.`;
+  }
+
+  if (session.scenario === "customer_support") {
+    if (!session.slots.issue_type) {
+      return "I can help with that. What seems to be the main issue?";
+    }
+    if (!session.slots.issue_summary) {
+      return "Understood. Could you briefly tell me what happened?";
+    }
+    return "Thanks — I’ve noted that. Would you like a short summary of the issue?";
+  }
+
+  return null;
+}
+
+function hasActiveStructuredGptChatFlow(session) {
+  return !!(session && session.scenario);
+}
+// ---------------------------------------------------------------------------
+
 // Restore on boot
 let prior = null;
 try {
@@ -193,7 +450,10 @@ try {
   app.use(securityHeaders({ isProd }));
   console.log("✅ Story 12.8 securityHeaders enabled");
 } catch (e) {
-  console.warn("⚠️ Story 12.8 securityHeaders not loaded:", e && e.message ? e.message : String(e));
+  console.warn(
+    "⚠️ Story 12.8 securityHeaders not loaded:",
+    e && e.message ? e.message : String(e)
+  );
 }
 
 // ✅ Story 12.8 — Marketplace Plugin (.well-known) Binding
@@ -211,7 +471,10 @@ app.use((req, res, next) => {
     if (!origin) return next(); // non-browser or same-origin fetch with no Origin
 
     const raw = String(process.env.ALLOWED_ORIGINS || "").trim();
-    const allow = raw.split(",").map((s) => s.trim()).filter(Boolean);
+    const allow = raw
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean);
 
     const renderBase = String(process.env.RENDER_BASE_URL || "").trim();
     if (renderBase && !allow.includes(renderBase)) allow.push(renderBase);
@@ -380,81 +643,130 @@ app.post("/api/gpt/chat", async (req, res) => {
       });
     }
 
-    const sessionId = `gpt_demo_${Date.now()}`;
+    const incomingSessionId = safeGptChatSessionId(req.body?.session_id);
+    const sessionId = incomingSessionId || `gpt_demo_${Date.now()}`;
+    const session = getOrCreateGptChatSession(sessionId);
 
-    let result;
-    try {
-      result = await retrieveAnswer(message, 1, "en-US");
-    } catch (innerErr) {
-      console.error("❌ /api/gpt/chat retrieveAnswer failed:", innerErr);
-      result = null;
+    if (session) {
+      pushGptChatHistory(session, "user", message);
+
+      const detected = detectGptChatScenarioFromText(message);
+
+      if (!session.scenario && detected.scenario) {
+        session.scenario = detected.scenario;
+      }
+
+      if (detected.intent) {
+        session.last_intent = detected.intent;
+      }
+
+      const extracted = extractGptChatSlotsFromText(
+        message,
+        session.scenario || detected.scenario
+      );
+
+      for (const [key, value] of Object.entries(extracted)) {
+        setGptChatSlot(session, key, value);
+      }
     }
 
-    let finalReply =
-      typeof result === "string"
-        ? result
-        : result?.reply ||
-          result?.answer ||
-          result?.text ||
-          result?.message ||
-          "";
+    let finalReply = "";
+    let resultSource = "brain";
+    let result = null;
 
-    const resultSource =
-      typeof result === "object" && result?.source ? result.source : "brain";
+    const structuredFlowActive = hasActiveStructuredGptChatFlow(session);
+    const deterministicReply = structuredFlowActive ? buildGptChatFollowUp(session) : null;
 
-    const looksLikeErrorReply =
-      !finalReply ||
-      resultSource === "error" ||
-      /temporary issue|try again|knowledge base|something went wrong/i.test(finalReply);
+    if (deterministicReply) {
+      finalReply = deterministicReply;
+      resultSource = "brain";
+    } else {
+      try {
+        result = await retrieveAnswer(message, 1, "en-US");
+      } catch (innerErr) {
+        console.error("❌ /api/gpt/chat retrieveAnswer failed:", innerErr);
+        result = null;
+      }
 
-    if (looksLikeErrorReply) {
-  const lower = message.toLowerCase();
+      finalReply =
+        typeof result === "string"
+          ? result
+          : result?.reply ||
+            result?.answer ||
+            result?.text ||
+            result?.message ||
+            "";
 
-  // 🍽 Restaurant scenario
-  if (
-    lower.includes("table") ||
-    lower.includes("reservation") ||
-    lower.includes("restaurant") ||
-    lower.includes("menu")
-  ) {
-    finalReply =
-      "Sure, I can help with that. What date and time would you like to book, and how many people should I reserve for?";
-  }
+      resultSource =
+        typeof result === "object" && result?.source ? result.source : "brain";
 
-  // 🏨 Hotel scenario
-  else if (
-    lower.includes("room") ||
-    lower.includes("hotel") ||
-    lower.includes("stay") ||
-    lower.includes("check-in")
-  ) {
-    finalReply =
-      "Of course. Let me check that for you—what dates are you planning to stay, and how many guests will be traveling?";
-  }
+      const looksLikeErrorReply =
+        !finalReply ||
+        resultSource === "error" ||
+        /temporary issue|try again|knowledge base|something went wrong/i.test(finalReply);
 
-  // 📞 Support scenario
-  else if (
-    lower.includes("issue") ||
-    lower.includes("problem") ||
-    lower.includes("help") ||
-    lower.includes("support")
-  ) {
-    finalReply =
-      "I can help with that. Could you tell me a bit more about the issue you're facing so I can guide you better?";
-  }
+      if (looksLikeErrorReply) {
+        const lower = message.toLowerCase();
 
-  // 💼 Default business response
-  else {
-    finalReply =
-      "We handle customer inquiries, booking requests, service questions, and general support—just like a real call assistant. What would you like help with today?";
-  }
-}
+        // 🍽 Restaurant scenario
+        if (
+          lower.includes("table") ||
+          lower.includes("reservation") ||
+          lower.includes("restaurant") ||
+          lower.includes("menu")
+        ) {
+          finalReply = "Sure — what day would you like the reservation?";
+        }
+
+        // 🏨 Hotel scenario
+        else if (
+          lower.includes("room") ||
+          lower.includes("hotel") ||
+          lower.includes("stay") ||
+          lower.includes("check-in")
+        ) {
+          finalReply = "Of course. When would you like to check in?";
+        }
+
+        // 📞 Support scenario
+        else if (
+          lower.includes("issue") ||
+          lower.includes("problem") ||
+          lower.includes("help") ||
+          lower.includes("support")
+        ) {
+          finalReply = "I can help with that. What seems to be the main issue?";
+        }
+
+        // 💼 Default business response
+        else {
+          finalReply =
+            "We handle customer inquiries, booking requests, service questions, and general support. What would you like help with today?";
+        }
+
+        resultSource = "brain";
+      }
+    }
+
+    finalReply = String(finalReply || "").trim().replace(/\s+/g, " ");
+
+    // Safety fallback
+    if (!finalReply) {
+      finalReply = "Could you tell me a little more about what you need?";
+      resultSource = "brain";
+    }
+
+    if (session) {
+      pushGptChatHistory(session, "assistant", finalReply);
+    }
 
     return res.status(200).json({
       ok: true,
       reply: finalReply,
       session_id: sessionId,
-      source: looksLikeErrorReply ? "brain" : resultSource,
+      source: resultSource,
+      scenario: session?.scenario || null,
+      context: session ? buildGptChatContextSummary(session) : "",
     });
   } catch (err) {
     console.error("❌ /api/gpt/chat error:", err);
@@ -646,7 +958,9 @@ try {
 // ============================================================
 // === System & Health Routes ===
 app.get("/", (req, res) => {
-  res.status(200).send("Welcome to Alphine AI. The call orchestration service is active.");
+  res
+    .status(200)
+    .send("Welcome to Alphine AI. The call orchestration service is active.");
 });
 
 // ✅ Story 12.8 — Marketplace-friendly health check
@@ -787,7 +1101,8 @@ function listRoutes(app) {
   try {
     const paths = [];
 
-    const stack = app && app._router && Array.isArray(app._router.stack) ? app._router.stack : null;
+    const stack =
+      app && app._router && Array.isArray(app._router.stack) ? app._router.stack : null;
     if (!stack) {
       console.warn("⚠️ Route-list diagnostic skipped: app._router.stack not available");
       return;
@@ -960,7 +1275,12 @@ async function onFinalTranscript(transcript, langCode, businessId, ws) {
       }
     }
 
-    console.log("➡️ Final decision: langCode =", langCode, "| sessionLang =", sessionLang);
+    console.log(
+      "➡️ Final decision: langCode =",
+      langCode,
+      "| sessionLang =",
+      sessionLang
+    );
 
     const answer = await retrieveAnswer(transcript, businessId, langCode);
     console.log("📋 Retrieved/polished answer:", answer);
