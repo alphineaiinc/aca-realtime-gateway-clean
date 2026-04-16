@@ -10,6 +10,13 @@ const { synthesizeSpeech } = require("../../tts");
 const { getTenantRegion } = require("../brain/utils/tenantContext"); // ✅ tenant region helper
 const { transcribeMulaw } = require("../brain/utils/sttGoogle"); // ✅ Google STT helper
 
+require("dotenv").config({ path: path.resolve(__dirname, "../../.env") });
+
+const VOICE_TURN_SILENCE_MS = Number(process.env.VOICE_TURN_SILENCE_MS || 1200);
+const VOICE_MIN_UTTERANCE_CHARS = Number(process.env.VOICE_MIN_UTTERANCE_CHARS || 3);
+const VOICE_MAX_REPLY_CHARS = Number(process.env.VOICE_MAX_REPLY_CHARS || 220);
+const VOICE_LOG_PREFIX = "[twilio_voice_intel]";
+
 // ✅ Tenant voice profile loader (to get language_code for live calls)
 let getTenantVoiceProfile = async () => null;
 try {
@@ -17,19 +24,6 @@ try {
 } catch (e) {
   console.warn("⚠️ [twilio] voiceProfileLoader not found, using default lang=en-US.");
 }
-
-require("dotenv").config({ path: path.resolve(__dirname, "../../.env") });
-
-/**
- * ========================================================
- * Story 13.1 — Voice Turn Intelligence Pack
- * Minimal, additive, Twilio-safe helpers
- * ========================================================
- */
-const VOICE_TURN_SILENCE_MS = Number(process.env.VOICE_TURN_SILENCE_MS || 1200);
-const VOICE_MIN_UTTERANCE_CHARS = Number(process.env.VOICE_MIN_UTTERANCE_CHARS || 3);
-const VOICE_MAX_REPLY_CHARS = Number(process.env.VOICE_MAX_REPLY_CHARS || 220);
-const VOICE_LOG_PREFIX = "[twilio_voice_intel]";
 
 /**
  * Story 13.1.9 — Durable Twilio debug snapshot
@@ -49,8 +43,8 @@ function pushTwilioDebug(event, details = {}) {
   twilioDebugState.updatedAt = entry.ts;
   twilioDebugState.events.push(entry);
 
-  if (twilioDebugState.events.length > 50) {
-    twilioDebugState.events = twilioDebugState.events.slice(-50);
+  if (twilioDebugState.events.length > 200) {
+    twilioDebugState.events = twilioDebugState.events.slice(-200);
   }
 }
 
@@ -199,15 +193,20 @@ async function handleVoiceWebhook(req, res) {
 
   const streamUrl = `${process.env.ALPHINE_STREAM_BASE}/ws/twilio-stream`;
   console.log("🔗 [twilio] Stream target:", streamUrl);
-  console.log("🔗 [twilio] ALPHINE_STREAM_BASE =", process.env.ALPHINE_STREAM_BASE || "(missing)");
+  console.log(
+    "🔗 [twilio] ALPHINE_STREAM_BASE =",
+    process.env.ALPHINE_STREAM_BASE || "(missing)"
+  );
 
   const connect = twiml.connect();
-connect.stream({
-  url: streamUrl,
-  name: "aca-live-stream",
-  statusCallback: `${process.env.RENDER_BASE_URL || "https://aca-realtime-gateway-clean.onrender.com"}/twilio/stream-status`,
-  statusCallbackMethod: "POST",
-});
+  connect.stream({
+    url: streamUrl,
+    name: "aca-live-stream",
+    statusCallback: `${
+      process.env.RENDER_BASE_URL || "https://aca-realtime-gateway-clean.onrender.com"
+    }/twilio/stream-status`,
+    statusCallbackMethod: "POST",
+  });
 
   twiml.pause({ length: 15 });
 
@@ -234,6 +233,7 @@ function handleStatusWebhook(req, res) {
 
   res.sendStatus(200);
 }
+
 function handleStreamStatusWebhook(req, res) {
   const payload = {
     accountSid: req.body?.AccountSid || null,
@@ -246,11 +246,11 @@ function handleStreamStatusWebhook(req, res) {
   };
 
   console.log("📡 [twilio] Stream status callback:", payload);
-
   pushTwilioDebug("stream_status", payload);
 
   res.sendStatus(200);
 }
+
 router.post("/voice", handleVoiceWebhook);
 router.get("/voice", handleVoiceWebhook);
 
@@ -261,8 +261,7 @@ router.post("/status", handleStatusWebhook);
 router.get("/status", handleStatusWebhook);
 
 /**
- * App-level WebSocket handler for /twilio/stream
- * Story 13.1.2 — moved from router.ws(...) to app.ws(...)
+ * App-level WebSocket handler for /ws/twilio-stream
  */
 async function handleTwilioStream(ws, req) {
   console.log("🌐  Twilio WebSocket connected");
@@ -374,6 +373,10 @@ async function handleTwilioStream(ws, req) {
           text: finalVoiceText,
         })
       );
+      pushTwilioDebug("utterance_skipped", {
+        callSid: activeCallSid,
+        text: finalVoiceText,
+      });
       return;
     }
 
@@ -384,11 +387,18 @@ async function handleTwilioStream(ws, req) {
         text: finalVoiceText,
       })
     );
+    pushTwilioDebug("dispatch_turn", {
+      callSid: activeCallSid,
+      text: finalVoiceText.slice(0, 120),
+    });
 
     const reply = await onFinalTranscript(finalVoiceText);
 
     if (!reply) {
       console.log("ℹ️ [twilio] Empty reply after handler, skipping TTS.");
+      pushTwilioDebug("reply_empty", {
+        callSid: activeCallSid,
+      });
       return;
     }
 
@@ -402,6 +412,11 @@ async function handleTwilioStream(ws, req) {
         completed: looksTaskCompleted(shapedReply),
       })
     );
+    pushTwilioDebug("reply_ready", {
+      callSid: activeCallSid,
+      chars: shapedReply.length,
+      completed: looksTaskCompleted(shapedReply),
+    });
 
     console.log("💬  Voice reply:", shapedReply);
 
@@ -427,6 +442,10 @@ async function handleTwilioStream(ws, req) {
       });
     } catch (ttsErr) {
       console.error("❌  TTS synthesis failed:", ttsErr.message);
+      pushTwilioDebug("tts_error", {
+        callSid: activeCallSid,
+        error: ttsErr.message,
+      });
     }
 
     if (ttsBuffer && activeStreamSid && streamActive) {
@@ -455,6 +474,9 @@ async function handleTwilioStream(ws, req) {
       console.warn(
         "⚠️  Skipping TTS send: activeStreamSid is missing, cannot send media event."
       );
+      pushTwilioDebug("tts_skip_no_streamsid", {
+        callSid: activeCallSid,
+      });
     }
   }
 
@@ -485,7 +507,7 @@ async function handleTwilioStream(ws, req) {
           streamSid: activeStreamSid,
         });
 
-        // Story 13.1.8 — test-only ack for manual WS probes
+        // test-only ack for manual WS probes
         if (
           String(activeCallSid || "").startsWith("CA_TEST_") ||
           String(activeCallSid || "").startsWith("CA_LOCAL_")
@@ -543,12 +565,15 @@ async function handleTwilioStream(ws, req) {
 
         const payloadBuffer = Buffer.from(data.media.payload, "base64");
 
-        pushTwilioDebug("media", {
-          callSid: activeCallSid,
-          streamSid: activeStreamSid,
-          mediaPacketCount,
-          payloadBytes: payloadBuffer.length,
-        });
+        // Throttle media debug so it does not flood the ring buffer
+        if (mediaPacketCount <= 5 || mediaPacketCount % 50 === 0) {
+          pushTwilioDebug("media", {
+            callSid: activeCallSid,
+            streamSid: activeStreamSid,
+            mediaPacketCount,
+            payloadBytes: payloadBuffer.length,
+          });
+        }
 
         if (mediaPacketCount <= 5 || mediaPacketCount % 25 === 0) {
           console.log("🎧 [twilio] Media packet received:", {
@@ -573,6 +598,13 @@ async function handleTwilioStream(ws, req) {
           const combined = Buffer.concat(sttBuffers);
           sttBuffers = [];
 
+          pushTwilioDebug("stt_begin", {
+            callSid: activeCallSid,
+            streamSid: activeStreamSid,
+            bufferedBytes: combined.length,
+            languageCode: tenantLangCode,
+          });
+
           userText = await transcribeMulaw(combined, {
             languageCode: tenantLangCode,
           });
@@ -583,7 +615,7 @@ async function handleTwilioStream(ws, req) {
             length: String(userText || "").length,
           });
 
-          pushTwilioDebug("stt_result", {
+          pushTwilioDebug("stt_return", {
             callSid: activeCallSid,
             text: String(userText || "").slice(0, 120),
             length: String(userText || "").length,
@@ -593,70 +625,28 @@ async function handleTwilioStream(ws, req) {
             "❌ [stt] Transcription failed, falling back to simulated text:",
             sttErr.message
           );
+          pushTwilioDebug("stt_error", {
+            callSid: activeCallSid,
+            error: sttErr.message,
+          });
           userText = "simulated transcription";
         }
 
         userText = normalizeIncomingVoiceText(userText);
-const cleanedText = normalizeIncomingVoiceText(userText);
+        const cleanedText = normalizeIncomingVoiceText(userText);
 
-// Force fallback if text is empty OR meaningless
-if (!cleanedText || cleanedText.length < 2) {
-  console.log("ℹ️ [stt] Invalid or empty transcript — forcing fallback");
+        // Force fallback if text is empty or too small to be useful
+        if (!cleanedText || cleanedText.length < 2) {
+          console.log("ℹ️ [stt] Invalid or empty transcript — forcing fallback");
 
-  pushTwilioDebug("stt_invalid_forced", {
-    callSid: activeCallSid,
-    raw: userText,
-    cleaned: cleanedText,
-  });
-
-  const fallbackReply =
-    "Hello, I can hear you clearly. Please say your request, for example, book a table or schedule an appointment.";
-
-  let ttsBuffer = null;
-  try {
-    ttsBuffer = await synthesizeSpeech(fallbackReply, tenantLangCode, {
-      tenantId,
-      tonePreset: "friendly",
-      useFillers: false,
-      outputFormat: "ulaw_8000",
-      acceptMime: "audio/mpeg",
-    });
-  } catch (ttsErr) {
-    console.error("❌ [twilio] Fallback TTS failed:", ttsErr.message);
-  }
-
-  if (ttsBuffer && activeStreamSid && streamActive) {
-    pushTwilioDebug("tts_send_forced", {
-      callSid: activeCallSid,
-      streamSid: activeStreamSid,
-      bytes: ttsBuffer.length,
-    });
-
-    console.log("📤 [twilio] Sending forced fallback audio");
-
-    ws.send(
-      JSON.stringify({
-        event: "media",
-        streamSid: activeStreamSid,
-        media: {
-          payload: ttsBuffer.toString("base64"),
-        },
-      })
-    );
-  }
-
-  return;
-}
-                if (!userText) {
-          console.log("ℹ️ [stt] Empty transcript detected — forcing fallback");
-
-          pushTwilioDebug("stt_empty_forced", {
+          pushTwilioDebug("stt_invalid_forced", {
             callSid: activeCallSid,
-            streamSid: activeStreamSid,
+            raw: userText,
+            cleaned: cleanedText,
           });
 
           const fallbackReply =
-            "Hello, I can hear you clearly. Please say your request again, for example, book a table or schedule an appointment.";
+            "Hello, I can hear you clearly. Please say your request, for example, book a table or schedule an appointment.";
 
           let ttsBuffer = null;
           try {
@@ -669,16 +659,20 @@ if (!cleanedText || cleanedText.length < 2) {
             });
           } catch (ttsErr) {
             console.error("❌ [twilio] Fallback TTS failed:", ttsErr.message);
+            pushTwilioDebug("tts_fallback_error", {
+              callSid: activeCallSid,
+              error: ttsErr.message,
+            });
           }
 
           if (ttsBuffer && activeStreamSid && streamActive) {
-            pushTwilioDebug("tts_send_fallback", {
+            pushTwilioDebug("tts_send_forced", {
               callSid: activeCallSid,
               streamSid: activeStreamSid,
               bytes: ttsBuffer.length,
             });
 
-            console.log("📤 [twilio] Sending fallback audio");
+            console.log("📤 [twilio] Sending forced fallback audio");
 
             ws.send(
               JSON.stringify({
@@ -717,6 +711,10 @@ if (!cleanedText || cleanedText.length < 2) {
                 error: err?.message || String(err),
               })
             );
+            pushTwilioDebug("dispatch_error", {
+              callSid: activeCallSid,
+              error: err?.message || String(err),
+            });
 
             const fallbackReply =
               "Sorry, I didn't catch that. Please say that once more.";
@@ -732,6 +730,10 @@ if (!cleanedText || cleanedText.length < 2) {
               });
             } catch (ttsErr) {
               console.error("❌  Fallback TTS synthesis failed:", ttsErr.message);
+              pushTwilioDebug("tts_fallback_error", {
+                callSid: activeCallSid,
+                error: ttsErr.message,
+              });
             }
 
             if (ttsBuffer && activeStreamSid && streamActive) {
@@ -764,6 +766,9 @@ if (!cleanedText || cleanedText.length < 2) {
       }
     } catch (err) {
       console.error("❌  Stream error:", err);
+      pushTwilioDebug("stream_error", {
+        error: err?.message || String(err),
+      });
     }
   });
 
