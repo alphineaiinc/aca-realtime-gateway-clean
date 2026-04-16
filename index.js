@@ -1179,9 +1179,16 @@ app.set("trust proxy", 1);
 console.log("🧭 process.cwd():", process.cwd());
 console.log("🧭 __dirname:", __dirname);
 
-const twilioRouter = require("./src/routes/twilio");
+const { router: twilioRouter, handleTwilioStream } = require("./src/routes/twilio");
 app.use("/twilio", twilioRouter);
 console.log("✅ Mounted /twilio routes");
+
+if (typeof app.ws === "function") {
+  app.ws("/twilio/stream", handleTwilioStream);
+  console.log("✅ Mounted WebSocket streaming route at /twilio/stream (Story 13.1.2)");
+} else {
+  console.warn("⚠️ app.ws is not available; /twilio/stream WebSocket route not mounted.");
+}
 
 // Story 12.4 — Explicit assets mount (Render/Linux path-safe)
 app.use(

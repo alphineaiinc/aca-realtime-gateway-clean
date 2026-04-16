@@ -1,10 +1,6 @@
 // src/routes/twilio.js
 const express = require("express");
-const expressWs = require("express-ws"); // ✅ Added to enable router.ws()
 const router = express.Router();
-
-// ✅ Patch the router with express-ws before using router.ws()
-expressWs(router);
 
 const twilio = require("twilio");
 const path = require("path");
@@ -99,10 +95,6 @@ function getSharedConversationHandler() {
 
 /**
  * ✅ Keep voice replies short and natural for live calls
- * Story 13.1 upgrade:
- * - trims over-chatty endings
- * - keeps only first 1-2 short sentences
- * - suppresses unnecessary follow-up reopeners after completion
  */
 function normalizeVoiceReply(reply) {
   let text = "";
@@ -170,13 +162,11 @@ async function handleVoiceWebhook(req, res) {
   const VoiceResponse = twilio.twiml.VoiceResponse;
   const twiml = new VoiceResponse();
 
-  // --- Initial greeting before connection ---
   twiml.say(
     { voice: "Polly.Amy-Neural" },
     "Welcome to Alphine AI. The call orchestration service is active."
   );
 
-  // --- Establish live stream connection to ACA orchestrator ---
   const streamUrl = `${process.env.ALPHINE_STREAM_BASE}/twilio/stream`;
   console.log("🔗 [twilio] Stream target:", streamUrl);
   console.log("🔗 [twilio] ALPHINE_STREAM_BASE =", process.env.ALPHINE_STREAM_BASE || "(missing)");
@@ -184,10 +174,8 @@ async function handleVoiceWebhook(req, res) {
   const connect = twiml.connect();
   connect.stream({ url: streamUrl });
 
-  // --- Keep call alive while WebSocket is running ---
   twiml.pause({ length: 15 });
 
-  // --- Return TwiML response ---
   const xmlResponse = twiml.toString();
   console.log("📤 Returning TwiML to Twilio:\n", xmlResponse);
 
@@ -212,42 +200,29 @@ function handleStatusWebhook(req, res) {
   res.sendStatus(200);
 }
 
-/**
- * Voice webhook handler — Twilio may hit via GET (test) or POST (normal).
- * Support both to avoid 404s.
- */
 router.post("/voice", handleVoiceWebhook);
 router.get("/voice", handleVoiceWebhook);
 
-/**
- * Status callback handler — same: support both GET and POST.
- */
 router.post("/status", handleStatusWebhook);
 router.get("/status", handleStatusWebhook);
 
 /**
- * WebSocket route — Twilio will stream live audio here.
- * Handles real-time bidirectional audio (STT → GPT → TTS).
+ * App-level WebSocket handler for /twilio/stream
+ * Story 13.1.2 — moved from router.ws(...) to app.ws(...)
  */
-router.ws("/stream", async (ws, req) => {
+async function handleTwilioStream(ws, req) {
   console.log("🌐  Twilio WebSocket connected");
 
   let activeCallSid = null;
-  let activeStreamSid = null; // ✅ track Twilio streamSid for replies
-  let lastResponseAt = 0; // ✅ cooldown between STT chunk processing (ms)
-  let streamActive = true; // ✅ avoid sending after stop
-  let sttBuffers = []; // ✅ accumulate audio for the next STT chunk
+  let activeStreamSid = null;
+  let lastResponseAt = 0;
+  let streamActive = true;
+  let sttBuffers = [];
   let mediaPacketCount = 0;
 
-  // ✅ Tenant context for this call
-  // For now we assume tenant 1; later this should come from call context / webhook
   let tenantId = 1;
-  let tenantLangCode = "en-US"; // default; will try to override from tenant_voice_profile
+  let tenantLangCode = "en-US";
 
-  /**
-   * ✅ Shared final transcript handler for live voice turns
-   * Uses shared multi-turn engine first, then falls back safely.
-   */
   async function onFinalTranscript(userText) {
     const safeText = normalizeIncomingVoiceText(userText);
     if (!safeText) return "";
@@ -328,10 +303,6 @@ router.ws("/stream", async (ws, req) => {
     return normalizedFallbackReply;
   }
 
-  /**
-   * Story 13.1 — Debounced turn dispatch
-   * Wait briefly after transcript chunks so ACA does not answer too early.
-   */
   async function dispatchPendingVoiceTurn() {
     const finalVoiceText = normalizeIncomingVoiceText(ws.__pendingVoiceTranscript);
 
@@ -637,6 +608,9 @@ router.ws("/stream", async (ws, req) => {
     console.log("⚡  Twilio WebSocket disconnected");
     streamActive = false;
   });
-});
+}
 
-module.exports = router;
+module.exports = {
+  router,
+  handleTwilioStream,
+};
