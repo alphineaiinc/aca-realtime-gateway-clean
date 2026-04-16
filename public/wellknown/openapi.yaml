@@ -1,61 +1,53 @@
 ﻿openapi: 3.1.0
 info:
-  title: Alphine AI ACA API
+  title: Alphine AI ACA Marketplace API
   version: 1.0.0
-  description: API for demo token generation and chat responses for Alphine AI Smart Call Assistant.
+  description: Public demo API for Alphine AI Smart Call Assistant.
 
 servers:
   - url: https://aca-realtime-gateway-clean.onrender.com
 
 paths:
-  /api/demo/token:
+  /api/gpt/chat:
     post:
-      operationId: createDemoToken
-      summary: Create demo token
-      description: Returns a short-lived demo token for the ACA demo flow.
-      requestBody:
-        required: false
-        content:
-          application/json:
-            schema:
-              type: object
-              additionalProperties: false
-              properties: {}
-      responses:
-        "200":
-          description: Demo token created
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/DemoTokenResponse"
-
-  /api/chat:
-    post:
-      operationId: sendChatMessage
-      summary: Send chat message
-      description: Sends a user message to ACA and returns a conversational response.
-      security:
-        - bearerAuth: []
+      operationId: sendGptChatMessage
+      summary: Send a demo chat message
+      description: Sends a safe demo conversation message to ACA and returns a structured response.
+      x-openai-isConsequential: false
+      security: []
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/ChatRequest"
+              $ref: '#/components/schemas/ChatRequest'
       responses:
-        "200":
-          description: Chat response returned
+        '200':
+          description: Successful chat response
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/ChatResponse"
+                $ref: '#/components/schemas/ChatResponse'
+        '400':
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '429':
+          description: Rate limited
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
 
 components:
-  securitySchemes:
-    bearerAuth:
-      type: http
-      scheme: bearer
-
   schemas:
     ChatRequest:
       type: object
@@ -65,29 +57,38 @@ components:
       properties:
         message:
           type: string
-          description: The user's input message.
-
-    DemoTokenResponse:
-      type: object
-      additionalProperties: true
-      properties:
-        ok:
-          type: boolean
-        token:
-          type: string
-        expires_at:
-          type: string
-          description: Expiration timestamp if returned by the API.
+          description: The user's message for the ACA demo assistant.
+          minLength: 1
+          maxLength: 2000
 
     ChatResponse:
       type: object
       additionalProperties: true
+      required:
+        - ok
+        - reply
       properties:
         ok:
           type: boolean
+          description: Whether the request succeeded.
         reply:
           type: string
+          description: The assistant response text.
         session_id:
           type: string
+          description: Demo session identifier.
         source:
+          type: string
+          description: Response source.
+
+    ErrorResponse:
+      type: object
+      additionalProperties: true
+      required:
+        - ok
+        - error
+      properties:
+        ok:
+          type: boolean
+        error:
           type: string
