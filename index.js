@@ -1179,9 +1179,28 @@ app.set("trust proxy", 1);
 console.log("🧭 process.cwd():", process.cwd());
 console.log("🧭 __dirname:", __dirname);
 
-const { router: twilioRouter, handleTwilioStream } = require("./src/routes/twilio");
+const {
+  router: twilioRouter,
+  handleTwilioStream,
+  getTwilioDebugState,
+} = require("./src/routes/twilio");
 app.use("/twilio", twilioRouter);
 console.log("✅ Mounted /twilio routes");
+
+app.get("/monitor/twilio-debug", (req, res) => {
+  try {
+    return res.status(200).json({
+      ok: true,
+      debug: typeof getTwilioDebugState === "function" ? getTwilioDebugState() : null,
+    });
+  } catch (err) {
+    return res.status(500).json({
+      ok: false,
+      error: err.message,
+    });
+  }
+});
+console.log("✅ Mounted /monitor/twilio-debug");
 
 
 

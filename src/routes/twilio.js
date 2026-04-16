@@ -31,6 +31,36 @@ const VOICE_MIN_UTTERANCE_CHARS = Number(process.env.VOICE_MIN_UTTERANCE_CHARS |
 const VOICE_MAX_REPLY_CHARS = Number(process.env.VOICE_MAX_REPLY_CHARS || 220);
 const VOICE_LOG_PREFIX = "[twilio_voice_intel]";
 
+/**
+ * Story 13.1.9 — Durable Twilio debug snapshot
+ */
+const twilioDebugState = {
+  updatedAt: null,
+  events: [],
+};
+
+function pushTwilioDebug(event, details = {}) {
+  const entry = {
+    ts: new Date().toISOString(),
+    event,
+    ...details,
+  };
+
+  twilioDebugState.updatedAt = entry.ts;
+  twilioDebugState.events.push(entry);
+
+  if (twilioDebugState.events.length > 50) {
+    twilioDebugState.events = twilioDebugState.events.slice(-50);
+  }
+}
+
+function getTwilioDebugState() {
+  return {
+    updatedAt: twilioDebugState.updatedAt,
+    events: [...twilioDebugState.events],
+  };
+}
+
 function clearPendingVoiceTurn(ws) {
   try {
     if (ws && ws.__voiceTurnTimer) {
@@ -212,6 +242,7 @@ router.get("/status", handleStatusWebhook);
  */
 async function handleTwilioStream(ws, req) {
   console.log("🌐  Twilio WebSocket connected");
+  pushTwilioDebug("ws_connected", {});
 
   let activeCallSid = null;
   let activeStreamSid = null;
@@ -380,6 +411,11 @@ async function handleTwilioStream(ws, req) {
         streamSid: activeStreamSid,
         bytes: ttsBuffer.length,
       });
+      pushTwilioDebug("tts_send", {
+        callSid: activeCallSid,
+        streamSid: activeStreamSid,
+        bytes: ttsBuffer.length,
+      });
       console.log("📤 [twilio] Sending WS media event back to Twilio");
 
       ws.send(
@@ -410,6 +446,11 @@ async function handleTwilioStream(ws, req) {
         sttBuffers = [];
         mediaPacketCount = 0;
 
+        pushTwilioDebug("start", {
+          callSid: activeCallSid,
+          streamSid: activeStreamSid,
+        });
+
         ws.__voiceTurnTimer = null;
         ws.__pendingVoiceTranscript = "";
         ws.__lastVoiceInputAt = 0;
@@ -420,7 +461,7 @@ async function handleTwilioStream(ws, req) {
           streamSid: activeStreamSid,
         });
 
-                // Story 13.1.8 — test-only ack for manual WS probes
+        // Story 13.1.8 — test-only ack for manual WS probes
         if (
           String(activeCallSid || "").startsWith("CA_TEST_") ||
           String(activeCallSid || "").startsWith("CA_LOCAL_")
@@ -478,6 +519,13 @@ async function handleTwilioStream(ws, req) {
 
         const payloadBuffer = Buffer.from(data.media.payload, "base64");
 
+        pushTwilioDebug("media", {
+          callSid: activeCallSid,
+          streamSid: activeStreamSid,
+          mediaPacketCount,
+          payloadBytes: payloadBuffer.length,
+        });
+
         if (mediaPacketCount <= 5 || mediaPacketCount % 25 === 0) {
           console.log("🎧 [twilio] Media packet received:", {
             callSid: activeCallSid,
@@ -510,6 +558,12 @@ async function handleTwilioStream(ws, req) {
             text: userText,
             length: String(userText || "").length,
           });
+
+          pushTwilioDebug("stt_result", {
+            callSid: activeCallSid,
+            text: String(userText || "").slice(0, 120),
+            length: String(userText || "").length,
+          });
         } catch (sttErr) {
           console.error(
             "❌ [stt] Transcription failed, falling back to simulated text:",
@@ -522,6 +576,10 @@ async function handleTwilioStream(ws, req) {
 
         if (!userText) {
           console.log("ℹ️ [stt] Empty transcript, using live-call fallback prompt.");
+          pushTwilioDebug("stt_empty", {
+            callSid: activeCallSid,
+            streamSid: activeStreamSid,
+          });
 
           const fallbackReply =
             "Hello, I can hear you. Please tell me what you need, for example, book a table or schedule an appointment.";
@@ -540,6 +598,11 @@ async function handleTwilioStream(ws, req) {
           }
 
           if (ttsBuffer && activeStreamSid && streamActive) {
+            pushTwilioDebug("tts_send", {
+              callSid: activeCallSid,
+              streamSid: activeStreamSid,
+              bytes: ttsBuffer.length,
+            });
             console.log("📤 [twilio] Sending WS media event back to Twilio");
 
             ws.send(
@@ -597,6 +660,11 @@ async function handleTwilioStream(ws, req) {
             }
 
             if (ttsBuffer && activeStreamSid && streamActive) {
+              pushTwilioDebug("tts_send", {
+                callSid: activeCallSid,
+                streamSid: activeStreamSid,
+                bytes: ttsBuffer.length,
+              });
               console.log("📤 [twilio] Sending WS media event back to Twilio");
 
               ws.send(
@@ -613,6 +681,9 @@ async function handleTwilioStream(ws, req) {
         }, VOICE_TURN_SILENCE_MS);
       } else if (data.event === "stop") {
         console.log("🛑  Stream stopped for Call SID:", data.stop.callSid);
+        pushTwilioDebug("stop", {
+          callSid: data?.stop?.callSid || activeCallSid,
+        });
         streamActive = false;
         clearPendingVoiceTurn(ws);
       }
@@ -623,6 +694,9 @@ async function handleTwilioStream(ws, req) {
 
   ws.on("close", () => {
     clearPendingVoiceTurn(ws);
+    pushTwilioDebug("ws_closed", {
+      callSid: activeCallSid,
+    });
     console.log(
       `${VOICE_LOG_PREFIX} socket_closed`,
       JSON.stringify({
@@ -637,4 +711,5 @@ async function handleTwilioStream(ws, req) {
 module.exports = {
   router,
   handleTwilioStream,
+  getTwilioDebugState,
 };
