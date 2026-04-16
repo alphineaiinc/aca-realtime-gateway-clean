@@ -13,6 +13,7 @@ const { retrieveAnswer } = require("../../retriever");
 const { synthesizeSpeech } = require("../../tts");
 const { getTenantRegion } = require("../brain/utils/tenantContext"); // ✅ tenant region helper
 const { transcribeMulaw } = require("../brain/utils/sttGoogle"); // ✅ Google STT helper
+
 // ✅ Tenant voice profile loader (to get language_code for live calls)
 let getTenantVoiceProfile = async () => null;
 try {
@@ -22,6 +23,54 @@ try {
 }
 
 require("dotenv").config({ path: path.resolve(__dirname, "../../.env") });
+
+/**
+ * ✅ Lazy-load shared conversation handler from root index.js
+ * Avoid top-level require to reduce circular import risk.
+ */
+function getSharedConversationHandler() {
+  try {
+    const rootModule = require("../../index");
+    if (rootModule && typeof rootModule.handleConversationTurn === "function") {
+      return rootModule.handleConversationTurn;
+    }
+  } catch (err) {
+    console.warn(
+      "⚠️ [twilio] Shared handleConversationTurn unavailable, fallback will be used:",
+      err.message
+    );
+  }
+  return null;
+}
+
+/**
+ * ✅ Keep voice replies short and natural for live calls
+ */
+function normalizeVoiceReply(reply) {
+  let text = "";
+
+  if (typeof reply === "string") {
+    text = reply;
+  } else if (reply && typeof reply === "object") {
+    text =
+      reply.reply ||
+      reply.answer ||
+      reply.text ||
+      reply.response ||
+      reply.message ||
+      "";
+  }
+
+  text = String(text || "")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  if (text.length > 260) {
+    text = `${text.slice(0, 257).trim()}...`;
+  }
+
+  return text;
+}
 
 /**
  * Shared handler for Twilio voice webhook
@@ -106,6 +155,93 @@ router.ws("/stream", async (ws, req) => {
   let tenantId = 1;
   let tenantLangCode = "en-US"; // default; will try to override from tenant_voice_profile
 
+  /**
+   * ✅ Shared final transcript handler for live voice turns
+   * Uses shared multi-turn engine first, then falls back safely.
+   */
+  async function onFinalTranscript(userText) {
+    const safeText = String(userText || "").trim();
+    if (!safeText) return "";
+
+    const sessionId = `call_${activeCallSid || "unknown"}`;
+    const sharedHandler = getSharedConversationHandler();
+
+    if (sharedHandler) {
+      let sharedResult = null;
+      let sharedError = null;
+
+      // Try object-style call first
+      try {
+        sharedResult = await sharedHandler({
+          message: safeText,
+          userText: safeText,
+          tenantId,
+          locale: tenantLangCode,
+          sessionId,
+          channel: "voice",
+          source: "twilio",
+          shortReply: true,
+        });
+      } catch (err) {
+        sharedError = err;
+      }
+
+      // Fallback attempt: text + options style
+      if (!sharedResult) {
+        try {
+          sharedResult = await sharedHandler(safeText, {
+            tenantId,
+            locale: tenantLangCode,
+            sessionId,
+            channel: "voice",
+            source: "twilio",
+            shortReply: true,
+          });
+          sharedError = null;
+        } catch (err) {
+          sharedError = err;
+        }
+      }
+
+      const normalizedSharedReply = normalizeVoiceReply(sharedResult);
+      if (normalizedSharedReply) {
+        console.log("🧠 [twilio] Shared conversation handler reply:", {
+          callSid: activeCallSid,
+          sessionId,
+          user: safeText,
+          bot: normalizedSharedReply,
+        });
+        return normalizedSharedReply;
+      }
+
+      if (sharedError) {
+        console.warn(
+          "⚠️ [twilio] Shared handler failed, using retrieveAnswer fallback:",
+          sharedError.message
+        );
+      }
+    }
+
+    // ✅ Safe fallback to current ACA voice flow
+    const fallbackReply = await retrieveAnswer(
+      safeText,
+      tenantId,
+      tenantLangCode,
+      activeCallSid
+    );
+
+    const normalizedFallbackReply = normalizeVoiceReply(fallbackReply);
+
+    console.log("💬 [twilio:fallback]", {
+      callSid: activeCallSid,
+      sessionId,
+      user: safeText,
+      bot: normalizedFallbackReply,
+    });
+
+    return normalizedFallbackReply;
+  }
+
   ws.on("message", async (msg) => {
     try {
       const data = JSON.parse(msg);
@@ -144,7 +280,7 @@ router.ws("/stream", async (ws, req) => {
           );
         }
       } else if (data.event === "media" && data.media.payload) {
-        // Twilio sends base64 PCM16 μ-law audio in data.media.payload
+        // Twilio sends base64 μ-law audio in data.media.payload
         const audioBuffer = Buffer.from(data.media.payload, "base64");
 
         // ✅ Always accumulate audio into current chunk for STT
@@ -185,20 +321,15 @@ router.ws("/stream", async (ws, req) => {
 
         console.log(`👂  Heard (Call ${activeCallSid}):`, userText);
 
-        // ✅ Retrieve GPT-generated response with per-call session (activeCallSid)
-        // ✅ Use tenantLangCode so GPT knows which locale to respond in
-        const reply = await retrieveAnswer(
-          userText,
-          tenantId,
-          tenantLangCode,
-          activeCallSid
-        );
-        console.log("💬  GPT reply:", reply);
-        console.log("💬 [conv]", {
-          callSid: activeCallSid,
-          user: userText,
-          bot: reply,
-        });
+        // ✅ Use shared multi-turn handler with per-call voice session
+        const reply = await onFinalTranscript(userText);
+
+        if (!reply) {
+          console.log("ℹ️ [twilio] Empty reply after handler, skipping TTS.");
+          return;
+        }
+
+        console.log("💬  Voice reply:", reply);
 
         // Resolve tenant region (for accent shaping, etc.)
         let regionCode = null;
