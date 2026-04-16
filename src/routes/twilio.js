@@ -598,15 +598,16 @@ async function handleTwilioStream(ws, req) {
 
         userText = normalizeIncomingVoiceText(userText);
 
-        if (!userText) {
-          console.log("ℹ️ [stt] Empty transcript, using live-call fallback prompt.");
-          pushTwilioDebug("stt_empty", {
+                if (!userText) {
+          console.log("ℹ️ [stt] Empty transcript detected — forcing fallback");
+
+          pushTwilioDebug("stt_empty_forced", {
             callSid: activeCallSid,
             streamSid: activeStreamSid,
           });
 
           const fallbackReply =
-            "Hello, I can hear you. Please tell me what you need, for example, book a table or schedule an appointment.";
+            "Hello, I can hear you clearly. Please say your request again, for example, book a table or schedule an appointment.";
 
           let ttsBuffer = null;
           try {
@@ -618,16 +619,17 @@ async function handleTwilioStream(ws, req) {
               acceptMime: "audio/mpeg",
             });
           } catch (ttsErr) {
-            console.error("❌ [twilio] Empty-transcript fallback TTS failed:", ttsErr.message);
+            console.error("❌ [twilio] Fallback TTS failed:", ttsErr.message);
           }
 
           if (ttsBuffer && activeStreamSid && streamActive) {
-            pushTwilioDebug("tts_send", {
+            pushTwilioDebug("tts_send_fallback", {
               callSid: activeCallSid,
               streamSid: activeStreamSid,
               bytes: ttsBuffer.length,
             });
-            console.log("📤 [twilio] Sending WS media event back to Twilio");
+
+            console.log("📤 [twilio] Sending fallback audio");
 
             ws.send(
               JSON.stringify({
