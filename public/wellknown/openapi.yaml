@@ -1,26 +1,129 @@
-﻿openapi: 3.0.1
+﻿openapi: 3.1.0
 info:
-  title: Alphine AI API
-  description: ACA conversational API
+  title: Alphine AI ACA API
+  description: Public Marketplace-facing API for Alphine AI Automated Call Attender.
   version: "1.0.0"
 
 servers:
   - url: https://aca-realtime-gateway-clean.onrender.com
 
 paths:
+  /health:
+    get:
+      operationId: getHealth
+      summary: Health check
+      description: Returns the current health status of the ACA service.
+      responses:
+        "200":
+          description: Service is healthy
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+                  service:
+                    type: string
+                  ts:
+                    type: string
+                    format: date-time
+
+  /api/demo/token:
+    post:
+      operationId: createDemoToken
+      summary: Create demo token
+      description: Creates a short-lived demo JWT for Marketplace-safe chat access.
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                role:
+                  type: string
+                  example: demo
+      responses:
+        "200":
+          description: Demo token issued successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+                  token:
+                    type: string
+                  expires_in:
+                    type: integer
+                  tenant_id:
+                    type: integer
+                  locale_default:
+                    type: string
+        "401":
+          description: Unauthorized
+        "403":
+          description: Forbidden
+        "429":
+          description: Rate limit exceeded
+
   /api/chat:
     post:
-      operationId: chat
+      operationId: sendChatMessage
       summary: Send a message to ACA
+      description: Sends a user message to ACA and returns a conversational response. Requires a Bearer token obtained from /api/demo/token.
+      security:
+        - bearerAuth: []
       requestBody:
         required: true
         content:
           application/json:
             schema:
               type: object
+              required:
+                - message
               properties:
+                session_id:
+                  type: string
+                  example: webchat
+                locale:
+                  type: string
+                  example: en-US
                 message:
                   type: string
+                  example: Hello ACA
       responses:
         "200":
-          description: Successful response
+          description: Successful chat response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+                  reply:
+                    type: string
+                  session_id:
+                    type: string
+                  locale:
+                    type: string
+        "400":
+          description: Invalid request
+        "401":
+          description: Unauthorized
+        "429":
+          description: Rate limit exceeded
+        "500":
+          description: Server error
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
