@@ -196,15 +196,17 @@ async function synthesizeSpeech(text, langCode = "en-US", options = {}) {
 
     if (!apiKey) throw new Error("Missing ELEVENLABS_API_KEY in .env");
 
-    let {
-      tenantId = null,
-      regionCode = null,
-      tonePreset = "friendly",
-      useFillers = true,
-      outputFormat = "ulaw_8000",
-      acceptMime = outputFormat === "ulaw_8000" ? "audio/basic" : "audio/mpeg";
-      explicitVoiceId = null,
-    } = options || {};
+   let {
+  tenantId = null,
+  regionCode = null,
+  tonePreset = "friendly",
+  useFillers = true,
+  outputFormat = "ulaw_8000",
+  acceptMime = null,
+  explicitVoiceId = null,
+} = options || {};
+
+acceptMime = acceptMime || (outputFormat === "ulaw_8000" ? "audio/basic" : "audio/mpeg");
 
     // ---------------------------------
     // 0) Load tenant voice profile (if tenantId present)
