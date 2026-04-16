@@ -49,6 +49,8 @@ function isKnownLanguageCode(langCode) {
   return Boolean(all[base]);
 }
 
+console.log("📦 [tts] module loaded from:", __filename);
+
 // ------------------------------------------------------
 // Optional conversational helpers (prosody / fillers / accent)
 // If the modules are missing, we fall back to no-op so TTS
@@ -185,6 +187,13 @@ function decodeErrorBody(data) {
  *   - explicitVoiceId (string, overrides everything for voice selection)
  */
 async function synthesizeSpeech(text, langCode = "en-US", options = {}) {
+  console.log("🎯 [tts] synthesizeSpeech ENTER", {
+    file: __filename,
+    langCode,
+    textPreview: safePreview(text, 120),
+    optionKeys: Object.keys(options || {}),
+  });
+
   try {
     const rawApiKey = process.env.ELEVENLABS_API_KEY;
     const apiKey = normalizeApiKey(rawApiKey);
@@ -196,17 +205,31 @@ async function synthesizeSpeech(text, langCode = "en-US", options = {}) {
 
     if (!apiKey) throw new Error("Missing ELEVENLABS_API_KEY in .env");
 
-   let {
-  tenantId = null,
-  regionCode = null,
-  tonePreset = "friendly",
-  useFillers = true,
-  outputFormat = "ulaw_8000",
-  acceptMime = null,
-  explicitVoiceId = null,
-} = options || {};
+    let {
+      tenantId = null,
+      regionCode = null,
+      tonePreset = "friendly",
+      useFillers = true,
+      outputFormat = "ulaw_8000",
+      acceptMime = null,
+      explicitVoiceId = null,
+    } = options || {};
 
-acceptMime = acceptMime || (outputFormat === "ulaw_8000" ? "audio/basic" : "audio/mpeg");
+    if (outputFormat === "ulaw_8000") {
+      acceptMime = "audio/basic";
+    } else {
+      acceptMime = "audio/mpeg";
+    }
+
+    console.log("🧪 [tts] normalized request options", {
+      tenantId,
+      regionCode,
+      tonePreset,
+      useFillers,
+      outputFormat,
+      acceptMime,
+      hasExplicitVoiceId: !!explicitVoiceId,
+    });
 
     // ---------------------------------
     // 0) Load tenant voice profile (if tenantId present)
@@ -264,6 +287,7 @@ acceptMime = acceptMime || (outputFormat === "ulaw_8000" ? "audio/basic" : "audi
     const selectedVoiceId = resolveVoiceId(langCode, voiceProfile, explicitVoiceId);
     const baseLang = (langCode.split("-")[0] || "en").toLowerCase();
 
+    console.log("🚀 [tts] FINAL HEADERS:", { acceptMime, outputFormat });
     console.log(
       `🎙 [tts] Selected voiceId=${selectedVoiceId || "MISSING"} for langCode=${langCode}`
     );
@@ -309,6 +333,8 @@ acceptMime = acceptMime || (outputFormat === "ulaw_8000" ? "audio/basic" : "audi
       similarity_boost,
       outputFormat,
       acceptMime,
+      keyPrefix: apiKey ? apiKey.slice(0, 5) : "NONE",
+      keyLength: apiKey ? apiKey.length : 0,
     });
 
     const response = await axios.post(
@@ -320,19 +346,30 @@ acceptMime = acceptMime || (outputFormat === "ulaw_8000" ? "audio/basic" : "audi
       },
       {
         headers: {
-  "xi-api-key": apiKey,
-  Accept: acceptMime,
-  "Content-Type": "application/json",
-},
+          "xi-api-key": apiKey,
+          Accept: acceptMime,
+          "Content-Type": "application/json",
+        },
         responseType: "arraybuffer",
       }
     );
 
     console.log("✅ [tts] ElevenLabs synthesis complete", {
       bytes: response.data ? response.data.length : 0,
+      voiceId: selectedVoiceId,
+      langCode,
+      outputFormat,
     });
 
-    return Buffer.from(response.data);
+    const finalBuffer = Buffer.from(response.data);
+
+    console.log("📦 [tts] returning audio buffer", {
+      bytes: finalBuffer.length,
+      voiceId: selectedVoiceId,
+      langCode,
+    });
+
+    return finalBuffer;
   } catch (err) {
     const status = err.response?.status || null;
     const statusText = err.response?.statusText || null;
@@ -341,6 +378,8 @@ acceptMime = acceptMime || (outputFormat === "ulaw_8000" ? "audio/basic" : "audi
     console.error("❌ [tts] ElevenLabs status:", status);
     console.error("❌ [tts] ElevenLabs statusText:", statusText);
     console.error("❌ [tts] ElevenLabs error body:", decodedError || err.message);
+    console.error("❌ [tts] request failed in file:", __filename);
+    console.error("❌ [tts] axios error code:", err.code || null);
 
     throw new Error(
       "ElevenLabs TTS failed: " + (statusText || decodedError || err.message)
