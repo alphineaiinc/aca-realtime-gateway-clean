@@ -1190,6 +1190,29 @@ if (typeof app.ws === "function") {
   console.warn("⚠️ app.ws is not available; /ws/twilio-stream WebSocket route not mounted.");
 }
 
+if (typeof app.ws === "function") {
+  app.ws("/ws/probe", (ws, req) => {
+    console.log("🧪 [ws_probe] connected");
+
+    ws.on("message", (msg) => {
+      const text = String(msg || "");
+      console.log("🧪 [ws_probe] message:", text);
+
+      try {
+        ws.send(JSON.stringify({ ok: true, echo: text }));
+      } catch (err) {
+        console.error("❌ [ws_probe] send failed:", err.message);
+      }
+    });
+
+    ws.on("close", () => {
+      console.log("🧪 [ws_probe] closed");
+    });
+  });
+
+  console.log("✅ Mounted WebSocket probe route at /ws/probe (Story 13.1.5)");
+}
+
 // Story 12.4 — Explicit assets mount (Render/Linux path-safe)
 app.use(
   "/dashboard/assets",
