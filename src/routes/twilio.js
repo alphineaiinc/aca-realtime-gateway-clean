@@ -202,7 +202,12 @@ async function handleVoiceWebhook(req, res) {
   console.log("🔗 [twilio] ALPHINE_STREAM_BASE =", process.env.ALPHINE_STREAM_BASE || "(missing)");
 
   const connect = twiml.connect();
-  connect.stream({ url: streamUrl });
+connect.stream({
+  url: streamUrl,
+  name: "aca-live-stream",
+  statusCallback: `${process.env.RENDER_BASE_URL || "https://aca-realtime-gateway-clean.onrender.com"}/twilio/stream-status`,
+  statusCallbackMethod: "POST",
+});
 
   twiml.pause({ length: 15 });
 
@@ -229,9 +234,28 @@ function handleStatusWebhook(req, res) {
 
   res.sendStatus(200);
 }
+function handleStreamStatusWebhook(req, res) {
+  const payload = {
+    accountSid: req.body?.AccountSid || null,
+    callSid: req.body?.CallSid || null,
+    streamSid: req.body?.StreamSid || null,
+    streamName: req.body?.StreamName || null,
+    streamEvent: req.body?.StreamEvent || null,
+    streamError: req.body?.StreamError || null,
+    timestamp: req.body?.Timestamp || null,
+  };
 
+  console.log("📡 [twilio] Stream status callback:", payload);
+
+  pushTwilioDebug("stream_status", payload);
+
+  res.sendStatus(200);
+}
 router.post("/voice", handleVoiceWebhook);
 router.get("/voice", handleVoiceWebhook);
+
+router.post("/stream-status", handleStreamStatusWebhook);
+router.get("/stream-status", handleStreamStatusWebhook);
 
 router.post("/status", handleStatusWebhook);
 router.get("/status", handleStatusWebhook);
