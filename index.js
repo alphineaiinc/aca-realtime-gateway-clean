@@ -165,6 +165,25 @@ function safeGptChatSessionId(value) {
   return raw.replace(/[^a-zA-Z0-9._:-]/g, "").slice(0, 128) || null;
 }
 
+function normalizeBusinessType(value) {
+  const raw = String(value || "").trim().toLowerCase();
+
+  const allowed = new Set([
+    "restaurant",
+    "hotel",
+    "hospital_clinic",
+    "salon_spa",
+    "office_business",
+    "resort_travel",
+    "local_service",
+    "support_center",
+    "generic",
+  ]);
+
+  if (allowed.has(raw)) return raw;
+  return null;
+}
+
 function getOrCreateGptChatSession(sessionId) {
   const id = safeGptChatSessionId(sessionId);
   if (!id) return null;
@@ -179,15 +198,16 @@ function getOrCreateGptChatSession(sessionId) {
   }
 
   const fresh = {
-  session_id: id,
-  scenario: null,
-  business_type: null,
-  last_intent: null,
-  slots: {},
-  history: [],
-  last_seen_at: now,
-  expires_at: now + GPT_CHAT_SESSION_TTL_MS,
-};
+    session_id: id,
+    scenario: null,
+    business_type: null,
+    tenant_business_type: null,
+    last_intent: null,
+    slots: {},
+    history: [],
+    last_seen_at: now,
+    expires_at: now + GPT_CHAT_SESSION_TTL_MS,
+  };
 
   gptChatSessions.set(id, fresh);
   return fresh;
@@ -282,6 +302,25 @@ function detectBusinessTypeFromText(text) {
   const t = String(text || "").toLowerCase();
 
   if (
+    t.includes("restaurant") ||
+    t.includes("table") ||
+    t.includes("dinner") ||
+    t.includes("lunch") ||
+    t.includes("menu")
+  ) {
+    return "restaurant";
+  }
+
+  if (
+    t.includes("hotel") ||
+    t.includes("room") ||
+    t.includes("check-in") ||
+    t.includes("stay")
+  ) {
+    return "hotel";
+  }
+
+  if (
     t.includes("doctor") ||
     t.includes("hospital") ||
     t.includes("clinic") ||
@@ -338,6 +377,15 @@ function detectBusinessTypeFromText(text) {
     return "local_service";
   }
 
+  if (
+    t.includes("support") ||
+    t.includes("issue") ||
+    t.includes("problem") ||
+    t.includes("complaint")
+  ) {
+    return "support_center";
+  }
+
   return null;
 }
 
@@ -354,25 +402,25 @@ function extractGptChatSlotsFromText(text, scenario) {
     input.match(/\b(\d{1,2})\s+(people|persons|guests|guest)\b/i);
 
   if (scenario === "restaurant_reservation" && countMatch) {
-  slots.party_size = countMatch[1];
-}
+    slots.party_size = countMatch[1];
+  }
 
-if (scenario === "hotel_booking" && countMatch) {
-  slots.guests = countMatch[1];
-}
+  if (scenario === "hotel_booking" && countMatch) {
+    slots.guests = countMatch[1];
+  }
 
-if (scenario === "generic_service" && countMatch) {
-  slots.participants = countMatch[1];
-}
+  if (scenario === "generic_service" && countMatch) {
+    slots.participants = countMatch[1];
+  }
 
   // Time
   const timeMatch = input.match(/\b(\d{1,2})(?::(\d{2}))?\s?(am|pm)\b/i);
-if (
-  (scenario === "restaurant_reservation" || scenario === "generic_service") &&
-  timeMatch
-) {
-  slots.time = timeMatch[0];
-}
+  if (
+    (scenario === "restaurant_reservation" || scenario === "generic_service") &&
+    timeMatch
+  ) {
+    slots.time = timeMatch[0];
+  }
 
   // Restaurant date-like words
   if (scenario === "restaurant_reservation") {
@@ -383,6 +431,45 @@ if (
       /\b(monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b/i
     );
     if (dayMatch) slots.date = dayMatch[1];
+  }
+
+  // Generic service date-like words + service extraction
+  if (scenario === "generic_service") {
+    if (/\btoday\b/i.test(input)) slots.date = "today";
+    if (/\btomorrow\b/i.test(input)) slots.date = "tomorrow";
+
+    const dayMatch = input.match(
+      /\b(monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b/i
+    );
+    if (dayMatch) slots.date = dayMatch[1];
+
+    const serviceMatch =
+      input.match(
+        /\b(?:need|want|book|schedule|arrange)\s+(?:a|an)?\s*([a-z][a-z\s-]{2,40})$/i
+      ) ||
+      input.match(/\bfor\s+(?:a|an)?\s*([a-z][a-z\s-]{2,40})$/i);
+
+    if (serviceMatch) {
+      const cleanedService = serviceMatch[1]
+        .trim()
+        .replace(
+          /\b(today|tomorrow|monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b/gi,
+          ""
+        )
+        .replace(/\b(at|for)\b/gi, "")
+        .trim();
+
+      if (cleanedService) {
+        slots.service_type = cleanedService.slice(0, 80);
+      }
+    }
+
+    if (
+      input.length >= 12 &&
+      !/^(appointment|schedule|meeting|service|book|reserve)$/i.test(input)
+    ) {
+      slots.notes = input.slice(0, 160);
+    }
   }
 
   // Hotel stay details
@@ -430,6 +517,9 @@ function buildGptChatContextSummary(session) {
   const parts = [];
 
   if (session.scenario) parts.push(`scenario=${session.scenario}`);
+  if (session.tenant_business_type) {
+    parts.push(`tenant_business_type=${session.tenant_business_type}`);
+  }
   if (session.business_type) parts.push(`business_type=${session.business_type}`);
   if (session.last_intent) parts.push(`intent=${session.last_intent}`);
 
@@ -444,20 +534,36 @@ function buildGptChatContextSummary(session) {
   return parts.join(" | ");
 }
 
-function buildGptChatFollowUp(session) {
+function buildGptChatFollowUp(session, channel = "chat") {
   if (!session || !session.scenario) return null;
 
+  const isVoice = channel === "voice";
+
   if (session.scenario === "restaurant_reservation") {
-    if (!session.slots.date) return "Sure — what day would you like the reservation?";
-    if (!session.slots.time) return "What time should I note for the table?";
-    if (!session.slots.party_size) return "How many people will be joining?";
-    if (!session.slots.name) return "Got it. What name should I put on the reservation?";
+    if (!session.slots.date) {
+      return isVoice
+        ? "Sure — what day works for the reservation?"
+        : "Sure — what day would you like the reservation?";
+    }
+    if (!session.slots.time) {
+      return isVoice
+        ? "What time works for the table?"
+        : "What time should I note for the table?";
+    }
+    if (!session.slots.party_size) {
+      return "How many people will be joining?";
+    }
+    if (!session.slots.name) {
+      return "Got it. What name should I put on the reservation?";
+    }
 
     return `Thanks, ${session.slots.name} — I’ve noted your request for ${session.slots.date} at ${session.slots.time} for ${session.slots.party_size} people.`;
   }
 
   if (session.scenario === "hotel_booking") {
-    if (!session.slots.check_in) return "Sure — when would you like to check in?";
+    if (!session.slots.check_in) {
+      return "Sure — when would you like to check in?";
+    }
     if (!session.slots.nights) return "How many nights will you be staying?";
     if (!session.slots.guests) return "How many guests should I note?";
     if (!session.slots.name) return "What name should I place on the booking request?";
@@ -476,89 +582,285 @@ function buildGptChatFollowUp(session) {
     return "Thanks — I’ve noted that. Would you like a short summary of the issue?";
   }
 
-  // ✅ 👉 INSERT PATCH 3 RIGHT HERE 👇
   if (session.scenario === "generic_service") {
-  if (!session.slots.service_type) {
-    if (session.business_type === "hospital_clinic") {
-      return "Sure — is this for a doctor visit, consultation, or something else?";
+    if (!session.slots.service_type) {
+      if (session.business_type === "hospital_clinic") {
+        return "Sure — is this for a doctor visit, consultation, or something else?";
+      }
+
+      if (session.business_type === "salon_spa") {
+        return "Sure — what service would you like to book?";
+      }
+
+      if (session.business_type === "office_business") {
+        return "Sure — what kind of meeting or appointment should I note?";
+      }
+
+      if (session.business_type === "resort_travel") {
+        return "Sure — what kind of reservation or service are you looking for?";
+      }
+
+      if (session.business_type === "local_service") {
+        return "Sure — what kind of service do you need help arranging?";
+      }
+
+      return "Sure — what kind of service would you like to arrange?";
     }
 
-    if (session.business_type === "salon_spa") {
-      return "Sure — what service would you like to book?";
+    if (!session.slots.date) {
+      if (session.business_type === "hospital_clinic") {
+        return "What day would you like to come in?";
+      }
+
+      if (session.business_type === "office_business") {
+        return "What day should I note for the meeting?";
+      }
+
+      return "What day would you like me to note for this?";
     }
 
-    if (session.business_type === "office_business") {
-      return "Sure — what kind of meeting or appointment should I note?";
+    if (!session.slots.time) {
+      if (session.business_type === "hospital_clinic") {
+        return "What time works best for the appointment?";
+      }
+
+      if (session.business_type === "salon_spa") {
+        return "What time would you prefer?";
+      }
+
+      return "What time works best for you?";
     }
 
-    if (session.business_type === "resort_travel") {
-      return "Sure — what kind of reservation or service are you looking for?";
+    if (!session.slots.participants) {
+      if (session.business_type === "hospital_clinic") {
+        return "Should I note this for just one person?";
+      }
+
+      if (session.business_type === "office_business") {
+        return "How many people should I include in the meeting?";
+      }
+
+      return "How many people should I include?";
     }
 
-    if (session.business_type === "local_service") {
-      return "Sure — what kind of service do you need help arranging?";
+    if (!session.slots.name) {
+      if (session.business_type === "hospital_clinic") {
+        return "Got it. What name should I note for the appointment?";
+      }
+
+      if (session.business_type === "office_business") {
+        return "Got it. What name should I note for this meeting request?";
+      }
+
+      return "Got it. What name should I note for this request?";
     }
 
-    return "Sure — what kind of service would you like to arrange?";
+    return `Thanks, ${session.slots.name} — I’ve noted your request for ${session.slots.service_type} on ${session.slots.date} at ${session.slots.time} for ${session.slots.participants} people.`;
   }
 
-  if (!session.slots.date) {
-    if (session.business_type === "hospital_clinic") {
-      return "What day would you like to come in?";
-    }
-
-    if (session.business_type === "office_business") {
-      return "What day should I note for the meeting?";
-    }
-
-    return "What day would you like me to note for this?";
-  }
-
-  if (!session.slots.time) {
-    if (session.business_type === "hospital_clinic") {
-      return "What time works best for the appointment?";
-    }
-
-    if (session.business_type === "salon_spa") {
-      return "What time would you prefer?";
-    }
-
-    return "What time works best for you?";
-  }
-
-  if (!session.slots.participants) {
-    if (session.business_type === "hospital_clinic") {
-      return "Should I note this for just one person?";
-    }
-
-    if (session.business_type === "office_business") {
-      return "How many people should I include in the meeting?";
-    }
-
-    return "How many people should I include?";
-  }
-
-  if (!session.slots.name) {
-    if (session.business_type === "hospital_clinic") {
-      return "Got it. What name should I note for the appointment?";
-    }
-
-    if (session.business_type === "office_business") {
-      return "Got it. What name should I note for this meeting request?";
-    }
-
-    return "Got it. What name should I note for this request?";
-  }
-
-  return `Thanks, ${session.slots.name} — I’ve noted your request for ${session.slots.service_type} on ${session.slots.date} at ${session.slots.time} for ${session.slots.participants} people.`;
-}
-
-  // 👇 DO NOT REMOVE THIS
   return null;
 }
 
 function hasActiveStructuredGptChatFlow(session) {
   return !!(session && session.scenario);
+}
+
+function normalizeGptChatReply(finalReply, session, channel = "chat") {
+  let reply = String(finalReply || "").trim().replace(/\s+/g, " ");
+
+  if (
+    session?.scenario === "restaurant_reservation" ||
+    session?.scenario === "generic_service" ||
+    session?.scenario === "hotel_booking"
+  ) {
+    reply = reply
+      .replace(/\byou(?:'re| are) all set\b/gi, "I’ve noted the request")
+      .replace(/\bconfirmed\b/gi, "noted")
+      .replace(/\bbooked\b/gi, "noted")
+      .replace(/\byour table is set\b/gi, "your request is noted")
+      .replace(/\byour booking is set\b/gi, "your request is noted")
+      .replace(/\breservation confirmed\b/gi, "reservation request noted");
+  }
+
+  if (channel === "voice" && reply.length > 220) {
+    reply = reply.slice(0, 220).trim();
+    if (!/[.!?]$/.test(reply)) {
+      reply += ".";
+    }
+  }
+
+  return reply;
+}
+
+async function handleConversationTurn({
+  sessionId,
+  message,
+  channel = "chat",
+  tenantBusinessType = null,
+  tenantId = 1,
+  locale = "en-US",
+}) {
+  const cleanMessage = typeof message === "string" ? message.trim() : "";
+  if (!cleanMessage) {
+    return {
+      ok: false,
+      error: "Message is required",
+    };
+  }
+
+  if (cleanMessage.length > 2000) {
+    return {
+      ok: false,
+      error: "Message is too long",
+    };
+  }
+
+  const incomingSessionId = safeGptChatSessionId(sessionId);
+  const resolvedSessionId = incomingSessionId || `gpt_demo_${Date.now()}`;
+  const session = getOrCreateGptChatSession(resolvedSessionId);
+
+  const requestedTenantBusinessType = normalizeBusinessType(tenantBusinessType);
+  const defaultTenantBusinessType = normalizeBusinessType(
+    process.env.DEFAULT_TENANT_BUSINESS_TYPE
+  );
+
+  if (session) {
+    if (!session.tenant_business_type && requestedTenantBusinessType) {
+      session.tenant_business_type = requestedTenantBusinessType;
+    }
+
+    if (!session.tenant_business_type && defaultTenantBusinessType) {
+      session.tenant_business_type = defaultTenantBusinessType;
+    }
+
+    pushGptChatHistory(session, "user", cleanMessage);
+
+    const detected = detectGptChatScenarioFromText(cleanMessage);
+    const detectedBusinessType = detectBusinessTypeFromText(cleanMessage);
+
+    if (!session.scenario && detected.scenario) {
+      session.scenario = detected.scenario;
+    }
+
+    if (detected.intent) {
+      session.last_intent = detected.intent;
+    }
+
+    const resolvedBusinessType =
+      session.tenant_business_type ||
+      session.business_type ||
+      detectedBusinessType ||
+      "generic";
+
+    if (!session.business_type && resolvedBusinessType) {
+      session.business_type = resolvedBusinessType;
+    }
+
+    const extracted = extractGptChatSlotsFromText(
+      cleanMessage,
+      session.scenario || detected.scenario
+    );
+
+    for (const [key, value] of Object.entries(extracted)) {
+      setGptChatSlot(session, key, value);
+    }
+  }
+
+  let finalReply = "";
+  let resultSource = "brain";
+  let result = null;
+
+  const structuredFlowActive = hasActiveStructuredGptChatFlow(session);
+  const deterministicReply = structuredFlowActive
+    ? buildGptChatFollowUp(session, channel)
+    : null;
+
+  if (deterministicReply) {
+    finalReply = deterministicReply;
+    resultSource = "brain";
+  } else {
+    try {
+      result = await retrieveAnswer(cleanMessage, tenantId, locale);
+    } catch (innerErr) {
+      console.error("❌ handleConversationTurn retrieveAnswer failed:", innerErr);
+      result = null;
+    }
+
+    finalReply =
+      typeof result === "string"
+        ? result
+        : result?.reply ||
+          result?.answer ||
+          result?.text ||
+          result?.message ||
+          "";
+
+    resultSource =
+      typeof result === "object" && result?.source ? result.source : "brain";
+
+    const looksLikeErrorReply =
+      !finalReply ||
+      resultSource === "error" ||
+      /temporary issue|try again|knowledge base|something went wrong/i.test(finalReply);
+
+    if (looksLikeErrorReply) {
+      const lower = cleanMessage.toLowerCase();
+
+      if (
+        lower.includes("table") ||
+        lower.includes("reservation") ||
+        lower.includes("restaurant") ||
+        lower.includes("menu")
+      ) {
+        finalReply =
+          channel === "voice"
+            ? "Sure — what day works for the reservation?"
+            : "Sure — what day would you like the reservation?";
+      } else if (
+        lower.includes("room") ||
+        lower.includes("hotel") ||
+        lower.includes("stay") ||
+        lower.includes("check-in")
+      ) {
+        finalReply = "Of course. When would you like to check in?";
+      } else if (
+        lower.includes("issue") ||
+        lower.includes("problem") ||
+        lower.includes("help") ||
+        lower.includes("support")
+      ) {
+        finalReply = "I can help with that. What seems to be the main issue?";
+      } else {
+        finalReply =
+          "We handle customer inquiries, booking requests, service questions, and general support. What would you like help with today?";
+      }
+
+      resultSource = "brain";
+    }
+  }
+
+  finalReply = normalizeGptChatReply(finalReply, session, channel);
+
+  if (!finalReply) {
+    finalReply = "Could you tell me a little more about what you need?";
+    resultSource = "brain";
+  }
+
+  if (session) {
+    pushGptChatHistory(session, "assistant", finalReply);
+  }
+
+  return {
+    ok: true,
+    reply: finalReply,
+    session_id: resolvedSessionId,
+    source: resultSource,
+    scenario: session?.scenario || null,
+    tenant_business_type: session?.tenant_business_type || null,
+    business_type: session?.business_type || null,
+    context: session ? buildGptChatContextSummary(session) : "",
+    session,
+  };
 }
 // ---------------------------------------------------------------------------
 
@@ -743,7 +1045,6 @@ const authRateLimit = createRateLimiter({
 });
 
 // ✅ Story 12.5/12.6 — Create HTTP server EARLY so express-ws binds correctly
-// (This fixes “connecting…” in chat UI because WS upgrades now hit the right server.)
 const server = http.createServer(app);
 
 // ✅ Optional compression (Render-safe). If not installed, we continue without it.
@@ -768,7 +1069,6 @@ app.use("/public/signup", publicRateLimit);
 app.use("/api/demo", demoRouter);
 
 // Story 12.5 — SSE must not be compressed/buffered (Render/proxy safe)
-// Only apply if compression is available.
 if (compression) {
   app.use(
     compression({
@@ -777,7 +1077,6 @@ if (compression) {
           const p = req.originalUrl || req.url || "";
           const accept = String(req.headers?.accept || "");
 
-          // ✅ Never compress SSE
           if (p.startsWith("/api/chat/stream")) return false;
           if (accept.includes("text/event-stream")) return false;
         } catch (e) {}
@@ -793,166 +1092,28 @@ app.use(express.json({ limit: "1mb" }));
 
 app.post("/api/gpt/chat", async (req, res) => {
   try {
-    const rawMessage = req.body?.message;
-    const message = typeof rawMessage === "string" ? rawMessage.trim() : "";
+    const result = await handleConversationTurn({
+      sessionId: req.body?.session_id,
+      message: req.body?.message,
+      channel: "chat",
+      tenantBusinessType: req.body?.tenant_business_type || null,
+      tenantId: 1,
+      locale: "en-US",
+    });
 
-    if (!message) {
-      return res.status(400).json({
-        ok: false,
-        error: "Message is required",
-      });
-    }
-
-    if (message.length > 2000) {
-      return res.status(400).json({
-        ok: false,
-        error: "Message is too long",
-      });
-    }
-
-    const incomingSessionId = safeGptChatSessionId(req.body?.session_id);
-    const sessionId = incomingSessionId || `gpt_demo_${Date.now()}`;
-    const session = getOrCreateGptChatSession(sessionId);
-
-    if (session) {
-      pushGptChatHistory(session, "user", message);
-
-      const detected = detectGptChatScenarioFromText(message);
-const detectedBusinessType = detectBusinessTypeFromText(message);
-
-if (!session.scenario && detected.scenario) {
-  session.scenario = detected.scenario;
-}
-
-if (detected.intent) {
-  session.last_intent = detected.intent;
-}
-
-if (!session.business_type && detectedBusinessType) {
-  session.business_type = detectedBusinessType;
-}
-
-      const extracted = extractGptChatSlotsFromText(
-        message,
-        session.scenario || detected.scenario
-      );
-
-      for (const [key, value] of Object.entries(extracted)) {
-        setGptChatSlot(session, key, value);
-      }
-    }
-
-    let finalReply = "";
-    let resultSource = "brain";
-    let result = null;
-
-    const structuredFlowActive = hasActiveStructuredGptChatFlow(session);
-    const deterministicReply = structuredFlowActive ? buildGptChatFollowUp(session) : null;
-
-    if (deterministicReply) {
-      finalReply = deterministicReply;
-      resultSource = "brain";
-    } else {
-      try {
-        result = await retrieveAnswer(message, 1, "en-US");
-      } catch (innerErr) {
-        console.error("❌ /api/gpt/chat retrieveAnswer failed:", innerErr);
-        result = null;
-      }
-
-      finalReply =
-        typeof result === "string"
-          ? result
-          : result?.reply ||
-            result?.answer ||
-            result?.text ||
-            result?.message ||
-            "";
-
-      resultSource =
-        typeof result === "object" && result?.source ? result.source : "brain";
-
-      const looksLikeErrorReply =
-        !finalReply ||
-        resultSource === "error" ||
-        /temporary issue|try again|knowledge base|something went wrong/i.test(finalReply);
-
-      if (looksLikeErrorReply) {
-        const lower = message.toLowerCase();
-
-        // 🍽 Restaurant scenario
-        if (
-          lower.includes("table") ||
-          lower.includes("reservation") ||
-          lower.includes("restaurant") ||
-          lower.includes("menu")
-        ) {
-          finalReply = "Sure — what day would you like the reservation?";
-        }
-
-        // 🏨 Hotel scenario
-        else if (
-          lower.includes("room") ||
-          lower.includes("hotel") ||
-          lower.includes("stay") ||
-          lower.includes("check-in")
-        ) {
-          finalReply = "Of course. When would you like to check in?";
-        }
-
-        // 📞 Support scenario
-        else if (
-          lower.includes("issue") ||
-          lower.includes("problem") ||
-          lower.includes("help") ||
-          lower.includes("support")
-        ) {
-          finalReply = "I can help with that. What seems to be the main issue?";
-        }
-
-        // 💼 Default business response
-        else {
-          finalReply =
-            "We handle customer inquiries, booking requests, service questions, and general support. What would you like help with today?";
-        }
-
-        resultSource = "brain";
-      }
-    }
-
-   finalReply = String(finalReply || "").trim().replace(/\s+/g, " ");
-
-if (
-  session?.scenario === "restaurant_reservation" ||
-  session?.scenario === "generic_service" ||
-  session?.scenario === "hotel_booking"
-) {
-  finalReply = finalReply
-    .replace(/\byou(?:'re| are) all set\b/gi, "I’ve noted the request")
-    .replace(/\bconfirmed\b/gi, "noted")
-    .replace(/\bbooked\b/gi, "noted")
-    .replace(/\byour table is set\b/gi, "your request is noted")
-    .replace(/\byour booking is set\b/gi, "your request is noted")
-    .replace(/\breservation confirmed\b/gi, "reservation request noted");
-}
-
-    // Safety fallback
-    if (!finalReply) {
-      finalReply = "Could you tell me a little more about what you need?";
-      resultSource = "brain";
-    }
-
-    if (session) {
-      pushGptChatHistory(session, "assistant", finalReply);
+    if (!result.ok) {
+      return res.status(400).json(result);
     }
 
     return res.status(200).json({
       ok: true,
-      reply: finalReply,
-      session_id: sessionId,
-      source: resultSource,
-      scenario: session?.scenario || null,
-      context: session ? buildGptChatContextSummary(session) : "",
+      reply: result.reply,
+      session_id: result.session_id,
+      source: result.source,
+      scenario: result.scenario,
+      tenant_business_type: result.tenant_business_type,
+      business_type: result.business_type,
+      context: result.context,
     });
   } catch (err) {
     console.error("❌ /api/gpt/chat error:", err);
@@ -981,8 +1142,6 @@ try {
 }
 
 // ✅ Global JSON parse error handler (prevents noisy stack traces)
-// If any request sends invalid JSON with Content-Type: application/json,
-// Express/body-parser throws SyntaxError. Catch and return 400 cleanly.
 app.use((err, req, res, next) => {
   const isJsonSyntax =
     err &&
@@ -1036,11 +1195,9 @@ console.log(
 
 // ---------------------------------------------------------------------------
 // ✅ Guaranteed serving of Marketplace manifest files (Render-safe absolute paths)
-//    We keep your explicit routes AND add a regex catch-all to cover all proxies.
 // ---------------------------------------------------------------------------
 const wellKnownAbsolute = path.resolve(__dirname, "public", "wellknown");
 
-// Your explicit endpoints (kept intact)
 app.get("/.well-known/ai-plugin.json", (req, res) => {
   const filePath = path.join(wellKnownAbsolute, "ai-plugin.json");
   console.log("➡️  [.well-known] serving:", filePath);
@@ -1063,7 +1220,7 @@ app.get("/.well-known/openapi.yaml", (req, res) => {
   });
 });
 
-// 🔒 Regex catch-all for any .well-known/* (covers caching/proxy edge-cases)
+// 🔒 Regex catch-all for any .well-known/*
 app.get(/^\/\.well-known\/(.+)$/i, (req, res) => {
   const requested = (req.params[0] || "").toString();
   const safeName = requested.replace(/[^a-zA-Z0-9._-]/g, "");
@@ -1075,7 +1232,6 @@ app.get(/^\/\.well-known\/(.+)$/i, (req, res) => {
     return res.status(404).send("Not Found");
   }
 
-  // Set explicit content-type for common cases
   if (safeName.endsWith(".json")) res.type("application/json");
   if (safeName.endsWith(".yaml") || safeName.endsWith(".yml")) res.type("text/yaml");
 
@@ -1127,7 +1283,6 @@ try {
 try {
   const partnerPayout = require("./src/routes/partnerPayout");
 
-  // 🔍 Detailed introspection
   console.log("🧩 partnerPayout require result type:", typeof partnerPayout);
   console.log(
     "🧩 partnerPayout keys:",
@@ -1497,4 +1652,8 @@ async function onFinalTranscript(transcript, langCode, businessId, ws) {
   }
 }
 
-module.exports = { onSTTResponse, onStreamEnd };
+module.exports = {
+  onSTTResponse,
+  onStreamEnd,
+  handleConversationTurn,
+};
