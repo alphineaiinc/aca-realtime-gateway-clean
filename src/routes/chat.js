@@ -3,7 +3,7 @@ const express = require("express");
 const jwt = require("jsonwebtoken");
 
 // ✅ Use timeout-guarded brain wrapper
-const { retrieveAnswerWithTimeout: retrieveAnswer } = require("../../retriever");
+const { retrieveAnswer } = require("../../retriever");
 
 const router = express.Router();
 
