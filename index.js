@@ -179,14 +179,15 @@ function getOrCreateGptChatSession(sessionId) {
   }
 
   const fresh = {
-    session_id: id,
-    scenario: null,
-    last_intent: null,
-    slots: {},
-    history: [],
-    last_seen_at: now,
-    expires_at: now + GPT_CHAT_SESSION_TTL_MS,
-  };
+  session_id: id,
+  scenario: null,
+  business_type: null,
+  last_intent: null,
+  slots: {},
+  history: [],
+  last_seen_at: now,
+  expires_at: now + GPT_CHAT_SESSION_TTL_MS,
+};
 
   gptChatSessions.set(id, fresh);
   return fresh;
@@ -275,6 +276,69 @@ function detectGptChatScenarioFromText(text) {
   }
 
   return { scenario: null, intent: null };
+}
+
+function detectBusinessTypeFromText(text) {
+  const t = String(text || "").toLowerCase();
+
+  if (
+    t.includes("doctor") ||
+    t.includes("hospital") ||
+    t.includes("clinic") ||
+    t.includes("appointment") ||
+    t.includes("medical") ||
+    t.includes("patient") ||
+    t.includes("consultation")
+  ) {
+    return "hospital_clinic";
+  }
+
+  if (
+    t.includes("salon") ||
+    t.includes("spa") ||
+    t.includes("haircut") ||
+    t.includes("massage") ||
+    t.includes("facial") ||
+    t.includes("stylist") ||
+    t.includes("beauty")
+  ) {
+    return "salon_spa";
+  }
+
+  if (
+    t.includes("office") ||
+    t.includes("meeting") ||
+    t.includes("conference") ||
+    t.includes("business") ||
+    t.includes("discussion") ||
+    t.includes("appointment with manager")
+  ) {
+    return "office_business";
+  }
+
+  if (
+    t.includes("resort") ||
+    t.includes("vacation") ||
+    t.includes("holiday") ||
+    t.includes("travel") ||
+    t.includes("tour") ||
+    t.includes("package")
+  ) {
+    return "resort_travel";
+  }
+
+  if (
+    t.includes("repair") ||
+    t.includes("cleaning") ||
+    t.includes("service call") ||
+    t.includes("inspection") ||
+    t.includes("installation") ||
+    t.includes("maintenance")
+  ) {
+    return "local_service";
+  }
+
+  return null;
 }
 
 function extractGptChatSlotsFromText(text, scenario) {
@@ -366,6 +430,7 @@ function buildGptChatContextSummary(session) {
   const parts = [];
 
   if (session.scenario) parts.push(`scenario=${session.scenario}`);
+  if (session.business_type) parts.push(`business_type=${session.business_type}`);
   if (session.last_intent) parts.push(`intent=${session.last_intent}`);
 
   const slotEntries = Object.entries(session.slots || {})
@@ -413,28 +478,80 @@ function buildGptChatFollowUp(session) {
 
   // ✅ 👉 INSERT PATCH 3 RIGHT HERE 👇
   if (session.scenario === "generic_service") {
-    if (!session.slots.service_type) {
-      return "Sure — what kind of service would you like to arrange?";
+  if (!session.slots.service_type) {
+    if (session.business_type === "hospital_clinic") {
+      return "Sure — is this for a doctor visit, consultation, or something else?";
     }
 
-    if (!session.slots.date) {
-      return "What day would you like me to note for this?";
+    if (session.business_type === "salon_spa") {
+      return "Sure — what service would you like to book?";
     }
 
-    if (!session.slots.time) {
-      return "What time works best for you?";
+    if (session.business_type === "office_business") {
+      return "Sure — what kind of meeting or appointment should I note?";
     }
 
-    if (!session.slots.participants) {
-      return "How many people should I include?";
+    if (session.business_type === "resort_travel") {
+      return "Sure — what kind of reservation or service are you looking for?";
     }
 
-    if (!session.slots.name) {
-      return "Got it. What name should I note for this request?";
+    if (session.business_type === "local_service") {
+      return "Sure — what kind of service do you need help arranging?";
     }
 
-    return `Thanks, ${session.slots.name} — I’ve noted your request for ${session.slots.service_type} on ${session.slots.date} at ${session.slots.time} for ${session.slots.participants} people.`;
+    return "Sure — what kind of service would you like to arrange?";
   }
+
+  if (!session.slots.date) {
+    if (session.business_type === "hospital_clinic") {
+      return "What day would you like to come in?";
+    }
+
+    if (session.business_type === "office_business") {
+      return "What day should I note for the meeting?";
+    }
+
+    return "What day would you like me to note for this?";
+  }
+
+  if (!session.slots.time) {
+    if (session.business_type === "hospital_clinic") {
+      return "What time works best for the appointment?";
+    }
+
+    if (session.business_type === "salon_spa") {
+      return "What time would you prefer?";
+    }
+
+    return "What time works best for you?";
+  }
+
+  if (!session.slots.participants) {
+    if (session.business_type === "hospital_clinic") {
+      return "Should I note this for just one person?";
+    }
+
+    if (session.business_type === "office_business") {
+      return "How many people should I include in the meeting?";
+    }
+
+    return "How many people should I include?";
+  }
+
+  if (!session.slots.name) {
+    if (session.business_type === "hospital_clinic") {
+      return "Got it. What name should I note for the appointment?";
+    }
+
+    if (session.business_type === "office_business") {
+      return "Got it. What name should I note for this meeting request?";
+    }
+
+    return "Got it. What name should I note for this request?";
+  }
+
+  return `Thanks, ${session.slots.name} — I’ve noted your request for ${session.slots.service_type} on ${session.slots.date} at ${session.slots.time} for ${session.slots.participants} people.`;
+}
 
   // 👇 DO NOT REMOVE THIS
   return null;
@@ -701,14 +818,19 @@ app.post("/api/gpt/chat", async (req, res) => {
       pushGptChatHistory(session, "user", message);
 
       const detected = detectGptChatScenarioFromText(message);
+const detectedBusinessType = detectBusinessTypeFromText(message);
 
-      if (!session.scenario && detected.scenario) {
-        session.scenario = detected.scenario;
-      }
+if (!session.scenario && detected.scenario) {
+  session.scenario = detected.scenario;
+}
 
-      if (detected.intent) {
-        session.last_intent = detected.intent;
-      }
+if (detected.intent) {
+  session.last_intent = detected.intent;
+}
+
+if (!session.business_type && detectedBusinessType) {
+  session.business_type = detectedBusinessType;
+}
 
       const extracted = extractGptChatSlotsFromText(
         message,
