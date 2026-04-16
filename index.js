@@ -382,17 +382,22 @@ app.post("/api/gpt/chat", async (req, res) => {
 
     const sessionId = `gpt_demo_${Date.now()}`;
 
-    // Demo-safe Marketplace route:
-    // - no JWT required
-    // - fixed safe business/tenant context
-    // - no side effects
-    const reply = await retrieveAnswer(message, 1, "en-US");
+    const result = await retrieveAnswer(message, 1, "en-US");
+
+    const finalReply =
+      typeof result === "string"
+        ? result
+        : result?.reply ||
+          result?.answer ||
+          result?.text ||
+          result?.message ||
+          "Sorry, I could not generate a response.";
 
     return res.status(200).json({
       ok: true,
-      reply: typeof reply === "string" ? reply : String(reply || ""),
+      reply: finalReply,
       session_id: sessionId,
-      source: "brain",
+      source: result?.source || "brain",
     });
   } catch (err) {
     console.error("❌ /api/gpt/chat error:", err);
