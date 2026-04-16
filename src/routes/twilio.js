@@ -167,7 +167,7 @@ async function handleVoiceWebhook(req, res) {
     "Welcome to Alphine AI. The call orchestration service is active."
   );
 
-  const streamUrl = `${process.env.ALPHINE_STREAM_BASE}/twilio/stream`;
+  const streamUrl = `${process.env.ALPHINE_STREAM_BASE}/ws/twilio-stream`;
   console.log("🔗 [twilio] Stream target:", streamUrl);
   console.log("🔗 [twilio] ALPHINE_STREAM_BASE =", process.env.ALPHINE_STREAM_BASE || "(missing)");
 

@@ -1184,10 +1184,10 @@ app.use("/twilio", twilioRouter);
 console.log("✅ Mounted /twilio routes");
 
 if (typeof app.ws === "function") {
-  app.ws("/twilio/stream", handleTwilioStream);
-  console.log("✅ Mounted WebSocket streaming route at /twilio/stream (Story 13.1.2)");
+  app.ws("/ws/twilio-stream", handleTwilioStream);
+  console.log("✅ Mounted WebSocket streaming route at /ws/twilio-stream (Story 13.1.4)");
 } else {
-  console.warn("⚠️ app.ws is not available; /twilio/stream WebSocket route not mounted.");
+  console.warn("⚠️ app.ws is not available; /ws/twilio-stream WebSocket route not mounted.");
 }
 
 // Story 12.4 — Explicit assets mount (Render/Linux path-safe)
