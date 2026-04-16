@@ -12,6 +12,9 @@ const { transcribeMulaw } = require("../brain/utils/sttGoogle"); // ✅ Google S
 
 require("dotenv").config({ path: path.resolve(__dirname, "../../.env") });
 
+console.log("🧩 [twilio->tts] resolved module:", require.resolve("../../tts"));
+console.log("🧩 [twilio->tts] typeof synthesizeSpeech:", typeof synthesizeSpeech);
+
 const VOICE_TURN_SILENCE_MS = Number(process.env.VOICE_TURN_SILENCE_MS || 1200);
 const VOICE_MIN_UTTERANCE_CHARS = Number(process.env.VOICE_MIN_UTTERANCE_CHARS || 3);
 const VOICE_MAX_REPLY_CHARS = Number(process.env.VOICE_MAX_REPLY_CHARS || 220);
@@ -432,6 +435,17 @@ async function handleTwilioStream(ws, req) {
 
     let ttsBuffer = null;
     try {
+      console.log("🗣️ [twilio] about to call synthesizeSpeech", {
+        callSid: activeCallSid,
+        streamSid: activeStreamSid,
+        replyPreview: String(shapedReply || "").slice(0, 120),
+        hasReply: !!shapedReply,
+        langCode: tenantLangCode,
+        tenantId,
+        regionCode,
+        path: "../../tts",
+      });
+
       ttsBuffer = await synthesizeSpeech(shapedReply, tenantLangCode, {
         tenantId,
         regionCode,
@@ -439,6 +453,13 @@ async function handleTwilioStream(ws, req) {
         useFillers: false,
         outputFormat: "ulaw_8000",
         acceptMime: "audio/mpeg",
+      });
+
+      console.log("📥 [twilio] synthesizeSpeech returned", {
+        callSid: activeCallSid,
+        streamSid: activeStreamSid,
+        hasAudio: !!ttsBuffer,
+        bytes: ttsBuffer?.length || 0,
       });
     } catch (ttsErr) {
       console.error("❌  TTS synthesis failed:", ttsErr.message);
@@ -650,12 +671,31 @@ async function handleTwilioStream(ws, req) {
 
           let ttsBuffer = null;
           try {
+            console.log("🗣️ [twilio] about to call synthesizeSpeech", {
+              callSid: activeCallSid,
+              streamSid: activeStreamSid,
+              replyPreview: String(fallbackReply || "").slice(0, 120),
+              hasReply: !!fallbackReply,
+              langCode: tenantLangCode,
+              tenantId,
+              path: "../../tts",
+              branch: "forced_fallback_invalid_stt",
+            });
+
             ttsBuffer = await synthesizeSpeech(fallbackReply, tenantLangCode, {
               tenantId,
               tonePreset: "friendly",
               useFillers: false,
               outputFormat: "ulaw_8000",
               acceptMime: "audio/mpeg",
+            });
+
+            console.log("📥 [twilio] synthesizeSpeech returned", {
+              callSid: activeCallSid,
+              streamSid: activeStreamSid,
+              hasAudio: !!ttsBuffer,
+              bytes: ttsBuffer?.length || 0,
+              branch: "forced_fallback_invalid_stt",
             });
           } catch (ttsErr) {
             console.error("❌ [twilio] Fallback TTS failed:", ttsErr.message);
@@ -721,12 +761,31 @@ async function handleTwilioStream(ws, req) {
 
             let ttsBuffer = null;
             try {
+              console.log("🗣️ [twilio] about to call synthesizeSpeech", {
+                callSid: activeCallSid,
+                streamSid: activeStreamSid,
+                replyPreview: String(fallbackReply || "").slice(0, 120),
+                hasReply: !!fallbackReply,
+                langCode: tenantLangCode,
+                tenantId,
+                path: "../../tts",
+                branch: "dispatch_error_fallback",
+              });
+
               ttsBuffer = await synthesizeSpeech(fallbackReply, tenantLangCode, {
                 tenantId,
                 tonePreset: "friendly",
                 useFillers: false,
                 outputFormat: "ulaw_8000",
                 acceptMime: "audio/mpeg",
+              });
+
+              console.log("📥 [twilio] synthesizeSpeech returned", {
+                callSid: activeCallSid,
+                streamSid: activeStreamSid,
+                hasAudio: !!ttsBuffer,
+                bytes: ttsBuffer?.length || 0,
+                branch: "dispatch_error_fallback",
               });
             } catch (ttsErr) {
               console.error("❌  Fallback TTS synthesis failed:", ttsErr.message);
