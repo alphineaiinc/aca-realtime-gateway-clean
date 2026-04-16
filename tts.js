@@ -144,6 +144,30 @@ function resolveVoiceId(langCode, voiceProfile, explicitVoiceId) {
   return DEFAULT_VOICE_ID;
 }
 
+function safePreview(value, max = 80) {
+  const str = typeof value === "string" ? value : String(value ?? "");
+  return str.length > max ? str.slice(0, max) + "..." : str;
+}
+
+function normalizeApiKey(raw) {
+  if (typeof raw !== "string") return "";
+  return raw.trim();
+}
+
+function decodeErrorBody(data) {
+  if (!data) return null;
+  if (Buffer.isBuffer(data)) return data.toString("utf8");
+  if (data instanceof ArrayBuffer) return Buffer.from(data).toString("utf8");
+  if (typeof data === "object") {
+    try {
+      return JSON.stringify(data);
+    } catch {
+      return String(data);
+    }
+  }
+  return String(data);
+}
+
 /**
  * synthesizeSpeech
  *
@@ -162,7 +186,14 @@ function resolveVoiceId(langCode, voiceProfile, explicitVoiceId) {
  */
 async function synthesizeSpeech(text, langCode = "en-US", options = {}) {
   try {
-    const apiKey = process.env.ELEVENLABS_API_KEY;
+    const rawApiKey = process.env.ELEVENLABS_API_KEY;
+    const apiKey = normalizeApiKey(rawApiKey);
+
+    console.log("🔐 [tts] key exists:", !!rawApiKey);
+    console.log("🔐 [tts] key trimmed exists:", !!apiKey);
+    console.log("🔐 [tts] key length:", apiKey ? apiKey.length : 0);
+    console.log("🔐 [tts] key prefix:", apiKey ? apiKey.slice(0, 5) : "NONE");
+
     if (!apiKey) throw new Error("Missing ELEVENLABS_API_KEY in .env");
 
     let {
@@ -236,8 +267,8 @@ async function synthesizeSpeech(text, langCode = "en-US", options = {}) {
     );
 
     console.log("🧠 [tts] Text pipeline preview:", {
-      original_preview: text.substring(0, 80) + "...",
-      processed_preview: processedText.substring(0, 80) + "...",
+      original_preview: safePreview(text),
+      processed_preview: safePreview(processedText),
       langCode,
       regionCode,
       tonePreset,
@@ -271,10 +302,11 @@ async function synthesizeSpeech(text, langCode = "en-US", options = {}) {
       url,
       model_id: "eleven_multilingual_v2",
       language_code: baseLang,
-      text_preview: processedText.substring(0, 80) + "...",
+      text_preview: safePreview(processedText),
       stability,
       similarity_boost,
       outputFormat,
+      acceptMime,
     });
 
     const response = await axios.post(
@@ -297,14 +329,19 @@ async function synthesizeSpeech(text, langCode = "en-US", options = {}) {
     console.log("✅ [tts] ElevenLabs synthesis complete", {
       bytes: response.data ? response.data.length : 0,
     });
+
     return Buffer.from(response.data);
   } catch (err) {
-    console.error(
-      "❌ [tts] ElevenLabs error:",
-      err.response?.data || err.message
-    );
+    const status = err.response?.status || null;
+    const statusText = err.response?.statusText || null;
+    const decodedError = decodeErrorBody(err.response?.data);
+
+    console.error("❌ [tts] ElevenLabs status:", status);
+    console.error("❌ [tts] ElevenLabs statusText:", statusText);
+    console.error("❌ [tts] ElevenLabs error body:", decodedError || err.message);
+
     throw new Error(
-      "ElevenLabs TTS failed: " + (err.response?.statusText || err.message)
+      "ElevenLabs TTS failed: " + (statusText || decodedError || err.message)
     );
   }
 }
