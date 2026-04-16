@@ -597,7 +597,56 @@ async function handleTwilioStream(ws, req) {
         }
 
         userText = normalizeIncomingVoiceText(userText);
+const cleanedText = normalizeIncomingVoiceText(userText);
 
+// Force fallback if text is empty OR meaningless
+if (!cleanedText || cleanedText.length < 2) {
+  console.log("ℹ️ [stt] Invalid or empty transcript — forcing fallback");
+
+  pushTwilioDebug("stt_invalid_forced", {
+    callSid: activeCallSid,
+    raw: userText,
+    cleaned: cleanedText,
+  });
+
+  const fallbackReply =
+    "Hello, I can hear you clearly. Please say your request, for example, book a table or schedule an appointment.";
+
+  let ttsBuffer = null;
+  try {
+    ttsBuffer = await synthesizeSpeech(fallbackReply, tenantLangCode, {
+      tenantId,
+      tonePreset: "friendly",
+      useFillers: false,
+      outputFormat: "ulaw_8000",
+      acceptMime: "audio/mpeg",
+    });
+  } catch (ttsErr) {
+    console.error("❌ [twilio] Fallback TTS failed:", ttsErr.message);
+  }
+
+  if (ttsBuffer && activeStreamSid && streamActive) {
+    pushTwilioDebug("tts_send_forced", {
+      callSid: activeCallSid,
+      streamSid: activeStreamSid,
+      bytes: ttsBuffer.length,
+    });
+
+    console.log("📤 [twilio] Sending forced fallback audio");
+
+    ws.send(
+      JSON.stringify({
+        event: "media",
+        streamSid: activeStreamSid,
+        media: {
+          payload: ttsBuffer.toString("base64"),
+        },
+      })
+    );
+  }
+
+  return;
+}
                 if (!userText) {
           console.log("ℹ️ [stt] Empty transcript detected — forcing fallback");
 
