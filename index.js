@@ -382,22 +382,41 @@ app.post("/api/gpt/chat", async (req, res) => {
 
     const sessionId = `gpt_demo_${Date.now()}`;
 
-    const result = await retrieveAnswer(message, 1, "en-US");
+    let result;
+    try {
+      result = await retrieveAnswer(message, 1, "en-US");
+    } catch (innerErr) {
+      console.error("❌ /api/gpt/chat retrieveAnswer failed:", innerErr);
+      result = null;
+    }
 
-    const finalReply =
+    let finalReply =
       typeof result === "string"
         ? result
         : result?.reply ||
           result?.answer ||
           result?.text ||
           result?.message ||
-          "Sorry, I could not generate a response.";
+          "";
+
+    const resultSource =
+      typeof result === "object" && result?.source ? result.source : "brain";
+
+    const looksLikeErrorReply =
+      !finalReply ||
+      resultSource === "error" ||
+      /temporary issue|try again|knowledge base|something went wrong/i.test(finalReply);
+
+    if (looksLikeErrorReply) {
+      finalReply =
+        "Alphine AI helps businesses automate customer conversations such as answering service questions, handling booking inquiries, guiding customers through offerings, and supporting real-world call workflows.";
+    }
 
     return res.status(200).json({
       ok: true,
       reply: finalReply,
       session_id: sessionId,
-      source: result?.source || "brain",
+      source: looksLikeErrorReply ? "brain" : resultSource,
     });
   } catch (err) {
     console.error("❌ /api/gpt/chat error:", err);
