@@ -361,13 +361,14 @@ function buildGptChatContextSummary(session) {
 function buildGptChatFollowUp(session) {
   if (!session || !session.scenario) return null;
 
-  if (session.scenario === "restaurant_reservation") {
-    if (!session.slots.date) return "Sure — what day would you like the reservation?";
-    if (!session.slots.time) return "What time should I note for the table?";
-    if (!session.slots.party_size) return "How many people will be joining?";
-    if (!session.slots.name) return "Got it. What name should I put on the reservation?";
-    return `Thanks — I have ${session.slots.date}, ${session.slots.time}, for ${session.slots.party_size} people under ${session.slots.name}.`;
-  }
+ if (session.scenario === "restaurant_reservation") {
+  if (!session.slots.date) return "Sure — what day would you like the reservation?";
+  if (!session.slots.time) return "What time should I note for the table?";
+  if (!session.slots.party_size) return "How many people will be joining?";
+  if (!session.slots.name) return "Got it. What name should I put on the reservation?";
+
+  return `Thanks, ${session.slots.name} — I’ve noted your request for ${session.slots.date} at ${session.slots.time} for ${session.slots.party_size} people.`;
+}
 
   if (session.scenario === "hotel_booking") {
     if (!session.slots.check_in) return "Sure — when would you like to check in?";
@@ -748,7 +749,15 @@ app.post("/api/gpt/chat", async (req, res) => {
       }
     }
 
-    finalReply = String(finalReply || "").trim().replace(/\s+/g, " ");
+   finalReply = String(finalReply || "").trim().replace(/\s+/g, " ");
+
+if (session?.scenario === "restaurant_reservation") {
+  finalReply = finalReply
+    .replace(/\byou(?:'re| are) all set\b/gi, "I’ve noted the request")
+    .replace(/\bconfirmed\b/gi, "noted")
+    .replace(/\byour table is set\b/gi, "your request is noted")
+    .replace(/\bbooked\b/gi, "noted");
+}
 
     // Safety fallback
     if (!finalReply) {
