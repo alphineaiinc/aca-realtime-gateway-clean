@@ -1,81 +1,39 @@
 ﻿openapi: 3.1.0
 info:
   title: Alphine AI ACA API
-  description: Public Marketplace-facing API for Alphine AI Automated Call Attender.
-  version: "1.0.0"
+  version: 1.0.0
+  description: API for demo token generation and chat responses for Alphine AI Smart Call Assistant.
 
 servers:
   - url: https://aca-realtime-gateway-clean.onrender.com
 
 paths:
-  /health:
-    get:
-      operationId: getHealth
-      summary: Health check
-      description: Returns the current health status of the ACA service.
-      responses:
-        "200":
-          description: Service is healthy
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  ok:
-                    type: boolean
-                  service:
-                    type: string
-                  ts:
-                    type: string
-                    format: date-time
-
   /api/demo/token:
     post:
       operationId: createDemoToken
       summary: Create demo token
-      description: Creates a short-lived demo JWT for Marketplace-safe chat access.
+      description: Returns a short-lived demo token for the ACA demo flow.
       requestBody:
         required: false
         content:
           application/json:
             schema:
               type: object
-              properties:
-                name:
-                  type: string
-                role:
-                  type: string
-                  example: demo
+              additionalProperties: false
+              properties: {}
       responses:
         "200":
-          description: Demo token issued successfully
+          description: Demo token created
           content:
             application/json:
               schema:
-                type: object
-                properties:
-                  ok:
-                    type: boolean
-                  token:
-                    type: string
-                  expires_in:
-                    type: integer
-                  tenant_id:
-                    type: integer
-                  locale_default:
-                    type: string
-        "401":
-          description: Unauthorized
-        "403":
-          description: Forbidden
-        "429":
-          description: Rate limit exceeded
+                $ref: "#/components/schemas/DemoTokenResponse"
 
   /api/chat:
     post:
       operationId: sendChatMessage
-      summary: Send a message to ACA
-      description: Sends a user message to ACA and returns a conversational response. Requires a Bearer token obtained from /api/demo/token.
+      summary: Send chat message
+      description: Sends a user message to ACA and returns a conversational response.
       security:
         - bearerAuth: []
       requestBody:
@@ -83,47 +41,53 @@ paths:
         content:
           application/json:
             schema:
-              type: object
-              required:
-                - message
-              properties:
-                session_id:
-                  type: string
-                  example: webchat
-                locale:
-                  type: string
-                  example: en-US
-                message:
-                  type: string
-                  example: Hello ACA
+              $ref: "#/components/schemas/ChatRequest"
       responses:
         "200":
-          description: Successful chat response
+          description: Chat response returned
           content:
             application/json:
               schema:
-                type: object
-                properties:
-                  ok:
-                    type: boolean
-                  reply:
-                    type: string
-                  session_id:
-                    type: string
-                  locale:
-                    type: string
-        "400":
-          description: Invalid request
-        "401":
-          description: Unauthorized
-        "429":
-          description: Rate limit exceeded
-        "500":
-          description: Server error
+                $ref: "#/components/schemas/ChatResponse"
 
 components:
   securitySchemes:
     bearerAuth:
       type: http
       scheme: bearer
-      bearerFormat: JWT
+
+  schemas:
+    ChatRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - message
+      properties:
+        message:
+          type: string
+          description: The user's input message.
+
+    DemoTokenResponse:
+      type: object
+      additionalProperties: true
+      properties:
+        ok:
+          type: boolean
+        token:
+          type: string
+        expires_at:
+          type: string
+          description: Expiration timestamp if returned by the API.
+
+    ChatResponse:
+      type: object
+      additionalProperties: true
+      properties:
+        ok:
+          type: boolean
+        reply:
+          type: string
+        session_id:
+          type: string
+        source:
+          type: string
