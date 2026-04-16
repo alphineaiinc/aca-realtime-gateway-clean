@@ -1184,8 +1184,27 @@ app.use("/twilio", twilioRouter);
 console.log("✅ Mounted /twilio routes");
 
 if (typeof app.ws === "function") {
-  app.ws("/ws/twilio-stream", handleTwilioStream);
-  console.log("✅ Mounted WebSocket streaming route at /ws/twilio-stream (Story 13.1.4)");
+  const { handleTwilioStream } = require("./src/routes/twilio");
+
+if (typeof app.ws === "function") {
+  app.ws("/ws/twilio-stream", (ws, req) => {
+    console.log("🔥 [twilio_stream_inline] connected");
+
+    try {
+      // Call your existing handler directly
+      handleTwilioStream(ws, req);
+    } catch (err) {
+      console.error("❌ [twilio_stream_inline] handler crash:", err.message);
+      try {
+        ws.close();
+      } catch (_) {}
+    }
+  });
+
+  console.log("✅ Mounted WebSocket streaming route at /ws/twilio-stream (Story 13.1.7 INLINE)");
+}
+
+  console.log("✅ Mounted WebSocket streaming route at /ws/twilio-stream (Story 13.1.6)");
 } else {
   console.warn("⚠️ app.ws is not available; /ws/twilio-stream WebSocket route not mounted.");
 }
