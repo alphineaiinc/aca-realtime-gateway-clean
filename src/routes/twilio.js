@@ -10,6 +10,17 @@ const { synthesizeSpeech } = require("../../tts");
 const { getTenantRegion } = require("../brain/utils/tenantContext"); // ✅ tenant region helper
 const { transcribeMulaw } = require("../brain/utils/sttGoogle"); // ✅ Google STT helper
 
+const {
+  handleCallStarted,
+  handleGreeting,
+  handleTranscriptPartial,
+  handleTranscriptFinal,
+  handleProcessingResult,
+  handleSpeak,
+  handleSpeechComplete,
+  handleCallEnded,
+} = require("../voice/sessionController");
+
 require("dotenv").config({ path: path.resolve(__dirname, "../../.env") });
 
 console.log("🧩 [twilio->tts] resolved module:", require.resolve("../../tts"));
@@ -147,7 +158,7 @@ function isPlaybackLocked(ws) {
   return isPlaybackActive(ws);
 }
 
-function beginPlaybackLock(ws, ttsBuffer, activeCallSid, activeStreamSid, branch = "main") {
+function beginPlaybackLock(ws, activeCallSid, activeStreamSid, ttsBuffer, branch = "main") {
   if (!ws) return;
 
   const holdMs = estimatePlaybackMs(ttsBuffer);
@@ -208,7 +219,7 @@ function endPlaybackLock(ws, activeCallSid, activeStreamSid, reason = "unknown")
 function sendTwilioAudioWithMark(ws, activeCallSid, activeStreamSid, ttsBuffer, branch = "main") {
   if (!ws || !activeStreamSid || !ttsBuffer?.length) return;
 
-  beginPlaybackLock(ws, ttsBuffer, activeCallSid, activeStreamSid, branch);
+  beginPlaybackLock(ws, activeCallSid, activeStreamSid, ttsBuffer, branch);
 
   const playback = ensurePlaybackState(ws);
   const payload = ttsBuffer.toString("base64");
@@ -304,6 +315,7 @@ function normalizeVoiceReply(reply) {
       reply.text ||
       reply.response ||
       reply.message ||
+      reply.replyText ||
       "";
   }
 
@@ -349,6 +361,111 @@ function normalizeVoiceReply(reply) {
   return text;
 }
 
+async function synthesizeAndSendReply(
+  ws,
+  activeCallSid,
+  activeStreamSid,
+  tenantId,
+  tenantLangCode,
+  replyText,
+  branch = "main"
+) {
+  const shapedReply = normalizeVoiceReply(replyText);
+  if (!shapedReply) return false;
+
+  console.log(
+    `${VOICE_LOG_PREFIX} reply_ready`,
+    JSON.stringify({
+      callSid: activeCallSid,
+      chars: shapedReply.length,
+      completed: looksTaskCompleted(shapedReply),
+      branch,
+    })
+  );
+
+  pushTwilioDebug("reply_ready", {
+    callSid: activeCallSid,
+    chars: shapedReply.length,
+    completed: looksTaskCompleted(shapedReply),
+    branch,
+  });
+
+  console.log("💬  Voice reply:", shapedReply);
+
+  let regionCode = null;
+  try {
+    regionCode = await getTenantRegion(tenantId);
+  } catch (e) {
+    console.warn(
+      `⚠️  Failed to get tenant region for tenant=${tenantId}:`,
+      e.message
+    );
+  }
+
+  let ttsBuffer = null;
+  try {
+    console.log("🗣️ [twilio] about to call synthesizeSpeech", {
+      callSid: activeCallSid,
+      streamSid: activeStreamSid,
+      replyPreview: String(shapedReply || "").slice(0, 120),
+      hasReply: !!shapedReply,
+      langCode: tenantLangCode,
+      tenantId,
+      regionCode,
+      path: "../../tts",
+      branch,
+    });
+
+    ttsBuffer = await synthesizeSpeech(shapedReply, tenantLangCode, {
+      tenantId,
+      regionCode,
+      tonePreset: "friendly",
+      useFillers: false,
+      outputFormat: "ulaw_8000",
+      acceptMime: "audio/mpeg",
+    });
+
+    console.log("📥 [twilio] synthesizeSpeech returned", {
+      callSid: activeCallSid,
+      streamSid: activeStreamSid,
+      hasAudio: !!ttsBuffer,
+      bytes: ttsBuffer?.length || 0,
+      branch,
+    });
+  } catch (ttsErr) {
+    console.error("❌  TTS synthesis failed:", ttsErr.message);
+    pushTwilioDebug("tts_error", {
+      callSid: activeCallSid,
+      error: ttsErr.message,
+      branch,
+    });
+  }
+
+  if (ttsBuffer && activeStreamSid) {
+    handleSpeak(activeCallSid);
+    sendTwilioAudioWithMark(
+      ws,
+      activeCallSid,
+      activeStreamSid,
+      ttsBuffer,
+      branch
+    );
+    return true;
+  }
+
+  if (!activeStreamSid) {
+    console.warn(
+      "⚠️  Skipping TTS send: activeStreamSid is missing, cannot send media event."
+    );
+    pushTwilioDebug("tts_skip_no_streamsid", {
+      callSid: activeCallSid,
+      branch,
+    });
+  }
+
+  return false;
+}
+
 /**
  * Shared handler for Twilio voice webhook
  */
@@ -357,11 +474,6 @@ async function handleVoiceWebhook(req, res) {
 
   const VoiceResponse = twilio.twiml.VoiceResponse;
   const twiml = new VoiceResponse();
-
-  twiml.say(
-    { voice: "Polly.Amy-Neural" },
-    "Welcome to Alphine AI. The call orchestration service is active."
-  );
 
   const streamUrl = `${process.env.ALPHINE_STREAM_BASE}/ws/twilio-stream`;
   console.log("🔗 [twilio] Stream target:", streamUrl);
@@ -579,6 +691,15 @@ async function handleTwilioStream(ws, req) {
       text: finalVoiceText.slice(0, 120),
     });
 
+    const finalResult = handleTranscriptFinal(activeCallSid, finalVoiceText);
+    if (!finalResult || !finalResult.shouldProcess) {
+      pushTwilioDebug("dispatch_skipped_controller", {
+        callSid: activeCallSid,
+        text: finalVoiceText.slice(0, 120),
+      });
+      return;
+    }
+
     const reply = await onFinalTranscript(finalVoiceText);
 
     if (!reply) {
@@ -586,89 +707,37 @@ async function handleTwilioStream(ws, req) {
       pushTwilioDebug("reply_empty", {
         callSid: activeCallSid,
       });
+
+      handleProcessingResult(activeCallSid, {
+        shouldSpeak: false,
+        replyText: "",
+        replyType: "silent",
+      });
       return;
     }
 
-    const shapedReply = normalizeVoiceReply(reply);
-
-    console.log(
-      `${VOICE_LOG_PREFIX} reply_ready`,
-      JSON.stringify({
-        callSid: activeCallSid,
-        chars: shapedReply.length,
-        completed: looksTaskCompleted(shapedReply),
-      })
-    );
-    pushTwilioDebug("reply_ready", {
-      callSid: activeCallSid,
-      chars: shapedReply.length,
-      completed: looksTaskCompleted(shapedReply),
+    const controllerReply = handleProcessingResult(activeCallSid, {
+      shouldSpeak: true,
+      replyText: reply,
+      replyType: looksTaskCompleted(reply) ? "result" : "reply",
     });
 
-    console.log("💬  Voice reply:", shapedReply);
-
-    let regionCode = null;
-    try {
-      regionCode = await getTenantRegion(tenantId);
-    } catch (e) {
-      console.warn(
-        `⚠️  Failed to get tenant region for tenant=${tenantId}:`,
-        e.message
-      );
+    if (!controllerReply || !controllerReply.shouldSpeak) {
+      pushTwilioDebug("reply_blocked_controller", {
+        callSid: activeCallSid,
+      });
+      return;
     }
 
-    let ttsBuffer = null;
-    try {
-      console.log("🗣️ [twilio] about to call synthesizeSpeech", {
-        callSid: activeCallSid,
-        streamSid: activeStreamSid,
-        replyPreview: String(shapedReply || "").slice(0, 120),
-        hasReply: !!shapedReply,
-        langCode: tenantLangCode,
-        tenantId,
-        regionCode,
-        path: "../../tts",
-      });
-
-      ttsBuffer = await synthesizeSpeech(shapedReply, tenantLangCode, {
-        tenantId,
-        regionCode,
-        tonePreset: "friendly",
-        useFillers: false,
-        outputFormat: "ulaw_8000",
-        acceptMime: "audio/mpeg",
-      });
-
-      console.log("📥 [twilio] synthesizeSpeech returned", {
-        callSid: activeCallSid,
-        streamSid: activeStreamSid,
-        hasAudio: !!ttsBuffer,
-        bytes: ttsBuffer?.length || 0,
-      });
-    } catch (ttsErr) {
-      console.error("❌  TTS synthesis failed:", ttsErr.message);
-      pushTwilioDebug("tts_error", {
-        callSid: activeCallSid,
-        error: ttsErr.message,
-      });
-    }
-
-    if (ttsBuffer && activeStreamSid && streamActive) {
-      sendTwilioAudioWithMark(
-        ws,
-        activeCallSid,
-        activeStreamSid,
-        ttsBuffer,
-        "main"
-      );
-    } else if (!activeStreamSid) {
-      console.warn(
-        "⚠️  Skipping TTS send: activeStreamSid is missing, cannot send media event."
-      );
-      pushTwilioDebug("tts_skip_no_streamsid", {
-        callSid: activeCallSid,
-      });
-    }
+    await synthesizeAndSendReply(
+      ws,
+      activeCallSid,
+      activeStreamSid,
+      tenantId,
+      tenantLangCode,
+      controllerReply.replyText,
+      "main"
+    );
   }
 
   ws.on("message", async (msg) => {
@@ -704,6 +773,13 @@ async function handleTwilioStream(ws, req) {
         console.log("🎬  Stream started:", {
           callSid: activeCallSid,
           streamSid: activeStreamSid,
+        });
+
+        handleCallStarted(activeCallSid, {
+          tenantId,
+          businessId: null,
+          streamSid: activeStreamSid,
+          source: "twilio",
         });
 
         if (
@@ -756,6 +832,19 @@ async function handleTwilioStream(ws, req) {
           console.warn(
             `⚠️ [twilio] Failed to load tenant voice profile for tenant=${tenantId}:`,
             e.message
+          );
+        }
+
+        const greetingResult = handleGreeting(activeCallSid);
+        if (greetingResult && greetingResult.shouldSpeak && streamActive) {
+          await synthesizeAndSendReply(
+            ws,
+            activeCallSid,
+            activeStreamSid,
+            tenantId,
+            tenantLangCode,
+            greetingResult.replyText,
+            "greeting"
           );
         }
       } else if (data.event === "media" && data.media.payload) {
@@ -831,93 +920,31 @@ async function handleTwilioStream(ws, req) {
           });
         } catch (sttErr) {
           console.error(
-            "❌ [stt] Transcription failed, falling back to simulated text:",
+            "❌ [stt] Transcription failed; skipping this chunk:",
             sttErr.message
           );
           pushTwilioDebug("stt_error", {
             callSid: activeCallSid,
             error: sttErr.message,
           });
-          userText = "simulated transcription";
+          userText = "";
         }
 
         userText = normalizeIncomingVoiceText(userText);
         const cleanedText = normalizeIncomingVoiceText(userText);
 
         if (!cleanedText || cleanedText.length < 2) {
-          if (isPlaybackLocked(ws)) {
-            console.log("⏸️ [stt] Empty transcript ignored during ACA playback", {
-              callSid: activeCallSid,
-              streamSid: activeStreamSid,
-            });
-            pushTwilioDebug("stt_invalid_ignored_playback", {
-              callSid: activeCallSid,
-              streamSid: activeStreamSid,
-            });
-            return;
-          }
-
-          console.log("ℹ️ [stt] Invalid or empty transcript — forcing fallback");
-
-          pushTwilioDebug("stt_invalid_forced", {
+          pushTwilioDebug("stt_invalid_skipped", {
             callSid: activeCallSid,
             raw: userText,
             cleaned: cleanedText,
           });
-
-          const fallbackReply =
-            "Hello, I can hear you clearly. Please say your request, for example, book a table or schedule an appointment.";
-
-          let ttsBuffer = null;
-          try {
-            console.log("🗣️ [twilio] about to call synthesizeSpeech", {
-              callSid: activeCallSid,
-              streamSid: activeStreamSid,
-              replyPreview: String(fallbackReply || "").slice(0, 120),
-              hasReply: !!fallbackReply,
-              langCode: tenantLangCode,
-              tenantId,
-              path: "../../tts",
-              branch: "forced_fallback_invalid_stt",
-            });
-
-            ttsBuffer = await synthesizeSpeech(fallbackReply, tenantLangCode, {
-              tenantId,
-              tonePreset: "friendly",
-              useFillers: false,
-              outputFormat: "ulaw_8000",
-              acceptMime: "audio/mpeg",
-            });
-
-            console.log("📥 [twilio] synthesizeSpeech returned", {
-              callSid: activeCallSid,
-              streamSid: activeStreamSid,
-              hasAudio: !!ttsBuffer,
-              bytes: ttsBuffer?.length || 0,
-              branch: "forced_fallback_invalid_stt",
-            });
-          } catch (ttsErr) {
-            console.error("❌ [twilio] Fallback TTS failed:", ttsErr.message);
-            pushTwilioDebug("tts_fallback_error", {
-              callSid: activeCallSid,
-              error: ttsErr.message,
-            });
-          }
-
-          if (ttsBuffer && activeStreamSid && streamActive) {
-            sendTwilioAudioWithMark(
-              ws,
-              activeCallSid,
-              activeStreamSid,
-              ttsBuffer,
-              "forced_fallback_invalid_stt"
-            );
-          }
-
           return;
         }
 
         console.log(`👂  Heard (Call ${activeCallSid}):`, userText);
+
+        handleTranscriptPartial(activeCallSid, cleanedText);
 
         if (ws.__pendingVoiceTranscript) {
           ws.__pendingVoiceTranscript = `${ws.__pendingVoiceTranscript} ${userText}`.trim();
@@ -956,55 +983,6 @@ async function handleTwilioStream(ws, req) {
               callSid: activeCallSid,
               error: err?.message || String(err),
             });
-
-            const fallbackReply =
-              "Sorry, I didn't catch that. Please say that once more.";
-
-            let ttsBuffer = null;
-            try {
-              console.log("🗣️ [twilio] about to call synthesizeSpeech", {
-                callSid: activeCallSid,
-                streamSid: activeStreamSid,
-                replyPreview: String(fallbackReply || "").slice(0, 120),
-                hasReply: !!fallbackReply,
-                langCode: tenantLangCode,
-                tenantId,
-                path: "../../tts",
-                branch: "dispatch_error_fallback",
-              });
-
-              ttsBuffer = await synthesizeSpeech(fallbackReply, tenantLangCode, {
-                tenantId,
-                tonePreset: "friendly",
-                useFillers: false,
-                outputFormat: "ulaw_8000",
-                acceptMime: "audio/mpeg",
-              });
-
-              console.log("📥 [twilio] synthesizeSpeech returned", {
-                callSid: activeCallSid,
-                streamSid: activeStreamSid,
-                hasAudio: !!ttsBuffer,
-                bytes: ttsBuffer?.length || 0,
-                branch: "dispatch_error_fallback",
-              });
-            } catch (ttsErr) {
-              console.error("❌  Fallback TTS synthesis failed:", ttsErr.message);
-              pushTwilioDebug("tts_fallback_error", {
-                callSid: activeCallSid,
-                error: ttsErr.message,
-              });
-            }
-
-            if (ttsBuffer && activeStreamSid && streamActive) {
-              sendTwilioAudioWithMark(
-                ws,
-                activeCallSid,
-                activeStreamSid,
-                ttsBuffer,
-                "dispatch_error_fallback"
-              );
-            }
           }
         }, VOICE_TURN_SILENCE_MS);
       } else if (data.event === "mark") {
@@ -1027,6 +1005,7 @@ async function handleTwilioStream(ws, req) {
 
         if (markName && playback.currentMark && markName === playback.currentMark) {
           endPlaybackLock(ws, activeCallSid, activeStreamSid, "mark_received");
+          handleSpeechComplete(activeCallSid);
         }
       } else if (data.event === "stop") {
         console.log("🛑  Stream stopped for Call SID:", data.stop.callSid);
@@ -1036,6 +1015,7 @@ async function handleTwilioStream(ws, req) {
         streamActive = false;
         clearPendingVoiceTurn(ws);
         endPlaybackLock(ws, activeCallSid, activeStreamSid, "stream_stop");
+        handleCallEnded(activeCallSid);
       }
     } catch (err) {
       console.error("❌  Stream error:", err);
@@ -1059,6 +1039,7 @@ async function handleTwilioStream(ws, req) {
     console.log("⚡  Twilio WebSocket disconnected");
     streamActive = false;
     endPlaybackLock(ws, activeCallSid, activeStreamSid, "ws_close");
+    handleCallEnded(activeCallSid);
   });
 }
 
