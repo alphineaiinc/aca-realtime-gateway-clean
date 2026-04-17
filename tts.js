@@ -188,27 +188,113 @@ function decodeErrorBody(data) {
 // PCM16 mono 24k → PCM16 mono 8k downsample
 // Simple decimator for telephony path
 // ------------------------------------------------------
-function downsamplePcm16Mono24kTo8k(pcm24kBuffer) {
-  if (!Buffer.isBuffer(pcm24kBuffer) || pcm24kBuffer.length < 2) {
+// ------------------------------------------------------
+// WAV PCM16 mono -> PCM16 mono 8k -> G.711 μ-law
+// Safer telephony path for OpenAI TTS
+// ------------------------------------------------------
+function parseWavPcm16Mono(wavBuffer) {
+  if (!Buffer.isBuffer(wavBuffer) || wavBuffer.length < 44) {
+    throw new Error("Invalid WAV buffer");
+  }
+
+  const riff = wavBuffer.toString("ascii", 0, 4);
+  const wave = wavBuffer.toString("ascii", 8, 12);
+
+  if (riff !== "RIFF" || wave !== "WAVE") {
+    throw new Error("Buffer is not a RIFF/WAVE file");
+  }
+
+  let offset = 12;
+  let fmt = null;
+  let dataOffset = -1;
+  let dataSize = 0;
+
+  while (offset + 8 <= wavBuffer.length) {
+    const chunkId = wavBuffer.toString("ascii", offset, offset + 4);
+    const chunkSize = wavBuffer.readUInt32LE(offset + 4);
+    const chunkDataStart = offset + 8;
+
+    if (chunkId === "fmt ") {
+      if (chunkSize < 16) {
+        throw new Error("Invalid WAV fmt chunk");
+      }
+
+      fmt = {
+        audioFormat: wavBuffer.readUInt16LE(chunkDataStart + 0),
+        numChannels: wavBuffer.readUInt16LE(chunkDataStart + 2),
+        sampleRate: wavBuffer.readUInt32LE(chunkDataStart + 4),
+        byteRate: wavBuffer.readUInt32LE(chunkDataStart + 8),
+        blockAlign: wavBuffer.readUInt16LE(chunkDataStart + 12),
+        bitsPerSample: wavBuffer.readUInt16LE(chunkDataStart + 14),
+      };
+    } else if (chunkId === "data") {
+      dataOffset = chunkDataStart;
+      dataSize = chunkSize;
+      break;
+    }
+
+    offset = chunkDataStart + chunkSize + (chunkSize % 2);
+  }
+
+  if (!fmt) {
+    throw new Error("WAV fmt chunk not found");
+  }
+
+  if (dataOffset < 0 || dataSize <= 0) {
+    throw new Error("WAV data chunk not found");
+  }
+
+  if (fmt.audioFormat !== 1) {
+    throw new Error(`Unsupported WAV audio format: ${fmt.audioFormat}`);
+  }
+
+  if (fmt.bitsPerSample !== 16) {
+    throw new Error(`Unsupported WAV bit depth: ${fmt.bitsPerSample}`);
+  }
+
+  if (fmt.numChannels !== 1) {
+    throw new Error(`Unsupported WAV channels: ${fmt.numChannels}`);
+  }
+
+  const dataEnd = Math.min(dataOffset + dataSize, wavBuffer.length);
+  const pcm16 = wavBuffer.subarray(dataOffset, dataEnd);
+
+  return {
+    sampleRate: fmt.sampleRate,
+    pcm16,
+  };
+}
+
+function downsamplePcm16Mono(pcmBuffer, inSampleRate, outSampleRate) {
+  if (!Buffer.isBuffer(pcmBuffer) || pcmBuffer.length < 2) {
     return Buffer.alloc(0);
   }
 
-  const sampleCount = Math.floor(pcm24kBuffer.length / 2);
-  const outSampleCount = Math.floor(sampleCount / 3);
-  const out = Buffer.alloc(outSampleCount * 2);
+  if (!Number.isFinite(inSampleRate) || !Number.isFinite(outSampleRate)) {
+    throw new Error("Invalid sample rates");
+  }
 
-  for (let i = 0, j = 0; j < outSampleCount; i += 3, j += 1) {
-    const byteIndex = i * 2;
-    const sample = pcm24kBuffer.readInt16LE(byteIndex);
+  if (inSampleRate === outSampleRate) {
+    return Buffer.from(pcmBuffer);
+  }
+
+  const inputSamples = Math.floor(pcmBuffer.length / 2);
+  const durationSeconds = inputSamples / inSampleRate;
+  const outputSamples = Math.max(1, Math.floor(durationSeconds * outSampleRate));
+  const out = Buffer.alloc(outputSamples * 2);
+
+  for (let j = 0; j < outputSamples; j += 1) {
+    const srcIndex = Math.min(
+      inputSamples - 1,
+      Math.floor((j * inSampleRate) / outSampleRate)
+    );
+    const sample = pcmBuffer.readInt16LE(srcIndex * 2);
     out.writeInt16LE(sample, j * 2);
   }
 
   return out;
 }
 
-// ------------------------------------------------------
-// PCM16 → G.711 μ-law
-// ------------------------------------------------------
 const MU_LAW_BIAS = 0x84;
 const MU_LAW_CLIP = 32635;
 
@@ -233,9 +319,7 @@ function linear16SampleToMulaw(sample) {
   }
 
   const mantissa = (magnitude >> (exponent + 3)) & 0x0f;
-  const muLawByte = ~(sign | (exponent << 4) | mantissa) & 0xff;
-
-  return muLawByte;
+  return ~(sign | (exponent << 4) | mantissa) & 0xff;
 }
 
 function pcm16ToMulaw(pcm16Buffer) {
@@ -254,8 +338,9 @@ function pcm16ToMulaw(pcm16Buffer) {
   return out;
 }
 
-function pcm24kToMulaw8k(pcm24kBuffer) {
-  const pcm8k = downsamplePcm16Mono24kTo8k(pcm24kBuffer);
+function wavToMulaw8k(wavBuffer) {
+  const { sampleRate, pcm16 } = parseWavPcm16Mono(wavBuffer);
+  const pcm8k = downsamplePcm16Mono(pcm16, sampleRate, 8000);
   return pcm16ToMulaw(pcm8k);
 }
 
@@ -384,7 +469,7 @@ async function synthesizeWithOpenAI(text, langCode = "en-US", options = {}) {
   });
 
   // For Twilio we request PCM, then convert to μ-law 8k locally.
-  const requestedFormat = ctx.outputFormat === "ulaw_8000" ? "pcm" : "mp3";
+const requestedFormat = ctx.outputFormat === "ulaw_8000" ? "wav" : "mp3";
 
   console.log("📤 [tts:openai] API Request:", {
     model,
@@ -411,14 +496,14 @@ async function synthesizeWithOpenAI(text, langCode = "en-US", options = {}) {
 
     let finalBuffer = rawAudio;
 
-    if (ctx.outputFormat === "ulaw_8000") {
-      finalBuffer = pcm24kToMulaw8k(rawAudio);
+  if (ctx.outputFormat === "ulaw_8000") {
+  finalBuffer = wavToMulaw8k(rawAudio);
 
-      console.log("🔄 [tts:openai] converted pcm24k -> mulaw8k", {
-        rawBytes: rawAudio.length,
-        finalBytes: finalBuffer.length,
-      });
-    }
+  console.log("🔄 [tts:openai] converted wav -> mulaw8k", {
+    rawBytes: rawAudio.length,
+    finalBytes: finalBuffer.length,
+  });
+}
 
     console.log("📦 [tts:openai] returning audio buffer", {
       bytes: finalBuffer.length,
