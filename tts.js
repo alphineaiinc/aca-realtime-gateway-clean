@@ -1,26 +1,17 @@
 // ===============================================
 // tts.js — Alphine AI Text-to-Speech Handler
 // Story 9.3 / 9.5 / 10.3 Integration + Global 113-language layer
+// Temporary provider swap: OpenAI default, ElevenLabs optional fallback
 // ===============================================
 const axios = require("axios");
-const fs = require("fs");
 const path = require("path");
+const OpenAI = require("openai");
 
 // ------------------------------------------------------
 // Global language registry (Story 9.1 / 9.7)
-// We don't need to hard-code all 113 languages in this file;
-// we just make sure any BCP-47 code from the registry is accepted.
 // ------------------------------------------------------
 let languageRegistry = null;
 try {
-  // config/languageRegistry.json:
-  // {
-  //   "languages": {
-  //      "as-IN": "Assamese (India)",
-  //      "bn-IN": "Bengali (India)",
-  //      ...
-  //   }
-  // }
   const registryPath = path.join(__dirname, "config", "languageRegistry.json");
   languageRegistry = require(registryPath);
   console.log(
@@ -37,7 +28,6 @@ try {
   );
 }
 
-// Helper to sanity-check a language code against the registry (if present)
 function isKnownLanguageCode(langCode) {
   if (!langCode || typeof langCode !== "string" || !languageRegistry) {
     return false;
@@ -45,7 +35,6 @@ function isKnownLanguageCode(langCode) {
   const all = languageRegistry.languages || {};
   if (all[langCode]) return true;
   const base = langCode.split("-")[0];
-  // Some registries may use base codes (e.g. "en") in addition to full BCP-47
   return Boolean(all[base]);
 }
 
@@ -53,8 +42,6 @@ console.log("📦 [tts] module loaded from:", __filename);
 
 // ------------------------------------------------------
 // Optional conversational helpers (prosody / fillers / accent)
-// If the modules are missing, we fall back to no-op so TTS
-// keeps working without breaking.
 // ------------------------------------------------------
 let applyProsody = (text, _opts) => text;
 let injectFillers = (text, _opts) => text;
@@ -78,7 +65,9 @@ try {
   console.warn("⚠️ [tts] accentShaper not found, using passthrough.");
 }
 
+// ------------------------------------------------------
 // Tenant voice profile loader (Story 9.5)
+// ------------------------------------------------------
 let getTenantVoiceProfile = async () => null;
 try {
   ({ getTenantVoiceProfile } = require("./src/brain/utils/voiceProfileLoader"));
@@ -86,35 +75,32 @@ try {
   console.warn("⚠️ [tts] voiceProfileLoader not found, tenant profiles disabled.");
 }
 
-// --- Default voice mapping (per specific language code)
-//
-// NOTE: This is *not* the full 113-language list. These are just
-// curated defaults for a few key locales. All other languages
-// from languageRegistry.json will still work; they'll just
-// fall back to DEFAULT_VOICE_ID unless the tenant profile
-// overrides voice_id.
+// ------------------------------------------------------
+// Provider + OpenAI client
+// ------------------------------------------------------
+const openai = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY,
+});
+
+const DEFAULT_TTS_PROVIDER = String(process.env.TTS_PROVIDER || "openai")
+  .trim()
+  .toLowerCase();
+
+// ------------------------------------------------------
+// ElevenLabs voice mapping (kept for later switch-back)
+// ------------------------------------------------------
 const voiceMap = {
-  "en-US": "21m00Tcm4TlvDq8ikWAM", // ElevenLabs "Rachel" (neutral US)
-  "en-IN": "21m00Tcm4TlvDq8ikWAM", // reuse neutral if no specific Indian set
-  "ta-IN": "TxGEqnHWrfWFTfGW9XjX", // Tamil (placeholder / sample)
-  "fr-FR": "EXAVITQu4vr4xnSDxMaL", // French
+  "en-US": "21m00Tcm4TlvDq8ikWAM",
+  "en-IN": "21m00Tcm4TlvDq8ikWAM",
+  "ta-IN": "TxGEqnHWrfWFTfGW9XjX",
+  "fr-FR": "EXAVITQu4vr4xnSDxMaL",
   "fr-CA": "EXAVITQu4vr4xnSDxMaL",
-  "es-ES": "pNInz6obpgDQGcFmaJgB", // Spanish
-  "hi-IN": "MF3mGyEYCl7XYWbV9V6O", // Hindi
+  "es-ES": "pNInz6obpgDQGcFmaJgB",
+  "hi-IN": "MF3mGyEYCl7XYWbV9V6O",
 };
 
-// --- Default fallback voice ID (Rachel)
 const DEFAULT_VOICE_ID = "21m00Tcm4TlvDq8ikWAM";
 
-/**
- * resolveVoiceId
- *
- * Order of precedence:
- *  1) explicitVoiceId (e.g. from Voice Studio preview payload)
- *  2) tenant voice profile voice_id (from DB)
- *  3) hard-coded voiceMap[langCode] for key locales
- *  4) DEFAULT_VOICE_ID
- */
 function resolveVoiceId(langCode, voiceProfile, explicitVoiceId) {
   if (typeof explicitVoiceId === "string" && explicitVoiceId.trim()) {
     return explicitVoiceId.trim();
@@ -129,11 +115,9 @@ function resolveVoiceId(langCode, voiceProfile, explicitVoiceId) {
     return voiceMap[langCode];
   }
 
-  // If we have a registry and the langCode is known, we can log it for visibility,
-  // but we still fall back to DEFAULT_VOICE_ID unless we have a dedicated voice.
   if (isKnownLanguageCode(langCode)) {
     console.log(
-      "🌍 [tts] Known language without specific voice mapping, falling back to default:",
+      "🌍 [tts] Known language without specific ElevenLabs mapping, falling back to default:",
       langCode
     );
   } else {
@@ -144,6 +128,36 @@ function resolveVoiceId(langCode, voiceProfile, explicitVoiceId) {
   }
 
   return DEFAULT_VOICE_ID;
+}
+
+// ------------------------------------------------------
+// OpenAI voice mapping
+// ------------------------------------------------------
+const openAiVoiceMap = {
+  "en-US": process.env.OPENAI_TTS_VOICE_EN_US || process.env.OPENAI_TTS_VOICE || "marin",
+  "en-IN": process.env.OPENAI_TTS_VOICE_EN_IN || process.env.OPENAI_TTS_VOICE || "marin",
+  "ta-IN": process.env.OPENAI_TTS_VOICE_TA_IN || process.env.OPENAI_TTS_VOICE || "marin",
+  "fr-FR": process.env.OPENAI_TTS_VOICE_FR_FR || process.env.OPENAI_TTS_VOICE || "marin",
+  "fr-CA": process.env.OPENAI_TTS_VOICE_FR_CA || process.env.OPENAI_TTS_VOICE || "marin",
+  "es-ES": process.env.OPENAI_TTS_VOICE_ES_ES || process.env.OPENAI_TTS_VOICE || "marin",
+  "hi-IN": process.env.OPENAI_TTS_VOICE_HI_IN || process.env.OPENAI_TTS_VOICE || "marin",
+};
+
+function resolveOpenAiVoice(langCode, voiceProfile, explicitVoiceId) {
+  if (typeof explicitVoiceId === "string" && explicitVoiceId.trim()) {
+    return explicitVoiceId.trim();
+  }
+
+  if (voiceProfile && typeof voiceProfile.voice_id === "string") {
+    const trimmed = voiceProfile.voice_id.trim();
+    if (trimmed) return trimmed;
+  }
+
+  if (langCode && openAiVoiceMap[langCode]) {
+    return openAiVoiceMap[langCode];
+  }
+
+  return process.env.OPENAI_TTS_VOICE || "marin";
 }
 
 function safePreview(value, max = 80) {
@@ -170,200 +184,360 @@ function decodeErrorBody(data) {
   return String(data);
 }
 
-/**
- * synthesizeSpeech
- *
- * @param {string} text      Raw text from GPT / ACA brain
- * @param {string} langCode  BCP-47 lang code like "en-US", "ta-IN", "fr-CA"
- *                           This can be ANY of our 113 supported languages
- *                           (from config/languageRegistry.json).
- * @param {object} options   Optional conversational controls:
- *   - tenantId       (for tenant-specific voice profile)
- *   - regionCode     (e.g. "IN", "FR", "CA")
- *   - tonePreset     (e.g. "friendly", "formal", "supportive")
- *   - useFillers     (boolean, default true)
- *   - outputFormat   (string, ElevenLabs output_format, default "ulaw_8000")
- *   - acceptMime     (string, Accept header, default "audio/mpeg")
- *   - explicitVoiceId (string, overrides everything for voice selection)
- */
-async function synthesizeSpeech(text, langCode = "en-US", options = {}) {
-  console.log("🎯 [tts] synthesizeSpeech ENTER", {
-    file: __filename,
-    langCode,
-    textPreview: safePreview(text, 120),
-    optionKeys: Object.keys(options || {}),
+// ------------------------------------------------------
+// PCM16 mono 24k → PCM16 mono 8k downsample
+// Simple decimator for telephony path
+// ------------------------------------------------------
+function downsamplePcm16Mono24kTo8k(pcm24kBuffer) {
+  if (!Buffer.isBuffer(pcm24kBuffer) || pcm24kBuffer.length < 2) {
+    return Buffer.alloc(0);
+  }
+
+  const sampleCount = Math.floor(pcm24kBuffer.length / 2);
+  const outSampleCount = Math.floor(sampleCount / 3);
+  const out = Buffer.alloc(outSampleCount * 2);
+
+  for (let i = 0, j = 0; j < outSampleCount; i += 3, j += 1) {
+    const byteIndex = i * 2;
+    const sample = pcm24kBuffer.readInt16LE(byteIndex);
+    out.writeInt16LE(sample, j * 2);
+  }
+
+  return out;
+}
+
+// ------------------------------------------------------
+// PCM16 → G.711 μ-law
+// ------------------------------------------------------
+const MU_LAW_BIAS = 0x84;
+const MU_LAW_CLIP = 32635;
+
+function linear16SampleToMulaw(sample) {
+  let sign = 0;
+  let magnitude = sample;
+
+  if (magnitude < 0) {
+    sign = 0x80;
+    magnitude = -magnitude;
+  }
+
+  if (magnitude > MU_LAW_CLIP) {
+    magnitude = MU_LAW_CLIP;
+  }
+
+  magnitude += MU_LAW_BIAS;
+
+  let exponent = 7;
+  for (let expMask = 0x4000; (magnitude & expMask) === 0 && exponent > 0; exponent -= 1) {
+    expMask >>= 1;
+  }
+
+  const mantissa = (magnitude >> (exponent + 3)) & 0x0f;
+  const muLawByte = ~(sign | (exponent << 4) | mantissa) & 0xff;
+
+  return muLawByte;
+}
+
+function pcm16ToMulaw(pcm16Buffer) {
+  if (!Buffer.isBuffer(pcm16Buffer) || pcm16Buffer.length < 2) {
+    return Buffer.alloc(0);
+  }
+
+  const sampleCount = Math.floor(pcm16Buffer.length / 2);
+  const out = Buffer.alloc(sampleCount);
+
+  for (let i = 0; i < sampleCount; i += 1) {
+    const sample = pcm16Buffer.readInt16LE(i * 2);
+    out[i] = linear16SampleToMulaw(sample);
+  }
+
+  return out;
+}
+
+function pcm24kToMulaw8k(pcm24kBuffer) {
+  const pcm8k = downsamplePcm16Mono24kTo8k(pcm24kBuffer);
+  return pcm16ToMulaw(pcm8k);
+}
+
+// ------------------------------------------------------
+// Shared text preprocessing
+// ------------------------------------------------------
+async function buildVoiceContext(text, langCode, options = {}) {
+  let {
+    tenantId = null,
+    regionCode = null,
+    tonePreset = "friendly",
+    useFillers = true,
+    outputFormat = "ulaw_8000",
+    acceptMime = null,
+    explicitVoiceId = null,
+  } = options || {};
+
+  if (outputFormat === "ulaw_8000") {
+    acceptMime = "audio/basic";
+  } else {
+    acceptMime = "audio/mpeg";
+  }
+
+  console.log("🧪 [tts] normalized request options", {
+    tenantId,
+    regionCode,
+    tonePreset,
+    useFillers,
+    outputFormat,
+    acceptMime,
+    hasExplicitVoiceId: !!explicitVoiceId,
+    provider: DEFAULT_TTS_PROVIDER,
   });
 
+  let voiceProfile = null;
   try {
-    const rawApiKey = process.env.ELEVENLABS_API_KEY;
-    const apiKey = normalizeApiKey(rawApiKey);
+    voiceProfile = await getTenantVoiceProfile(tenantId, langCode);
+  } catch (profileErr) {
+    console.warn(
+      "⚠️ [tts] Failed to load tenant voice profile, using defaults:",
+      profileErr.message
+    );
+  }
 
-    console.log("🔐 [tts] key exists:", !!rawApiKey);
-    console.log("🔐 [tts] key trimmed exists:", !!apiKey);
-    console.log("🔐 [tts] key length:", apiKey ? apiKey.length : 0);
-    console.log("🔐 [tts] key prefix:", apiKey ? apiKey.slice(0, 5) : "NONE");
+  if (voiceProfile) {
+    tonePreset = options.tonePreset || voiceProfile.tone_preset || tonePreset;
+    regionCode = options.regionCode || voiceProfile.region_code || regionCode;
+  }
 
-    if (!apiKey) throw new Error("Missing ELEVENLABS_API_KEY in .env");
+  let processedText = text;
 
-    let {
-      tenantId = null,
-      regionCode = null,
-      tonePreset = "friendly",
-      useFillers = true,
-      outputFormat = "ulaw_8000",
-      acceptMime = null,
-      explicitVoiceId = null,
-    } = options || {};
-
-    if (outputFormat === "ulaw_8000") {
-      acceptMime = "audio/basic";
-    } else {
-      acceptMime = "audio/mpeg";
-    }
-
-    console.log("🧪 [tts] normalized request options", {
-      tenantId,
+  try {
+    processedText = applyAccentShaping(processedText, {
+      langCode,
       regionCode,
-      tonePreset,
-      useFillers,
-      outputFormat,
-      acceptMime,
-      hasExplicitVoiceId: !!explicitVoiceId,
     });
 
-    // ---------------------------------
-    // 0) Load tenant voice profile (if tenantId present)
-    // ---------------------------------
-    let voiceProfile = null;
-    try {
-      voiceProfile = await getTenantVoiceProfile(tenantId, langCode);
-    } catch (profileErr) {
-      console.warn(
-        "⚠️ [tts] Failed to load tenant voice profile, using defaults:",
-        profileErr.message
-      );
-    }
+    processedText = applyProsody(processedText, {
+      langCode,
+      tonePreset,
+    });
 
-    if (voiceProfile) {
-      // Override tone & region if not explicitly provided
-      tonePreset = options.tonePreset || voiceProfile.tone_preset || tonePreset;
-      regionCode = options.regionCode || voiceProfile.region_code || regionCode;
-    }
-
-    // ---------------------------------
-    // 1) Pre-process text for voice
-    //    (accent shaping → prosody → fillers)
-    // ---------------------------------
-    let processedText = text;
-
-    try {
-      processedText = applyAccentShaping(processedText, {
-        langCode,
-        regionCode,
-      });
-
-      processedText = applyProsody(processedText, {
+    if (useFillers) {
+      processedText = injectFillers(processedText, {
         langCode,
         tonePreset,
       });
-
-      if (useFillers) {
-        processedText = injectFillers(processedText, {
-          langCode,
-          tonePreset,
-        });
-      }
-    } catch (preErr) {
-      console.warn(
-        "⚠️ [tts] Pre-processing (prosody/accent/fillers) failed, falling back to raw text:",
-        preErr.message
-      );
-      processedText = text;
     }
-
-    // ---------------------------------
-    // 2) Voice selection (global 113-language aware)
-    // ---------------------------------
-    const selectedVoiceId = resolveVoiceId(langCode, voiceProfile, explicitVoiceId);
-    const baseLang = (langCode.split("-")[0] || "en").toLowerCase();
-
-    console.log("🚀 [tts] FINAL HEADERS:", { acceptMime, outputFormat });
-    console.log(
-      `🎙 [tts] Selected voiceId=${selectedVoiceId || "MISSING"} for langCode=${langCode}`
+  } catch (preErr) {
+    console.warn(
+      "⚠️ [tts] Pre-processing failed, falling back to raw text:",
+      preErr.message
     );
+    processedText = text;
+  }
 
-    console.log("🧠 [tts] Text pipeline preview:", {
-      original_preview: safePreview(text),
-      processed_preview: safePreview(processedText),
-      langCode,
-      regionCode,
-      tonePreset,
-      useFillers,
-      tenantId,
-      has_profile: !!voiceProfile,
-      outputFormat,
-      explicitVoiceId: !!explicitVoiceId,
+  return {
+    tenantId,
+    regionCode,
+    tonePreset,
+    useFillers,
+    outputFormat,
+    acceptMime,
+    explicitVoiceId,
+    voiceProfile,
+    processedText,
+  };
+}
+
+// ------------------------------------------------------
+// OpenAI TTS branch
+// ------------------------------------------------------
+async function synthesizeWithOpenAI(text, langCode = "en-US", options = {}) {
+  const apiKey = normalizeApiKey(process.env.OPENAI_API_KEY);
+
+  console.log("🔐 [tts:openai] key exists:", !!process.env.OPENAI_API_KEY);
+  console.log("🔐 [tts:openai] key trimmed exists:", !!apiKey);
+  console.log("🔐 [tts:openai] key length:", apiKey ? apiKey.length : 0);
+
+  if (!apiKey) {
+    throw new Error("Missing OPENAI_API_KEY in environment");
+  }
+
+  const ctx = await buildVoiceContext(text, langCode, options);
+  const model = String(process.env.OPENAI_TTS_MODEL || "gpt-4o-mini-tts").trim();
+  const voice = resolveOpenAiVoice(langCode, ctx.voiceProfile, ctx.explicitVoiceId);
+
+  console.log("🎙 [tts:openai] Selected voice:", {
+    voice,
+    model,
+    langCode,
+    outputFormat: ctx.outputFormat,
+  });
+
+  console.log("🧠 [tts:openai] Text pipeline preview:", {
+    original_preview: safePreview(text),
+    processed_preview: safePreview(ctx.processedText),
+    langCode,
+    regionCode: ctx.regionCode,
+    tonePreset: ctx.tonePreset,
+    useFillers: ctx.useFillers,
+    tenantId: ctx.tenantId,
+    has_profile: !!ctx.voiceProfile,
+    outputFormat: ctx.outputFormat,
+    explicitVoiceId: !!ctx.explicitVoiceId,
+  });
+
+  // For Twilio we request PCM, then convert to μ-law 8k locally.
+  const requestedFormat = ctx.outputFormat === "ulaw_8000" ? "pcm" : "mp3";
+
+  console.log("📤 [tts:openai] API Request:", {
+    model,
+    voice,
+    requestedFormat,
+    text_preview: safePreview(ctx.processedText),
+  });
+
+  try {
+    const response = await openai.audio.speech.create({
+      model,
+      voice,
+      input: ctx.processedText,
+      format: requestedFormat,
     });
 
-    // Base voice settings (default)
-    let stability = 0.4;
-    let similarity_boost = 0.8;
+    const arrayBuffer = await response.arrayBuffer();
+    const rawAudio = Buffer.from(arrayBuffer);
 
-    if (voiceProfile) {
-      if (typeof voiceProfile.stability === "number") {
-        stability = voiceProfile.stability;
-      }
-      if (typeof voiceProfile.similarity_boost === "number") {
-        similarity_boost = voiceProfile.similarity_boost;
-      }
+    console.log("✅ [tts:openai] synthesis complete", {
+      rawBytes: rawAudio.length,
+      requestedFormat,
+    });
+
+    let finalBuffer = rawAudio;
+
+    if (ctx.outputFormat === "ulaw_8000") {
+      finalBuffer = pcm24kToMulaw8k(rawAudio);
+
+      console.log("🔄 [tts:openai] converted pcm24k -> mulaw8k", {
+        rawBytes: rawAudio.length,
+        finalBytes: finalBuffer.length,
+      });
     }
 
-    // ---------------------------------
-    // 3) ElevenLabs API call
-    //    For Twilio we use "ulaw_8000".
-    //    For browser preview we override with "mp3_44100_128".
-    // ---------------------------------
-    const url = `https://api.elevenlabs.io/v1/text-to-speech/${selectedVoiceId}?output_format=${outputFormat}`;
-    console.log("📤 [tts] API Request:", {
-      url,
-      model_id: "eleven_multilingual_v2",
-      language_code: baseLang,
-      text_preview: safePreview(processedText),
-      stability,
-      similarity_boost,
-      outputFormat,
-      acceptMime,
-      keyPrefix: apiKey ? apiKey.slice(0, 5) : "NONE",
-      keyLength: apiKey ? apiKey.length : 0,
+    console.log("📦 [tts:openai] returning audio buffer", {
+      bytes: finalBuffer.length,
+      voice,
+      langCode,
+      outputFormat: ctx.outputFormat,
     });
 
+    return finalBuffer;
+  } catch (err) {
+    const status = err.status || err.response?.status || null;
+    const statusText = err.statusText || err.response?.statusText || null;
+    const decodedError = decodeErrorBody(err.response?.data) || err.message;
+
+    console.error("❌ [tts:openai] status:", status);
+    console.error("❌ [tts:openai] statusText:", statusText);
+    console.error("❌ [tts:openai] error body:", decodedError);
+    console.error("❌ [tts:openai] request failed in file:", __filename);
+
+    throw new Error("OpenAI TTS failed: " + (statusText || decodedError || err.message));
+  }
+}
+
+// ------------------------------------------------------
+// ElevenLabs TTS branch (kept for later switch-back)
+// ------------------------------------------------------
+async function synthesizeWithElevenLabs(text, langCode = "en-US", options = {}) {
+  const rawApiKey = process.env.ELEVENLABS_API_KEY;
+  const apiKey = normalizeApiKey(rawApiKey);
+
+  console.log("🔐 [tts:elevenlabs] key exists:", !!rawApiKey);
+  console.log("🔐 [tts:elevenlabs] key trimmed exists:", !!apiKey);
+  console.log("🔐 [tts:elevenlabs] key length:", apiKey ? apiKey.length : 0);
+  console.log("🔐 [tts:elevenlabs] key prefix:", apiKey ? apiKey.slice(0, 5) : "NONE");
+
+  if (!apiKey) {
+    throw new Error("Missing ELEVENLABS_API_KEY in environment");
+  }
+
+  const ctx = await buildVoiceContext(text, langCode, options);
+  const selectedVoiceId = resolveVoiceId(langCode, ctx.voiceProfile, ctx.explicitVoiceId);
+  const baseLang = (langCode.split("-")[0] || "en").toLowerCase();
+
+  console.log("🚀 [tts:elevenlabs] FINAL HEADERS:", {
+    acceptMime: ctx.acceptMime,
+    outputFormat: ctx.outputFormat,
+  });
+
+  console.log(
+    `🎙 [tts:elevenlabs] Selected voiceId=${selectedVoiceId || "MISSING"} for langCode=${langCode}`
+  );
+
+  console.log("🧠 [tts:elevenlabs] Text pipeline preview:", {
+    original_preview: safePreview(text),
+    processed_preview: safePreview(ctx.processedText),
+    langCode,
+    regionCode: ctx.regionCode,
+    tonePreset: ctx.tonePreset,
+    useFillers: ctx.useFillers,
+    tenantId: ctx.tenantId,
+    has_profile: !!ctx.voiceProfile,
+    outputFormat: ctx.outputFormat,
+    explicitVoiceId: !!ctx.explicitVoiceId,
+  });
+
+  let stability = 0.4;
+  let similarity_boost = 0.8;
+
+  if (ctx.voiceProfile) {
+    if (typeof ctx.voiceProfile.stability === "number") {
+      stability = ctx.voiceProfile.stability;
+    }
+    if (typeof ctx.voiceProfile.similarity_boost === "number") {
+      similarity_boost = ctx.voiceProfile.similarity_boost;
+    }
+  }
+
+  const url = `https://api.elevenlabs.io/v1/text-to-speech/${selectedVoiceId}?output_format=${ctx.outputFormat}`;
+  console.log("📤 [tts:elevenlabs] API Request:", {
+    url,
+    model_id: "eleven_multilingual_v2",
+    language_code: baseLang,
+    text_preview: safePreview(ctx.processedText),
+    stability,
+    similarity_boost,
+    outputFormat: ctx.outputFormat,
+    acceptMime: ctx.acceptMime,
+    keyPrefix: apiKey ? apiKey.slice(0, 5) : "NONE",
+    keyLength: apiKey ? apiKey.length : 0,
+  });
+
+  try {
     const response = await axios.post(
       url,
       {
-        text: processedText,
+        text: ctx.processedText,
         model_id: "eleven_multilingual_v2",
         voice_settings: { stability, similarity_boost },
       },
       {
         headers: {
           "xi-api-key": apiKey,
-          Accept: acceptMime,
+          Accept: ctx.acceptMime,
           "Content-Type": "application/json",
         },
         responseType: "arraybuffer",
       }
     );
 
-    console.log("✅ [tts] ElevenLabs synthesis complete", {
+    console.log("✅ [tts:elevenlabs] synthesis complete", {
       bytes: response.data ? response.data.length : 0,
       voiceId: selectedVoiceId,
       langCode,
-      outputFormat,
+      outputFormat: ctx.outputFormat,
     });
 
     const finalBuffer = Buffer.from(response.data);
 
-    console.log("📦 [tts] returning audio buffer", {
+    console.log("📦 [tts:elevenlabs] returning audio buffer", {
       bytes: finalBuffer.length,
       voiceId: selectedVoiceId,
       langCode,
@@ -375,16 +549,41 @@ async function synthesizeSpeech(text, langCode = "en-US", options = {}) {
     const statusText = err.response?.statusText || null;
     const decodedError = decodeErrorBody(err.response?.data);
 
-    console.error("❌ [tts] ElevenLabs status:", status);
-    console.error("❌ [tts] ElevenLabs statusText:", statusText);
-    console.error("❌ [tts] ElevenLabs error body:", decodedError || err.message);
-    console.error("❌ [tts] request failed in file:", __filename);
-    console.error("❌ [tts] axios error code:", err.code || null);
+    console.error("❌ [tts:elevenlabs] status:", status);
+    console.error("❌ [tts:elevenlabs] statusText:", statusText);
+    console.error("❌ [tts:elevenlabs] error body:", decodedError || err.message);
+    console.error("❌ [tts:elevenlabs] request failed in file:", __filename);
+    console.error("❌ [tts:elevenlabs] axios error code:", err.code || null);
 
     throw new Error(
       "ElevenLabs TTS failed: " + (statusText || decodedError || err.message)
     );
   }
+}
+
+/**
+ * synthesizeSpeech
+ *
+ * Existing public interface preserved.
+ */
+async function synthesizeSpeech(text, langCode = "en-US", options = {}) {
+  console.log("🎯 [tts] synthesizeSpeech ENTER", {
+    file: __filename,
+    provider: DEFAULT_TTS_PROVIDER,
+    langCode,
+    textPreview: safePreview(text, 120),
+    optionKeys: Object.keys(options || {}),
+  });
+
+  const provider = String(options.provider || DEFAULT_TTS_PROVIDER || "openai")
+    .trim()
+    .toLowerCase();
+
+  if (provider === "elevenlabs") {
+    return synthesizeWithElevenLabs(text, langCode, options);
+  }
+
+  return synthesizeWithOpenAI(text, langCode, options);
 }
 
 module.exports = { synthesizeSpeech };
