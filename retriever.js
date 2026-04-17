@@ -8,11 +8,7 @@
 
 const path = require("path");
 
-// ✅ Always load orchestrator-local .env first (prevents root .env overriding)
-require("dotenv").config({
-  path: path.resolve(__dirname, "./.env"),
-  override: true,
-});
+
 
 const { Pool } = require("pg");
 const OpenAI = require("openai");
