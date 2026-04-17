@@ -37,6 +37,8 @@ const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
 const { retrieveAnswer } = require("./retriever");
 const { synthesizeSpeech } = require("./tts");
+console.log("🧩 [tts-callsite] require.resolve('./tts') =", require.resolve("./tts"));
+console.log("🧩 [tts-callsite] typeof synthesizeSpeech =", typeof synthesizeSpeech);
 // const { bindWebSocket } = require("./socket_handler");
 // ✅ Story 12.6 fix: DO NOT load socket_handler here.
 // Reason: any raw ws.Server() / upgrade listeners inside socket_handler (even as side-effects) can intercept
@@ -861,6 +863,9 @@ async function handleConversationTurn({
     session,
   };
 }
+// Make the structured conversation handler available without circular require issues
+global.__ACA_HANDLE_CONVERSATION_TURN__ = handleConversationTurn;
+console.log("✅ Shared handleConversationTurn registered globally");
 // ---------------------------------------------------------------------------
 
 // Restore on boot

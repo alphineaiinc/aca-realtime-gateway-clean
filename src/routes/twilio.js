@@ -282,10 +282,16 @@ function sendTwilioAudioWithMark(ws, activeCallSid, activeStreamSid, ttsBuffer, 
 }
 
 /**
- * ✅ Lazy-load shared conversation handler from root index.js
- * Avoid top-level require to reduce circular import risk.
+ * Prefer globally-registered shared conversation handler.
+ * Fallback to require("../../index") only if needed.
  */
 function getSharedConversationHandler() {
+  try {
+    if (typeof global.__ACA_HANDLE_CONVERSATION_TURN__ === "function") {
+      return global.__ACA_HANDLE_CONVERSATION_TURN__;
+    }
+  } catch (_) {}
+
   try {
     const rootModule = require("../../index");
     if (rootModule && typeof rootModule.handleConversationTurn === "function") {
@@ -297,6 +303,7 @@ function getSharedConversationHandler() {
       err.message
     );
   }
+
   return null;
 }
 
@@ -567,66 +574,80 @@ async function handleTwilioStream(ws, req) {
   ws.__lastVoiceReplyAt = 0;
   ws.__isSpeaking = false;
   ws.__speakUntil = 0;
+  ws.__acaSessionId = null;
+  ws.__acaStructuredFlowActive = false;
   ensurePlaybackState(ws);
 
   async function onFinalTranscript(userText) {
     const safeText = normalizeIncomingVoiceText(userText);
     if (!safeText) return "";
 
-    const sessionId = `call_${activeCallSid || "unknown"}`;
+    const sessionId =
+      ws.__acaSessionId ||
+      `call_${activeCallSid || activeStreamSid || "unknown"}`;
+
     const sharedHandler = getSharedConversationHandler();
 
     if (sharedHandler) {
-      let sharedResult = null;
-      let sharedError = null;
-
       try {
-        sharedResult = await sharedHandler({
+        const sharedResult = await sharedHandler({
+          sessionId,
           message: safeText,
-          userText: safeText,
+          channel: "voice",
+          tenantBusinessType: null,
           tenantId,
           locale: tenantLangCode,
-          sessionId,
-          channel: "voice",
-          source: "twilio",
-          shortReply: true,
         });
-      } catch (err) {
-        sharedError = err;
-      }
 
-      if (!sharedResult) {
-        try {
-          sharedResult = await sharedHandler(safeText, {
-            tenantId,
-            locale: tenantLangCode,
+        if (sharedResult && sharedResult.ok) {
+          if (sharedResult.scenario) {
+            ws.__acaStructuredFlowActive = true;
+          }
+
+          const normalizedSharedReply = normalizeVoiceReply(sharedResult.reply);
+
+          console.log("🧠 [twilio] Shared conversation handler reply:", {
+            callSid: activeCallSid,
             sessionId,
-            channel: "voice",
-            source: "twilio",
-            shortReply: true,
+            user: safeText,
+            bot: normalizedSharedReply,
+            scenario: sharedResult.scenario || null,
+            source: sharedResult.source || null,
+            context: sharedResult.context || "",
           });
-          sharedError = null;
-        } catch (err) {
-          sharedError = err;
+
+          if (normalizedSharedReply) {
+            return normalizedSharedReply;
+          }
         }
-      }
 
-      const normalizedSharedReply = normalizeVoiceReply(sharedResult);
-      if (normalizedSharedReply) {
-        console.log("🧠 [twilio] Shared conversation handler reply:", {
-          callSid: activeCallSid,
-          sessionId,
-          user: safeText,
-          bot: normalizedSharedReply,
-        });
-        return normalizedSharedReply;
-      }
-
-      if (sharedError) {
+        if (ws.__acaStructuredFlowActive) {
+          console.warn(
+            "⚠️ [twilio] Structured flow active but shared handler returned empty reply; refusing stateless fallback.",
+            {
+              callSid: activeCallSid,
+              sessionId,
+            }
+          );
+          return "Sorry — could you repeat that once for me?";
+        }
+      } catch (err) {
         console.warn(
-          "⚠️ [twilio] Shared handler failed, using retrieveAnswer fallback:",
-          sharedError.message
+          "⚠️ [twilio] Shared handler failed:",
+          err.message
         );
+
+        if (ws.__acaStructuredFlowActive) {
+          console.warn(
+            "⚠️ [twilio] Structured flow already active; refusing retrieveAnswer fallback.",
+            {
+              callSid: activeCallSid,
+              sessionId,
+              error: err.message,
+            }
+          );
+          return "Sorry — could you say that again?";
+        }
       }
     }
 
@@ -763,6 +784,8 @@ async function handleTwilioStream(ws, req) {
         ws.__lastVoiceReplyAt = 0;
         ws.__isSpeaking = false;
         ws.__speakUntil = 0;
+        ws.__acaSessionId = `call_${activeCallSid || activeStreamSid || Date.now()}`;
+        ws.__acaStructuredFlowActive = false;
 
         const playback = ensurePlaybackState(ws);
         playback.active = false;
@@ -773,6 +796,7 @@ async function handleTwilioStream(ws, req) {
         console.log("🎬  Stream started:", {
           callSid: activeCallSid,
           streamSid: activeStreamSid,
+          acaSessionId: ws.__acaSessionId,
         });
 
         handleCallStarted(activeCallSid, {
