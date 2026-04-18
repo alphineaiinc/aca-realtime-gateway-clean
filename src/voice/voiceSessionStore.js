@@ -3,10 +3,13 @@
 const sessions = new Map();
 
 function createSession(callSid, meta = {}) {
+  const now = Date.now();
+
   const session = {
     callSid,
     tenantId: meta.tenantId || null,
     businessId: meta.businessId || null,
+    clusterId: meta.clusterId || null,
 
     state: "idle",
     greeted: false,
@@ -21,15 +24,34 @@ function createSession(callSid, meta = {}) {
     finalTranscriptBuffer: "",
 
     currentIntent: null,
+    active_intent: null,
+    workflow: null,
+    workflowStatus: "idle",
+
     extractedSlots: {},
+    slots: {},
+    workflowSlots: {},
+
+    lastAskedSlot: null,
+    lastAssistantReply: null,
+    lastCallerText: null,
+    recentTurns: [],
 
     activeTaskId: null,
 
     isSpeaking: false,
     isProcessing: false,
 
-    createdAt: Date.now(),
-    updatedAt: Date.now(),
+    voiceGate: {
+      assistantSpeaking: false,
+      ignoreInputUntil: 0,
+      pendingMarks: new Set(),
+      lastPlaybackStartedAt: 0,
+      lastPlaybackEndedAt: 0,
+    },
+
+    createdAt: now,
+    updatedAt: now,
   };
 
   sessions.set(callSid, session);
