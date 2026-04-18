@@ -1074,9 +1074,14 @@ async function handleTwilioStream(ws, req) {
       return;
     }
 
-    const normalized = finalVoiceText.trim();
+ const normalized = finalVoiceText.trim();
 const words = normalized.split(/\s+/).filter(Boolean);
 const wordCount = words.length;
+
+const slotLikeAnswer =
+  isValidSlotValue(normalized) ||
+  matchesExpectedSlot(normalized, expectedSlot) ||
+  /^(in the evening|in the morning|at night|evening|morning|night|p\.?m\.?|a\.?m\.?)$/i.test(normalized);
 
 const looksUnfinished =
   /(?:\b(and|or|for|with|to|at|on|in|my|the|a|an)\s*)$/i.test(normalized) ||
@@ -1088,7 +1093,7 @@ const looksUnfinished =
 const looksTooShortForFreeTurn =
   wordCount < 3 &&
   normalized.length < 12 &&
-  !isValidSlotValue(normalized);
+  !slotLikeAnswer;
 
 if (!expectedSlot && (looksUnfinished || looksTooShortForFreeTurn)) {
   pushTwilioDebug("dispatch_skipped_incomplete", {
@@ -1159,15 +1164,19 @@ if (
   return;
 }
 
-    if (expectedSlot && !matchesExpectedSlot(finalVoiceText, expectedSlot)) {
-      pushTwilioDebug("dispatch_skipped_incomplete", {
-        callSid: activeCallSid,
-        text: finalVoiceText,
-        reason: "slot_mismatch",
-        expectedSlot,
-      });
-      return;
-    }
+   if (
+  expectedSlot &&
+  !matchesExpectedSlot(finalVoiceText, expectedSlot) &&
+  !/^(in the evening|in the morning|at night|evening|morning|night|p\.?m\.?|a\.?m\.?)$/i.test(finalVoiceText.trim())
+) {
+  pushTwilioDebug("dispatch_skipped_incomplete", {
+    callSid: activeCallSid,
+    text: finalVoiceText,
+    reason: "slot_mismatch",
+    expectedSlot,
+  });
+  return;
+}
 
     if (!isMeaningfulUtterance(finalVoiceText) && !isValidSlotValue(finalVoiceText)) {
       pushTwilioDebug("dispatch_skipped_incomplete", {
