@@ -1063,7 +1063,36 @@ async function handleTwilioStream(ws, req) {
 
   return;
 }
+const noiseWords = finalVoiceText.trim().split(/\s+/).filter(Boolean);
 
+// reject very short garbage unless it is a valid slot-like answer
+if (
+  noiseWords.length < 3 &&
+  !/\b(yes|no|7|8|9|10|11|12|am|pm|today|tomorrow)\b/i.test(finalVoiceText) &&
+  !isValidSlotValue(finalVoiceText)
+) {
+  pushTwilioDebug("dispatch_skipped_incomplete", {
+    callSid: activeCallSid,
+    text: finalVoiceText,
+    reason: "noise_too_short",
+    expectedSlot,
+  });
+  return;
+}
+
+// reject obvious STT garbage fragments
+if (
+  /\b(mint|ment|open up ments|cooled|dot)\b/i.test(finalVoiceText) &&
+  noiseWords.length < 5
+) {
+  pushTwilioDebug("dispatch_skipped_incomplete", {
+    callSid: activeCallSid,
+    text: finalVoiceText,
+    reason: "noise_garbage_fragment",
+    expectedSlot,
+  });
+  return;
+}
     if (!finalVoiceText) {
       pushTwilioDebug("dispatch_skipped_incomplete", {
         callSid: activeCallSid,
