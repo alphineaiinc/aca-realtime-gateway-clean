@@ -1161,8 +1161,23 @@ if (pendingAgeMs >= 1800) {
 
 if (
   isWeakFragment(finalVoiceText) ||
-  /^(that is what|which is|is it|confer|okay|so|yeah)$/i.test(finalVoiceText.trim())
+  /^(that is what|which is|is it|confer|okay|so|yeah|exactly|right|correct|uh|um|hmm)$/i.test(finalVoiceText.trim()) ||
+  /^(i am looking for|i need|they said|it's like)$/i.test(finalVoiceText.trim())
 ) {
+  pushTwilioDebug("dispatch_skipped_incomplete", {
+    callSid: activeCallSid,
+    text: finalVoiceText,
+    reason: "conversation_noise_filtered",
+    expectedSlot,
+  });
+
+  ws.__pendingVoiceTranscript = "";
+  ws.__pendingVoiceTranscriptStartedAt = 0;
+  ws.__lastStableTranscript = "";
+  ws.__lastStableTranscriptAt = 0;
+
+  return;
+}
   pushTwilioDebug("dispatch_skipped_incomplete", {
     callSid: activeCallSid,
     text: finalVoiceText,
