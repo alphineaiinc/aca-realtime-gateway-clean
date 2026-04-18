@@ -1,3 +1,4 @@
+// src/voice/workflowStateEngine.js
 "use strict";
 
 function safeObject(v) {
@@ -14,6 +15,64 @@ function isFilled(value) {
   if (Array.isArray(value)) return value.length > 0;
   if (typeof value === "object") return Object.keys(value).length > 0;
   return true;
+}
+
+function normalizeText(text) {
+  return String(text || "").replace(/\s+/g, " ").trim();
+}
+
+function normalizeOrdinalDay(value) {
+  const text = normalizeText(value).toLowerCase();
+  return text.replace(/\b(\d{1,2})(st|nd|rd|th)\b/g, "$1");
+}
+
+function normalizeDateLikeValue(value) {
+  let text = normalizeOrdinalDay(value);
+  if (!text) return text;
+
+  text = text
+    .replace(/\bof\b/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  return text;
+}
+
+function normalizeTimeLikeValue(value) {
+  let text = normalizeText(value).toLowerCase();
+  if (!text) return text;
+
+  text = text
+    .replace(/\bo'?clock\b/g, ":00")
+    .replace(/\bp\.?\s*m\.?\b/g, "PM")
+    .replace(/\ba\.?\s*m\.?\b/g, "AM")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  const withEvening = text.match(/\b(\d{1,2})(?::(\d{2}))?\s*(?:in the )?(evening|night)\b/i);
+  if (withEvening) {
+    const hour = Number(withEvening[1]);
+    const mins = withEvening[2] || "00";
+    const normalizedHour = hour >= 12 ? hour : hour + 12;
+    return `${normalizedHour}:${mins}`;
+  }
+
+  const withMorning = text.match(/\b(\d{1,2})(?::(\d{2}))?\s*(?:in the )?morning\b/i);
+  if (withMorning) {
+    const hour = Number(withMorning[1]);
+    const mins = withMorning[2] || "00";
+    return `${hour}:${mins} AM`;
+  }
+
+  const withAfternoon = text.match(/\b(\d{1,2})(?::(\d{2}))?\s*(?:in the )?afternoon\b/i);
+  if (withAfternoon) {
+    const hour = Number(withAfternoon[1]);
+    const mins = withAfternoon[2] || "00";
+    const normalizedHour = hour >= 12 ? hour : hour + 12;
+    return `${normalizedHour}:${mins}`;
+  }
+
+  return text;
 }
 
 function getIntentList(clusterSchema) {
@@ -86,6 +145,14 @@ function normalizeSlotValue(slotName, value, clusterSchema) {
   if (!isFilled(value)) return value;
 
   const type = slotDef.type || null;
+
+  if (slotName && /date|day/i.test(slotName)) {
+    return normalizeDateLikeValue(value);
+  }
+
+  if (slotName && /time/i.test(slotName)) {
+    return normalizeTimeLikeValue(value);
+  }
 
   if (type === "integer" || type === "number") {
     if (typeof value === "number") return value;
@@ -176,6 +243,48 @@ function computeSessionState(workflowStatus) {
   return "idle";
 }
 
+function shouldKeepExistingSlot(existingValue, newValue, slotName, extraction) {
+  if (!isFilled(existingValue)) return false;
+  if (!isFilled(newValue)) return true;
+
+  const corrections = safeObject(extraction && extraction.slot_corrections);
+  if (Object.prototype.hasOwnProperty.call(corrections, slotName)) {
+    return false;
+  }
+
+  const existing = normalizeText(existingValue).toLowerCase();
+  const incoming = normalizeText(newValue).toLowerCase();
+
+  if (!incoming) return true;
+  if (existing === incoming) return true;
+
+  if (/date|day/i.test(slotName)) {
+    return existing.includes(incoming) || incoming.includes(existing);
+  }
+
+  if (/time/i.test(slotName)) {
+    return existing.includes(incoming) || incoming.includes(existing);
+  }
+
+  return false;
+}
+
+function mergeSlotsPreferStable(currentSlots, updates, corrections, extraction) {
+  const merged = { ...safeObject(currentSlots) };
+
+  for (const [key, value] of Object.entries(safeObject(updates))) {
+    if (!shouldKeepExistingSlot(merged[key], value, key, extraction)) {
+      merged[key] = value;
+    }
+  }
+
+  for (const [key, value] of Object.entries(safeObject(corrections))) {
+    merged[key] = value;
+  }
+
+  return merged;
+}
+
 function computeWorkflowState({ clusterSchema, session, extraction }) {
   const safeSession = safeObject(session);
   const safeExtraction = safeObject(extraction);
@@ -204,10 +313,11 @@ function computeWorkflowState({ clusterSchema, session, extraction }) {
   const normalizedUpdates = normalizeSlotUpdates(clusterSchema, filteredUpdates);
   const normalizedCorrections = normalizeSlotUpdates(clusterSchema, filteredCorrections);
 
-  const mergedSlots = mergeSlots(
+  const mergedSlots = mergeSlotsPreferStable(
     safeSession.slots || {},
     normalizedUpdates,
-    normalizedCorrections
+    normalizedCorrections,
+    safeExtraction
   );
 
   const nextMissingSlot = getNextMissingSlot(intentSchema, mergedSlots);

@@ -1,3 +1,4 @@
+// src/voice/workflowExtractor.js
 "use strict";
 
 const path = require("path");
@@ -12,7 +13,10 @@ try {
   console.warn("[workflowExtractor] openai package not found");
 }
 
-const DEFAULT_MODEL = process.env.OPENAI_REALTIME_TEXT_MODEL || process.env.OPENAI_MODEL || "gpt-4o-mini";
+const DEFAULT_MODEL =
+  process.env.OPENAI_REALTIME_TEXT_MODEL ||
+  process.env.OPENAI_MODEL ||
+  "gpt-4o-mini";
 
 let client = null;
 function getOpenAIClient() {
@@ -21,7 +25,7 @@ function getOpenAIClient() {
     throw new Error("OpenAI package is not available");
   }
   client = new OpenAI({
-    apiKey: process.env.OPENAI_API_KEY
+    apiKey: process.env.OPENAI_API_KEY,
   });
   return client;
 }
@@ -34,13 +38,26 @@ function safeArray(value, fallback = []) {
   return Array.isArray(value) ? value : fallback;
 }
 
+function normalizeText(text) {
+  return String(text || "").replace(/\s+/g, " ").trim();
+}
+
 function buildIntentCatalog(clusterSchema = {}) {
   return safeArray(clusterSchema.intents).map((intentDef) => ({
     intent: intentDef.intent,
     description: intentDef.description || "",
     required_slots: safeArray(intentDef.required_slots),
-    optional_slots: safeArray(intentDef.optional_slots)
+    optional_slots: safeArray(intentDef.optional_slots),
+    confirmation_slots: safeArray(intentDef.confirmation_slots),
   }));
+}
+
+function buildConversationTranscript(recentTurns = []) {
+  return safeArray(recentTurns)
+    .slice(-10)
+    .map((turn) => `${turn.role}: ${normalizeText(turn.text)}`)
+    .filter(Boolean)
+    .join("\n");
 }
 
 function buildExtractorPrompt({
@@ -48,46 +65,52 @@ function buildExtractorPrompt({
   clusterSchema,
   session,
   utterance,
-  recentTurns
+  recentTurns,
 }) {
   const activeIntent = session?.active_intent || null;
   const currentSlots = safeObject(session?.slots);
-  const lastRequestedSlot = session?.last_requested_slot || null;
+  const lastAskedSlot = session?.lastAskedSlot || null;
+  const conversationTranscript = buildConversationTranscript(recentTurns);
 
   return [
     {
       role: "system",
       content:
-        "You are an extraction engine for a live voice workflow. Return JSON only. No markdown. No explanation."
+        "You are an extraction engine for a live voice workflow. Return JSON only. No markdown. No explanation.",
     },
     {
       role: "system",
-      content:
-        [
-          "Rules:",
-          "1. Only use intents allowed by the provided cluster schema.",
-          "2. Only extract slots defined by the provided schema or the chosen intent.",
-          "3. Do not invent unsupported business logic.",
-          "4. Detect corrections if the caller changes a previously given detail.",
-          "5. If caller utterance does not clearly map to an allowed intent, keep intent null unless session active_intent should continue.",
-          "6. If session already has an active intent and the utterance is consistent with it, continue that intent.",
-          "7. Return valid compact JSON only."
-        ].join(" ")
+      content: [
+        "Rules:",
+        "1. Only use intents allowed by the provided cluster schema.",
+        "2. Only extract slots defined by the provided schema or the chosen intent.",
+        "3. Use the full recent conversation, not just the latest utterance.",
+        "4. Prefer preserving already-known slots unless the caller clearly corrects them.",
+        "5. Normalize likely voice/STT mistakes when strongly supported by context.",
+        "6. Treat spoken dates and times naturally, such as 'tomorrow', 'April 21st', '21st of April', '7 o clock', '7 in the evening'.",
+        "7. If the latest utterance is noisy but the conversation strongly implies a slot value, you may still extract it.",
+        "8. If session already has an active intent and the utterance is consistent with it, continue that intent.",
+        "9. If the caller is answering the requested slot, set answered_requested_slot = true.",
+        "10. Return valid compact JSON only.",
+      ].join(" "),
     },
     {
       role: "user",
       content: JSON.stringify({
-        task: "Extract cluster-aware intent and slot updates from the latest caller utterance.",
+        task: "Extract cluster-aware intent and slot updates from the latest caller utterance using full conversation context.",
         cluster_id: clusterId,
         allowed_intents: buildIntentCatalog(clusterSchema),
         slot_definitions: safeObject(clusterSchema.slot_definitions),
         session: {
           active_intent: activeIntent,
           slots: currentSlots,
-          last_requested_slot: lastRequestedSlot
+          last_asked_slot: lastAskedSlot,
+          last_assistant_reply: session?.lastAssistantReply || null,
+          last_caller_text: session?.lastCallerText || null,
         },
-        recent_turns: safeArray(recentTurns).slice(-6),
-        utterance: utterance,
+        recent_turns: safeArray(recentTurns).slice(-10),
+        conversation_transcript: conversationTranscript,
+        latest_utterance: normalizeText(utterance),
         output_schema: {
           intent: "string|null",
           intent_confidence: "number_0_to_1",
@@ -99,10 +122,10 @@ function buildExtractorPrompt({
           caller_goal_summary: "string",
           handoff_required: "boolean",
           safety_flags: "string[]",
-          notes: "string[]"
-        }
-      })
-    }
+          notes: "string[]",
+        },
+      }),
+    },
   ];
 }
 
@@ -141,7 +164,7 @@ function normalizeExtractionResult(raw, session = {}) {
     caller_goal_summary: raw?.caller_goal_summary || "",
     handoff_required: Boolean(raw?.handoff_required),
     safety_flags: safeArray(raw?.safety_flags),
-    notes: safeArray(raw?.notes)
+    notes: safeArray(raw?.notes),
   };
 }
 
@@ -150,7 +173,7 @@ async function extractWorkflowTurn({
   clusterSchema,
   session,
   utterance,
-  recentTurns = []
+  recentTurns = [],
 }) {
   if (!utterance || !String(utterance).trim()) {
     return normalizeExtractionResult({}, session);
@@ -162,14 +185,14 @@ async function extractWorkflowTurn({
     clusterSchema,
     session,
     utterance: String(utterance).trim(),
-    recentTurns
+    recentTurns,
   });
 
   const response = await openai.chat.completions.create({
     model: DEFAULT_MODEL,
     temperature: 0.1,
     response_format: { type: "json_object" },
-    messages
+    messages,
   });
 
   const text = response?.choices?.[0]?.message?.content || "{}";
@@ -181,5 +204,5 @@ module.exports = {
   buildIntentCatalog,
   buildExtractorPrompt,
   extractWorkflowTurn,
-  normalizeExtractionResult
+  normalizeExtractionResult,
 };
