@@ -4,7 +4,13 @@
  * src/voice/workflowStateEngine.js
  *
  * Deterministic workflow state handling for ACA live voice flow.
- * Compatibility-safe for current sessionController.js contract.
+ *
+ * Rules:
+ * - No hardcoded business-specific logic
+ * - Merge multi-slot extraction from a single caller utterance
+ * - Preserve already-filled slots unless caller clearly provides a better value
+ * - If a partial name becomes a fuller name, overwrite it
+ * - If all required slots are filled, move deterministically to ready_for_confirmation
  */
 
 function safeString(value) {
@@ -85,18 +91,15 @@ function getRequiredSlots(schema, workflow) {
   if (Array.isArray(schema?.requiredSlots) && schema.requiredSlots.length) {
     return schema.requiredSlots;
   }
-
-  if (Array.isArray(schema?.slots) && schema.slots.length) {
+  if (Array.isArray(schema?.slots)) {
     return schema.slots
       .filter((slot) => slot?.required !== false)
       .map((slot) => slot.key)
       .filter(Boolean);
   }
-
   if (Array.isArray(workflow?.requiredSlots) && workflow.requiredSlots.length) {
     return workflow.requiredSlots;
   }
-
   return [];
 }
 
@@ -105,7 +108,6 @@ function getPromptForSlot(slotKey, schema) {
   const slotDef = Array.isArray(schema?.slots)
     ? schema.slots.find((s) => s?.key === slotKey)
     : null;
-
   return safeString(slotDef?.prompt || slotDef?.question || "");
 }
 
@@ -115,14 +117,11 @@ function getSlotAliases(schema) {
   if (Array.isArray(schema?.slots)) {
     for (const slot of schema.slots) {
       if (!slot?.key) continue;
-
       aliases[slot.key] = slot.key;
 
       if (Array.isArray(slot.aliases)) {
         for (const alias of slot.aliases) {
-          if (isNonEmptyString(alias)) {
-            aliases[alias] = slot.key;
-          }
+          if (isNonEmptyString(alias)) aliases[alias] = slot.key;
         }
       }
     }
@@ -151,16 +150,14 @@ function scoreNameCompleteness(name) {
   const text = normalizeName(name);
   if (!text) return 0;
 
-  const parts = text.split(/\s+/).filter(Boolean);
   let score = 0;
+  const parts = text.split(/\s+/).filter(Boolean);
 
   score += parts.length * 10;
   score += text.length;
 
   if (parts.length >= 2) score += 30;
-  if (/^[A-Z][a-z]+(?:\s+[A-Z]\.?)?(?:\s+[A-Z][a-z]+)+$/.test(text)) {
-    score += 20;
-  }
+  if (/^[A-Z][a-z]+(?:\s+[A-Z]\.?)?(?:\s+[A-Z][a-z]+)+$/.test(text)) score += 20;
 
   return score;
 }
@@ -175,11 +172,15 @@ function shouldReplaceExistingSlot(slotKey, existingValue, incomingValue) {
 
   const key = String(slotKey || "").toLowerCase();
 
+  // Name overwrite rule: fuller name should replace shorter/partial name cleanly.
   if (key.includes("name")) {
     return scoreNameCompleteness(incoming) >= scoreNameCompleteness(existing);
   }
 
-  return incoming.length >= existing.length;
+  // Generic rule: accept explicit update if incoming is longer / more specific.
+  if (incoming.length >= existing.length) return true;
+
+  return false;
 }
 
 function mergeSlots(currentSlots, extractedSlots, schema) {
@@ -205,17 +206,7 @@ function getMissingSlots(slots, requiredSlots) {
 }
 
 function deriveWorkflowStatus({ slots, requiredSlots, existingStatus }) {
-  const required = Array.isArray(requiredSlots) ? requiredSlots.filter(Boolean) : [];
-  const missing = getMissingSlots(slots, required);
-
-  // Critical hardening:
-  // If we do not yet know the required slots, never assume the workflow is complete.
-  if (required.length === 0) {
-    if (existingStatus === "completed") {
-      return "completed";
-    }
-    return "collecting";
-  }
+  const missing = getMissingSlots(slots, requiredSlots);
 
   if (missing.length === 0) {
     return "ready_for_confirmation";
@@ -238,6 +229,7 @@ function buildConfirmationSummary(slots, requiredSlots) {
 
     const spokenKey = key
       .replace(/_/g, " ")
+      .replace(/\bparty size\b/i, "party size")
       .replace(/\bcustomer name\b/i, "name");
 
     parts.push(`${spokenKey}: ${value}`);
@@ -282,9 +274,11 @@ function updateWorkflowState({
     updatedAt: now || Date.now()
   };
 
-  updated.currentPrompt = nextMissingSlot
-    ? getPromptForSlot(nextMissingSlot, schema)
-    : "";
+  if (nextMissingSlot) {
+    updated.currentPrompt = getPromptForSlot(nextMissingSlot, schema);
+  } else {
+    updated.currentPrompt = "";
+  }
 
   return updated;
 }
@@ -305,93 +299,14 @@ function createInitialWorkflowState({ schema, existingWorkflow } = {}) {
   });
 }
 
-/**
- * Compatibility wrapper for current sessionController.js
- * sessionController expects:
- * computeWorkflowState({ clusterSchema, session, extraction })
- */
-function computeWorkflowState({ clusterSchema, session, extraction } = {}) {
-  const schema = clusterSchema || {};
-  const sessionSlots = isObject(session?.slots) ? session.slots : {};
-
-  const extractedSlots =
-    extraction?.slots ||
-    extraction?.extractedSlots ||
-    extraction?.workflowSlots ||
-    extraction?.slotValues ||
-    extraction?.filledSlots ||
-    extraction?.collectedSlots ||
-    extraction?.entities ||
-    extraction?.arguments ||
-    {};
-
-  const extractedRequiredSlots =
-    extraction?.requiredSlots ||
-    extraction?.workflowRequiredSlots ||
-    extraction?.intentSchema?.requiredSlots ||
-    extraction?.schema?.requiredSlots ||
-    [];
-
-  const schemaRequiredSlots = getRequiredSlots(schema, {});
-
-  const requiredSlots =
-    Array.isArray(extractedRequiredSlots) && extractedRequiredSlots.length
-      ? extractedRequiredSlots
-      : schemaRequiredSlots;
-
-  const workflow = updateWorkflowState({
-    workflow: {
-      slots: sessionSlots,
-      workflowStatus: session?.workflowStatus || "collecting",
-      requiredSlots
-    },
-    schema: {
-      ...schema,
-      requiredSlots
-    },
-    extractedSlots,
-    callerText:
-      extraction?.utterance ||
-      extraction?.text ||
-      extraction?.userText ||
-      session?.lastCallerText ||
-      "",
-    now: Date.now()
-  });
-
-  // If we still have no requiredSlots but we did extract some slots,
-  // do not fall into a dead generic loop. Stay collecting and expose no confirmation.
-  const hasAnySlots = Object.keys(workflow.slots || {}).length > 0;
-  const hasRequiredSlots = Array.isArray(workflow.requiredSlots) && workflow.requiredSlots.length > 0;
-
-  let workflowStatus = workflow.workflowStatus || "collecting";
-  if (!hasRequiredSlots && hasAnySlots) {
-    workflowStatus = "collecting";
-  }
-
-  return {
-    intent:
-      extraction?.intent ||
-      extraction?.active_intent ||
-      extraction?.workflow ||
-      session?.active_intent ||
-      null,
-    slots: workflow.slots || {},
-    nextMissingSlot: workflow.nextMissingSlot || null,
-    missingSlots: workflow.missingSlots || [],
-    workflowStatus,
-    confirmationSummary:
-      hasRequiredSlots ? (workflow.confirmationSummary || "") : "",
-    requiredSlots: workflow.requiredSlots || []
-  };
-}
 module.exports = {
   createInitialWorkflowState,
   updateWorkflowState,
-  computeWorkflowState,
   mergeSlots,
   getMissingSlots,
   buildConfirmationSummary,
+
+  // backward-friendly aliases
   advanceWorkflowState: updateWorkflowState,
   resolveWorkflowState: updateWorkflowState
 };
