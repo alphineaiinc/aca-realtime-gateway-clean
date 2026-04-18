@@ -190,15 +190,15 @@ function buildSlotQuestion(slotName) {
   const slot = String(slotName || "").toLowerCase();
 
   if (!slot) {
-    return "Could you tell me that one more time?";
+    return "Sorry, I missed that — could you say it again?";
   }
 
   if (slot.includes("date") || slot.includes("day")) {
-    return "What date would you like?";
+    return "Got it — which date should I book it for?";
   }
 
   if (slot.includes("time")) {
-    return "What time works for you?";
+    return "And what time works for you?";
   }
 
   if (
@@ -208,24 +208,23 @@ function buildSlotQuestion(slotName) {
     slot.includes("people") ||
     slot.includes("person")
   ) {
-    return "How many people should I put down?";
+    return "How many people should I reserve for?";
   }
 
   if (slot.includes("name")) {
-    return "Can I have your full name?";
+    return "May I have your name for the booking?";
   }
 
   if (slot.includes("phone")) {
-    return "What’s the best phone number for you?";
+    return "What’s the best number to reach you?";
   }
 
   if (slot.includes("email")) {
-    return "What’s the best email address for you?";
+    return "What’s your email address?";
   }
 
-  return "Could you tell me that one more time?";
+  return "Could you tell me that again?";
 }
-
 function buildSafeFallbackReply(session) {
   const workflowStatus = String(session?.workflowStatus || "").toLowerCase();
 
@@ -275,6 +274,8 @@ function handleProcessingResult(callSid, brainResult) {
   }
 
   let replyText = normalizeText(brainResult.replyText);
+
+  
 
   if (!isUsableReply(replyText)) {
     replyText = buildSafeFallbackReply(session);
@@ -451,9 +452,17 @@ async function handleCallerTurn({ callSid, businessId = null, transcript, meta =
 
   session.active_intent = workflowState.intent || null;
   session.workflow = workflowState.intent || null;
-  session.slots = workflowState.slots || {};
+ const newSlots = workflowState.slots || {};
+
+// Merge instead of overwrite
+session.slots = {
+  ...session.slots,
+  ...newSlots,
+};
   session.workflowSlots = workflowState.slots || {};
+  if (workflowState.nextMissingSlot !== session.lastAskedSlot) {
   session.lastAskedSlot = workflowState.nextMissingSlot || null;
+}
   session.workflowStatus = workflowState.workflowStatus || "idle";
 
   let replyText;
@@ -476,6 +485,10 @@ async function handleCallerTurn({ callSid, businessId = null, transcript, meta =
   }
 
   replyText = normalizeText(replyText);
+
+  if (replyText.length > 120) {
+  replyText = replyText.slice(0, 120);
+}
 
   if (!isUsableReply(replyText)) {
     replyText = buildSafeFallbackReply(session);
