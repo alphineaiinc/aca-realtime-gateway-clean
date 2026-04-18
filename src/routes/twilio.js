@@ -900,27 +900,27 @@ ensurePlaybackState(ws);
   }
 
   if (wordCount < 4) {
-  if (stableAgeMs < 320 && pendingAgeMs < 900) return true;
+  if (stableAgeMs < 260 && pendingAgeMs < 750) return true;
   return false;
 }
 
 const looksCompleteSentence =
   /[.!?]$/.test(pending) ||
-  /\b(at\s+\d{1,2}(:\d{2})?\s?(am|pm)?|on\s+\w+|\bfor\b|\bwith\b)\b/i.test(pending) ||
-  wordCount >= 7;
+  /\b(at\s+\d{1,2}(:\d{2})?\s?(am|pm)?|on\s+\w+|for\s+\d+|for\s+\w+|with\s+\w+)\b/i.test(pending) ||
+  wordCount >= 6;
 
 if (looksCompleteSentence) {
-  if (stableAgeMs < 250 && pendingAgeMs < 900) return true;
+  if (stableAgeMs < 180 && pendingAgeMs < 750) return true;
   return false;
 }
 
-if (stableAgeMs < 380) {
+if (stableAgeMs < 300) {
+  if (pendingAgeMs < 950) return true;
+  return false;
+}
+
+if (stillGrowing && stableAgeMs < 450) {
   if (pendingAgeMs < 1200) return true;
-  return false;
-}
-
-if (stillGrowing && stableAgeMs < 550) {
-  if (pendingAgeMs < 1500) return true;
   return false;
 }
 
@@ -1093,15 +1093,20 @@ if (stillGrowing && stableAgeMs < 550) {
         error: err?.message || String(err),
       });
     }
-  }, expectedSlot ? 140 : 180);
+  }, expectedSlot ? 120 : 150);
 
   return;
 }
 const noiseWords = finalVoiceText.trim().split(/\s+/).filter(Boolean);
 
-// reject very short garbage unless it is a valid slot-like answer
+// 🔥 NEW: detect phone-like numbers
+const looksLikePhoneNumber =
+  /(?:\+?\d[\d\s()-]{6,}\d)/.test(finalVoiceText);
+
+// reject very short garbage unless it is valid slot OR phone number
 if (
   noiseWords.length < 3 &&
+  !looksLikePhoneNumber &&
   !/\b(yes|no|7|8|9|10|11|12|am|pm|today|tomorrow)\b/i.test(finalVoiceText) &&
   !isValidSlotValue(finalVoiceText)
 ) {
@@ -1131,7 +1136,8 @@ if (
 // 🔥 BLOCK GARBAGE NUMERIC BLENDS
 if (
   /^[\d\s]+(am|pm)?$/i.test(finalVoiceText) &&
-  finalVoiceText.split(/\s+/).length > 2
+  finalVoiceText.split(/\s+/).length > 2 &&
+  !looksLikePhoneNumber
 ) {
   pushTwilioDebug("dispatch_skipped_incomplete", {
     callSid: activeCallSid,
@@ -1385,9 +1391,9 @@ if (!controllerReply || !controllerReply.shouldSpeak) {
 // 🔥 FAST ACK — only after transcript is accepted and reply is ready
 const shouldSendAck =
   controllerReply.replyText &&
-  controllerReply.replyText.length > 36 &&
+  controllerReply.replyText.length > 42 &&
   !looksTaskCompleted(controllerReply.replyText) &&
-  !/^(what|which|when|can i|may i|what’s|whats|and what|what time|what date)/i.test(
+  !/^(what|which|when|can i|may i|what’s|whats|and what|what time|what date|may i have|what’s the best number)/i.test(
     controllerReply.replyText.trim()
   );
 
@@ -1405,10 +1411,10 @@ if (shouldSendAck) {
     "ack"
   );
 
-  await new Promise((resolve) => setTimeout(resolve, 30));
+  await new Promise((resolve) => setTimeout(resolve, 15));
 }
 // small gap so ack does not collide with main reply playback lock
-await new Promise((resolve) => setTimeout(resolve, 20));
+await new Promise((resolve) => setTimeout(resolve, 10));
 
 await synthesizeAndSendReply(
   ws,
