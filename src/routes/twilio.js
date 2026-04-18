@@ -32,7 +32,7 @@ const MIN_TRANSCRIPT_CHARS = 3;
 const MIN_ALNUM_CHARS = 2;
 const MIN_INTERIM_STABLE_LEN = 4;
 
-const VOICE_TURN_SILENCE_MS = Number(process.env.VOICE_TURN_SILENCE_MS || 700);
+const VOICE_TURN_SILENCE_MS = Number(process.env.VOICE_TURN_SILENCE_MS || 1200);
 const VOICE_STT_COOLDOWN_MS = Number(process.env.VOICE_STT_COOLDOWN_MS || 400);
 const VOICE_POST_TTS_IGNORE_MS = Number(process.env.VOICE_POST_TTS_IGNORE_MS || 350);
 
@@ -74,6 +74,19 @@ const twilioDebugState = {
 };
 
 function pushTwilioDebug(event, details = {}) {
+  const ALLOWED_EVENTS = new Set([
+    "dispatch_turn",
+    "reply_ready",
+    "mark_received",
+    "playback_lock_start",
+    "playback_lock_end",
+    "dispatch_skipped_incomplete",
+    "stt_return",
+    "stt_invalid_skipped",
+  ]);
+
+  if (!ALLOWED_EVENTS.has(event)) return;
+
   const entry = {
     ts: new Date().toISOString(),
     event,
@@ -87,7 +100,6 @@ function pushTwilioDebug(event, details = {}) {
     twilioDebugState.events = twilioDebugState.events.slice(-200);
   }
 }
-
 function getTwilioDebugState() {
   return {
     updatedAt: twilioDebugState.updatedAt,
@@ -143,7 +155,7 @@ function estimatePlaybackMs(ttsBuffer) {
   if (!bytes) return VOICE_PLAYBACK_PADDING_MS + VOICE_PLAYBACK_TAIL_MS;
 
   const speechMs = Math.ceil((bytes / TWILIO_MULAW_BYTES_PER_SEC) * 1000);
-  return speechMs + VOICE_PLAYBACK_PADDING_MS + VOICE_PLAYBACK_TAIL_MS;
+  return Math.min(speechMs, 1800) + 150;
 }
 
 function ensurePlaybackState(ws) {
@@ -497,6 +509,14 @@ function normalizeVoiceReply(reply) {
     ""
   ).trim();
 
+  // soften tone (human-like)
+text = text
+  .replace(/could you please/gi, "can you")
+  .replace(/would you please/gi, "can you")
+  .replace(/please tell me/gi, "")
+  .replace(/kindly/gi, "")
+  .trim();
+
   const parts = text.match(/[^.!?]+[.!?]?/g) || [text];
   const trimmedParts = [];
   let total = 0;
@@ -550,12 +570,14 @@ async function synthesizeAndSendReply(
     })
   );
 
-  pushTwilioDebug("reply_ready", {
+   pushTwilioDebug("reply_ready", {
     callSid: activeCallSid,
     chars: shapedReply.length,
     completed: looksTaskCompleted(shapedReply),
     branch,
   });
+
+  
 
   console.log("💬  Voice reply:", shapedReply);
 
@@ -729,8 +751,36 @@ async function handleTwilioStream(ws, req) {
   ws.__sttBufferBytes = 0;
   ensurePlaybackState(ws);
 
+  function isIncompleteUtterance(text) {
+  const t = String(text || "").toLowerCase().trim();
+  if (!t) return true;
+
+  // obvious broken filler fragments only
+  if (/^(for|and|the|a|an|to|of|uh|um|hmm)$/i.test(t)) return true;
+
+  // bare number fragments like "20." are incomplete
+  if (/^\d+\.?$/.test(t)) return true;
+
+  return false;
+}
+
   async function dispatchPendingVoiceTurn() {
     const finalVoiceText = normalizeIncomingVoiceText(ws.__pendingVoiceTranscript);
+
+    // 🚫 BLOCK INCOMPLETE FRAGMENTS (CRITICAL FIX)
+if (isIncompleteUtterance(finalVoiceText)) {
+  pushTwilioDebug("dispatch_skipped_incomplete", {
+    callSid: activeCallSid,
+    text: finalVoiceText,
+  });
+
+  // give user more time to continue speaking
+  ws.__voiceTurnTimer = setTimeout(() => {
+    dispatchPendingVoiceTurn();
+  }, 500);
+
+  return;
+}
 
     console.log("🚀 DISPATCH TRIGGERED:", finalVoiceText);
 
