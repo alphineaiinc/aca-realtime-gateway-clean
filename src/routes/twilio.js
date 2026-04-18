@@ -926,13 +926,20 @@ async function handleTwilioStream(ws, req) {
         console.log("🚫 REJECTED TEXT:", cleanedText);
 
         if (!cleanedText || cleanedText.length < 2) {
-          pushTwilioDebug("stt_invalid_skipped", {
-            callSid: activeCallSid,
-            raw: userText,
-            cleaned: cleanedText,
-          });
-          return;
-        }
+  console.warn("⚠️ STT EMPTY — forcing fallback reply");
+
+  await synthesizeAndSendReply(
+    ws,
+    activeCallSid,
+    activeStreamSid,
+    tenantId,
+    tenantLangCode,
+    "Sorry, I didn’t catch that clearly — could you say it again?",
+    "fallback"
+  );
+
+  return;
+}
 
         console.log(`👂  Heard (Call ${activeCallSid}):`, userText);
 
