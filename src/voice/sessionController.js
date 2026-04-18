@@ -199,51 +199,43 @@ function extractTimeValue(text) {
   const value = normalizeText(text).toLowerCase();
   if (!value) return "";
 
-  const explicitTime = value.match(/\b\d{1,2}(?::\d{2})?\s*(am|pm)\b/i);
-  if (explicitTime) {
-    return normalizeText(explicitTime[0]).toUpperCase();
+  // Full explicit time
+  const explicit = value.match(/\b(\d{1,2})(?::(\d{2}))?\s*(am|pm)\b/i);
+  if (explicit) {
+    const hour = explicit[1];
+    const mins = explicit[2] || "00";
+    const period = explicit[3].toUpperCase();
+    return `${hour}:${mins} ${period}`;
   }
 
-  const clockTime = value.match(/\b\d{1,2}:\d{2}\b/);
-  if (clockTime) {
-    return clockTime[0];
+  // "7 in the evening"
+  const evening = value.match(/\b(\d{1,2})\s*(?:in the)?\s*(evening|night)\b/i);
+  if (evening) {
+    let hour = Number(evening[1]);
+    if (hour < 12) hour += 12;
+    return `${hour}:00`;
   }
 
-  const oclock = value.match(/\b(\d{1,2})\s*(o'?clock|oclock)\b/i);
-  if (oclock) {
-    return `${oclock[1]}:00`;
+  // "7 in the morning"
+  const morning = value.match(/\b(\d{1,2})\s*(?:in the)?\s*(morning)\b/i);
+  if (morning) {
+    return `${morning[1]}:00 AM`;
   }
 
-  const inThePeriod = value.match(
-    /\b(\d{1,2})\s*(?:in the|this)?\s*(morning|afternoon|evening|night)\b/i
-  );
-  if (inThePeriod) {
-    const hour = Number(inThePeriod[1]);
-    const period = inThePeriod[2].toLowerCase();
+  // "7 pm" spoken as "7"
+  const simple = value.match(/\b(\d{1,2})\b/);
+  const hasPm = /\b(pm|evening|night)\b/.test(value);
+  const hasAm = /\b(am|morning)\b/.test(value);
 
-    if (period === "morning") {
-      return `${hour}:00 AM`;
-    }
+  if (simple) {
+    let hour = Number(simple[1]);
 
-    if (period === "afternoon") {
-      const normalizedHour = hour >= 12 ? hour : hour + 12;
-      return `${normalizedHour}:00`;
-    }
+    if (hasPm && hour < 12) hour += 12;
 
-    if (period === "evening" || period === "night") {
-      const normalizedHour = hour >= 12 ? hour : hour + 12;
-      return `${normalizedHour}:00`;
-    }
-  }
+    if (hasPm) return `${hour}:00`;
+    if (hasAm) return `${hour}:00 AM`;
 
-  const bareAmPm = value.match(/\b(a\.?m\.?|p\.?m\.?)\b/i);
-  if (bareAmPm) {
-    return bareAmPm[1].replace(/\./g, "").toUpperCase();
-  }
-
-  const simpleHour = value.match(/\b\d{1,2}\b/);
-  if (simpleHour && /^(time|appointment|booking|visit|reservation)?$/i.test(value.replace(simpleHour[0], "").trim())) {
-    return `${simpleHour[0]}:00`;
+    return `${hour}:00`;
   }
 
   return "";

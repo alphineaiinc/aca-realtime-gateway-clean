@@ -194,7 +194,10 @@ function getNextMissingSlot(intentSchema, slots) {
   const required = safeArray(intentSchema.required_slots);
 
   for (const slot of required) {
-    if (!isFilled(slots[slot])) {
+    if (
+  !isFilled(slots[slot]) ||
+  (slot === "time" && /^(am|pm)$/i.test(slots[slot]))
+) {
       return slot;
     }
   }
@@ -322,7 +325,15 @@ function computeWorkflowState({ clusterSchema, session, extraction }) {
 
   const nextMissingSlot = getNextMissingSlot(intentSchema, mergedSlots);
   const handoffRequired = Boolean(safeExtraction.handoff_required);
-  const confirmationPending = Boolean(intent && !nextMissingSlot);
+  const hasWeakTime =
+  typeof mergedSlots.time === "string" &&
+  /^(am|pm)$/i.test(mergedSlots.time);
+
+const confirmationPending = Boolean(
+  intent &&
+  !nextMissingSlot &&
+  !hasWeakTime
+);
 
   const workflowStatus = computeWorkflowStatus({
     intent,

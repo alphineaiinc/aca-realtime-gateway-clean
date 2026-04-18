@@ -222,7 +222,14 @@ async function composeReply({
     }
   }
 
-  return normalizeText(replyText);
+  // 🔥 HARD CLEANUP FOR VOICE OUTPUT
+replyText = replyText
+  .replace(/dot dot dot/gi, "")
+  .replace(/\.\.+/g, ".")
+  .replace(/\s+/g, " ")
+  .trim();
+
+return normalizeText(replyText);
 }
 
 module.exports = {
