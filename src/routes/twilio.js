@@ -1128,15 +1128,38 @@ async function handleTwilioStream(ws, req) {
 
         const cleanedText = normalizeIncomingVoiceText(userText);
 
-        if (!isMeaningfulTranscript(cleanedText)) {
-          pushTwilioDebug("stt_invalid_skipped", {
-            callSid: activeCallSid,
-            raw: userText,
-            cleaned: cleanedText,
-            ignoredDuringPlayback: isPlaybackLocked(ws),
-          });
-          return;
-        }
+if (!cleanedText) {
+  pushTwilioDebug("stt_invalid_skipped", {
+    callSid: activeCallSid,
+    raw: userText,
+    cleaned: cleanedText,
+    reason: "empty_transcript",
+    ignoredDuringPlayback: isPlaybackLocked(ws),
+  });
+  return;
+}
+
+if (cleanedText.length < 3) {
+  pushTwilioDebug("stt_invalid_skipped", {
+    callSid: activeCallSid,
+    raw: userText,
+    cleaned: cleanedText,
+    reason: "too_short",
+    ignoredDuringPlayback: isPlaybackLocked(ws),
+  });
+  return;
+}
+
+if (/^(um+|uh+|hmm+|mm+|ah+|er+)$/i.test(cleanedText)) {
+  pushTwilioDebug("stt_invalid_skipped", {
+    callSid: activeCallSid,
+    raw: userText,
+    cleaned: cleanedText,
+    reason: "filler_only",
+    ignoredDuringPlayback: isPlaybackLocked(ws),
+  });
+  return;
+}
 
         console.log(`👂  Heard (Call ${activeCallSid}):`, cleanedText);
 
