@@ -735,40 +735,11 @@ async function handleTwilioStream(ws, req) {
 
         reply = turnResult?.replyText || "";
 
-        if (reply) {
-          ws.__acaStructuredFlowActive = true;
-        }
-      } catch (err) {
-        console.warn("⚠️ [twilio] handleCallerTurn failed:", err.message);
-        pushTwilioDebug("handle_caller_turn_error", {
-          callSid: activeCallSid,
-          error: err.message,
-        });
-      }
+        if (!reply) {
+  console.warn("⚠️ No reply from workflow — forcing controller fallback");
 
-      if (!reply) {
-        if (ws.__acaStructuredFlowActive) {
-          console.warn("⚠️ Structured flow active — refusing fallback");
-          reply = "Sorry — could you repeat that once for me?";
-        } else {
-          const fallbackReply = await onFinalTranscript(finalVoiceText);
-          reply = normalizeVoiceReply(fallbackReply);
-
-          if (!reply) {
-            console.log("ℹ️ [twilio] Empty reply after handler, skipping TTS.");
-            pushTwilioDebug("reply_empty", {
-              callSid: activeCallSid,
-            });
-
-            handleProcessingResult(activeCallSid, {
-              shouldSpeak: false,
-              replyText: "",
-              replyType: "silent",
-            });
-            return;
-          }
-        }
-      }
+  reply = "Sorry — could you repeat that once for me?";
+}
 
       const controllerReply = handleProcessingResult(activeCallSid, {
         shouldSpeak: true,
