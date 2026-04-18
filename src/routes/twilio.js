@@ -1166,20 +1166,7 @@ if (
   /^(yeah they said|exactly it's like confirm|i am looking for that visit|it is chicago)$/i.test(finalVoiceText.trim()) ||
   /^(near the park|park|clock)$/i.test(finalVoiceText.trim())
 ) {
-  pushTwilioDebug("dispatch_skipped_incomplete", {
-    callSid: activeCallSid,
-    text: finalVoiceText,
-    reason: "conversation_noise_filtered",
-    expectedSlot,
-  });
-
-  ws.__pendingVoiceTranscript = "";
-  ws.__pendingVoiceTranscriptStartedAt = 0;
-  ws.__lastStableTranscript = "";
-  ws.__lastStableTranscriptAt = 0;
-
-  return;
-}
+ 
   pushTwilioDebug("dispatch_skipped_incomplete", {
     callSid: activeCallSid,
     text: finalVoiceText,
@@ -1805,7 +1792,7 @@ return;
     }
   });
 
-  ws.on("close", () => {
+   ws.on("close", () => {
     clearPendingVoiceTurn(ws);
     pushTwilioDebug("ws_closed", {
       callSid: activeCallSid,
@@ -1823,7 +1810,7 @@ return;
     endPlaybackLock(ws, activeCallSid, activeStreamSid, "ws_close");
     handleCallEnded(activeCallSid);
   });
-
+}
 
 module.exports = {
   router,
