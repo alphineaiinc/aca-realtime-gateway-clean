@@ -148,25 +148,11 @@ function handleProcessingResult(callSid, brainResult) {
     return null;
   }
 
-  const safeReplyText = normalizeText(brainResult.replyText);
-
-  if (!safeReplyText) {
-    const fallbackReply = buildSessionFallbackReply(session);
-
-    transition(session, STATES.READY_TO_SPEAK, "brain_ready_with_fallback");
-
-    return {
-      shouldSpeak: true,
-      replyText: fallbackReply,
-      replyType: "fallback",
-    };
-  }
-
   transition(session, STATES.READY_TO_SPEAK, "brain_ready");
 
   return {
     shouldSpeak: true,
-    replyText: safeReplyText,
+    replyText: brainResult.replyText,
     replyType: brainResult.replyType || "reply",
   };
 }
@@ -220,107 +206,6 @@ function pushRecentTurn(session, role, text) {
   if (session.recentTurns.length > 8) {
     session.recentTurns = session.recentTurns.slice(-8);
   }
-}
-
-function isReadyForConfirmation(session) {
-  const status = String(session?.workflowStatus || "").toLowerCase();
-  return status === "ready_for_confirmation" || status === "complete";
-}
-
-function buildConfirmationReplyFromSession(session) {
-  const slots = session?.slots || {};
-  const values = Object.entries(slots)
-    .filter(([, value]) => normalizeText(value))
-    .map(([key, value]) => ({ key, value: normalizeText(value) }));
-
-  if (!values.length) {
-    return "Let me confirm the details I have. Is that correct?";
-  }
-
-  const findValue = (matcher) => {
-    const hit = values.find(({ key }) => matcher(String(key).toLowerCase()));
-    return hit ? hit.value : "";
-  };
-
-  const dateValue = findValue((key) => key.includes("date") || key.includes("day"));
-  const timeValue = findValue((key) => key.includes("time"));
-  const partyValue = findValue((key) =>
-    key.includes("party") ||
-    key.includes("size") ||
-    key.includes("guest") ||
-    key.includes("people") ||
-    key.includes("person")
-  );
-  const nameValue = findValue((key) => key.includes("name"));
-
-  const parts = [];
-
-  if (dateValue) parts.push(dateValue);
-  if (timeValue) parts.push(`at ${timeValue}`);
-  if (partyValue) parts.push(`for ${partyValue}`);
-  if (nameValue) parts.push(`under ${nameValue}`);
-
-  if (parts.length > 0) {
-    return `Let me confirm: ${parts.join(" ")}. Is that correct?`;
-  }
-
-  const genericSummary = values
-    .map(({ key, value }) => `${String(key).replace(/_/g, " ")} ${value}`)
-    .join(", ");
-
-  if (genericSummary) {
-    return `Let me confirm: ${genericSummary}. Is that correct?`;
-  }
-
-  return "Let me confirm the details I have. Is that correct?";
-}
-
-function buildMissingSlotFallbackReply(session) {
-  const slot = String(session?.lastAskedSlot || "").toLowerCase();
-
-  if (!slot) {
-    return "Could you say that one more time?";
-  }
-
-  if (slot.includes("date") || slot.includes("day")) {
-    return "What date would you like?";
-  }
-
-  if (slot.includes("time")) {
-    return "What time works for you?";
-  }
-
-  if (
-    slot.includes("party") ||
-    slot.includes("size") ||
-    slot.includes("guest") ||
-    slot.includes("people") ||
-    slot.includes("person")
-  ) {
-    return "How many people should I put down?";
-  }
-
-  if (slot.includes("name")) {
-    return "Can I have your full name?";
-  }
-
-  if (slot.includes("phone")) {
-    return "What’s the best phone number for you?";
-  }
-
-  if (slot.includes("email")) {
-    return "What’s the best email address for you?";
-  }
-
-  return "Could I get that detail one more time?";
-}
-
-function buildSessionFallbackReply(session) {
-  if (isReadyForConfirmation(session)) {
-    return buildConfirmationReplyFromSession(session);
-  }
-
-  return buildMissingSlotFallbackReply(session);
 }
 
 async function handleCallerTurn({ callSid, businessId = null, transcript, meta = {} }) {
@@ -470,31 +355,11 @@ async function handleCallerTurn({ callSid, businessId = null, transcript, meta =
       intent: workflowState.intent || null,
     });
 
-    replyText = "";
-  }
-
-  replyText = normalizeText(replyText);
-
-  if (!replyText) {
-    replyText = buildSessionFallbackReply(session);
-
-    logDecision(callSid, "Empty/invalid workflow reply replaced with fallback", {
-      tenantId: session.tenantId,
-      businessId: session.businessId,
-      clusterId: session.clusterId,
-      intent: session.active_intent,
-      workflowStatus: session.workflowStatus,
-      slots: session.slots,
-      nextMissingSlot: session.lastAskedSlot,
-      fallbackReplyText: replyText,
-    });
+    replyText = "Sorry — could you repeat that?";
   }
 
   session.lastAssistantReply = replyText;
-
-  if (replyText) {
-    pushRecentTurn(session, "assistant", replyText);
-  }
+  pushRecentTurn(session, "assistant", replyText);
 
   logDecision(callSid, "AI workflow turn processed", {
     tenantId: session.tenantId,

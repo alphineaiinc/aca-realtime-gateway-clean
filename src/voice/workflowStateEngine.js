@@ -1,312 +1,264 @@
 "use strict";
 
-/**
- * src/voice/workflowStateEngine.js
- *
- * Deterministic workflow state handling for ACA live voice flow.
- *
- * Rules:
- * - No hardcoded business-specific logic
- * - Merge multi-slot extraction from a single caller utterance
- * - Preserve already-filled slots unless caller clearly provides a better value
- * - If a partial name becomes a fuller name, overwrite it
- * - If all required slots are filled, move deterministically to ready_for_confirmation
- */
-
-function safeString(value) {
-  return typeof value === "string" ? value.trim() : "";
+function safeObject(v) {
+  return v && typeof v === "object" && !Array.isArray(v) ? v : {};
 }
 
-function isNonEmptyString(value) {
-  return typeof value === "string" && value.trim().length > 0;
+function safeArray(v) {
+  return Array.isArray(v) ? v : [];
 }
 
-function isObject(value) {
-  return !!value && typeof value === "object" && !Array.isArray(value);
+function isFilled(value) {
+  if (value === null || value === undefined) return false;
+  if (typeof value === "string") return value.trim().length > 0;
+  if (Array.isArray(value)) return value.length > 0;
+  if (typeof value === "object") return Object.keys(value).length > 0;
+  return true;
 }
 
-function normalizeWhitespace(text) {
-  return safeString(text).replace(/\s+/g, " ").trim();
+function getIntentList(clusterSchema) {
+  return safeArray(clusterSchema && clusterSchema.intents);
 }
 
-function normalizeName(value) {
-  const text = normalizeWhitespace(value);
-  if (!text) return "";
-  return text
-    .replace(/\s+/g, " ")
-    .replace(/\b[a-z]/g, (m) => m.toUpperCase());
+function getIntentSchema(clusterSchema, intent) {
+  if (!intent) return null;
+
+  const intents = getIntentList(clusterSchema);
+  return intents.find((i) => i && i.intent === intent) || null;
 }
 
-function normalizeTime(value) {
-  const text = normalizeWhitespace(value).toLowerCase();
-  if (!text) return "";
+function validateIntent(clusterSchema, requestedIntent, currentIntent) {
+  const intents = getIntentList(clusterSchema);
 
-  return text
-    .replace(/\b(p)\.?\s?(m)\.?\b/g, "pm")
-    .replace(/\b(a)\.?\s?(m)\.?\b/g, "am")
-    .replace(/\s+/g, " ");
-}
-
-function normalizeDate(value) {
-  return normalizeWhitespace(value).toLowerCase();
-}
-
-function normalizePartySize(value) {
-  if (value === null || value === undefined) return "";
-  const raw = String(value).trim();
-  if (!raw) return "";
-
-  const digits = raw.match(/\d+/);
-  if (digits) return digits[0];
-
-  return raw.toLowerCase();
-}
-
-function normalizeGeneric(value) {
-  if (value === null || value === undefined) return "";
-  return normalizeWhitespace(String(value));
-}
-
-function normalizeSlotValue(slotKey, value) {
-  if (value === null || value === undefined) return "";
-  const key = String(slotKey || "").toLowerCase();
-
-  if (key.includes("name")) return normalizeName(value);
-  if (key.includes("time")) return normalizeTime(value);
-  if (key.includes("date") || key.includes("day")) return normalizeDate(value);
-  if (
-    key.includes("party") ||
-    key.includes("size") ||
-    key.includes("guest") ||
-    key.includes("people") ||
-    key.includes("person")
-  ) {
-    return normalizePartySize(value);
+  if (requestedIntent) {
+    const requestedExists = intents.find((i) => i && i.intent === requestedIntent);
+    if (requestedExists) return requestedIntent;
   }
 
-  return normalizeGeneric(value);
+  if (currentIntent) {
+    const currentExists = intents.find((i) => i && i.intent === currentIntent);
+    if (currentExists) return currentIntent;
+  }
+
+  return null;
 }
 
-function getRequiredSlots(schema, workflow) {
-  if (Array.isArray(schema?.requiredSlots) && schema.requiredSlots.length) {
-    return schema.requiredSlots;
+function buildAllowedSlotSet(clusterSchema, intentSchema) {
+  const allowed = new Set();
+
+  const clusterSlots = safeObject(clusterSchema && clusterSchema.slot_definitions);
+  for (const key of Object.keys(clusterSlots)) {
+    allowed.add(key);
   }
-  if (Array.isArray(schema?.slots)) {
-    return schema.slots
-      .filter((slot) => slot?.required !== false)
-      .map((slot) => slot.key)
-      .filter(Boolean);
+
+  const requiredSlots = safeArray(intentSchema && intentSchema.required_slots);
+  const optionalSlots = safeArray(intentSchema && intentSchema.optional_slots);
+
+  for (const key of requiredSlots) {
+    allowed.add(key);
   }
-  if (Array.isArray(workflow?.requiredSlots) && workflow.requiredSlots.length) {
-    return workflow.requiredSlots;
+
+  for (const key of optionalSlots) {
+    allowed.add(key);
   }
-  return [];
+
+  return allowed;
 }
 
-function getPromptForSlot(slotKey, schema) {
-  if (!slotKey) return "";
-  const slotDef = Array.isArray(schema?.slots)
-    ? schema.slots.find((s) => s?.key === slotKey)
-    : null;
-  return safeString(slotDef?.prompt || slotDef?.question || "");
-}
+function filterSlotUpdates(clusterSchema, intentSchema, updates) {
+  const source = safeObject(updates);
+  const filtered = {};
+  const allowedSlots = buildAllowedSlotSet(clusterSchema, intentSchema);
 
-function getSlotAliases(schema) {
-  const aliases = {};
-
-  if (Array.isArray(schema?.slots)) {
-    for (const slot of schema.slots) {
-      if (!slot?.key) continue;
-      aliases[slot.key] = slot.key;
-
-      if (Array.isArray(slot.aliases)) {
-        for (const alias of slot.aliases) {
-          if (isNonEmptyString(alias)) aliases[alias] = slot.key;
-        }
-      }
+  for (const [key, value] of Object.entries(source)) {
+    if (allowedSlots.has(key)) {
+      filtered[key] = value;
     }
   }
 
-  return aliases;
+  return filtered;
 }
 
-function canonicalizeExtractedSlots(extractedSlots, schema) {
-  if (!isObject(extractedSlots)) return {};
+function normalizeSlotValue(slotName, value, clusterSchema) {
+  const slotDefinitions = safeObject(clusterSchema && clusterSchema.slot_definitions);
+  const slotDef = safeObject(slotDefinitions[slotName]);
 
-  const aliases = getSlotAliases(schema);
-  const out = {};
+  if (!isFilled(value)) return value;
 
-  for (const [rawKey, rawValue] of Object.entries(extractedSlots)) {
-    const canonicalKey = aliases[rawKey] || rawKey;
-    const normalized = normalizeSlotValue(canonicalKey, rawValue);
-    if (!normalized) continue;
-    out[canonicalKey] = normalized;
+  const type = slotDef.type || null;
+
+  if (type === "integer" || type === "number") {
+    if (typeof value === "number") return value;
+
+    const parsed = Number(String(value).trim());
+    if (Number.isFinite(parsed)) return parsed;
+
+    return value;
   }
 
-  return out;
-}
-
-function scoreNameCompleteness(name) {
-  const text = normalizeName(name);
-  if (!text) return 0;
-
-  let score = 0;
-  const parts = text.split(/\s+/).filter(Boolean);
-
-  score += parts.length * 10;
-  score += text.length;
-
-  if (parts.length >= 2) score += 30;
-  if (/^[A-Z][a-z]+(?:\s+[A-Z]\.?)?(?:\s+[A-Z][a-z]+)+$/.test(text)) score += 20;
-
-  return score;
-}
-
-function shouldReplaceExistingSlot(slotKey, existingValue, incomingValue) {
-  const existing = normalizeSlotValue(slotKey, existingValue);
-  const incoming = normalizeSlotValue(slotKey, incomingValue);
-
-  if (!incoming) return false;
-  if (!existing) return true;
-  if (existing === incoming) return false;
-
-  const key = String(slotKey || "").toLowerCase();
-
-  // Name overwrite rule: fuller name should replace shorter/partial name cleanly.
-  if (key.includes("name")) {
-    return scoreNameCompleteness(incoming) >= scoreNameCompleteness(existing);
+  if (type === "string" || type === "date" || type === "time" || type === "phone") {
+    return String(value).trim();
   }
 
-  // Generic rule: accept explicit update if incoming is longer / more specific.
-  if (incoming.length >= existing.length) return true;
-
-  return false;
+  return value;
 }
 
-function mergeSlots(currentSlots, extractedSlots, schema) {
-  const existing = isObject(currentSlots) ? { ...currentSlots } : {};
-  const incoming = canonicalizeExtractedSlots(extractedSlots, schema);
+function normalizeSlotUpdates(clusterSchema, updates) {
+  const normalized = {};
 
-  for (const [slotKey, incomingValue] of Object.entries(incoming)) {
-    const existingValue = existing[slotKey];
+  for (const [key, value] of Object.entries(safeObject(updates))) {
+    normalized[key] = normalizeSlotValue(key, value, clusterSchema);
+  }
 
-    if (shouldReplaceExistingSlot(slotKey, existingValue, incomingValue)) {
-      existing[slotKey] = normalizeSlotValue(slotKey, incomingValue);
+  return normalized;
+}
+
+function mergeSlots(currentSlots, updates, corrections) {
+  return {
+    ...safeObject(currentSlots),
+    ...safeObject(updates),
+    ...safeObject(corrections),
+  };
+}
+
+function getNextMissingSlot(intentSchema, slots) {
+  if (!intentSchema) return null;
+
+  const required = safeArray(intentSchema.required_slots);
+
+  for (const slot of required) {
+    if (!isFilled(slots[slot])) {
+      return slot;
     }
   }
 
-  return existing;
+  return null;
 }
 
-function getMissingSlots(slots, requiredSlots) {
-  const source = isObject(slots) ? slots : {};
-  const required = Array.isArray(requiredSlots) ? requiredSlots : [];
+function getConfirmationSlots(intentSchema, slots) {
+  if (!intentSchema) return {};
 
-  return required.filter((slotKey) => !isNonEmptyString(source[slotKey]));
-}
+  const confirmationSlotNames = safeArray(intentSchema.confirmation_slots).length
+    ? safeArray(intentSchema.confirmation_slots)
+    : [
+        ...safeArray(intentSchema.required_slots),
+        ...safeArray(intentSchema.optional_slots),
+      ];
 
-function deriveWorkflowStatus({ slots, requiredSlots, existingStatus }) {
-  const missing = getMissingSlots(slots, requiredSlots);
-
-  if (missing.length === 0) {
-    return "ready_for_confirmation";
+  const output = {};
+  for (const slotName of confirmationSlotNames) {
+    if (isFilled(slots[slotName])) {
+      output[slotName] = slots[slotName];
+    }
   }
 
-  if (existingStatus === "completed") {
-    return "completed";
-  }
-
-  return "collecting";
+  return output;
 }
 
-function buildConfirmationSummary(slots, requiredSlots) {
-  const keys = Array.isArray(requiredSlots) ? requiredSlots : Object.keys(slots || {});
-  const parts = [];
-
-  for (const key of keys) {
-    const value = safeString(slots?.[key]);
-    if (!value) continue;
-
-    const spokenKey = key
-      .replace(/_/g, " ")
-      .replace(/\bparty size\b/i, "party size")
-      .replace(/\bcustomer name\b/i, "name");
-
-    parts.push(`${spokenKey}: ${value}`);
-  }
-
-  return parts.join(", ");
+function computeWorkflowStatus({
+  intent,
+  nextMissingSlot,
+  handoffRequired,
+  confirmationPending,
+}) {
+  if (handoffRequired) return "handoff_required";
+  if (!intent) return "idle";
+  if (nextMissingSlot) return "collecting";
+  if (confirmationPending) return "ready_for_confirmation";
+  return "completed";
 }
 
-function updateWorkflowState({
-  workflow,
-  schema,
-  extractedSlots,
-  callerText,
-  now
-} = {}) {
-  const currentWorkflow = isObject(workflow) ? { ...workflow } : {};
-  const currentSlots = isObject(currentWorkflow.slots) ? { ...currentWorkflow.slots } : {};
+function computeSessionState(workflowStatus) {
+  if (workflowStatus === "handoff_required") return "failed";
+  if (workflowStatus === "collecting") return "task_in_progress";
+  if (workflowStatus === "ready_for_confirmation") return "ready_for_confirmation";
+  if (workflowStatus === "completed") return "completed";
+  return "idle";
+}
 
-  const requiredSlots = getRequiredSlots(schema, currentWorkflow);
-  const mergedSlots = mergeSlots(currentSlots, extractedSlots, schema);
-  const missingSlots = getMissingSlots(mergedSlots, requiredSlots);
-  const nextMissingSlot = missingSlots[0] || null;
-  const workflowStatus = deriveWorkflowStatus({
-    slots: mergedSlots,
-    requiredSlots,
-    existingStatus: currentWorkflow.workflowStatus || currentWorkflow.status
+function computeWorkflowState({ clusterSchema, session, extraction }) {
+  const safeSession = safeObject(session);
+  const safeExtraction = safeObject(extraction);
+
+  const currentIntent = safeSession.active_intent || null;
+  const intent = validateIntent(
+    clusterSchema,
+    safeExtraction.intent || null,
+    currentIntent
+  );
+
+  const intentSchema = getIntentSchema(clusterSchema, intent);
+
+  const filteredUpdates = filterSlotUpdates(
+    clusterSchema,
+    intentSchema,
+    safeExtraction.slot_updates
+  );
+
+  const filteredCorrections = filterSlotUpdates(
+    clusterSchema,
+    intentSchema,
+    safeExtraction.slot_corrections
+  );
+
+  const normalizedUpdates = normalizeSlotUpdates(clusterSchema, filteredUpdates);
+  const normalizedCorrections = normalizeSlotUpdates(clusterSchema, filteredCorrections);
+
+  const mergedSlots = mergeSlots(
+    safeSession.slots || {},
+    normalizedUpdates,
+    normalizedCorrections
+  );
+
+  const nextMissingSlot = getNextMissingSlot(intentSchema, mergedSlots);
+  const handoffRequired = Boolean(safeExtraction.handoff_required);
+  const confirmationPending = Boolean(intent && !nextMissingSlot);
+
+  const workflowStatus = computeWorkflowStatus({
+    intent,
+    nextMissingSlot,
+    handoffRequired,
+    confirmationPending,
   });
 
-  const updated = {
-    ...currentWorkflow,
+  const confirmationSlots = getConfirmationSlots(intentSchema, mergedSlots);
+  const state = computeSessionState(workflowStatus);
+
+  return {
+    intent,
+    intentSchema,
     slots: mergedSlots,
-    requiredSlots,
-    missingSlots,
+    slotUpdatesApplied: normalizedUpdates,
+    slotCorrectionsApplied: normalizedCorrections,
     nextMissingSlot,
     workflowStatus,
-    status: workflowStatus,
-    confirmationSummary:
-      workflowStatus === "ready_for_confirmation"
-        ? buildConfirmationSummary(mergedSlots, requiredSlots)
-        : "",
-    lastCallerText: safeString(callerText),
-    updatedAt: now || Date.now()
+    state,
+    handoffRequired,
+    confirmationPending,
+    confirmationSlots,
+    intentConfidence:
+      typeof safeExtraction.intent_confidence === "number"
+        ? safeExtraction.intent_confidence
+        : 0,
+    answeredRequestedSlot: Boolean(safeExtraction.answered_requested_slot),
+    callerGoalSummary: safeExtraction.caller_goal_summary || "",
+    safetyFlags: safeArray(safeExtraction.safety_flags),
+    notes: safeArray(safeExtraction.notes),
   };
-
-  if (nextMissingSlot) {
-    updated.currentPrompt = getPromptForSlot(nextMissingSlot, schema);
-  } else {
-    updated.currentPrompt = "";
-  }
-
-  return updated;
-}
-
-function createInitialWorkflowState({ schema, existingWorkflow } = {}) {
-  const workflow = isObject(existingWorkflow) ? existingWorkflow : {};
-  const requiredSlots = getRequiredSlots(schema, workflow);
-
-  return updateWorkflowState({
-    workflow: {
-      ...workflow,
-      slots: isObject(workflow.slots) ? workflow.slots : {},
-      requiredSlots
-    },
-    schema,
-    extractedSlots: {},
-    callerText: ""
-  });
 }
 
 module.exports = {
-  createInitialWorkflowState,
-  updateWorkflowState,
+  safeObject,
+  safeArray,
+  isFilled,
+  getIntentSchema,
+  validateIntent,
+  filterSlotUpdates,
+  normalizeSlotUpdates,
   mergeSlots,
-  getMissingSlots,
-  buildConfirmationSummary,
-
-  // backward-friendly aliases
-  advanceWorkflowState: updateWorkflowState,
-  resolveWorkflowState: updateWorkflowState
+  getNextMissingSlot,
+  getConfirmationSlots,
+  computeWorkflowStatus,
+  computeSessionState,
+  computeWorkflowState,
 };
