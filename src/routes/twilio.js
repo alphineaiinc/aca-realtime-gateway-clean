@@ -558,14 +558,15 @@ async function handleTwilioStream(ws, req) {
   let tenantId = 1;
   let tenantLangCode = "en-US";
 
-  ws.__voiceTurnTimer = null;
-  ws.__pendingVoiceTranscript = "";
-  ws.__lastVoiceInputAt = 0;
-  ws.__lastVoiceReplyAt = 0;
-  ws.__isSpeaking = false;
-  ws.__speakUntil = 0;
-  ws.__acaSessionId = null;
-  ws.__acaStructuredFlowActive = false;
+ ws.__voiceTurnTimer = null;
+ws.__pendingVoiceTranscript = "";
+ws.__lastVoiceInputAt = 0;
+ws.__lastVoiceReplyAt = 0;
+ws.__isSpeaking = false;
+ws.__speakUntil = 0;
+ws.__acaSessionId = null;
+ws.__acaStructuredFlowActive = false;
+ws.__routingMeta = {};
   ensurePlaybackState(ws);
 
   async function onFinalTranscript(userText) {
@@ -710,12 +711,14 @@ async function handleTwilioStream(ws, req) {
 
     let reply = "";
 
+    
+
     try {
       const turnResult = await handleCallerTurn({
-        callSid: activeCallSid,
-        businessId: null,
-        transcript: finalVoiceText,
-      });
+  callSid: activeCallSid,
+  transcript: finalVoiceText,
+  meta: ws.__routingMeta || {},
+});
 
       reply = turnResult?.replyText || "";
 
@@ -784,6 +787,36 @@ async function handleTwilioStream(ws, req) {
       console.log("📥 [twilio] WS event:", data?.event || "(unknown)");
 
       if (data.event === "start") {
+        const customParams = data.start.customParameters || {};
+
+console.log("🧭 [twilio] customParameters:", customParams);
+
+tenantId =
+  customParams.tenantId ||
+  customParams.tenant_id ||
+  tenantId;
+
+const calledNumber =
+  customParams.calledNumber ||
+  customParams.called_number ||
+  customParams.to ||
+  customParams.To ||
+  null;
+
+const businessId =
+  customParams.businessId ||
+  customParams.business_id ||
+  null;
+
+ws.__routingMeta = {
+  tenantId,
+  businessId,
+  calledNumber,
+  callSid: data.start.callSid,
+  streamSid: data.start.streamSid,
+};
+
+console.log("🧭 [twilio] resolved routing meta:", ws.__routingMeta);
         activeCallSid = data.start.callSid;
         activeStreamSid = data.start.streamSid;
         streamActive = true;
@@ -952,6 +985,14 @@ async function handleTwilioStream(ws, req) {
             text: userText,
             length: String(userText || "").length,
           });
+
+          if (!userText || userText.trim().length === 0) {
+  console.warn("⚠️ [STT ISSUE] Empty transcript detected", {
+    callSid: activeCallSid,
+    bufferedBytes: combined.length,
+    languageCode: tenantLangCode,
+  });
+}
 
           pushTwilioDebug("stt_return", {
             callSid: activeCallSid,
