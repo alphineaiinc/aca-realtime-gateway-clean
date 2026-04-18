@@ -1161,8 +1161,10 @@ if (pendingAgeMs >= 1800) {
 
 if (
   isWeakFragment(finalVoiceText) ||
-  /^(that is what|which is|is it|confer|okay|so|yeah|exactly|right|correct|uh|um|hmm)$/i.test(finalVoiceText.trim()) ||
-  /^(i am looking for|i need|they said|it's like)$/i.test(finalVoiceText.trim())
+  /^(that is what|which is|is it|confer|okay|so|yeah|exactly|right|correct|uh|um|hmm|sure|alright|hello)$/i.test(finalVoiceText.trim()) ||
+  /^(i am looking for|they said|it's like|you there)$/i.test(finalVoiceText.trim()) ||
+  /^(yeah they said|exactly it's like confirm|i am looking for that visit|it is chicago)$/i.test(finalVoiceText.trim()) ||
+  /^(near the park|park|clock)$/i.test(finalVoiceText.trim())
 ) {
   pushTwilioDebug("dispatch_skipped_incomplete", {
     callSid: activeCallSid,
