@@ -769,17 +769,28 @@ function isMeaningfulUtterance(text) {
 }
 
 function isValidSlotValue(text) {
-  const t = String(text || "").trim();
+  const t = String(text || "").trim().replace(/[.,!?]+$/g, "");
 
-  // time: 2, 2:00, 2 pm, 2:00 pm
+  // full time: 2, 2:00, 2 pm, 2:00 pm
   if (/^\d{1,2}(:\d{2})?\s?(am|pm)?$/i.test(t)) return true;
 
-  // date/day
+  // am / pm fragment
+  if (/^(am|pm)$/i.test(t)) return true;
+
+  // relative / weekday date
   if (
     /^(today|tomorrow|monday|tuesday|wednesday|thursday|friday|saturday|sunday)$/i.test(t)
   ) return true;
 
-  // simple name: Prem / Prem Kumar
+  // month names
+  if (
+    /^(jan|january|feb|february|mar|march|apr|april|may|jun|june|jul|july|aug|august|sep|sept|september|oct|october|nov|november|dec|december)$/i.test(t)
+  ) return true;
+
+  // day-of-month piece
+  if (/^\d{1,2}$/.test(t)) return true;
+
+  // simple name
   if (/^[A-Za-z]{2,}(?:\s[A-Za-z]{2,})?$/.test(t)) return true;
 
   return false;
@@ -1204,7 +1215,14 @@ if (!cleanedText) {
   return;
 }
 
-if (cleanedText.length < 3) {
+const canonicalText = cleanedText.replace(/[.,!?]+$/g, "").trim();
+
+const isShortSlotFragment =
+  /^\d{1,2}$/.test(canonicalText) ||                // 2, 20
+  /^(am|pm)$/i.test(canonicalText) ||              // am, pm
+  /^(jan|january|feb|february|mar|march|apr|april|may|jun|june|jul|july|aug|august|sep|sept|september|oct|october|nov|november|dec|december)$/i.test(canonicalText);
+
+if (cleanedText.length < 3 && !isShortSlotFragment) {
   pushTwilioDebug("stt_invalid_skipped", {
     callSid: activeCallSid,
     raw: userText,
@@ -1231,21 +1249,40 @@ if (/^(um+|uh+|hmm+|mm+|ah+|er+)$/i.test(cleanedText)) {
         handleTranscriptPartial(activeCallSid, cleanedText);
 
         // Only append if it's clearly continuation
-const looksLikeStandaloneSlotValue =
-  /^\d{1,2}(:\d{2})?\s?(am|pm)?$/i.test(cleanedText) ||   // time
-  /^(today|tomorrow|monday|tuesday|wednesday|thursday|friday|saturday|sunday)$/i.test(cleanedText) || // date
-  /^[A-Za-z]{2,}(?:\s[A-Za-z]{2,})?$/.test(cleanedText); // name
+const canonicalText = cleanedText.replace(/[.,!?]+$/g, "").trim();
+const pendingCanonical = String(ws.__pendingVoiceTranscript || "")
+  .replace(/[.,!?]+$/g, "")
+  .trim();
 
-// Only append if it's real continuation
+const isStandaloneCompleteSlot =
+  /^\d{1,2}(:\d{2})?\s?(am|pm)?$/i.test(canonicalText) || // 4, 4:00, 4 pm
+  /^(today|tomorrow|monday|tuesday|wednesday|thursday|friday|saturday|sunday)$/i.test(canonicalText) ||
+  /^[A-Za-z]{2,}(?:\s[A-Za-z]{2,})?$/.test(canonicalText);
+
+const isDateOrTimeFragment =
+  /^(am|pm)$/i.test(canonicalText) ||
+  /^\d{1,2}$/.test(canonicalText) ||
+  /^(jan|january|feb|february|mar|march|apr|april|may|jun|june|jul|july|aug|august|sep|sept|september|oct|october|nov|november|dec|december)$/i.test(canonicalText) ||
+  /^(in the morning|in the evening|at night)$/i.test(canonicalText);
+
+const pendingLooksDateOrTimeLike =
+  /^\d{1,2}(:\d{2})?$/i.test(pendingCanonical) ||
+  /^(jan|january|feb|february|mar|march|apr|april|may|jun|june|jul|july|aug|august|sep|sept|september|oct|october|nov|november|dec|december)$/i.test(pendingCanonical) ||
+  /^(today|tomorrow|monday|tuesday|wednesday|thursday|friday|saturday|sunday)$/i.test(pendingCanonical) ||
+  /\b(jan|january|feb|february|mar|march|apr|april|may|jun|june|jul|july|aug|august|sep|sept|september|oct|october|nov|november|dec|december)\b/i.test(pendingCanonical);
+
+// Append when current piece looks like it belongs to an unfinished date/time expression
 if (
   ws.__pendingVoiceTranscript &&
-  !looksLikeStandaloneSlotValue &&
-  cleanedText.length > 3
+  (
+    (isDateOrTimeFragment && pendingLooksDateOrTimeLike) ||
+    (!isStandaloneCompleteSlot && canonicalText.length > 3)
+  )
 ) {
   ws.__pendingVoiceTranscript =
-    `${ws.__pendingVoiceTranscript} ${cleanedText}`.trim();
+    `${ws.__pendingVoiceTranscript} ${canonicalText}`.trim();
 } else {
-  ws.__pendingVoiceTranscript = cleanedText;
+  ws.__pendingVoiceTranscript = canonicalText;
 }
         const previousInputAt = ws.__lastVoiceInputAt || 0;
         const inputAt = Date.now();
