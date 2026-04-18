@@ -4,6 +4,12 @@ const { createSession, getSession, removeSession } = require("./voiceSessionStor
 const { STATES, transition } = require("./stateMachine");
 const { logEvent, logDecision, logError } = require("./voiceLogger");
 
+const { resolveTenantFromVoiceContext } = require("./tenantResolver");
+const { loadClusterSchema } = require("./clusterSchemaLoader");
+const { extractWorkflowTurn } = require("./workflowExtractor");
+const { computeWorkflowState } = require("./workflowStateEngine");
+const { composeReply } = require("./workflowReplyComposer");
+
 function handleCallStarted(callSid, meta = {}) {
   let session = getSession(callSid);
 
@@ -11,13 +17,36 @@ function handleCallStarted(callSid, meta = {}) {
     session = createSession(callSid, meta);
   }
 
-  // ✅ Initialize minimal workflow memory safely
   if (!session.workflow) {
     session.workflow = null;
   }
 
   if (!session.workflowSlots) {
     session.workflowSlots = {};
+  }
+
+  if (!session.slots) {
+    session.slots = {};
+  }
+
+  if (!session.active_intent) {
+    session.active_intent = null;
+  }
+
+  if (!session.workflowStatus) {
+    session.workflowStatus = "idle";
+  }
+
+  if (!session.clusterId) {
+    session.clusterId = null;
+  }
+
+  if (!session.tenantId) {
+    session.tenantId = null;
+  }
+
+  if (!session.businessId) {
+    session.businessId = null;
   }
 
   if (!session.lastAskedSlot) {
@@ -30,6 +59,10 @@ function handleCallStarted(callSid, meta = {}) {
 
   if (!session.lastCallerText) {
     session.lastCallerText = null;
+  }
+
+  if (!session.recentTurns) {
+    session.recentTurns = [];
   }
 
   transition(session, STATES.GREETING, "call_started");
@@ -70,12 +103,12 @@ function handleTranscriptPartial(callSid, text) {
   session.partialTranscript = text;
   session.lastUserSpeechAt = Date.now();
 
- if (
-  session.state === STATES.LISTENING ||
-  session.state === STATES.AWAITING_INPUT
-) {
-  transition(session, STATES.AWAITING_END_OF_TURN, "user_started_speaking");
-}
+  if (
+    session.state === STATES.LISTENING ||
+    session.state === STATES.AWAITING_INPUT
+  ) {
+    transition(session, STATES.AWAITING_END_OF_TURN, "user_started_speaking");
+  }
 
   logEvent(callSid, "TRANSCRIPT_PARTIAL", { text });
 }
@@ -153,250 +186,202 @@ function handleCallEnded(callSid) {
   logEvent(callSid, "CALL_ENDED");
 }
 
-/* -------------------------------------------------------------------------- */
-/*                         Minimal workflow turn brain                         */
-/* -------------------------------------------------------------------------- */
-
 function normalizeText(text) {
   return String(text || "")
     .replace(/\s+/g, " ")
     .trim();
 }
 
-function toTitleCase(value) {
-  return String(value || "")
-    .toLowerCase()
-    .replace(/\b\w/g, (m) => m.toUpperCase());
+function pushRecentTurn(session, role, text) {
+  if (!session.recentTurns) {
+    session.recentTurns = [];
+  }
+
+  session.recentTurns.push({
+    role,
+    text,
+    at: Date.now(),
+  });
+
+  if (session.recentTurns.length > 8) {
+    session.recentTurns = session.recentTurns.slice(-8);
+  }
 }
 
-function detectWorkflow(text, session) {
-  const value = normalizeText(text).toLowerCase();
-
-  if (session && session.workflow) {
-    return session.workflow;
-  }
-
-  if (
-    value.includes("book a table") ||
-    value.includes("table for") ||
-    value.includes("reservation") ||
-    value.includes("reserve a table")
-  ) {
-    return "restaurant_reservation";
-  }
-
-  return "generic";
-}
-
-function parsePartySize(text) {
-  const value = normalizeText(text).toLowerCase();
-
-  const digitMatch = value.match(/\b(\d{1,2})\b/);
-  if (digitMatch) {
-    const num = Number(digitMatch[1]);
-    if (num >= 1 && num <= 30) {
-      return { party_size: num };
-    }
-  }
-
-  const wordMap = {
-    one: 1,
-    two: 2,
-    three: 3,
-    four: 4,
-    five: 5,
-    six: 6,
-    seven: 7,
-    eight: 8,
-    nine: 9,
-    ten: 10,
-  };
-
-  for (const [word, num] of Object.entries(wordMap)) {
-    if (value.includes(word)) {
-      return { party_size: num };
-    }
-  }
-
-  return {};
-}
-
-function parseName(text) {
-  const value = normalizeText(text);
-
-  let m = value.match(/\bmy name is ([a-z][a-z' -]{1,40})$/i);
-  if (m) {
-    return { customer_name: toTitleCase(m[1].trim()) };
-  }
-
-  m = value.match(/\bit'?s ([a-z][a-z' -]{1,40})$/i);
-  if (m) {
-    return { customer_name: toTitleCase(m[1].trim()) };
-  }
-
-  if (/^[a-z][a-z' -]{1,40}$/i.test(value) && value.split(" ").length <= 3) {
-    return { customer_name: toTitleCase(value) };
-  }
-
-  return {};
-}
-
-function parseDateTime(text, lastAskedSlot) {
-  const value = normalizeText(text).toLowerCase();
-  const result = {};
-
-  if (value.includes("tomorrow")) {
-    result.reservation_date = "tomorrow";
-  } else if (value.includes("today")) {
-    result.reservation_date = "today";
-  }
-
-  const timeMatch =
-    value.match(/\b(?:at\s*)?(\d{1,2})(?::(\d{2}))?\s*(am|pm)\b/i) ||
-    value.match(/\b(?:at\s*)?(\d{1,2})(?::(\d{2}))\b/i);
-
-  if (timeMatch) {
-    const hour = Number(timeMatch[1]);
-    const minute = timeMatch[2] ? timeMatch[2] : "00";
-    const ampm = timeMatch[3] ? timeMatch[3].toUpperCase() : null;
-
-    if (hour >= 1 && hour <= 12) {
-      result.reservation_time = ampm ? `${hour}:${minute} ${ampm}` : `${hour}:${minute}`;
-    }
-  } else if (lastAskedSlot === "reservation_time") {
-    const shortTime = value.match(/^\s*(?:at\s*)?(\d{1,2})\s*(am|pm)?\s*$/i);
-    if (shortTime) {
-      const hour = Number(shortTime[1]);
-      const ampm = shortTime[2] ? shortTime[2].toUpperCase() : "PM";
-
-      if (hour >= 1 && hour <= 12) {
-        result.reservation_time = `${hour}:00 ${ampm}`;
-      }
-    }
-  }
-
-  return result;
-}
-
-function mergeSlotsForRestaurantReservation(session, text) {
-  const nextSlots = {
-    ...(session.workflowSlots || {}),
-  };
-
-  const normalized = normalizeText(text);
-  const lower = normalized.toLowerCase();
-  const lastAskedSlot = session.lastAskedSlot || null;
-
-  const dateTime = parseDateTime(normalized, lastAskedSlot);
-  Object.assign(nextSlots, dateTime);
-
-  if (
-    lastAskedSlot === "party_size" ||
-    /\b(for|party of|table for)\b/i.test(lower) ||
-    /\bpeople\b/i.test(lower) ||
-    /^\d{1,2}$/.test(lower)
-  ) {
-    Object.assign(nextSlots, parsePartySize(normalized));
-  }
-
-  if (
-    lastAskedSlot === "customer_name" ||
-    /\bmy name is\b/i.test(lower) ||
-    /\bit'?s\b/i.test(lower)
-  ) {
-    Object.assign(nextSlots, parseName(normalized));
-  }
-
-  return nextSlots;
-}
-
-function getNextMissingSlot(workflow, slots) {
-  if (workflow === "restaurant_reservation") {
-    if (!slots.reservation_date) return "reservation_date";
-    if (!slots.reservation_time) return "reservation_time";
-    if (!slots.party_size) return "party_size";
-    if (!slots.customer_name) return "customer_name";
-    return null;
-  }
-
-  return null;
-}
-
-function buildRestaurantReply(slots, nextMissingSlot) {
-  if (nextMissingSlot === "reservation_date") {
-    return "Of course — what day should I note for the table?";
-  }
-
-  if (nextMissingSlot === "reservation_time") {
-    return "Sure — what time would you like me to note?";
-  }
-
-  if (nextMissingSlot === "party_size") {
-    return "Of course — how many people should I note?";
-  }
-
-  if (nextMissingSlot === "customer_name") {
-    return "Perfect — can I get the name for the reservation?";
-  }
-
-  return `Perfect — I have your table request for ${slots.party_size} on ${slots.reservation_date} at ${slots.reservation_time} under ${slots.customer_name}.`;
-}
-
-async function handleCallerTurn({ callSid, businessId = null, transcript }) {
+async function handleCallerTurn({ callSid, businessId = null, transcript, meta = {} }) {
   const session = getSession(callSid);
+
   if (!session) {
     logError(callSid, "handleCallerTurn called without session");
     return {
+      shouldSpeak: true,
       replyText: "Sorry — could you say that again?",
       replyType: "repair",
-      shouldSpeak: true,
     };
   }
 
-  const safeText = normalizeText(transcript);
-  session.lastCallerText = safeText;
+  const utterance = normalizeText(transcript);
+  session.lastCallerText = utterance;
 
-  const workflow = detectWorkflow(safeText, session);
-  session.workflow = workflow;
-
-  if (!session.workflowSlots) {
-    session.workflowSlots = {};
+  if (!utterance) {
+    logDecision(callSid, "Empty caller turn ignored");
+    return {
+      shouldSpeak: false,
+      replyText: "",
+      replyType: "noop",
+    };
   }
 
-  let replyText = "";
+  pushRecentTurn(session, "caller", utterance);
 
-  if (workflow === "restaurant_reservation") {
-    session.workflowSlots = mergeSlotsForRestaurantReservation(session, safeText);
-
-    const nextMissingSlot = getNextMissingSlot(workflow, session.workflowSlots);
-    session.lastAskedSlot = nextMissingSlot;
-
-    replyText = buildRestaurantReply(session.workflowSlots, nextMissingSlot);
-
-    logDecision(callSid, "Restaurant reservation turn processed", {
-      workflow,
-      slots: session.workflowSlots,
-      nextMissingSlot,
+  let routing;
+  try {
+    routing = await resolveTenantFromVoiceContext({
+      callSid,
       businessId,
+      ...meta,
     });
-  } else {
-    session.lastAskedSlot = null;
-    replyText = "Of course — how can I help you today?";
-    logDecision(callSid, "Generic workflow used", {
-      workflow,
+  } catch (err) {
+    logError(callSid, "Tenant resolution crashed", {
+      error: err.message,
       businessId,
+      meta,
     });
+
+    return {
+      shouldSpeak: true,
+      replyText: "Sorry — something went wrong. Please try again.",
+      replyType: "error",
+    };
+  }
+
+  if (!routing || !routing.ok || !routing.tenantId || !routing.clusterId) {
+    logError(callSid, "Tenant resolution failed", routing || { businessId, meta });
+
+    return {
+      shouldSpeak: true,
+      replyText: "Sorry — something went wrong. Please try again.",
+      replyType: "error",
+    };
+  }
+
+  session.tenantId = routing.tenantId || null;
+  session.businessId = routing.businessId || businessId || null;
+  session.clusterId = routing.clusterId || null;
+
+  let clusterSchema;
+  try {
+    clusterSchema = await loadClusterSchema(session.clusterId);
+  } catch (err) {
+    logError(callSid, "Cluster schema load failed", {
+      error: err.message,
+      clusterId: session.clusterId,
+      tenantId: session.tenantId,
+    });
+
+    return {
+      shouldSpeak: true,
+      replyText: "Sorry — something went wrong. Please try again.",
+      replyType: "error",
+    };
+  }
+
+  let extraction;
+  try {
+    extraction = await extractWorkflowTurn({
+      clusterId: session.clusterId,
+      clusterSchema,
+      session,
+      utterance,
+      recentTurns: session.recentTurns || [],
+    });
+  } catch (err) {
+    logError(callSid, "Workflow extraction failed", {
+      error: err.message,
+      clusterId: session.clusterId,
+      tenantId: session.tenantId,
+      utterance,
+    });
+
+    return {
+      shouldSpeak: true,
+      replyText: "Sorry — could you repeat that?",
+      replyType: "repair",
+    };
+  }
+
+  let workflowState;
+  try {
+    workflowState = computeWorkflowState({
+      clusterSchema,
+      session,
+      extraction,
+    });
+  } catch (err) {
+    logError(callSid, "Workflow state computation failed", {
+      error: err.message,
+      extraction,
+      clusterId: session.clusterId,
+      tenantId: session.tenantId,
+    });
+
+    return {
+      shouldSpeak: true,
+      replyText: "Sorry — could you repeat that?",
+      replyType: "repair",
+    };
+  }
+
+  session.active_intent = workflowState.intent || null;
+  session.workflow = workflowState.intent || null;
+  session.slots = workflowState.slots || {};
+  session.workflowSlots = workflowState.slots || {};
+  session.lastAskedSlot = workflowState.nextMissingSlot || null;
+  session.workflowStatus = workflowState.workflowStatus || "idle";
+
+  let replyText;
+  try {
+    replyText = await composeReply({
+      clusterSchema,
+      session,
+      workflowState,
+      utterance,
+    });
+  } catch (err) {
+    logError(callSid, "Workflow reply composition failed", {
+      error: err.message,
+      clusterId: session.clusterId,
+      tenantId: session.tenantId,
+      intent: workflowState.intent || null,
+    });
+
+    replyText = "Sorry — could you repeat that?";
   }
 
   session.lastAssistantReply = replyText;
+  pushRecentTurn(session, "assistant", replyText);
+
+  logDecision(callSid, "AI workflow turn processed", {
+    tenantId: session.tenantId,
+    businessId: session.businessId,
+    clusterId: session.clusterId,
+    intent: session.active_intent,
+    workflowStatus: session.workflowStatus,
+    slots: session.slots,
+    nextMissingSlot: session.lastAskedSlot,
+  });
 
   return {
     shouldSpeak: true,
     replyText,
-    replyType: "reply",
+    replyType: "ai",
     workflow: session.workflow,
-    slots: session.workflowSlots,
+    intent: session.active_intent,
+    slots: session.slots,
     lastAskedSlot: session.lastAskedSlot,
+    workflowStatus: session.workflowStatus,
+    tenantId: session.tenantId,
+    clusterId: session.clusterId,
   };
 }
 
