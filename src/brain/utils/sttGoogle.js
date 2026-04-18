@@ -63,15 +63,40 @@ async function transcribeMulaw(audioBuffer, { languageCode = "en-US" } = {}) {
     content: audioBuffer.toString("base64"),
   };
 
-  const config = {
+const config = {
+  encoding: "MULAW",
+  sampleRateHertz: 8000,
+  languageCode,
+  enableAutomaticPunctuation: false,
+  model: "phone_call",
+  useEnhanced: true,
+  profanityFilter: false,
+  maxAlternatives: 1,
+  metadata: {
+    interactionType: "PHONE_CALL",
+    microphoneDistance: "TELEPHONY",
+    originalMediaType: "AUDIO",
+  },
+};
+
+  let response;
+
+try {
+  [response] = await client.recognize({ audio, config });
+} catch (err) {
+  console.warn("⚠️ [stt] phone_call config failed, retrying with default model:", err.message);
+
+  const fallbackConfig = {
     encoding: "MULAW",
     sampleRateHertz: 8000,
     languageCode,
-    enableAutomaticPunctuation: true,
+    enableAutomaticPunctuation: false,
     model: "default",
+    maxAlternatives: 1,
   };
 
-  const [response] = await client.recognize({ audio, config });
+  [response] = await client.recognize({ audio, config: fallbackConfig });
+}
 
   const transcript = (response.results || [])
     .map(
