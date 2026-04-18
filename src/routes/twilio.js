@@ -900,7 +900,7 @@ ensurePlaybackState(ws);
   }
 
   if (wordCount < 4) {
-  if (stableAgeMs < 450 && pendingAgeMs < 1200) return true;
+  if (stableAgeMs < 320 && pendingAgeMs < 900) return true;
   return false;
 }
 
@@ -910,17 +910,17 @@ const looksCompleteSentence =
   wordCount >= 7;
 
 if (looksCompleteSentence) {
-  if (stableAgeMs < 350 && pendingAgeMs < 1200) return true;
+  if (stableAgeMs < 250 && pendingAgeMs < 900) return true;
   return false;
 }
 
-if (stableAgeMs < 500) {
+if (stableAgeMs < 380) {
+  if (pendingAgeMs < 1200) return true;
+  return false;
+}
+
+if (stillGrowing && stableAgeMs < 550) {
   if (pendingAgeMs < 1500) return true;
-  return false;
-}
-
-if (stillGrowing && stableAgeMs < 700) {
-  if (pendingAgeMs < 1800) return true;
   return false;
 }
 
@@ -1093,7 +1093,7 @@ if (stillGrowing && stableAgeMs < 700) {
         error: err?.message || String(err),
       });
     }
-  }, expectedSlot ? 180 : 220);
+  }, expectedSlot ? 140 : 180);
 
   return;
 }
@@ -1385,9 +1385,11 @@ if (!controllerReply || !controllerReply.shouldSpeak) {
 // 🔥 FAST ACK — only after transcript is accepted and reply is ready
 const shouldSendAck =
   controllerReply.replyText &&
-  controllerReply.replyText.length > 24 &&
+  controllerReply.replyText.length > 36 &&
   !looksTaskCompleted(controllerReply.replyText) &&
-  !/^(what|which|when|can i|may i|what’s|whats)/i.test(controllerReply.replyText.trim());
+  !/^(what|which|when|can i|may i|what’s|whats|and what|what time|what date)/i.test(
+    controllerReply.replyText.trim()
+  );
 
 if (shouldSendAck) {
   const ackText = pickAck(ws.__lastAckText || "");
@@ -1403,10 +1405,10 @@ if (shouldSendAck) {
     "ack"
   );
 
-  await new Promise((resolve) => setTimeout(resolve, 60));
+  await new Promise((resolve) => setTimeout(resolve, 30));
 }
 // small gap so ack does not collide with main reply playback lock
-await new Promise((resolve) => setTimeout(resolve, 40));
+await new Promise((resolve) => setTimeout(resolve, 20));
 
 await synthesizeAndSendReply(
   ws,
