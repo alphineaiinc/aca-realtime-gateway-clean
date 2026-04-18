@@ -205,7 +205,17 @@ function getMissingSlots(slots, requiredSlots) {
 }
 
 function deriveWorkflowStatus({ slots, requiredSlots, existingStatus }) {
-  const missing = getMissingSlots(slots, requiredSlots);
+  const required = Array.isArray(requiredSlots) ? requiredSlots.filter(Boolean) : [];
+  const missing = getMissingSlots(slots, required);
+
+  // Critical hardening:
+  // If we do not yet know the required slots, never assume the workflow is complete.
+  if (required.length === 0) {
+    if (existingStatus === "completed") {
+      return "completed";
+    }
+    return "collecting";
+  }
 
   if (missing.length === 0) {
     return "ready_for_confirmation";
@@ -311,13 +321,29 @@ function computeWorkflowState({ clusterSchema, session, extraction } = {}) {
     extraction?.slotValues ||
     {};
 
+  const extractedRequiredSlots =
+    extraction?.requiredSlots ||
+    extraction?.workflowRequiredSlots ||
+    extraction?.intentSchema?.requiredSlots ||
+    [];
+
+  const schemaRequiredSlots = getRequiredSlots(schema, {});
+
+  const requiredSlots =
+    Array.isArray(extractedRequiredSlots) && extractedRequiredSlots.length
+      ? extractedRequiredSlots
+      : schemaRequiredSlots;
+
   const workflow = updateWorkflowState({
     workflow: {
       slots: sessionSlots,
       workflowStatus: session?.workflowStatus || "collecting",
-      requiredSlots: getRequiredSlots(schema, {})
+      requiredSlots
     },
-    schema,
+    schema: {
+      ...schema,
+      requiredSlots
+    },
     extractedSlots,
     callerText: extraction?.utterance || session?.lastCallerText || "",
     now: Date.now()
@@ -337,7 +363,6 @@ function computeWorkflowState({ clusterSchema, session, extraction } = {}) {
     requiredSlots: workflow.requiredSlots || []
   };
 }
-
 module.exports = {
   createInitialWorkflowState,
   updateWorkflowState,
