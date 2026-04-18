@@ -903,8 +903,8 @@ ensurePlaybackState(ws);
     return false;
   }
 
-  if (wordCount < 4) {
-  if (stableAgeMs < 260 && pendingAgeMs < 750) return true;
+ if (wordCount < 4) {
+  if (stableAgeMs < 180 && pendingAgeMs < 550) return true;
   return false;
 }
 
@@ -914,17 +914,17 @@ const looksCompleteSentence =
   wordCount >= 6;
 
 if (looksCompleteSentence) {
-  if (stableAgeMs < 180 && pendingAgeMs < 750) return true;
+  if (stableAgeMs < 120 && pendingAgeMs < 550) return true;
   return false;
 }
 
-if (stableAgeMs < 300) {
-  if (pendingAgeMs < 950) return true;
+if (stableAgeMs < 220) {
+  if (pendingAgeMs < 700) return true;
   return false;
 }
 
-if (stillGrowing && stableAgeMs < 450) {
-  if (pendingAgeMs < 1200) return true;
+if (stillGrowing && stableAgeMs < 320) {
+  if (pendingAgeMs < 900) return true;
   return false;
 }
 
@@ -1051,19 +1051,32 @@ function shouldCollectPhoneChunks(text, expectedSlot) {
   expectedSlot && String(expectedSlot).toLowerCase().includes("phone");
 
 const phoneDigits = extractDigitsOnly(finalVoiceText);
+const normalizedPhoneText = normalizeIncomingVoiceText(finalVoiceText).toLowerCase();
 const phoneCollectionActive =
   ws.__pendingPhoneStartedAt &&
   Date.now() - ws.__pendingPhoneStartedAt < 3500;
 
+const isMostlyPhoneUtterance =
+  phoneDigits.length > 0 &&
+  (
+    /^[\d\s()+-]+$/.test(finalVoiceText) ||
+    /^(?:my (?:phone )?number is|it's|it is|number is)\s+[\d\s()+-]+$/i.test(finalVoiceText)
+  );
+
 const shouldHandlePhoneChunks =
   (expectsPhoneSlot && phoneDigits.length > 0) ||
-  (isPhoneIntroPhrase(finalVoiceText) && phoneDigits.length > 0) ||
-  (phoneCollectionActive && isShortPhoneChunk(finalVoiceText));
+  (phoneCollectionActive && /^[\d\s()+-]+$/.test(finalVoiceText)) ||
+  isMostlyPhoneUtterance;
 
-if (shouldHandlePhoneChunks) {
+const hasNonPhoneIntentContent =
+  /\b(book|appointment|table|reservation|tomorrow|today|evening|morning|afternoon|name is|for me|for tomorrow)\b/i.test(finalVoiceText);
+
+if ((!hasNonPhoneIntentContent || expectsPhoneSlot) && shouldHandlePhoneChunks) {
+  if (shouldHandlePhoneChunks) {
   if (!ws.__pendingPhoneStartedAt) {
     ws.__pendingPhoneStartedAt = Date.now();
   }
+}
 
   const sourceKey = `${finalVoiceText}__${phoneDigits}`;
 
@@ -1180,7 +1193,7 @@ if (shouldHandlePhoneChunks) {
         error: err?.message || String(err),
       });
     }
-  }, expectedSlot ? 120 : 150);
+  }, expectedSlot ? 90 : 110);
 
   return;
 }
@@ -1486,9 +1499,9 @@ if (!controllerReply || !controllerReply.shouldSpeak) {
 // 🔥 FAST ACK — only after transcript is accepted and reply is ready
 const shouldSendAck =
   controllerReply.replyText &&
-  controllerReply.replyText.length > 42 &&
+  controllerReply.replyText.length > 60 &&
   !looksTaskCompleted(controllerReply.replyText) &&
-  !/^(what|which|when|can i|may i|what’s|whats|and what|what time|what date|may i have|what’s the best number)/i.test(
+  !/^(what|which|when|can i|may i|what’s|whats|and what|what time|what date|may i have|what’s the best number|sorry)/i.test(
     controllerReply.replyText.trim()
   );
 
@@ -1506,10 +1519,10 @@ if (shouldSendAck) {
     "ack"
   );
 
-  await new Promise((resolve) => setTimeout(resolve, 15));
+  await new Promise((resolve) => setTimeout(resolve, 5));
 }
 // small gap so ack does not collide with main reply playback lock
-await new Promise((resolve) => setTimeout(resolve, 10));
+await new Promise((resolve) => setTimeout(resolve, 5));
 
 await synthesizeAndSendReply(
   ws,
