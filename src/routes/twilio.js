@@ -476,29 +476,27 @@ async function synthesizeAndSendReply(
 }
 
 async function handleVoiceWebhook(req, res) {
-  console.log("🛰️  Incoming Twilio Voice webhook:", req.body);
+  console.log("🛰️ Twilio webhook:", {
+    method: req.method,
+    query: req.query,
+    body: req.body || null,
+    contentType: req.headers["content-type"] || null,
+  });
 
   const VoiceResponse = twilio.twiml.VoiceResponse;
   const twiml = new VoiceResponse();
 
-  const streamUrl = `${process.env.ALPHINE_STREAM_BASE}/ws/twilio-stream`;
-  console.log("🔗 [twilio] Stream target:", streamUrl);
-  console.log(
-    "🔗 [twilio] ALPHINE_STREAM_BASE =",
-    process.env.ALPHINE_STREAM_BASE || "(missing)"
-  );
+  twiml.say("Connecting you now.");
 
   const connect = twiml.connect();
   connect.stream({
-    url: streamUrl,
+    url: "wss://aca-realtime-gateway-clean.onrender.com/ws/twilio-stream",
     name: "aca-live-stream",
-    statusCallback: `${
-      process.env.RENDER_BASE_URL || "https://aca-realtime-gateway-clean.onrender.com"
-    }/twilio/stream-status`,
+    statusCallback: "https://aca-realtime-gateway-clean.onrender.com/twilio/stream-status",
     statusCallbackMethod: "POST",
   });
 
-  twiml.pause({ length: 15 });
+  twiml.pause({ length: 60 });
 
   const xmlResponse = twiml.toString();
   console.log("📤 Returning TwiML to Twilio:\n", xmlResponse);
