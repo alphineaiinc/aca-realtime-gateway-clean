@@ -148,16 +148,21 @@ async function lookupTenantByPhoneNumber(calledNumber) {
 
 function buildResolutionResult(resolved, candidates) {
   if (!resolved) {
+    console.warn("⚠️ [tenantResolver] fallback to default tenant", {
+      candidates
+    });
+
     return {
-      ok: false,
-      tenantId: null,
+      ok: true,
+      tenantId: 1,
       businessId: candidates.businessId || null,
-      clusterId: null,
+      clusterId: "generic_service",
       callSid: candidates.callSid || null,
       calledNumber: candidates.calledNumber || null,
-      reason: "TENANT_NOT_RESOLVED"
+      reason: "FALLBACK_DEFAULT"
     };
   }
+
 
   return {
     ok: true,
