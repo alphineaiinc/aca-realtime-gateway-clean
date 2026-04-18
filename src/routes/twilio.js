@@ -900,19 +900,29 @@ ensurePlaybackState(ws);
   }
 
   if (wordCount < 4) {
-    if (stableAgeMs < 650 && pendingAgeMs < 1800) return true;
-    return false;
-  }
+  if (stableAgeMs < 450 && pendingAgeMs < 1200) return true;
+  return false;
+}
 
-  if (stableAgeMs < 650) {
-    if (pendingAgeMs < 1800) return true;
-    return false;
-  }
+const looksCompleteSentence =
+  /[.!?]$/.test(pending) ||
+  /\b(at\s+\d{1,2}(:\d{2})?\s?(am|pm)?|on\s+\w+|\bfor\b|\bwith\b)\b/i.test(pending) ||
+  wordCount >= 7;
 
-  if (stillGrowing && stableAgeMs < 900) {
-    if (pendingAgeMs < 2200) return true;
-    return false;
-  }
+if (looksCompleteSentence) {
+  if (stableAgeMs < 350 && pendingAgeMs < 1200) return true;
+  return false;
+}
+
+if (stableAgeMs < 500) {
+  if (pendingAgeMs < 1500) return true;
+  return false;
+}
+
+if (stillGrowing && stableAgeMs < 700) {
+  if (pendingAgeMs < 1800) return true;
+  return false;
+}
 
   return false;
 }
@@ -1083,7 +1093,7 @@ ensurePlaybackState(ws);
         error: err?.message || String(err),
       });
     }
-  }, expectedSlot ? 250 : 350);
+  }, expectedSlot ? 180 : 220);
 
   return;
 }
@@ -1375,8 +1385,9 @@ if (!controllerReply || !controllerReply.shouldSpeak) {
 // 🔥 FAST ACK — only after transcript is accepted and reply is ready
 const shouldSendAck =
   controllerReply.replyText &&
-  controllerReply.replyText.length > 12 &&   // avoid trivial replies
-  !looksTaskCompleted(controllerReply.replyText);
+  controllerReply.replyText.length > 24 &&
+  !looksTaskCompleted(controllerReply.replyText) &&
+  !/^(what|which|when|can i|may i|what’s|whats)/i.test(controllerReply.replyText.trim());
 
 if (shouldSendAck) {
   const ackText = pickAck(ws.__lastAckText || "");
@@ -1392,10 +1403,10 @@ if (shouldSendAck) {
     "ack"
   );
 
-  await new Promise((resolve) => setTimeout(resolve, 100));
+  await new Promise((resolve) => setTimeout(resolve, 60));
 }
 // small gap so ack does not collide with main reply playback lock
-await new Promise((resolve) => setTimeout(resolve, 120));
+await new Promise((resolve) => setTimeout(resolve, 40));
 
 await synthesizeAndSendReply(
   ws,
