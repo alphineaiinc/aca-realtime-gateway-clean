@@ -976,15 +976,45 @@ async function handleTwilioStream(ws, req) {
     const session = getCurrentSession();
     const expectedSlot = session?.lastAskedSlot || null;
 
-    if (shouldWaitForMoreSpeech(ws, expectedSlot)) {
-      pushTwilioDebug("dispatch_skipped_incomplete", {
+ if (shouldWaitForMoreSpeech(ws, expectedSlot)) {
+  pushTwilioDebug("dispatch_skipped_incomplete", {
+    callSid: activeCallSid,
+    text: finalVoiceText,
+    reason: expectedSlot ? "waiting_slot_stability" : "waiting_free_turn_stability",
+    expectedSlot,
+  });
+
+  clearPendingVoiceTurn(ws);
+
+  ws.__voiceTurnTimer = setTimeout(async () => {
+    try {
+      if (isPlaybackLocked(ws)) {
+        pushTwilioDebug("dispatch_ignored_playback", {
+          callSid: activeCallSid,
+          streamSid: activeStreamSid,
+        });
+        ws.__pendingVoiceTranscript = "";
+        return;
+      }
+
+      await dispatchPendingVoiceTurn();
+    } catch (err) {
+      console.error(
+        `${VOICE_LOG_PREFIX} dispatch_error`,
+        JSON.stringify({
+          callSid: activeCallSid,
+          error: err?.message || String(err),
+        })
+      );
+      pushTwilioDebug("dispatch_error", {
         callSid: activeCallSid,
-        text: finalVoiceText,
-        reason: expectedSlot ? "waiting_slot_stability" : "waiting_free_turn_stability",
-        expectedSlot,
+        error: err?.message || String(err),
       });
-      return;
     }
+  }, expectedSlot ? 250 : 350);
+
+  return;
+}
 
     if (!finalVoiceText) {
       pushTwilioDebug("dispatch_skipped_incomplete", {
@@ -1017,15 +1047,20 @@ async function handleTwilioStream(ws, req) {
       return;
     }
 
-    if (isWeakFragment(finalVoiceText)) {
-      pushTwilioDebug("dispatch_skipped_incomplete", {
-        callSid: activeCallSid,
-        text: finalVoiceText,
-        reason: "weak_fragment",
-        expectedSlot,
-      });
-      return;
-    }
+   if (isWeakFragment(finalVoiceText)) {
+  pushTwilioDebug("dispatch_skipped_incomplete", {
+    callSid: activeCallSid,
+    text: finalVoiceText,
+    reason: "weak_fragment",
+    expectedSlot,
+  });
+
+  ws.__pendingVoiceTranscript = "";
+  ws.__lastStableTranscript = "";
+  ws.__lastStableTranscriptAt = 0;
+
+  return;
+}
 
     if (expectedSlot && !matchesExpectedSlot(finalVoiceText, expectedSlot)) {
       pushTwilioDebug("dispatch_skipped_incomplete", {
