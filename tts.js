@@ -143,23 +143,50 @@ const openAiVoiceMap = {
   "hi-IN": process.env.OPENAI_TTS_VOICE_HI_IN || process.env.OPENAI_TTS_VOICE || "marin",
 };
 
-function resolveOpenAiVoice(langCode, voiceProfile, explicitVoiceId) {
-  if (typeof explicitVoiceId === "string" && explicitVoiceId.trim()) {
-    return explicitVoiceId.trim();
-  }
+const SUPPORTED_OPENAI_VOICES = new Set([
+  "alloy",
+  "echo",
+  "fable",
+  "onyx",
+  "nova",
+  "shimmer",
+  "coral",
+  "verse",
+  "ballad",
+  "ash",
+  "sage",
+  "marin",
+  "cedar",
+]);
 
-  if (voiceProfile && typeof voiceProfile.voice_id === "string") {
-    const trimmed = voiceProfile.voice_id.trim();
-    if (trimmed) return trimmed;
-  }
-
-  if (langCode && openAiVoiceMap[langCode]) {
-    return openAiVoiceMap[langCode];
-  }
-
-  return process.env.OPENAI_TTS_VOICE || "marin";
+function normalizeOpenAiVoice(value) {
+  const trimmed = String(value || "").trim().toLowerCase();
+  if (!trimmed) return null;
+  return SUPPORTED_OPENAI_VOICES.has(trimmed) ? trimmed : null;
 }
 
+function resolveOpenAiVoice(langCode, voiceProfile, explicitVoiceId) {
+  const explicitOpenAiVoice = normalizeOpenAiVoice(explicitVoiceId);
+  if (explicitOpenAiVoice) {
+    return explicitOpenAiVoice;
+  }
+
+  const profileOpenAiVoice = normalizeOpenAiVoice(
+    voiceProfile && (voiceProfile.openai_voice || voiceProfile.openai_voice_id)
+  );
+  if (profileOpenAiVoice) {
+    return profileOpenAiVoice;
+  }
+
+  const mappedOpenAiVoice = normalizeOpenAiVoice(
+    langCode && openAiVoiceMap[langCode]
+  );
+  if (mappedOpenAiVoice) {
+    return mappedOpenAiVoice;
+  }
+
+  return normalizeOpenAiVoice(process.env.OPENAI_TTS_VOICE) || "marin";
+}
 function safePreview(value, max = 80) {
   const str = typeof value === "string" ? value : String(value ?? "");
   return str.length > max ? str.slice(0, max) + "..." : str;
@@ -377,6 +404,13 @@ async function synthesizeWithOpenAI(text, langCode = "en-US", options = {}) {
   const ctx = await buildVoiceContext(text, langCode, options);
   const model = String(process.env.OPENAI_TTS_MODEL || "gpt-4o-mini-tts").trim();
   const voice = resolveOpenAiVoice(langCode, ctx.voiceProfile, ctx.explicitVoiceId);
+
+  console.log("🎙 [tts:openai] Voice resolution detail:", {
+  explicitVoiceId: ctx.explicitVoiceId || null,
+  profileVoiceId: ctx.voiceProfile?.voice_id || null,
+  profileOpenAiVoice: ctx.voiceProfile?.openai_voice || ctx.voiceProfile?.openai_voice_id || null,
+  selectedVoice: voice,
+});
 
   console.log("🎙 [tts:openai] Selected voice:", {
     voice,
