@@ -950,6 +950,28 @@ async function dispatchPendingVoiceTurn() {
   const session = getCurrentSession();
   const expectedSlot = session?.lastAskedSlot || null;
 
+  const normalized = finalVoiceText.trim();
+const words = normalized.split(/\s+/).filter(Boolean);
+const wordCount = words.length;
+
+const looksUnfinished =
+  /(?:\b(and|or|for|with|to|at|on|in|my|the|a|an)\s*)$/i.test(normalized) ||
+  /^(i|i'm|i am|hi|hello|yeah|yes|no|please)$/i.test(normalized) ||
+  /^[a-z]+$/i.test(normalized) && wordCount === 1;
+
+const looksTooShortForFreeTurn =
+  wordCount < 3 && normalized.length < 12;
+
+if (!expectedSlot && (looksUnfinished || looksTooShortForFreeTurn)) {
+  pushTwilioDebug("dispatch_skipped_incomplete", {
+    callSid: activeCallSid,
+    text: finalVoiceText,
+    reason: looksUnfinished ? "unfinished_free_turn" : "too_short_free_turn",
+    expectedSlot,
+  });
+  return;
+}
+
   if (!finalVoiceText) {
     pushTwilioDebug("dispatch_skipped_incomplete", {
       callSid: activeCallSid,
