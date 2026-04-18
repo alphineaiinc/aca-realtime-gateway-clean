@@ -574,6 +574,7 @@ async function handleTwilioStream(ws, req) {
   ensurePlaybackState(ws);
 
   async function dispatchPendingVoiceTurn() {
+    console.log("🚀 DISPATCH TRIGGERED:", finalVoiceText);
     if (ws.__dispatchInFlight) {
       pushTwilioDebug("dispatch_skipped_inflight", {
         callSid: activeCallSid,
@@ -885,6 +886,7 @@ async function handleTwilioStream(ws, req) {
           userText = await transcribeMulaw(combined, {
             languageCode: tenantLangCode,
           });
+          console.log("🧪 STT FINAL TEXT:", JSON.stringify(userText));
 
           console.log("📝 [stt] Raw transcript result:", {
             callSid: activeCallSid,
@@ -919,6 +921,9 @@ async function handleTwilioStream(ws, req) {
 
         userText = normalizeIncomingVoiceText(userText);
         const cleanedText = normalizeIncomingVoiceText(userText);
+        
+
+        console.log("🚫 REJECTED TEXT:", cleanedText);
 
         if (!cleanedText || cleanedText.length < 2) {
           pushTwilioDebug("stt_invalid_skipped", {
