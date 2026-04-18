@@ -748,9 +748,12 @@ async function handleTwilioStream(ws, req) {
   ws.__acaSessionId = null;
   ws.__acaStructuredFlowActive = false;
   ws.__routingMeta = {};
-  ws.__dispatchInFlight = false;
+    ws.__dispatchInFlight = false;
   ws.__sttInFlight = false;
   ws.__sttBufferBytes = 0;
+  ws.__lastStableTranscript = "";
+  ws.__lastStableTranscriptAt = 0;
+  ws.__lastCommittedTranscript = "";
   ensurePlaybackState(ws);
 
     
@@ -815,6 +818,78 @@ async function handleTwilioStream(ws, req) {
 
   return true;
 }
+
+  function normalizeForStability(text) {
+    return String(text || "")
+      .replace(/\s+/g, " ")
+      .replace(/[.,!?]+$/g, "")
+      .trim()
+      .toLowerCase();
+  }
+
+  function isTranscriptExtension(previousText, nextText) {
+    const prev = normalizeForStability(previousText);
+    const next = normalizeForStability(nextText);
+
+    if (!prev || !next) return false;
+    if (prev === next) return true;
+    if (next.startsWith(prev)) return true;
+
+    return false;
+  }
+
+  function noteTranscriptStability(ws, text) {
+    const normalized = normalizeIncomingVoiceText(text);
+    const previous = ws.__lastStableTranscript || "";
+
+    if (!normalized) return;
+
+    if (!previous) {
+      ws.__lastStableTranscript = normalized;
+      ws.__lastStableTranscriptAt = Date.now();
+      return;
+    }
+
+    if (isTranscriptExtension(previous, normalized)) {
+      ws.__lastStableTranscript = normalized;
+      ws.__lastStableTranscriptAt = Date.now();
+      return;
+    }
+
+    if (normalizeForStability(previous) !== normalizeForStability(normalized)) {
+      ws.__lastStableTranscript = normalized;
+      ws.__lastStableTranscriptAt = Date.now();
+    }
+  }
+
+  function shouldWaitForMoreSpeech(ws, expectedSlot) {
+    const pending = normalizeIncomingVoiceText(ws.__pendingVoiceTranscript);
+    const stable = normalizeIncomingVoiceText(ws.__lastStableTranscript);
+    const stableAgeMs = Date.now() - (ws.__lastStableTranscriptAt || 0);
+
+    if (!pending) return false;
+
+    if (expectedSlot) {
+      return stableAgeMs < 350;
+    }
+
+    const wordCount = pending.split(/\s+/).filter(Boolean).length;
+    const stillGrowing = stable && isTranscriptExtension(pending, stable) && normalizeForStability(pending) !== normalizeForStability(ws.__lastCommittedTranscript || "");
+
+    if (wordCount < 4) {
+      return true;
+    }
+
+    if (stableAgeMs < 650) {
+      return true;
+    }
+
+    if (stillGrowing && stableAgeMs < 900) {
+      return true;
+    }
+
+    return false;
+  }
 
   // 👇 your existing code continues here...
 
@@ -949,6 +1024,179 @@ async function dispatchPendingVoiceTurn() {
   const finalVoiceText = normalizeIncomingVoiceText(ws.__pendingVoiceTranscript);
   const session = getCurrentSession();
   const expectedSlot = session?.lastAskedSlot || null;
+
+  if (shouldWaitForMoreSpeech(ws, expectedSlot)) {
+    pushTwilioDebug("dispatch_skipped_incomplete", {
+      callSid: activeCallSid,
+      text: finalVoiceText,
+      reason: expectedSlot ? "waiting_slot_stability" : "waiting_free_turn_stability",
+      expectedSlot,
+    });
+    return;
+  }
+
+  if (!finalVoiceText) {
+    pushTwilioDebug("dispatch_skipped_incomplete", {
+      callSid: activeCallSid,
+      text: finalVoiceText,
+      reason: "empty",
+      expectedSlot,
+    });
+    return;
+  }
+
+  const normalized = finalVoiceText.trim();
+  const words = normalized.split(/\s+/).filter(Boolean);
+  const wordCount = words.length;
+
+  const looksUnfinished =
+    /(?:\b(and|or|for|with|to|at|on|in|my|the|a|an)\s*)$/i.test(normalized) ||
+    /^(i|i'm|i am|hi|hello|yeah|yes|no|please)$/i.test(normalized) ||
+    (/^[a-z]+$/i.test(normalized) && wordCount === 1);
+
+  const looksTooShortForFreeTurn =
+    wordCount < 3 && normalized.length < 12;
+
+  if (!expectedSlot && (looksUnfinished || looksTooShortForFreeTurn)) {
+    pushTwilioDebug("dispatch_skipped_incomplete", {
+      callSid: activeCallSid,
+      text: finalVoiceText,
+      reason: looksUnfinished ? "unfinished_free_turn" : "too_short_free_turn",
+      expectedSlot,
+    });
+    return;
+  }
+
+  if (isWeakFragment(finalVoiceText)) {
+    pushTwilioDebug("dispatch_skipped_incomplete", {
+      callSid: activeCallSid,
+      text: finalVoiceText,
+      reason: "weak_fragment",
+      expectedSlot,
+    });
+    return;
+  }
+
+  if (expectedSlot && !matchesExpectedSlot(finalVoiceText, expectedSlot)) {
+    pushTwilioDebug("dispatch_skipped_incomplete", {
+      callSid: activeCallSid,
+      text: finalVoiceText,
+      reason: "slot_mismatch",
+      expectedSlot,
+    });
+    return;
+  }
+
+  if (!isMeaningfulUtterance(finalVoiceText) && !isValidSlotValue(finalVoiceText)) {
+    pushTwilioDebug("dispatch_skipped_incomplete", {
+      callSid: activeCallSid,
+      text: finalVoiceText,
+      reason: "not_meaningful",
+      expectedSlot,
+    });
+    return;
+  }
+
+  if (ws.__dispatchInFlight) {
+    pushTwilioDebug("dispatch_skipped_inflight", {
+      callSid: activeCallSid,
+      streamSid: activeStreamSid,
+    });
+    return;
+  }
+
+  ws.__voiceTurnTimer = null;
+  ws.__pendingVoiceTranscript = "";
+
+  if (!streamActive) return;
+
+  if (isPlaybackLocked(ws)) {
+    pushTwilioDebug("dispatch_skipped_playback_lock", {
+      callSid: activeCallSid,
+      streamSid: activeStreamSid,
+    });
+    return;
+  }
+
+  if (!isMeaningfulVoiceUtterance(finalVoiceText)) {
+    pushTwilioDebug("utterance_skipped", {
+      callSid: activeCallSid,
+      text: finalVoiceText,
+    });
+    return;
+  }
+
+  ws.__dispatchInFlight = true;
+
+  try {
+    pushTwilioDebug("dispatch_turn", {
+      callSid: activeCallSid,
+      text: finalVoiceText.slice(0, 120),
+    });
+
+    const finalResult = handleTranscriptFinal(activeCallSid, finalVoiceText);
+    if (!finalResult || !finalResult.shouldProcess) {
+      pushTwilioDebug("dispatch_skipped_controller", {
+        callSid: activeCallSid,
+        text: finalVoiceText.slice(0, 120),
+      });
+      return;
+    }
+
+    let reply = "";
+
+    try {
+      const turnResult = await handleCallerTurn({
+        callSid: activeCallSid,
+        transcript: finalVoiceText,
+        meta: ws.__routingMeta || {},
+      });
+
+      reply = normalizeVoiceReply(turnResult?.replyText || "");
+    } catch (err) {
+      console.warn("⚠️ [twilio] handleCallerTurn failed:", err.message);
+      pushTwilioDebug("handle_caller_turn_error", {
+        callSid: activeCallSid,
+        error: err.message,
+      });
+    }
+
+    if (!reply) {
+      pushTwilioDebug("reply_empty_skipped", {
+        callSid: activeCallSid,
+        text: finalVoiceText.slice(0, 120),
+      });
+      return;
+    }
+
+    const controllerReply = handleProcessingResult(activeCallSid, {
+      shouldSpeak: true,
+      replyText: reply,
+      replyType: looksTaskCompleted(reply) ? "result" : "reply",
+    });
+
+    if (!controllerReply || !controllerReply.shouldSpeak) {
+      pushTwilioDebug("reply_blocked_controller", {
+        callSid: activeCallSid,
+      });
+      return;
+    }
+
+    await synthesizeAndSendReply(
+      ws,
+      activeCallSid,
+      activeStreamSid,
+      tenantId,
+      tenantLangCode,
+      controllerReply.replyText,
+      "main"
+    );
+
+    ws.__lastCommittedTranscript = finalVoiceText;
+  } finally {
+    ws.__dispatchInFlight = false;
+  }
+}
 
   const normalized = finalVoiceText.trim();
 const words = normalized.split(/\s+/).filter(Boolean);
@@ -1183,9 +1431,12 @@ if (!expectedSlot && (looksUnfinished || looksTooShortForFreeTurn)) {
         ws.__speakUntil = 0;
         ws.__acaSessionId = `call_${activeCallSid || activeStreamSid || Date.now()}`;
         ws.__acaStructuredFlowActive = false;
-        ws.__dispatchInFlight = false;
+                ws.__dispatchInFlight = false;
         ws.__sttInFlight = false;
         ws.__sttBufferBytes = 0;
+        ws.__lastStableTranscript = "";
+        ws.__lastStableTranscriptAt = 0;
+        ws.__lastCommittedTranscript = "";
 
         const playback = ensurePlaybackState(ws);
         playback.active = false;
@@ -1590,7 +1841,7 @@ if (
     endPlaybackLock(ws, activeCallSid, activeStreamSid, "ws_close");
     handleCallEnded(activeCallSid);
   });
-}
+
 
 module.exports = {
   router,
