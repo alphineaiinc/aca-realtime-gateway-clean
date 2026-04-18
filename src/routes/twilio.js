@@ -1112,6 +1112,20 @@ if (
   });
   return;
 }
+
+// 🔥 BLOCK GARBAGE NUMERIC BLENDS
+if (
+  /^[\d\s]+(am|pm)?$/i.test(finalVoiceText) &&
+  finalVoiceText.split(/\s+/).length > 2
+) {
+  pushTwilioDebug("dispatch_skipped_incomplete", {
+    callSid: activeCallSid,
+    text: finalVoiceText,
+    reason: "numeric_fragment_garbage",
+    expectedSlot,
+  });
+  return;
+}
     if (!finalVoiceText) {
       pushTwilioDebug("dispatch_skipped_incomplete", {
         callSid: activeCallSid,
@@ -1129,6 +1143,8 @@ const wordCount = words.length;
 const slotLikeAnswer =
   isValidSlotValue(normalized) ||
   matchesExpectedSlot(normalized, expectedSlot) ||
+  /\b\d{1,2}(:\d{2})?\s?(am|pm)\b/i.test(normalized) &&
+  /\b(today|tomorrow|monday|tuesday|wednesday|thursday|friday|saturday|sunday|\d{1,2}(st|nd|rd|th)?|jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)\b/i.test(normalized);
   /^(in the evening|in the morning|at night|evening|morning|night|p\.?m\.?|a\.?m\.?)$/i.test(normalized);
 
 const looksUnfinished =
@@ -1807,15 +1823,18 @@ const pendingLooksDateOrTimeLike =
   );
 
 const shouldAppendToExisting =
-  !pendingCanonical
-    ? false
-    : isDateOrTimeFragment
-      ? true
-      : pendingLooksDateOrTimeLike
-        ? true
-        : pendingWordCount >= 2
-          ? true
-          : normalizedMergeCanonicalText.length > 3;
+  pendingCanonical &&
+  (
+    // only append if it clearly extends meaning
+    isTranscriptExtension(pendingCanonical, normalizedMergeCanonicalText) ||
+
+    // OR proper date-time combination like "April 21st" + "7 pm"
+    (
+      pendingLooksDateOrTimeLike &&
+      isDateOrTimeFragment &&
+      normalizedMergeCanonicalText.length <= 10
+    )
+  );
 
 if (!ws.__pendingVoiceTranscriptStartedAt) {
   ws.__pendingVoiceTranscriptStartedAt = Date.now();
