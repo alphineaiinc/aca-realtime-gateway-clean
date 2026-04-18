@@ -246,6 +246,35 @@ function computeSessionState(workflowStatus) {
   return "idle";
 }
 
+function scoreDateSpecificity(value) {
+  const text = normalizeText(value).toLowerCase();
+  if (!text) return 0;
+
+  if (
+    /\b(jan|january|feb|february|mar|march|apr|april|may|jun|june|jul|july|aug|august|sep|sept|september|oct|october|nov|november|dec|december)\s+\d{1,2}\b/i.test(text)
+  ) {
+    return 3;
+  }
+
+  if (
+    /\b\d{1,2}\s+(jan|january|feb|february|mar|march|apr|april|may|jun|june|jul|july|aug|august|sep|sept|september|oct|october|nov|november|dec|december)\b/i.test(text)
+  ) {
+    return 3;
+  }
+
+  if (
+    /\b(today|tomorrow|monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b/i.test(text)
+  ) {
+    return 2;
+  }
+
+  if (/^\d{1,2}$/.test(text)) {
+    return 1;
+  }
+
+  return 0;
+}
+
 function shouldKeepExistingSlot(existingValue, newValue, slotName, extraction) {
   if (!isFilled(existingValue)) return false;
   if (!isFilled(newValue)) return true;
@@ -262,6 +291,12 @@ function shouldKeepExistingSlot(existingValue, newValue, slotName, extraction) {
   if (existing === incoming) return true;
 
   if (/date|day/i.test(slotName)) {
+    const existingScore = scoreDateSpecificity(existing);
+    const incomingScore = scoreDateSpecificity(incoming);
+
+    if (incomingScore > existingScore) return false;
+    if (existingScore > incomingScore) return true;
+
     return existing.includes(incoming) || incoming.includes(existing);
   }
 
