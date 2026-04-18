@@ -32,7 +32,7 @@ const MIN_TRANSCRIPT_CHARS = 3;
 const MIN_ALNUM_CHARS = 2;
 const MIN_INTERIM_STABLE_LEN = 4;
 
-const VOICE_TURN_SILENCE_MS = Number(process.env.VOICE_TURN_SILENCE_MS || 1200);
+const VOICE_TURN_SILENCE_MS = Number(process.env.VOICE_TURN_SILENCE_MS || 1500);
 const VOICE_STT_COOLDOWN_MS = Number(process.env.VOICE_STT_COOLDOWN_MS || 400);
 const VOICE_POST_TTS_IGNORE_MS = Number(process.env.VOICE_POST_TTS_IGNORE_MS || 350);
 
@@ -751,24 +751,43 @@ async function handleTwilioStream(ws, req) {
   ws.__sttBufferBytes = 0;
   ensurePlaybackState(ws);
 
-  function isIncompleteUtterance(text) {
-  const t = String(text || "").toLowerCase().trim();
-  if (!t) return true;
+  function isMeaningfulUtterance(text) {
+  const t = String(text || "").trim();
 
-  // obvious broken filler fragments only
-  if (/^(for|and|the|a|an|to|of|uh|um|hmm)$/i.test(t)) return true;
+  if (!t) return false;
 
-  // bare number fragments like "20." are incomplete
-  if (/^\d+\.?$/.test(t)) return true;
+  const words = t.split(/\s+/);
 
-  return false;
+  // Too short
+  if (words.length <= 1 && t.length < 6) return false;
+
+  // Junk fragments
+  if (/^(for|and|the|a|an|to|of|on|in)$/i.test(t)) return false;
+
+  // Looks like broken STT fragments
+  if (/^[a-z]+\.?$/i.test(t) && words.length === 1) return false;
+
+  // Must contain meaningful structure
+  const hasVerb =
+    /\b(book|need|want|schedule|check|have|is|are|was|do|did|can)\b/i.test(t);
+
+  const hasTime =
+    /\b\d{1,2}(:\d{2})?\s?(am|pm)?\b/i.test(t);
+
+  const hasDate =
+    /\b(today|tomorrow|monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b/i.test(t);
+
+  const hasNameLike =
+    /^[A-Z][a-z]+(\s[A-Z][a-z]+)?$/.test(t);
+
+  return hasVerb || hasTime || hasDate || hasNameLike || words.length >= 3;
 }
 
   async function dispatchPendingVoiceTurn() {
     const finalVoiceText = normalizeIncomingVoiceText(ws.__pendingVoiceTranscript);
 
     // 🚫 BLOCK INCOMPLETE FRAGMENTS (CRITICAL FIX)
-if (isIncompleteUtterance(finalVoiceText)) {
+if (!isMeaningfulUtterance(finalVoiceText)) {
   pushTwilioDebug("dispatch_skipped_incomplete", {
     callSid: activeCallSid,
     text: finalVoiceText,
