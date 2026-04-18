@@ -1104,6 +1104,10 @@ const looksLikePhoneNumber =
   /(?:\+?\d[\d\s()-]{6,}\d)/.test(finalVoiceText);
 
 // reject very short garbage unless it is valid slot OR phone number
+const looksLikePhoneNumber =
+  /(?:\+?\d[\d\s()-]{6,}\d)/.test(finalVoiceText) ||
+  /^\d{7,}$/.test(finalVoiceText);
+
 if (
   noiseWords.length < 3 &&
   !looksLikePhoneNumber &&
@@ -1177,10 +1181,15 @@ const looksUnfinished =
   /^(my name is|i am|this is)$/i.test(normalized) ||
   /^(that is what|which is|is it)$/i.test(normalized);
 
+const looksLikePhoneNumber =
+  /(?:\+?\d[\d\s()-]{6,}\d)/.test(normalized) ||
+  /^\d{7,}$/.test(normalized);
+
 const looksTooShortForFreeTurn =
   wordCount < 3 &&
   normalized.length < 12 &&
-  !slotLikeAnswer;
+  !slotLikeAnswer &&
+  !looksLikePhoneNumber;
 
 if (!expectedSlot && (looksUnfinished || looksTooShortForFreeTurn)) {
   pushTwilioDebug("dispatch_skipped_incomplete", {

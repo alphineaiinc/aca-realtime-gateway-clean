@@ -490,15 +490,19 @@ function getCanonicalRequiredSlotStatus(slots = {}) {
       "full_name",
     ]),
     phone: getSlotValueByAlias(slots, [
-      "phone",
-      "number",
-      "phone number",
-      "contact number",
-      "mobile",
-      "telephone",
-      "phone_number",
-      "contact_number",
-    ]),
+  "phone number",
+  "contact number",
+  "mobile number",
+  "telephone number",
+  "phone_number",
+  "contact_number",
+  "mobile_number",
+  "telephone_number",
+  "phone",
+  "mobile",
+  "telephone",
+  "number",
+]),
   };
 }
 
@@ -569,11 +573,11 @@ function buildSlotQuestion(slotName) {
   }
 
   if (slot.includes("date") || slot.includes("day")) {
-    return "Got it — which date should I book it for?";
+    return "Sorry, I missed the date there — which date should I book it for?";
   }
 
   if (slot.includes("time")) {
-    return "And what time works for you?";
+    return "Sorry, I didn’t catch the time — what time works for you?";
   }
 
   if (
@@ -587,11 +591,11 @@ function buildSlotQuestion(slotName) {
   }
 
   if (slot.includes("name")) {
-    return "May I have your name for the booking?";
+   return "Sorry about that — may I have your name for the booking?";
   }
 
   if (slot.includes("phone")) {
-    return "What’s the best number to reach you?";
+   return "Sorry, I missed the number — what’s the best number to reach you?";
   }
 
   if (slot.includes("email")) {
@@ -604,10 +608,10 @@ function buildSlotQuestion(slotName) {
     slot.includes("purpose") ||
     slot.includes("service")
   ) {
-    return "What type of appointment do you need?";
+    return "Sorry, I didn’t catch the appointment type — what type do you need?";
   }
 
-  return "Could you tell me that again?";
+ return "Sorry, I missed that — could you say it again?";
 }
 
 function buildSafeFallbackReply(session) {
