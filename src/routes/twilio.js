@@ -1108,9 +1108,23 @@ if (!expectedSlot && (looksUnfinished || looksTooShortForFreeTurn)) {
 
   const pendingAgeMs = Date.now() - ws.__pendingVoiceTranscriptStartedAt;
 
-  if (pendingAgeMs >= 1800) {
-    // allow dispatch after enough wait
-  } else {
+ const isClearlyIncompleteSlot =
+  /^(?:\d+\s*(in the|at|around)?|in the|at|around)$/i.test(normalized) ||
+  /^(in the|at|around)$/i.test(normalized);
+
+if (pendingAgeMs >= 1800) {
+  if (isClearlyIncompleteSlot) {
+    // DO NOT dispatch incomplete slot like "7 in the"
+    clearPendingVoiceTurn(ws);
+
+    ws.__voiceTurnTimer = setTimeout(async () => {
+      await dispatchPendingVoiceTurn();
+    }, 400);
+
+    return;
+  }
+  // otherwise allow dispatch
+} else {
     clearPendingVoiceTurn(ws);
 
     ws.__voiceTurnTimer = setTimeout(async () => {
