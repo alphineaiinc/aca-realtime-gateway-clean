@@ -105,14 +105,19 @@ async function composeReply({
   }
 
   // Prevent repetition of last question
-  if (
-    session.lastAssistantReply &&
-    replyText.trim().toLowerCase() === session.lastAssistantReply.trim().toLowerCase()
-  ) {
+     const lastReply =
+    typeof session?.lastAssistantReply === "string"
+      ? session.lastAssistantReply.trim().toLowerCase()
+      : "";
+
+  if (lastReply && replyText.trim().toLowerCase() === lastReply) {
     if (nextMissingSlot) {
-      replyText = `Could you tell me the ${nextMissingSlot.replace(/_/g, " ")}?`;
+      const spokenSlot = String(nextMissingSlot).replace(/_/g, " ");
+      replyText = `Just to confirm, what is the ${spokenSlot}?`;
+    } else if (confirmationPending) {
+      replyText = "Could you confirm those details for me?";
     } else {
-      replyText = "Could you confirm that for me?";
+      replyText = "Sorry, could you say that once more?";
     }
   }
 

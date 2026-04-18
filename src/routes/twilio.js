@@ -662,111 +662,67 @@ async function handleTwilioStream(ws, req) {
     return normalizedFallbackReply;
   }
 
-  async function dispatchPendingVoiceTurn() {
-    if (ws.__dispatchInFlight) {
-      pushTwilioDebug("dispatch_skipped_inflight", {
-        callSid: activeCallSid,
-        streamSid: activeStreamSid,
-      });
-      return;
-    }
+    async function dispatchPendingVoiceTurn() {
+  if (ws.__dispatchInFlight) return;
 
-    const finalVoiceText = normalizeIncomingVoiceText(ws.__pendingVoiceTranscript);
+  const finalVoiceText = normalizeIncomingVoiceText(ws.__pendingVoiceTranscript);
 
-    ws.__voiceTurnTimer = null;
-    ws.__pendingVoiceTranscript = "";
+  ws.__voiceTurnTimer = null;
+  ws.__pendingVoiceTranscript = "";
 
-    if (!streamActive) return;
-    if (isPlaybackLocked(ws)) {
-      pushTwilioDebug("dispatch_skipped_playback_lock", {
-        callSid: activeCallSid,
-        streamSid: activeStreamSid,
-      });
-      return;
-    }
+  if (!streamActive) return;
+  if (isPlaybackLocked(ws)) return;
+  if (!isMeaningfulVoiceUtterance(finalVoiceText)) return;
 
-    if (!isMeaningfulVoiceUtterance(finalVoiceText)) {
-      console.log(
-        `${VOICE_LOG_PREFIX} skip_non_meaningful`,
-        JSON.stringify({
-          callSid: activeCallSid,
-          text: finalVoiceText,
-        })
-      );
-      pushTwilioDebug("utterance_skipped", {
-        callSid: activeCallSid,
-        text: finalVoiceText,
-      });
-      return;
-    }
+  ws.__dispatchInFlight = true;
 
-    ws.__dispatchInFlight = true;
+  try {
+    const finalResult = handleTranscriptFinal(activeCallSid, finalVoiceText);
+    if (!finalResult || !finalResult.shouldProcess) return;
+
+    let reply = "";
 
     try {
-      console.log(
-        `${VOICE_LOG_PREFIX} dispatch_turn`,
-        JSON.stringify({
-          callSid: activeCallSid,
-          text: finalVoiceText,
-        })
-      );
-      pushTwilioDebug("dispatch_turn", {
+      const turnResult = await handleCallerTurn({
         callSid: activeCallSid,
-        text: finalVoiceText.slice(0, 120),
+        transcript: finalVoiceText,
+        meta: ws.__routingMeta || {},
       });
 
-      const finalResult = handleTranscriptFinal(activeCallSid, finalVoiceText);
-      if (!finalResult || !finalResult.shouldProcess) {
-        pushTwilioDebug("dispatch_skipped_controller", {
-          callSid: activeCallSid,
-          text: finalVoiceText.slice(0, 120),
-        });
-        return;
-      }
-
-      let reply = "";
-
-      try {
-        const turnResult = await handleCallerTurn({
-          callSid: activeCallSid,
-          transcript: finalVoiceText,
-          meta: ws.__routingMeta || {},
-        });
-
-        reply = turnResult?.replyText || "";
-
-        if (!reply) {
-  console.warn("⚠️ No reply from workflow — forcing controller fallback");
-
-  reply = "Sorry — could you repeat that once for me?";
-}
-
-      const controllerReply = handleProcessingResult(activeCallSid, {
-        shouldSpeak: true,
-        replyText: reply,
-        replyType: looksTaskCompleted(reply) ? "result" : "reply",
-      });
-
-      if (!controllerReply || !controllerReply.shouldSpeak) {
-        pushTwilioDebug("reply_blocked_controller", {
-          callSid: activeCallSid,
-        });
-        return;
-      }
-
-      await synthesizeAndSendReply(
-        ws,
-        activeCallSid,
-        activeStreamSid,
-        tenantId,
-        tenantLangCode,
-        controllerReply.replyText,
-        "main"
-      );
-    } finally {
-      ws.__dispatchInFlight = false;
+      reply = turnResult?.replyText || "";
+    } catch (err) {
+      console.warn("⚠️ handleCallerTurn failed:", err.message);
     }
+
+    // 🔒 SINGLE WORKFLOW CONTROL (no fallback to other systems)
+    if (!reply) {
+      reply = "Sorry — could you repeat that once for me?";
+    }
+
+    const controllerReply = handleProcessingResult(activeCallSid, {
+      shouldSpeak: true,
+      replyText: reply,
+      replyType: looksTaskCompleted(reply) ? "result" : "reply",
+    });
+
+    if (!controllerReply || !controllerReply.shouldSpeak) return;
+
+    await synthesizeAndSendReply(
+      ws,
+      activeCallSid,
+      activeStreamSid,
+      tenantId,
+      tenantLangCode,
+      controllerReply.replyText,
+      "main"
+    );
+
+  } finally {
+    ws.__dispatchInFlight = false;
   }
+}}
+  
+  
 
   ws.on("message", async (msg) => {
     try {
@@ -1118,7 +1074,7 @@ async function handleTwilioStream(ws, req) {
     endPlaybackLock(ws, activeCallSid, activeStreamSid, "ws_close");
     handleCallEnded(activeCallSid);
   });
-}
+
 
 module.exports = {
   router,
