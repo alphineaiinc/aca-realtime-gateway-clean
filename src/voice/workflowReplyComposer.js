@@ -64,9 +64,11 @@ function buildDeterministicQuestion(nextMissingSlot, schema) {
   if (key.includes("date") || key.includes("day")) {
     return "What date would you like?";
   }
+
   if (key.includes("time")) {
     return "What time works for you?";
   }
+
   if (
     key.includes("party") ||
     key.includes("size") ||
@@ -76,12 +78,15 @@ function buildDeterministicQuestion(nextMissingSlot, schema) {
   ) {
     return "How many people should I put down?";
   }
+
   if (key.includes("name")) {
     return "Can I have your full name?";
   }
+
   if (key.includes("phone")) {
     return "What’s the best phone number for you?";
   }
+
   if (key.includes("email")) {
     return "What’s the best email address for you?";
   }
@@ -101,17 +106,19 @@ function buildConfirmationReply(workflowState) {
   }
 
   const nameKey = Object.keys(values).find((k) => k.toLowerCase().includes("name"));
-  const dateKey = Object.keys(values).find((k) => k.toLowerCase().includes("date") || k.toLowerCase().includes("day"));
+  const dateKey = Object.keys(values).find(
+    (k) => k.toLowerCase().includes("date") || k.toLowerCase().includes("day")
+  );
   const timeKey = Object.keys(values).find((k) => k.toLowerCase().includes("time"));
   const sizeKey = Object.keys(values).find((k) =>
     /(party|size|guest|people|person)/i.test(k)
   );
 
   const parts = [];
-  if (values[dateKey]) parts.push(values[dateKey]);
-  if (values[timeKey]) parts.push(`at ${values[timeKey]}`);
-  if (values[sizeKey]) parts.push(`for ${values[sizeKey]}`);
-  if (values[nameKey]) parts.push(`under ${values[nameKey]}`);
+  if (dateKey && values[dateKey]) parts.push(values[dateKey]);
+  if (timeKey && values[timeKey]) parts.push(`at ${values[timeKey]}`);
+  if (sizeKey && values[sizeKey]) parts.push(`for ${values[sizeKey]}`);
+  if (nameKey && values[nameKey]) parts.push(`under ${values[nameKey]}`);
 
   if (parts.length) {
     return cleanPhoneReply(`Let me confirm: ${parts.join(" ")}. Is that correct?`);
@@ -140,7 +147,7 @@ function looksWeakReply(text) {
     "share the date",
     "share the time",
     "provide the date",
-    "provide the time"
+    "provide the time",
   ];
 
   return banned.some((phrase) => value === phrase || value.includes(phrase));
@@ -155,7 +162,7 @@ async function composeReply({
   clusterSchema,
   session,
   workflowState,
-  utterance
+  utterance,
 } = {}) {
   const schema = clusterSchema || {};
   const state = workflowState || {};
@@ -177,20 +184,24 @@ async function composeReply({
     return cleaned;
   }
 
-   const nextMissingSlot = state.nextMissingSlot || null;
+  const nextMissingSlot = state.nextMissingSlot || null;
   if (nextMissingSlot) {
     return buildDeterministicQuestion(nextMissingSlot, schema);
   }
 
-  const knownSlots = Object.keys(state.slots || {}).filter((k) => isNonEmptyString(state.slots[k]));
+  const knownSlots = Object.keys(state.slots || {}).filter((k) =>
+    isNonEmptyString(state.slots[k])
+  );
   if (knownSlots.length > 0) {
     return "Got it. What’s the next detail I should note down?";
   }
 
   return "Could you say that one more time?";
+}
 
 module.exports = {
   composeReply,
   buildConfirmationReply,
-  cleanPhoneReply
+  buildDeterministicQuestion,
+  cleanPhoneReply,
 };
