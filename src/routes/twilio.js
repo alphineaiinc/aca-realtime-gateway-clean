@@ -486,7 +486,7 @@ async function handleVoiceWebhook(req, res) {
   const VoiceResponse = twilio.twiml.VoiceResponse;
   const twiml = new VoiceResponse();
 
-  twiml.say("Connecting you now.");
+ 
 
   const connect = twiml.connect();
   connect.stream({
@@ -924,18 +924,15 @@ async function handleTwilioStream(ws, req) {
         console.log("🚫 REJECTED TEXT:", cleanedText);
 
         if (!cleanedText || cleanedText.length < 2) {
-  console.warn("⚠️ STT EMPTY — forcing fallback reply");
+  pushTwilioDebug("stt_invalid_skipped", {
+    callSid: activeCallSid,
+    raw: userText,
+    cleaned: cleanedText,
+    ignoredDuringPlayback: isPlaybackLocked(ws),
+  });
 
-  await synthesizeAndSendReply(
-    ws,
-    activeCallSid,
-    activeStreamSid,
-    tenantId,
-    tenantLangCode,
-    "Sorry, I didn’t catch that clearly — could you say it again?",
-    "fallback"
-  );
-
+  // Do not speak a fallback here.
+  // Empty STT right after ACA speech can be self-hearing / noise / silence.
   return;
 }
 
