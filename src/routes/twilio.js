@@ -769,6 +769,8 @@ ws.__streamingFinal = "";
 ws.__speechActive = false;
 ws.__lastSpeechStartAt = 0;
 ws.__lastSpeechEndAt = 0;
+ws.__pendingPhoneChunks = [];
+ws.__pendingPhoneStartedAt = 0;
 ensurePlaybackState(ws);
 
   function getOpenExpectedSlot() {
@@ -1010,10 +1012,77 @@ if (stillGrowing && stableAgeMs < 450) {
     ].includes(t);
   }
 
+  function extractDigitsOnly(text) {
+  return String(text || "").replace(/\D/g, "");
+}
+
+function isShortPhoneChunk(text) {
+  const digits = extractDigitsOnly(text);
+  return digits.length >= 2 && digits.length <= 4;
+}
+
+function isPhoneIntroPhrase(text) {
+  return /\b(phone number|my number|mobile number|contact number|reach me at)\b/i.test(
+    String(text || "")
+  );
+}
+
+function shouldCollectPhoneChunks(text, expectedSlot) {
+  const digits = extractDigitsOnly(text);
+  if (expectedSlot && String(expectedSlot).toLowerCase().includes("phone")) {
+    return digits.length > 0;
+  }
+
+  if (isPhoneIntroPhrase(text)) {
+    return true;
+  }
+
+  return false;
+}
+
   async function dispatchPendingVoiceTurn() {
-    const finalVoiceText = normalizeIncomingVoiceText(ws.__pendingVoiceTranscript);
+    let finalVoiceText = normalizeIncomingVoiceText(ws.__pendingVoiceTranscript);
         const session = getCurrentSession();
     const expectedSlot = session?.lastAskedSlot || null;
+
+    const phoneDigits = extractDigitsOnly(finalVoiceText);
+
+// start or continue phone chunk capture
+if (shouldCollectPhoneChunks(finalVoiceText, expectedSlot)) {
+  if (!ws.__pendingPhoneStartedAt) {
+    ws.__pendingPhoneStartedAt = Date.now();
+  }
+
+  if (phoneDigits) {
+    ws.__pendingPhoneChunks.push(phoneDigits);
+  }
+
+  const mergedPhone = ws.__pendingPhoneChunks.join("");
+  const ageMs = Date.now() - ws.__pendingPhoneStartedAt;
+
+  // wait briefly for more chunks if number still incomplete
+  if (mergedPhone.length < 10 && ageMs < 2500) {
+    pushTwilioDebug("dispatch_skipped_incomplete", {
+      callSid: activeCallSid,
+      text: finalVoiceText,
+      reason: "waiting_phone_chunks",
+      expectedSlot,
+    });
+
+    clearPendingVoiceTurn(ws);
+    ws.__voiceTurnTimer = setTimeout(async () => {
+      await dispatchPendingVoiceTurn();
+    }, 500);
+
+    return;
+  }
+
+  // once enough digits collected, replace transcript with merged number
+ if (mergedPhone.length >= 10) {
+  ws.__pendingVoiceTranscript = mergedPhone;
+  finalVoiceText = mergedPhone;
+}
+}
 
     if (/^(my name is|i am|this is)$/i.test(finalVoiceText.trim())) {
   pushTwilioDebug("dispatch_skipped_incomplete", {
@@ -1433,6 +1502,8 @@ await synthesizeAndSendReply(
       ws.__lastCommittedTranscript = finalVoiceText;
             ws.__streamingInterim = "";
 ws.__streamingFinal = "";
+ws.__pendingPhoneChunks = [];
+ws.__pendingPhoneStartedAt = 0;
     } finally {
       ws.__dispatchInFlight = false;
     }
@@ -1580,6 +1651,8 @@ ws.__streamingFinal = "";
 ws.__speechActive = false;
 ws.__lastSpeechStartAt = 0;
 ws.__lastSpeechEndAt = 0;
+ws.__pendingPhoneChunks = [];
+ws.__pendingPhoneStartedAt = 0;
 
 ws.__sttStream = createStreamingTranscriber({
   languageCode: tenantLangCode,

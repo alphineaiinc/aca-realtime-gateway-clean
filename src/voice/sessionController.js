@@ -206,40 +206,44 @@ function extractTimeValue(text) {
   const value = normalizeText(text).toLowerCase();
   if (!value) return "";
 
-  // Full explicit time
   const explicit = value.match(/\b(\d{1,2})(?::(\d{2}))?\s*(am|pm)\b/i);
   if (explicit) {
-    const hour = explicit[1];
+    let hour = Number(explicit[1]);
     const mins = explicit[2] || "00";
     const period = explicit[3].toUpperCase();
+
+    if (hour === 0) hour = 12;
+    if (hour > 12) hour = ((hour - 1) % 12) + 1;
+
     return `${hour}:${mins} ${period}`;
   }
 
-  // "7 in the evening"
   const evening = value.match(/\b(\d{1,2})\s*(?:in the)?\s*(evening|night)\b/i);
   if (evening) {
     let hour = Number(evening[1]);
-    if (hour < 12) hour += 12;
-    return `${hour}:00`;
+    if (hour === 0) hour = 12;
+    if (hour > 12) hour = ((hour - 1) % 12) + 1;
+    return `${hour}:00 PM`;
   }
 
-  // "7 in the morning"
   const morning = value.match(/\b(\d{1,2})\s*(?:in the)?\s*(morning)\b/i);
   if (morning) {
-    return `${morning[1]}:00 AM`;
+    let hour = Number(morning[1]);
+    if (hour === 0) hour = 12;
+    if (hour > 12) hour = ((hour - 1) % 12) + 1;
+    return `${hour}:00 AM`;
   }
 
-  // "7 pm" spoken as "7"
   const simple = value.match(/\b(\d{1,2})\b/);
   const hasPm = /\b(pm|evening|night)\b/.test(value);
   const hasAm = /\b(am|morning)\b/.test(value);
 
   if (simple) {
     let hour = Number(simple[1]);
+    if (hour === 0) hour = 12;
+    if (hour > 12) hour = ((hour - 1) % 12) + 1;
 
-    if (hasPm && hour < 12) hour += 12;
-
-    if (hasPm) return `${hour}:00`;
+    if (hasPm) return `${hour}:00 PM`;
     if (hasAm) return `${hour}:00 AM`;
 
     return `${hour}:00`;
