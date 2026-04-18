@@ -27,13 +27,23 @@ require("dotenv").config({ path: path.resolve(__dirname, "../../.env") });
 console.log("🧩 [twilio->tts] resolved module:", require.resolve("../../tts"));
 console.log("🧩 [twilio->tts] typeof synthesizeSpeech:", typeof synthesizeSpeech);
 
-const VOICE_TURN_SILENCE_MS = Number(process.env.VOICE_TURN_SILENCE_MS || 550);
-const VOICE_STT_COOLDOWN_MS = Number(process.env.VOICE_STT_COOLDOWN_MS || 250);
-const VOICE_POST_TTS_IGNORE_MS = Number(process.env.VOICE_POST_TTS_IGNORE_MS || 300);
+const POST_TTS_GUARD_MS = 400;
+const MIN_TRANSCRIPT_CHARS = 3;
+const MIN_ALNUM_CHARS = 2;
+const MIN_INTERIM_STABLE_LEN = 4;
+
+const VOICE_TURN_SILENCE_MS = Number(process.env.VOICE_TURN_SILENCE_MS || 700);
+const VOICE_STT_COOLDOWN_MS = Number(process.env.VOICE_STT_COOLDOWN_MS || 400);
+const VOICE_POST_TTS_IGNORE_MS = Number(process.env.VOICE_POST_TTS_IGNORE_MS || 350);
 
 const VOICE_MIN_UTTERANCE_CHARS = Number(process.env.VOICE_MIN_UTTERANCE_CHARS || 3);
 const VOICE_MAX_REPLY_CHARS = Number(process.env.VOICE_MAX_REPLY_CHARS || 220);
 const VOICE_LOG_PREFIX = "[twilio_voice_intel]";
+
+const VOICE_MIN_AUDIO_BYTES = Number(process.env.VOICE_MIN_AUDIO_BYTES || 640);
+const VOICE_MIN_AUDIO_RMS = Number(process.env.VOICE_MIN_AUDIO_RMS || 180);
+const VOICE_MIN_AUDIO_PEAK = Number(process.env.VOICE_MIN_AUDIO_PEAK || 900);
+const VOICE_MIN_VOICED_SAMPLES = Number(process.env.VOICE_MIN_VOICED_SAMPLES || 24);
 
 const DEFAULT_TENANT_BUSINESS_TYPE = String(
   process.env.DEFAULT_TENANT_BUSINESS_TYPE || "generic"
@@ -177,6 +187,8 @@ function beginPlaybackLock(ws, activeCallSid, activeStreamSid, ttsBuffer, branch
 
   clearPendingVoiceTurn(ws);
   ws.__pendingVoiceTranscript = "";
+  ws.__lastVoiceInputAt = 0;
+  ws.__sttBufferBytes = 0;
 
   pushTwilioDebug("playback_lock_start", {
     callSid: activeCallSid,
@@ -195,6 +207,64 @@ function beginPlaybackLock(ws, activeCallSid, activeStreamSid, ttsBuffer, branch
   });
 }
 
+function normalizeTranscript(text) {
+  return String(text || "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function isMeaningfulTranscript(text) {
+  const t = normalizeTranscript(text);
+  if (!t) return false;
+  if (t.length < MIN_TRANSCRIPT_CHARS) return false;
+
+  const alnum = (t.match(/[a-z0-9]/gi) || []).length;
+  if (alnum < MIN_ALNUM_CHARS) return false;
+
+  if (/^(um+|uh+|hmm+|mm+|ah+|er+|...+|[.,!?-]+)$/i.test(t)) return false;
+
+  return true;
+}
+
+function ensureVoiceGate(session) {
+  if (!session.voiceGate) {
+    session.voiceGate = {
+      assistantSpeaking: false,
+      ignoreInputUntil: 0,
+      pendingMarks: new Set(),
+      lastPlaybackStartedAt: 0,
+      lastPlaybackEndedAt: 0,
+    };
+  }
+  return session.voiceGate;
+}
+
+function shouldIgnoreCallerInput(session) {
+  const gate = ensureVoiceGate(session);
+  return gate.assistantSpeaking || Date.now() < gate.ignoreInputUntil;
+}
+
+function beginAssistantPlayback(session, markName) {
+  const gate = ensureVoiceGate(session);
+  gate.assistantSpeaking = true;
+  gate.lastPlaybackStartedAt = Date.now();
+  gate.pendingMarks.add(markName);
+}
+
+function finishAssistantPlaybackMark(session, markName) {
+  const gate = ensureVoiceGate(session);
+
+  if (markName) {
+    gate.pendingMarks.delete(markName);
+  }
+
+  if (gate.pendingMarks.size === 0) {
+    gate.assistantSpeaking = false;
+    gate.lastPlaybackEndedAt = Date.now();
+    gate.ignoreInputUntil = Date.now() + POST_TTS_GUARD_MS;
+  }
+}
+
 function endPlaybackLock(ws, activeCallSid, activeStreamSid, reason = "unknown") {
   if (!ws) return;
 
@@ -205,6 +275,10 @@ function endPlaybackLock(ws, activeCallSid, activeStreamSid, reason = "unknown")
   playback.active = false;
   playback.currentMark = null;
   playback.ignoreInboundUntil = Date.now() + VOICE_PLAYBACK_TAIL_MS;
+
+  ws.__pendingVoiceTranscript = "";
+  ws.__lastVoiceInputAt = 0;
+  ws.__sttBufferBytes = 0;
 
   pushTwilioDebug("playback_lock_end", {
     callSid: activeCallSid,
@@ -284,6 +358,84 @@ function sendTwilioAudioWithMark(ws, activeCallSid, activeStreamSid, ttsBuffer, 
     markName,
     branch,
   });
+}
+
+function muLawByteToLinearSample(muLawByte) {
+  const MULAW_BIAS = 0x84;
+  let uVal = (~muLawByte) & 0xff;
+  const sign = uVal & 0x80;
+  const exponent = (uVal >> 4) & 0x07;
+  const mantissa = uVal & 0x0f;
+  let sample = ((mantissa << 3) + MULAW_BIAS) << exponent;
+  sample -= MULAW_BIAS;
+  return sign ? -sample : sample;
+}
+
+function analyzeMulawAudio(buffer) {
+  if (!buffer || !buffer.length) {
+    return {
+      rms: 0,
+      peak: 0,
+      voicedSamples: 0,
+      sampleCount: 0,
+    };
+  }
+
+  let sumSquares = 0;
+  let peak = 0;
+  let voicedSamples = 0;
+  const sampleCount = buffer.length;
+
+  for (let i = 0; i < buffer.length; i += 1) {
+    const sample = muLawByteToLinearSample(buffer[i]);
+    const abs = Math.abs(sample);
+    sumSquares += sample * sample;
+    if (abs > peak) peak = abs;
+    if (abs >= 500) voicedSamples += 1;
+  }
+
+  const rms = Math.sqrt(sumSquares / sampleCount);
+
+  return {
+    rms: Math.round(rms),
+    peak,
+    voicedSamples,
+    sampleCount,
+  };
+}
+
+function hasEnoughCallerAudio(buffer) {
+  if (!buffer || buffer.length < VOICE_MIN_AUDIO_BYTES) {
+    return {
+      ok: false,
+      reason: "too_small",
+      stats: analyzeMulawAudio(buffer),
+    };
+  }
+
+  const stats = analyzeMulawAudio(buffer);
+
+  if (stats.rms < VOICE_MIN_AUDIO_RMS && stats.peak < VOICE_MIN_AUDIO_PEAK) {
+    return {
+      ok: false,
+      reason: "low_energy",
+      stats,
+    };
+  }
+
+  if (stats.voicedSamples < VOICE_MIN_VOICED_SAMPLES) {
+    return {
+      ok: false,
+      reason: "not_voiced_enough",
+      stats,
+    };
+  }
+
+  return {
+    ok: true,
+    reason: "ok",
+    stats,
+  };
 }
 
 /**
@@ -486,8 +638,6 @@ async function handleVoiceWebhook(req, res) {
   const VoiceResponse = twilio.twiml.VoiceResponse;
   const twiml = new VoiceResponse();
 
- 
-
   const connect = twiml.connect();
   connect.stream({
     url: "wss://aca-realtime-gateway-clean.onrender.com/ws/twilio-stream",
@@ -569,10 +719,15 @@ async function handleTwilioStream(ws, req) {
   ws.__acaStructuredFlowActive = false;
   ws.__routingMeta = {};
   ws.__dispatchInFlight = false;
+  ws.__sttInFlight = false;
+  ws.__sttBufferBytes = 0;
   ensurePlaybackState(ws);
 
   async function dispatchPendingVoiceTurn() {
+    const finalVoiceText = normalizeIncomingVoiceText(ws.__pendingVoiceTranscript);
+
     console.log("🚀 DISPATCH TRIGGERED:", finalVoiceText);
+
     if (ws.__dispatchInFlight) {
       pushTwilioDebug("dispatch_skipped_inflight", {
         callSid: activeCallSid,
@@ -581,12 +736,11 @@ async function handleTwilioStream(ws, req) {
       return;
     }
 
-    const finalVoiceText = normalizeIncomingVoiceText(ws.__pendingVoiceTranscript);
-
     ws.__voiceTurnTimer = null;
     ws.__pendingVoiceTranscript = "";
 
     if (!streamActive) return;
+
     if (isPlaybackLocked(ws)) {
       pushTwilioDebug("dispatch_skipped_playback_lock", {
         callSid: activeCallSid,
@@ -643,7 +797,7 @@ async function handleTwilioStream(ws, req) {
           meta: ws.__routingMeta || {},
         });
 
-        reply = turnResult?.replyText || "";
+        reply = normalizeVoiceReply(turnResult?.replyText || "");
       } catch (err) {
         console.warn("⚠️ [twilio] handleCallerTurn failed:", err.message);
         pushTwilioDebug("handle_caller_turn_error", {
@@ -653,8 +807,12 @@ async function handleTwilioStream(ws, req) {
       }
 
       if (!reply) {
-        console.warn("⚠️ No reply from workflow — forcing controller fallback");
-        reply = "Sorry — could you repeat that once for me?";
+        console.warn("⚠️ [twilio] No reply returned for caller turn; skipping TTS.");
+        pushTwilioDebug("reply_empty_skipped", {
+          callSid: activeCallSid,
+          text: finalVoiceText.slice(0, 120),
+        });
+        return;
       }
 
       const controllerReply = handleProcessingResult(activeCallSid, {
@@ -740,6 +898,8 @@ async function handleTwilioStream(ws, req) {
         ws.__acaSessionId = `call_${activeCallSid || activeStreamSid || Date.now()}`;
         ws.__acaStructuredFlowActive = false;
         ws.__dispatchInFlight = false;
+        ws.__sttInFlight = false;
+        ws.__sttBufferBytes = 0;
 
         const playback = ensurePlaybackState(ws);
         playback.active = false;
@@ -790,6 +950,9 @@ async function handleTwilioStream(ws, req) {
             silenceMs: VOICE_TURN_SILENCE_MS,
             sttCooldownMs: VOICE_STT_COOLDOWN_MS,
             postTtsIgnoreMs: VOICE_POST_TTS_IGNORE_MS,
+            minAudioBytes: VOICE_MIN_AUDIO_BYTES,
+            minAudioRms: VOICE_MIN_AUDIO_RMS,
+            minAudioPeak: VOICE_MIN_AUDIO_PEAK,
           })
         );
 
@@ -827,7 +990,7 @@ async function handleTwilioStream(ws, req) {
             "greeting"
           );
         }
-      } else if (data.event === "media" && data.media.payload) {
+      } else if (data.event === "media" && data.media && data.media.payload) {
         mediaPacketCount += 1;
 
         const payloadBuffer = Buffer.from(data.media.payload, "base64");
@@ -850,6 +1013,10 @@ async function handleTwilioStream(ws, req) {
           });
         }
 
+        if (!payloadBuffer.length) {
+          return;
+        }
+
         if (isPlaybackLocked(ws)) {
           if (mediaPacketCount <= 5 || mediaPacketCount % 50 === 0) {
             pushTwilioDebug("media_ignored_playback_lock", {
@@ -862,28 +1029,58 @@ async function handleTwilioStream(ws, req) {
         }
 
         sttBuffers.push(payloadBuffer);
+        ws.__sttBufferBytes = (ws.__sttBufferBytes || 0) + payloadBuffer.length;
 
         const now = Date.now();
         if (now - lastResponseAt < VOICE_STT_COOLDOWN_MS) {
           return;
         }
+
+        if (ws.__sttInFlight) {
+          return;
+        }
+
+        const combined = Buffer.concat(sttBuffers);
+        sttBuffers = [];
+        ws.__sttBufferBytes = 0;
+
+        if (!combined.length) {
+          return;
+        }
+
+        const audioCheck = hasEnoughCallerAudio(combined);
+        if (!audioCheck.ok) {
+          pushTwilioDebug("stt_audio_skipped", {
+            callSid: activeCallSid,
+            streamSid: activeStreamSid,
+            reason: audioCheck.reason,
+            bytes: combined.length,
+            rms: audioCheck.stats.rms,
+            peak: audioCheck.stats.peak,
+            voicedSamples: audioCheck.stats.voicedSamples,
+          });
+          return;
+        }
+
         lastResponseAt = now;
+        ws.__sttInFlight = true;
 
         let userText = "";
         try {
-          const combined = Buffer.concat(sttBuffers);
-          sttBuffers = [];
-
           pushTwilioDebug("stt_begin", {
             callSid: activeCallSid,
             streamSid: activeStreamSid,
             bufferedBytes: combined.length,
             languageCode: tenantLangCode,
+            rms: audioCheck.stats.rms,
+            peak: audioCheck.stats.peak,
+            voicedSamples: audioCheck.stats.voicedSamples,
           });
 
           userText = await transcribeMulaw(combined, {
             languageCode: tenantLangCode,
           });
+
           console.log("🧪 STT FINAL TEXT:", JSON.stringify(userText));
 
           console.log("📝 [stt] Raw transcript result:", {
@@ -891,14 +1088,6 @@ async function handleTwilioStream(ws, req) {
             text: userText,
             length: String(userText || "").length,
           });
-
-          if (!userText || userText.trim().length === 0) {
-            console.warn("⚠️ [STT ISSUE] Empty transcript detected", {
-              callSid: activeCallSid,
-              bufferedBytes: combined.length,
-              languageCode: tenantLangCode,
-            });
-          }
 
           pushTwilioDebug("stt_return", {
             callSid: activeCallSid,
@@ -915,35 +1104,38 @@ async function handleTwilioStream(ws, req) {
             error: sttErr.message,
           });
           userText = "";
+        } finally {
+          ws.__sttInFlight = false;
         }
 
-        userText = normalizeIncomingVoiceText(userText);
+        if (isPlaybackLocked(ws)) {
+          pushTwilioDebug("stt_result_ignored_playback_lock", {
+            callSid: activeCallSid,
+            streamSid: activeStreamSid,
+          });
+          return;
+        }
+
         const cleanedText = normalizeIncomingVoiceText(userText);
-        
 
-        console.log("🚫 REJECTED TEXT:", cleanedText);
+        if (!isMeaningfulTranscript(cleanedText)) {
+          pushTwilioDebug("stt_invalid_skipped", {
+            callSid: activeCallSid,
+            raw: userText,
+            cleaned: cleanedText,
+            ignoredDuringPlayback: isPlaybackLocked(ws),
+          });
+          return;
+        }
 
-        if (!cleanedText || cleanedText.length < 2) {
-  pushTwilioDebug("stt_invalid_skipped", {
-    callSid: activeCallSid,
-    raw: userText,
-    cleaned: cleanedText,
-    ignoredDuringPlayback: isPlaybackLocked(ws),
-  });
-
-  // Do not speak a fallback here.
-  // Empty STT right after ACA speech can be self-hearing / noise / silence.
-  return;
-}
-
-        console.log(`👂  Heard (Call ${activeCallSid}):`, userText);
+        console.log(`👂  Heard (Call ${activeCallSid}):`, cleanedText);
 
         handleTranscriptPartial(activeCallSid, cleanedText);
 
         if (ws.__pendingVoiceTranscript) {
-          ws.__pendingVoiceTranscript = `${ws.__pendingVoiceTranscript} ${userText}`.trim();
+          ws.__pendingVoiceTranscript = `${ws.__pendingVoiceTranscript} ${cleanedText}`.trim();
         } else {
-          ws.__pendingVoiceTranscript = userText;
+          ws.__pendingVoiceTranscript = cleanedText;
         }
 
         const previousInputAt = ws.__lastVoiceInputAt || 0;
@@ -953,9 +1145,10 @@ async function handleTwilioStream(ws, req) {
 
         clearPendingVoiceTurn(ws);
 
-        const adjustedDelay = previousInputAt > 0
-          ? Math.max(180, VOICE_TURN_SILENCE_MS - Math.min(deltaFromPreviousInput, 250))
-          : VOICE_TURN_SILENCE_MS;
+        const adjustedDelay =
+          previousInputAt > 0
+            ? Math.max(350, VOICE_TURN_SILENCE_MS - Math.min(deltaFromPreviousInput, 200))
+            : VOICE_TURN_SILENCE_MS;
 
         ws.__voiceTurnTimer = setTimeout(async () => {
           try {
@@ -968,6 +1161,7 @@ async function handleTwilioStream(ws, req) {
                 callSid: activeCallSid,
                 streamSid: activeStreamSid,
               });
+              ws.__pendingVoiceTranscript = "";
               return;
             }
 
@@ -1014,6 +1208,8 @@ async function handleTwilioStream(ws, req) {
           callSid: data?.stop?.callSid || activeCallSid,
         });
         streamActive = false;
+        sttBuffers = [];
+        ws.__sttBufferBytes = 0;
         clearPendingVoiceTurn(ws);
         endPlaybackLock(ws, activeCallSid, activeStreamSid, "stream_stop");
         handleCallEnded(activeCallSid);
@@ -1039,6 +1235,8 @@ async function handleTwilioStream(ws, req) {
     );
     console.log("⚡  Twilio WebSocket disconnected");
     streamActive = false;
+    sttBuffers = [];
+    ws.__sttBufferBytes = 0;
     endPlaybackLock(ws, activeCallSid, activeStreamSid, "ws_close");
     handleCallEnded(activeCallSid);
   });
@@ -1049,4 +1247,3 @@ module.exports = {
   handleTwilioStream,
   getTwilioDebugState,
 };
-
