@@ -299,14 +299,41 @@ function createInitialWorkflowState({ schema, existingWorkflow } = {}) {
   });
 }
 
+function computeWorkflowState({ clusterSchema, session, extraction }) {
+  const existingWorkflow = session?.workflow || {};
+
+  const extractedSlots =
+    extraction?.slots ||
+    extraction?.extractedSlots ||
+    {};
+
+  const updated = updateWorkflowState({
+    workflow: {
+      ...existingWorkflow,
+      slots: session?.slots || {},
+      workflowStatus: session?.workflowStatus || "collecting"
+    },
+    schema: clusterSchema,
+    extractedSlots,
+    callerText: extraction?.utterance || ""
+  });
+
+  return {
+    intent: extraction?.intent || session?.active_intent || null,
+    slots: updated.slots || {},
+    nextMissingSlot: updated.nextMissingSlot || null,
+    workflowStatus: updated.workflowStatus || "collecting",
+    confirmationSummary: updated.confirmationSummary || ""
+  };
+}
 module.exports = {
   createInitialWorkflowState,
   updateWorkflowState,
+  computeWorkflowState,   // ✅ CRITICAL FIX
   mergeSlots,
   getMissingSlots,
   buildConfirmationSummary,
 
-  // backward-friendly aliases
   advanceWorkflowState: updateWorkflowState,
   resolveWorkflowState: updateWorkflowState
 };
