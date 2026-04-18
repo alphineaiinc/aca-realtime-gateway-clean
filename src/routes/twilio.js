@@ -1821,7 +1821,7 @@ return;
     endPlaybackLock(ws, activeCallSid, activeStreamSid, "ws_close");
     handleCallEnded(activeCallSid);
   });
-}
+
 
 module.exports = {
   router,
