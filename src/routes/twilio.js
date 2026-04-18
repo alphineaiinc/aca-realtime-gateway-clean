@@ -45,6 +45,12 @@ const VOICE_MIN_AUDIO_RMS = Number(process.env.VOICE_MIN_AUDIO_RMS || 180);
 const VOICE_MIN_AUDIO_PEAK = Number(process.env.VOICE_MIN_AUDIO_PEAK || 900);
 const VOICE_MIN_VOICED_SAMPLES = Number(process.env.VOICE_MIN_VOICED_SAMPLES || 24);
 
+const VOICE_MIN_BUFFER_BYTES_FOR_STT = Number(
+  process.env.VOICE_MIN_BUFFER_BYTES_FOR_STT || 1600
+);
+
+ws.__sttBufferBytes = (ws.__sttBufferBytes || 0) + payloadBuffer.length;
+
 const DEFAULT_TENANT_BUSINESS_TYPE = String(
   process.env.DEFAULT_TENANT_BUSINESS_TYPE || "generic"
 )
@@ -1030,6 +1036,10 @@ async function handleTwilioStream(ws, req) {
 
         sttBuffers.push(payloadBuffer);
         ws.__sttBufferBytes = (ws.__sttBufferBytes || 0) + payloadBuffer.length;
+
+        if ((ws.__sttBufferBytes || 0) < VOICE_MIN_BUFFER_BYTES_FOR_STT) {
+  return;
+}
 
         const now = Date.now();
         if (now - lastResponseAt < VOICE_STT_COOLDOWN_MS) {
