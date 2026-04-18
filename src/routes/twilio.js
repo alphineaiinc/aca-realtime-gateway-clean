@@ -982,6 +982,47 @@ async function handleTwilioStream(ws, req) {
     const session = getCurrentSession();
     const expectedSlot = session?.lastAskedSlot || null;
 
+    if (/^(my name is|i am|this is)$/i.test(finalVoiceText.trim())) {
+  pushTwilioDebug("dispatch_skipped_incomplete", {
+    callSid: activeCallSid,
+    text: finalVoiceText,
+    reason: "incomplete_identity_phrase",
+    expectedSlot,
+  });
+
+  clearPendingVoiceTurn(ws);
+
+  ws.__voiceTurnTimer = setTimeout(async () => {
+    try {
+      if (isPlaybackLocked(ws)) {
+        pushTwilioDebug("dispatch_ignored_playback", {
+          callSid: activeCallSid,
+          streamSid: activeStreamSid,
+        });
+        ws.__pendingVoiceTranscript = "";
+        ws.__pendingVoiceTranscriptStartedAt = 0;
+        return;
+      }
+
+      await dispatchPendingVoiceTurn();
+    } catch (err) {
+      console.error(
+        `${VOICE_LOG_PREFIX} dispatch_error`,
+        JSON.stringify({
+          callSid: activeCallSid,
+          error: err?.message || String(err),
+        })
+      );
+      pushTwilioDebug("dispatch_error", {
+        callSid: activeCallSid,
+        error: err?.message || String(err),
+      });
+    }
+  }, 900);
+
+  return;
+}
+
  if (shouldWaitForMoreSpeech(ws, expectedSlot)) {
   pushTwilioDebug("dispatch_skipped_incomplete", {
     callSid: activeCallSid,
@@ -1034,27 +1075,75 @@ async function handleTwilioStream(ws, req) {
     }
 
     const normalized = finalVoiceText.trim();
-    const words = normalized.split(/\s+/).filter(Boolean);
-    const wordCount = words.length;
+const words = normalized.split(/\s+/).filter(Boolean);
+const wordCount = words.length;
 
-    const looksUnfinished =
-      /(?:\b(and|or|for|with|to|at|on|in|my|the|a|an)\s*)$/i.test(normalized) ||
-      /^(i|i'm|i am|hi|hello|yeah|yes|no|please)$/i.test(normalized) ||
-      (/^[a-z]+$/i.test(normalized) && wordCount === 1);
+const looksUnfinished =
+  /(?:\b(and|or|for|with|to|at|on|in|my|the|a|an)\s*)$/i.test(normalized) ||
+  /^(i|i'm|i am|hi|hello|yeah|yes|no|please)$/i.test(normalized) ||
+  (/^[a-z]+$/i.test(normalized) && wordCount === 1) ||
+  /^(my name is|i am|this is)$/i.test(normalized) ||
+  /^(that is what|which is|is it)$/i.test(normalized);
 
-    const looksTooShortForFreeTurn = wordCount < 3 && normalized.length < 12;
+const looksTooShortForFreeTurn =
+  wordCount < 3 &&
+  normalized.length < 12 &&
+  !isValidSlotValue(normalized);
 
-    if (!expectedSlot && (looksUnfinished || looksTooShortForFreeTurn)) {
-      pushTwilioDebug("dispatch_skipped_incomplete", {
-        callSid: activeCallSid,
-        text: finalVoiceText,
-        reason: looksUnfinished ? "unfinished_free_turn" : "too_short_free_turn",
-        expectedSlot,
-      });
-      return;
-    }
+if (!expectedSlot && (looksUnfinished || looksTooShortForFreeTurn)) {
+  pushTwilioDebug("dispatch_skipped_incomplete", {
+    callSid: activeCallSid,
+    text: finalVoiceText,
+    reason: looksUnfinished ? "unfinished_free_turn" : "too_short_free_turn",
+    expectedSlot,
+  });
 
-if (isWeakFragment(finalVoiceText)) {
+  ws.__pendingVoiceTranscriptStartedAt =
+    ws.__pendingVoiceTranscriptStartedAt || Date.now();
+
+  const pendingAgeMs = Date.now() - ws.__pendingVoiceTranscriptStartedAt;
+
+  if (pendingAgeMs >= 1800) {
+    // allow dispatch after enough wait
+  } else {
+    clearPendingVoiceTurn(ws);
+
+    ws.__voiceTurnTimer = setTimeout(async () => {
+      try {
+        if (isPlaybackLocked(ws)) {
+          pushTwilioDebug("dispatch_ignored_playback", {
+            callSid: activeCallSid,
+            streamSid: activeStreamSid,
+          });
+          ws.__pendingVoiceTranscript = "";
+          ws.__pendingVoiceTranscriptStartedAt = 0;
+          return;
+        }
+
+        await dispatchPendingVoiceTurn();
+      } catch (err) {
+        console.error(
+          `${VOICE_LOG_PREFIX} dispatch_error`,
+          JSON.stringify({
+            callSid: activeCallSid,
+            error: err?.message || String(err),
+          })
+        );
+        pushTwilioDebug("dispatch_error", {
+          callSid: activeCallSid,
+          error: err?.message || String(err),
+        });
+      }
+    }, 450);
+
+    return;
+  }
+}
+
+if (
+  isWeakFragment(finalVoiceText) ||
+  /^(that is what|which is|is it|confer|okay|so|yeah)$/i.test(finalVoiceText.trim())
+) {
   pushTwilioDebug("dispatch_skipped_incomplete", {
     callSid: activeCallSid,
     text: finalVoiceText,
@@ -1526,26 +1615,46 @@ ws.__pendingVoiceTranscriptStartedAt = 0;
         handleTranscriptPartial(activeCallSid, cleanedText);
         noteTranscriptStability(ws, cleanedText);
 
-        const mergeCanonicalText = cleanedText.replace(/[.,!?]+$/g, "").trim();
+ const mergeCanonicalText = cleanedText.replace(/[.,!?]+$/g, "").trim();
 const pendingCanonical = String(ws.__pendingVoiceTranscript || "")
   .replace(/[.,!?]+$/g, "")
+  .trim();
+
+const normalizedMergeCanonicalText = mergeCanonicalText
+  .replace(/\bclock\b/gi, "")
+  .replace(/\beven\b/gi, "evening")
+  .replace(/\s+/g, " ")
   .trim();
 
 const pendingWordCount = pendingCanonical.split(/\s+/).filter(Boolean).length;
 
 const isDateOrTimeFragment =
-  /^(am|pm)$/i.test(mergeCanonicalText) ||
-  /^\d{1,2}$/.test(mergeCanonicalText) ||
-  /^(today|tomorrow|monday|tuesday|wednesday|thursday|friday|saturday|sunday)$/i.test(mergeCanonicalText) ||
-  /^(jan|january|feb|february|mar|march|apr|april|may|jun|june|jul|july|aug|august|sep|sept|september|oct|october|nov|november|dec|december)$/i.test(mergeCanonicalText) ||
-  /^(in the morning|in the evening|at night)$/i.test(mergeCanonicalText);
+  /^(am|pm)$/i.test(normalizedMergeCanonicalText) ||
+  /^\d{1,2}$/.test(normalizedMergeCanonicalText) ||
+  /^(today|tomorrow|monday|tuesday|wednesday|thursday|friday|saturday|sunday)$/i.test(
+    normalizedMergeCanonicalText
+  ) ||
+  /^(jan|january|feb|february|mar|march|apr|april|may|jun|june|jul|july|aug|august|sep|sept|september|oct|october|nov|november|dec|december)$/i.test(
+    normalizedMergeCanonicalText
+  ) ||
+  /^(in the morning|in the evening|at night|evening)$/i.test(
+    normalizedMergeCanonicalText
+  );
 
 const pendingLooksDateOrTimeLike =
   /^\d{1,2}(:\d{2})?$/i.test(pendingCanonical) ||
-  /^(today|tomorrow|monday|tuesday|wednesday|thursday|friday|saturday|sunday)$/i.test(pendingCanonical) ||
-  /^(jan|january|feb|february|mar|march|apr|april|may|jun|june|jul|july|aug|august|sep|sept|september|oct|october|nov|november|dec|december)$/i.test(pendingCanonical) ||
-  /\b(today|tomorrow|monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b/i.test(pendingCanonical) ||
-  /\b(jan|january|feb|february|mar|march|apr|april|may|jun|june|jul|july|aug|august|sep|sept|september|oct|october|nov|november|dec|december)\b/i.test(pendingCanonical);
+  /^(today|tomorrow|monday|tuesday|wednesday|thursday|friday|saturday|sunday)$/i.test(
+    pendingCanonical
+  ) ||
+  /^(jan|january|feb|february|mar|march|apr|april|may|jun|june|jul|july|aug|august|sep|sept|september|oct|october|nov|november|dec|december)$/i.test(
+    pendingCanonical
+  ) ||
+  /\b(today|tomorrow|monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b/i.test(
+    pendingCanonical
+  ) ||
+  /\b(jan|january|feb|february|mar|march|apr|april|may|jun|june|jul|july|aug|august|sep|sept|september|oct|october|nov|november|dec|december)\b/i.test(
+    pendingCanonical
+  );
 
 const shouldAppendToExisting =
   !pendingCanonical
@@ -1556,7 +1665,7 @@ const shouldAppendToExisting =
         ? true
         : pendingWordCount >= 2
           ? true
-          : mergeCanonicalText.length > 3;
+          : normalizedMergeCanonicalText.length > 3;
 
 if (!ws.__pendingVoiceTranscriptStartedAt) {
   ws.__pendingVoiceTranscriptStartedAt = Date.now();
@@ -1564,9 +1673,9 @@ if (!ws.__pendingVoiceTranscriptStartedAt) {
 
 if (pendingCanonical && shouldAppendToExisting) {
   ws.__pendingVoiceTranscript =
-    `${ws.__pendingVoiceTranscript} ${mergeCanonicalText}`.trim();
+    `${ws.__pendingVoiceTranscript} ${normalizedMergeCanonicalText}`.trim();
 } else {
-  ws.__pendingVoiceTranscript = mergeCanonicalText;
+  ws.__pendingVoiceTranscript = normalizedMergeCanonicalText;
   ws.__pendingVoiceTranscriptStartedAt = Date.now();
 }
 
