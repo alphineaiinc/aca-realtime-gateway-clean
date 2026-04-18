@@ -27,7 +27,7 @@ require("dotenv").config({ path: path.resolve(__dirname, "../../.env") });
 console.log("🧩 [twilio->tts] resolved module:", require.resolve("../../tts"));
 console.log("🧩 [twilio->tts] typeof synthesizeSpeech:", typeof synthesizeSpeech);
 
-const VOICE_TURN_SILENCE_MS = Number(process.env.VOICE_TURN_SILENCE_MS || 1200);
+const VOICE_TURN_SILENCE_MS = Number(process.env.VOICE_TURN_SILENCE_MS || 550);
 const VOICE_MIN_UTTERANCE_CHARS = Number(process.env.VOICE_MIN_UTTERANCE_CHARS || 3);
 const VOICE_MAX_REPLY_CHARS = Number(process.env.VOICE_MAX_REPLY_CHARS || 220);
 const VOICE_LOG_PREFIX = "[twilio_voice_intel]";
@@ -38,7 +38,7 @@ const DEFAULT_TENANT_BUSINESS_TYPE = String(
   .trim()
   .toLowerCase();
 
-const VOICE_PLAYBACK_TAIL_MS = Number(process.env.VOICE_PLAYBACK_TAIL_MS || 700);
+const VOICE_PLAYBACK_TAIL_MS = Number(process.env.VOICE_PLAYBACK_TAIL_MS || 200);
 const VOICE_PLAYBACK_PADDING_MS = Number(process.env.VOICE_PLAYBACK_PADDING_MS || 250);
 const TWILIO_MULAW_BYTES_PER_SEC = 8000;
 
@@ -170,7 +170,7 @@ function beginPlaybackLock(ws, activeCallSid, activeStreamSid, ttsBuffer, branch
   const playback = ensurePlaybackState(ws);
   playback.active = true;
   playback.lastMediaSentAt = Date.now();
-  playback.ignoreInboundUntil = Date.now() + 1500;
+  playback.ignoreInboundUntil = Date.now() + 300;
 
   clearPendingVoiceTurn(ws);
   ws.__pendingVoiceTranscript = "";
@@ -958,7 +958,7 @@ console.log("🧭 [twilio] resolved routing meta:", ws.__routingMeta);
         sttBuffers.push(payloadBuffer);
 
         const now = Date.now();
-        const COOLDOWN_MS = 1000;
+        const COOLDOWN_MS = 250;
         if (now - lastResponseAt < COOLDOWN_MS) {
           return;
         }
@@ -1037,6 +1037,9 @@ console.log("🧭 [twilio] resolved routing meta:", ws.__routingMeta);
 
         clearPendingVoiceTurn(ws);
 
+        const timeSinceLastInput = Date.now() - ws.__lastVoiceInputAt;
+const adjustedDelay = Math.max(100, VOICE_TURN_SILENCE_MS - timeSinceLastInput);
+
         ws.__voiceTurnTimer = setTimeout(async () => {
           try {
             if (isPlaybackLocked(ws)) {
@@ -1065,7 +1068,7 @@ console.log("🧭 [twilio] resolved routing meta:", ws.__routingMeta);
               error: err?.message || String(err),
             });
           }
-        }, VOICE_TURN_SILENCE_MS);
+        }, adjustedDelay);
       } else if (data.event === "mark") {
         const playback = ensurePlaybackState(ws);
         const markName = data.mark && data.mark.name;
