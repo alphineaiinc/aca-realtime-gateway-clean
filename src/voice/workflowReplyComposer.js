@@ -177,13 +177,17 @@ async function composeReply({
     return cleaned;
   }
 
-  const nextMissingSlot = state.nextMissingSlot || null;
+   const nextMissingSlot = state.nextMissingSlot || null;
   if (nextMissingSlot) {
     return buildDeterministicQuestion(nextMissingSlot, schema);
   }
 
+  const knownSlots = Object.keys(state.slots || {}).filter((k) => isNonEmptyString(state.slots[k]));
+  if (knownSlots.length > 0) {
+    return "Got it. What’s the next detail I should note down?";
+  }
+
   return "Could you say that one more time?";
-}
 
 module.exports = {
   composeReply,

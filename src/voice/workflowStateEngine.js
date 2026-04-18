@@ -319,12 +319,17 @@ function computeWorkflowState({ clusterSchema, session, extraction } = {}) {
     extraction?.extractedSlots ||
     extraction?.workflowSlots ||
     extraction?.slotValues ||
+    extraction?.filledSlots ||
+    extraction?.collectedSlots ||
+    extraction?.entities ||
+    extraction?.arguments ||
     {};
 
   const extractedRequiredSlots =
     extraction?.requiredSlots ||
     extraction?.workflowRequiredSlots ||
     extraction?.intentSchema?.requiredSlots ||
+    extraction?.schema?.requiredSlots ||
     [];
 
   const schemaRequiredSlots = getRequiredSlots(schema, {});
@@ -345,21 +350,38 @@ function computeWorkflowState({ clusterSchema, session, extraction } = {}) {
       requiredSlots
     },
     extractedSlots,
-    callerText: extraction?.utterance || session?.lastCallerText || "",
+    callerText:
+      extraction?.utterance ||
+      extraction?.text ||
+      extraction?.userText ||
+      session?.lastCallerText ||
+      "",
     now: Date.now()
   });
+
+  // If we still have no requiredSlots but we did extract some slots,
+  // do not fall into a dead generic loop. Stay collecting and expose no confirmation.
+  const hasAnySlots = Object.keys(workflow.slots || {}).length > 0;
+  const hasRequiredSlots = Array.isArray(workflow.requiredSlots) && workflow.requiredSlots.length > 0;
+
+  let workflowStatus = workflow.workflowStatus || "collecting";
+  if (!hasRequiredSlots && hasAnySlots) {
+    workflowStatus = "collecting";
+  }
 
   return {
     intent:
       extraction?.intent ||
       extraction?.active_intent ||
+      extraction?.workflow ||
       session?.active_intent ||
       null,
     slots: workflow.slots || {},
     nextMissingSlot: workflow.nextMissingSlot || null,
     missingSlots: workflow.missingSlots || [],
-    workflowStatus: workflow.workflowStatus || "collecting",
-    confirmationSummary: workflow.confirmationSummary || "",
+    workflowStatus,
+    confirmationSummary:
+      hasRequiredSlots ? (workflow.confirmationSummary || "") : "",
     requiredSlots: workflow.requiredSlots || []
   };
 }
