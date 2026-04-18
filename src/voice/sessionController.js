@@ -450,16 +450,26 @@ async function handleCallerTurn({ callSid, businessId = null, transcript, meta =
     };
   }
 
-  session.active_intent = workflowState.intent || null;
-  session.workflow = workflowState.intent || null;
- const newSlots = workflowState.slots || {};
+ session.active_intent = workflowState.intent || null;
+session.workflow = workflowState.intent || null;
 
-// Merge instead of overwrite
+const newSlots = workflowState.slots || {};
+const cleanedNewSlots = Object.fromEntries(
+  Object.entries(newSlots).filter(([_, value]) => {
+    return value !== null && value !== undefined && String(value).trim().length > 0;
+  })
+);
+
+// Merge instead of overwrite, but do not let empty values wipe existing slots
 session.slots = {
   ...session.slots,
-  ...newSlots,
+  ...cleanedNewSlots,
 };
-  session.workflowSlots = workflowState.slots || {};
+
+session.workflowSlots = {
+  ...(session.workflowSlots || {}),
+  ...cleanedNewSlots,
+};
   if (workflowState.nextMissingSlot !== session.lastAskedSlot) {
   session.lastAskedSlot = workflowState.nextMissingSlot || null;
 }
