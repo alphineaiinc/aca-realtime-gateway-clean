@@ -1098,15 +1098,15 @@ if (stillGrowing && stableAgeMs < 450) {
   return;
 }
 const noiseWords = finalVoiceText.trim().split(/\s+/).filter(Boolean);
+const normalized = finalVoiceText.trim();
 
 // 🔥 NEW: detect phone-like numbers
-const looksLikePhoneNumber =
-  /(?:\+?\d[\d\s()-]{6,}\d)/.test(finalVoiceText);
+
 
 // reject very short garbage unless it is valid slot OR phone number
 const looksLikePhoneNumber =
-  /(?:\+?\d[\d\s()-]{6,}\d)/.test(finalVoiceText) ||
-  /^\d{7,}$/.test(finalVoiceText);
+  /(?:\+?\d[\d\s()-]{6,}\d)/.test(normalized) ||
+  /^\d{7,}$/.test(normalized);
 
 if (
   noiseWords.length < 3 &&
@@ -1161,7 +1161,7 @@ if (
       return;
     }
 
- const normalized = finalVoiceText.trim();
+ 
 const words = normalized.split(/\s+/).filter(Boolean);
 const wordCount = words.length;
 
@@ -1180,10 +1180,6 @@ const looksUnfinished =
   (/^[a-z]+$/i.test(normalized) && wordCount === 1) ||
   /^(my name is|i am|this is)$/i.test(normalized) ||
   /^(that is what|which is|is it)$/i.test(normalized);
-
-const looksLikePhoneNumber =
-  /(?:\+?\d[\d\s()-]{6,}\d)/.test(normalized) ||
-  /^\d{7,}$/.test(normalized);
 
 const looksTooShortForFreeTurn =
   wordCount < 3 &&
@@ -1816,11 +1812,10 @@ return;
         });
         
         streamActive = false;
-        sttBuffers = [];
-        ws.__sttBufferBytes = 0;
-        clearPendingVoiceTurn(ws);
-        endPlaybackLock(ws, activeCallSid, activeStreamSid, "stream_stop");
-        handleCallEnded(activeCallSid);
+ws.__sttBufferBytes = 0;
+clearPendingVoiceTurn(ws);
+endPlaybackLock(ws, activeCallSid, activeStreamSid, "stream_stop");
+handleCallEnded(activeCallSid);
       }
     } catch (err) {
       console.error("❌  Stream error:", err);
@@ -1847,10 +1842,9 @@ return;
     );
     console.log("⚡  Twilio WebSocket disconnected");
     streamActive = false;
-    sttBuffers = [];
-    ws.__sttBufferBytes = 0;
-    endPlaybackLock(ws, activeCallSid, activeStreamSid, "ws_close");
-    handleCallEnded(activeCallSid);
+ws.__sttBufferBytes = 0;
+endPlaybackLock(ws, activeCallSid, activeStreamSid, "ws_close");
+handleCallEnded(activeCallSid);
   });
 }
 
