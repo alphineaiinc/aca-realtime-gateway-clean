@@ -771,6 +771,8 @@ ws.__lastSpeechStartAt = 0;
 ws.__lastSpeechEndAt = 0;
 ws.__pendingPhoneChunks = [];
 ws.__pendingPhoneStartedAt = 0;
+ws.__pendingPhoneLastSource = "";
+
 ensurePlaybackState(ws);
 
   function getOpenExpectedSlot() {
@@ -1045,23 +1047,40 @@ function shouldCollectPhoneChunks(text, expectedSlot) {
         const session = getCurrentSession();
     const expectedSlot = session?.lastAskedSlot || null;
 
-    const phoneDigits = extractDigitsOnly(finalVoiceText);
+    const expectsPhoneSlot =
+  expectedSlot && String(expectedSlot).toLowerCase().includes("phone");
 
-// start or continue phone chunk capture
-if (shouldCollectPhoneChunks(finalVoiceText, expectedSlot)) {
+const phoneDigits = extractDigitsOnly(finalVoiceText);
+const phoneCollectionActive =
+  ws.__pendingPhoneStartedAt &&
+  Date.now() - ws.__pendingPhoneStartedAt < 3500;
+
+const shouldHandlePhoneChunks =
+  (expectsPhoneSlot && phoneDigits.length > 0) ||
+  (isPhoneIntroPhrase(finalVoiceText) && phoneDigits.length > 0) ||
+  (phoneCollectionActive && isShortPhoneChunk(finalVoiceText));
+
+if (shouldHandlePhoneChunks) {
   if (!ws.__pendingPhoneStartedAt) {
     ws.__pendingPhoneStartedAt = Date.now();
   }
 
-  if (phoneDigits) {
+  const sourceKey = `${finalVoiceText}__${phoneDigits}`;
+
+  if (phoneDigits && ws.__pendingPhoneLastSource !== sourceKey) {
     ws.__pendingPhoneChunks.push(phoneDigits);
+    ws.__pendingPhoneLastSource = sourceKey;
   }
 
-  const mergedPhone = ws.__pendingPhoneChunks.join("");
+  let mergedPhone = ws.__pendingPhoneChunks.join("");
+
+  if (mergedPhone.length === 11 && mergedPhone.startsWith("1")) {
+    mergedPhone = mergedPhone.slice(1);
+  }
+
   const ageMs = Date.now() - ws.__pendingPhoneStartedAt;
 
-  // wait briefly for more chunks if number still incomplete
-  if (mergedPhone.length < 10 && ageMs < 2500) {
+  if (mergedPhone.length < 10 && ageMs < 3000) {
     pushTwilioDebug("dispatch_skipped_incomplete", {
       callSid: activeCallSid,
       text: finalVoiceText,
@@ -1077,11 +1096,10 @@ if (shouldCollectPhoneChunks(finalVoiceText, expectedSlot)) {
     return;
   }
 
-  // once enough digits collected, replace transcript with merged number
- if (mergedPhone.length >= 10) {
-  ws.__pendingVoiceTranscript = mergedPhone;
-  finalVoiceText = mergedPhone;
-}
+  if (mergedPhone.length >= 10) {
+    ws.__pendingVoiceTranscript = mergedPhone;
+    finalVoiceText = mergedPhone;
+  }
 }
 
     if (/^(my name is|i am|this is)$/i.test(finalVoiceText.trim())) {
@@ -1335,10 +1353,13 @@ if (
     expectedSlot,
   });
 
-  ws.__pendingVoiceTranscript = "";
-  ws.__pendingVoiceTranscriptStartedAt = 0;
-  ws.__lastStableTranscript = "";
-  ws.__lastStableTranscriptAt = 0;
+ ws.__pendingVoiceTranscript = "";
+ws.__pendingVoiceTranscriptStartedAt = 0;
+ws.__lastStableTranscript = "";
+ws.__lastStableTranscriptAt = 0;
+ws.__pendingPhoneChunks = [];
+ws.__pendingPhoneStartedAt = 0;
+ws.__pendingPhoneLastSource = "";
 
   return;
 }
@@ -1504,6 +1525,7 @@ await synthesizeAndSendReply(
 ws.__streamingFinal = "";
 ws.__pendingPhoneChunks = [];
 ws.__pendingPhoneStartedAt = 0;
+ws.__pendingPhoneLastSource = "";
     } finally {
       ws.__dispatchInFlight = false;
     }
@@ -1653,6 +1675,7 @@ ws.__lastSpeechStartAt = 0;
 ws.__lastSpeechEndAt = 0;
 ws.__pendingPhoneChunks = [];
 ws.__pendingPhoneStartedAt = 0;
+ws.__pendingPhoneLastSource = "";
 
 ws.__sttStream = createStreamingTranscriber({
   languageCode: tenantLangCode,
