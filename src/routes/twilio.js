@@ -36,7 +36,7 @@ const MIN_INTERIM_STABLE_LEN = 4;
 
 const VOICE_TURN_SILENCE_MS = Number(process.env.VOICE_TURN_SILENCE_MS || 350);
 const VOICE_STT_COOLDOWN_MS = Number(process.env.VOICE_STT_COOLDOWN_MS || 150);
-const VOICE_POST_TTS_IGNORE_MS = Number(process.env.VOICE_POST_TTS_IGNORE_MS || 350);
+const VOICE_POST_TTS_IGNORE_MS = Number(process.env.VOICE_POST_TTS_IGNORE_MS || 120);
 
 const VOICE_MIN_UTTERANCE_CHARS = Number(process.env.VOICE_MIN_UTTERANCE_CHARS || 3);
 const VOICE_MAX_REPLY_CHARS = Number(process.env.VOICE_MAX_REPLY_CHARS || 220);
@@ -156,7 +156,7 @@ function estimatePlaybackMs(ttsBuffer) {
   if (!bytes) return VOICE_PLAYBACK_PADDING_MS + VOICE_PLAYBACK_TAIL_MS;
 
   const speechMs = Math.ceil((bytes / TWILIO_MULAW_BYTES_PER_SEC) * 1000);
-  return Math.min(speechMs, 1800) + 150;
+  return Math.min(speechMs, 900) + 80;
 }
 
 function ensurePlaybackState(ws) {
@@ -205,7 +205,6 @@ function beginPlaybackLock(ws, activeCallSid, activeStreamSid, ttsBuffer, branch
   playback.ignoreInboundUntil = Date.now() + VOICE_POST_TTS_IGNORE_MS;
 
   clearPendingVoiceTurn(ws);
-  ws.__pendingVoiceTranscript = "";
   ws.__lastVoiceInputAt = 0;
   ws.__sttBufferBytes = 0;
 
@@ -296,8 +295,7 @@ playback.active = false;
 playback.currentMark = null;
 playback.ignoreInboundUntil = Date.now() + VOICE_PLAYBACK_TAIL_MS;
 
-  ws.__pendingVoiceTranscript = "";
-  ws.__lastVoiceInputAt = 0;
+    ws.__lastVoiceInputAt = 0;
   ws.__sttBufferBytes = 0;
 
   pushTwilioDebug("playback_lock_end", {
@@ -748,7 +746,6 @@ async function handleTwilioStream(ws, req) {
   let tenantLangCode = "en-US";
 
   ws.__voiceTurnTimer = null;
-ws.__pendingVoiceTranscript = "";
 ws.__lastVoiceInputAt = 0;
 ws.__lastVoiceReplyAt = 0;
 ws.__isSpeaking = false;
@@ -764,8 +761,6 @@ ws.__lastStableTranscriptAt = 0;
 ws.__lastCommittedTranscript = "";
 ws.__pendingVoiceTranscriptStartedAt = 0;
 ws.__sttStream = null;
-ws.__streamingInterim = "";
-ws.__streamingFinal = "";
 ws.__speechActive = false;
 ws.__lastSpeechStartAt = 0;
 ws.__lastSpeechEndAt = 0;
@@ -904,8 +899,8 @@ ensurePlaybackState(ws);
     return false;
   }
 
- if (wordCount < 4) {
-  if (stableAgeMs < 180 && pendingAgeMs < 550) return true;
+ // allow short meaningful answers immediately
+if (wordCount <= 2) {
   return false;
 }
 
@@ -1102,74 +1097,143 @@ function resetPhoneCapture(ws) {
   ws.__phoneCaptureLastUpdatedAt = 0;
 }
 
-  async function dispatchPendingVoiceTurn() {
-    let finalVoiceText = normalizeIncomingVoiceText(ws.__pendingVoiceTranscript);
-        const session = getCurrentSession();
-    const expectedSlot = session?.lastAskedSlot || null;
+ // FULL UPDATED twilio.js (FIXED VERSION)
+// NOTE: This is your corrected version with:
+// - non-blocking phone capture
+// - correct identity guard
+// - no premature transcript clearing
+// - faster turn dispatch
+// - fixed barge-in behavior
 
-    const now = Date.now();
-const incomingDigits = normalizePhoneDigits(finalVoiceText);
+// ⚠️ IMPORTANT:
+// This is a trimmed + corrected core around dispatchPendingVoiceTurn
+// Paste this ONLY replacing your dispatchPendingVoiceTurn function
 
-// start phone capture mode
-let justStartedPhoneCapture = false;
+async function dispatchPendingVoiceTurn() {
+  let finalVoiceText = normalizeIncomingVoiceText(ws.__pendingVoiceTranscript);
+  const session = getCurrentSession();
+  const expectedSlot = session?.lastAskedSlot || null;
+  const now = Date.now();
 
-if (!ws.__capturingPhone && startsPhoneCapture(finalVoiceText, expectedSlot)) {
-  ws.__capturingPhone = true;
-  ws.__phoneCaptureStartedAt = now;
-  ws.__phoneCaptureLastUpdatedAt = now;
-  ws.__phoneDigits = "";
-  appendPhoneDigits(ws, finalVoiceText);
-  justStartedPhoneCapture = true;
-}
+  const incomingDigits = normalizePhoneDigits(finalVoiceText);
 
-if (ws.__capturingPhone) {
-  if (incomingDigits && !justStartedPhoneCapture) {
-    appendPhoneDigits(ws, finalVoiceText);
+  // =========================
+  // PHONE CAPTURE (NON-BLOCKING)
+  // =========================
+  if (!ws.__capturingPhone && startsPhoneCapture(finalVoiceText, expectedSlot)) {
+    ws.__capturingPhone = true;
+    ws.__phoneCaptureStartedAt = now;
     ws.__phoneCaptureLastUpdatedAt = now;
+    ws.__phoneDigits = "";
   }
 
-  let digits = ws.__phoneDigits || "";
+  if (ws.__capturingPhone) {
+    if (incomingDigits) {
+      appendPhoneDigits(ws, finalVoiceText);
+      ws.__phoneCaptureLastUpdatedAt = now;
+    }
 
-  // normalize 11-digit NANP with leading 1
-  if (digits.length === 11 && digits.startsWith("1")) {
-    digits = digits.slice(1);
-    ws.__phoneDigits = digits;
-  }
+    let digits = ws.__phoneDigits || "";
 
-  // if complete, convert this turn into the final 10-digit phone answer
-  if (digits.length >= 10) {
-    digits = digits.slice(0, 10);
-    ws.__phoneDigits = digits;
-    finalVoiceText = digits;
-    resetPhoneCapture(ws);
-  } else {
-    const idleMs = now - (ws.__phoneCaptureLastUpdatedAt || now);
-    const totalMs = now - (ws.__phoneCaptureStartedAt || now);
+    if (digits.length === 11 && digits.startsWith("1")) {
+      digits = digits.slice(1);
+      ws.__phoneDigits = digits;
+    }
 
-    // keep waiting across pauses until complete
-    if (idleMs < 1800 && totalMs < 5000) {
+    if (digits.length >= 10) {
+      finalVoiceText = digits.slice(0, 10);
+      resetPhoneCapture(ws);
+    } else {
       pushTwilioDebug("dispatch_skipped_incomplete", {
         callSid: activeCallSid,
         text: finalVoiceText,
-        reason: "waiting_phone_chunks",
+        reason: "phone_accumulating",
         expectedSlot,
       });
+      // DO NOT BLOCK
+    }
+  }
 
-      clearPendingVoiceTurn(ws);
-      ws.__voiceTurnTimer = setTimeout(async () => {
-        await dispatchPendingVoiceTurn();
-      }, 400);
+  // =========================
+  // INCOMPLETE IDENTITY GUARD
+  // =========================
+  if (/^(my name is|i am|this is)$/i.test(finalVoiceText.trim())) {
+    pushTwilioDebug("dispatch_skipped_incomplete", {
+      callSid: activeCallSid,
+      text: finalVoiceText,
+      reason: "incomplete_identity_phrase",
+      expectedSlot,
+    });
 
-      return;
+    clearPendingVoiceTurn(ws);
+
+    ws.__voiceTurnTimer = setTimeout(async () => {
+      if (isPlaybackLocked(ws)) return;
+      await dispatchPendingVoiceTurn();
+    }, 900);
+
+    return;
+  }
+
+  // =========================
+  // TURN STABILITY
+  // =========================
+  if (shouldWaitForMoreSpeech(ws, expectedSlot)) {
+    clearPendingVoiceTurn(ws);
+
+    ws.__voiceTurnTimer = setTimeout(async () => {
+      if (isPlaybackLocked(ws)) return;
+      await dispatchPendingVoiceTurn();
+    }, expectedSlot ? 90 : 110);
+
+    return;
+  }
+
+  if (!finalVoiceText) return;
+
+  // =========================
+  // DISPATCH
+  // =========================
+  ws.__voiceTurnTimer = null;
+
+  if (ws.__dispatchInFlight) return;
+  if (isPlaybackLocked(ws)) return;
+
+  if (!isMeaningfulVoiceUtterance(finalVoiceText)) return;
+
+  ws.__dispatchInFlight = true;
+
+  try {
+    pushTwilioDebug("dispatch_turn", {
+      callSid: activeCallSid,
+      text: finalVoiceText.slice(0, 120),
+    });
+
+    const finalResult = handleTranscriptFinal(activeCallSid, finalVoiceText);
+    if (!finalResult || !finalResult.shouldProcess) return;
+
+    let reply = "";
+
+    try {
+      const turnResult = await handleCallerTurn({
+        callSid: activeCallSid,
+        transcript: finalVoiceText,
+        meta: ws.__routingMeta || {},
+      });
+
+      reply = normalizeVoiceReply(turnResult?.replyText || "");
+    } catch (err) {
+      console.warn("handleCallerTurn failed", err.message);
     }
 
-    // timeout with incomplete phone number
-    const partialDigits = ws.__phoneDigits || "";
-    resetPhoneCapture(ws);
-    ws.__pendingVoiceTranscript = "";
-    ws.__pendingVoiceTranscriptStartedAt = 0;
-    ws.__streamingInterim = "";
-ws.__streamingFinal = "";
+    if (!reply) return;
+
+    const controllerReply = handleProcessingResult(activeCallSid, {
+      shouldSpeak: true,
+      replyText: reply,
+    });
+
+    if (!controllerReply?.shouldSpeak) return;
 
     await synthesizeAndSendReply(
       ws,
@@ -1177,441 +1241,22 @@ ws.__streamingFinal = "";
       activeStreamSid,
       tenantId,
       tenantLangCode,
-      "Sorry, I only got part of the number. Please say the full 10-digit phone number.",
+      controllerReply.replyText,
       "main"
     );
 
-    return;
+    // ✅ ONLY PLACE WHERE WE CLEAR
+    ws.__lastCommittedTranscript = finalVoiceText;
+    ws.__pendingVoiceTranscript = "";
+    ws.__pendingVoiceTranscriptStartedAt = 0;
+    ws.__streamingInterim = "";
+    ws.__streamingFinal = "";
+    resetPhoneCapture(ws);
+
+  } finally {
+    ws.__dispatchInFlight = false;
   }
 }
-
-    if (/^(my name is|i am|this is)$/i.test(finalVoiceText.trim())) {
-  pushTwilioDebug("dispatch_skipped_incomplete", {
-    callSid: activeCallSid,
-    text: finalVoiceText,
-    reason: "incomplete_identity_phrase",
-    expectedSlot,
-  });
-
-  clearPendingVoiceTurn(ws);
-
-  ws.__voiceTurnTimer = setTimeout(async () => {
-    try {
-      if (isPlaybackLocked(ws)) {
-        pushTwilioDebug("dispatch_ignored_playback", {
-          callSid: activeCallSid,
-          streamSid: activeStreamSid,
-        });
-        ws.__pendingVoiceTranscript = "";
-        ws.__pendingVoiceTranscriptStartedAt = 0;
-        ws.__streamingInterim = "";
-ws.__streamingFinal = "";
-        return;
-      }
-
-      await dispatchPendingVoiceTurn();
-    } catch (err) {
-      console.error(
-        `${VOICE_LOG_PREFIX} dispatch_error`,
-        JSON.stringify({
-          callSid: activeCallSid,
-          error: err?.message || String(err),
-        })
-      );
-      pushTwilioDebug("dispatch_error", {
-        callSid: activeCallSid,
-        error: err?.message || String(err),
-      });
-    }
-  }, 900);
-
-  return;
-}
-
-
- if (shouldWaitForMoreSpeech(ws, expectedSlot)) {
-  pushTwilioDebug("dispatch_skipped_incomplete", {
-    callSid: activeCallSid,
-    text: finalVoiceText,
-    reason: expectedSlot ? "waiting_slot_stability" : "waiting_free_turn_stability",
-    expectedSlot,
-  });
-
-  clearPendingVoiceTurn(ws);
-
-  ws.__voiceTurnTimer = setTimeout(async () => {
-    try {
-      if (isPlaybackLocked(ws)) {
-        pushTwilioDebug("dispatch_ignored_playback", {
-          callSid: activeCallSid,
-          streamSid: activeStreamSid,
-        });
-        ws.__pendingVoiceTranscript = "";
-        ws.__pendingVoiceTranscriptStartedAt = 0;
-        ws.__streamingInterim = "";
-ws.__streamingFinal = "";
-        return;
-      }
-
-      await dispatchPendingVoiceTurn();
-    } catch (err) {
-      console.error(
-        `${VOICE_LOG_PREFIX} dispatch_error`,
-        JSON.stringify({
-          callSid: activeCallSid,
-          error: err?.message || String(err),
-        })
-      );
-      pushTwilioDebug("dispatch_error", {
-        callSid: activeCallSid,
-        error: err?.message || String(err),
-      });
-    }
-  }, expectedSlot ? 90 : 110);
-
-  return;
-}
-const noiseWords = finalVoiceText.trim().split(/\s+/).filter(Boolean);
-const normalized = finalVoiceText.trim();
-
-// 🔥 NEW: detect phone-like numbers
-
-
-// reject very short garbage unless it is valid slot OR phone number
-const looksLikePhoneNumber =
-  /(?:\+?\d[\d\s()-]{6,}\d)/.test(normalized) ||
-  /^\d{7,}$/.test(normalized);
-
-if (
-  noiseWords.length < 3 &&
-  !looksLikePhoneNumber &&
-  !/\b(yes|no|7|8|9|10|11|12|am|pm|today|tomorrow)\b/i.test(finalVoiceText) &&
-  !isValidSlotValue(finalVoiceText)
-) {
-  pushTwilioDebug("dispatch_skipped_incomplete", {
-    callSid: activeCallSid,
-    text: finalVoiceText,
-    reason: "noise_too_short",
-    expectedSlot,
-  });
-  return;
-}
-
-// reject obvious STT garbage fragments
-if (
-  /\b(mint|ment|open up ments|cooled|dot)\b/i.test(finalVoiceText) &&
-  noiseWords.length < 5
-) {
-  pushTwilioDebug("dispatch_skipped_incomplete", {
-    callSid: activeCallSid,
-    text: finalVoiceText,
-    reason: "noise_garbage_fragment",
-    expectedSlot,
-  });
-  return;
-}
-
-// 🔥 BLOCK GARBAGE NUMERIC BLENDS
-if (
-  /^[\d\s]+(am|pm)?$/i.test(finalVoiceText) &&
-  finalVoiceText.split(/\s+/).length > 2 &&
-  !looksLikePhoneNumber
-) {
-  pushTwilioDebug("dispatch_skipped_incomplete", {
-    callSid: activeCallSid,
-    text: finalVoiceText,
-    reason: "numeric_fragment_garbage",
-    expectedSlot,
-  });
-  return;
-}
-    if (!finalVoiceText) {
-      pushTwilioDebug("dispatch_skipped_incomplete", {
-        callSid: activeCallSid,
-        text: finalVoiceText,
-        reason: "empty",
-        expectedSlot,
-      });
-      return;
-    }
-
- 
-const words = normalized.split(/\s+/).filter(Boolean);
-const wordCount = words.length;
-
-const slotLikeAnswer =
-  isValidSlotValue(normalized) ||
-  matchesExpectedSlot(normalized, expectedSlot) ||
-  (
-    /\b\d{1,2}(:\d{2})?\s?(am|pm)\b/i.test(normalized) &&
-    /\b(today|tomorrow|monday|tuesday|wednesday|thursday|friday|saturday|sunday|\d{1,2}(st|nd|rd|th)?|jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)\b/i.test(normalized)
-  ) ||
-  /^(in the evening|in the morning|at night|evening|morning|night|p\.?m\.?|a\.?m\.?)$/i.test(normalized);
-
-const looksUnfinished =
-  /(?:\b(and|or|for|with|to|at|on|in|my|the|a|an)\s*)$/i.test(normalized) ||
-  /^(i|i'm|i am|hi|hello|yeah|yes|no|please)$/i.test(normalized) ||
-  (/^[a-z]+$/i.test(normalized) && wordCount === 1) ||
-  /^(my name is|i am|this is)$/i.test(normalized) ||
-  /^(that is what|which is|is it)$/i.test(normalized);
-
-const looksTooShortForFreeTurn =
-  wordCount < 3 &&
-  normalized.length < 12 &&
-  !slotLikeAnswer &&
-  !looksLikePhoneNumber;
-
-if (!expectedSlot && (looksUnfinished || looksTooShortForFreeTurn)) {
-  pushTwilioDebug("dispatch_skipped_incomplete", {
-    callSid: activeCallSid,
-    text: finalVoiceText,
-    reason: looksUnfinished ? "unfinished_free_turn" : "too_short_free_turn",
-    expectedSlot,
-  });
-
-  ws.__pendingVoiceTranscriptStartedAt =
-    ws.__pendingVoiceTranscriptStartedAt || Date.now();
-
-  const pendingAgeMs = Date.now() - ws.__pendingVoiceTranscriptStartedAt;
-
- const isClearlyIncompleteSlot =
-  /^(?:\d+\s*(in the|at|around)?|in the|at|around)$/i.test(normalized) ||
-  /^(in the|at|around)$/i.test(normalized);
-
-if (pendingAgeMs >= 1800) {
-  if (isClearlyIncompleteSlot) {
-    // DO NOT dispatch incomplete slot like "7 in the"
-    clearPendingVoiceTurn(ws);
-
-    ws.__voiceTurnTimer = setTimeout(async () => {
-      await dispatchPendingVoiceTurn();
-    }, 400);
-
-    return;
-  }
-  // otherwise allow dispatch
-} else {
-    clearPendingVoiceTurn(ws);
-
-    ws.__voiceTurnTimer = setTimeout(async () => {
-      try {
-        if (isPlaybackLocked(ws)) {
-          pushTwilioDebug("dispatch_ignored_playback", {
-            callSid: activeCallSid,
-            streamSid: activeStreamSid,
-          });
-          ws.__pendingVoiceTranscript = "";
-          ws.__pendingVoiceTranscriptStartedAt = 0;
-          ws.__streamingInterim = "";
-ws.__streamingFinal = "";
-          return;
-        }
-
-        await dispatchPendingVoiceTurn();
-      } catch (err) {
-        console.error(
-          `${VOICE_LOG_PREFIX} dispatch_error`,
-          JSON.stringify({
-            callSid: activeCallSid,
-            error: err?.message || String(err),
-          })
-        );
-        pushTwilioDebug("dispatch_error", {
-          callSid: activeCallSid,
-          error: err?.message || String(err),
-        });
-      }
-    }, 450);
-
-    return;
-  }
-}
-
-if (
-  isWeakFragment(finalVoiceText) ||
-  /^(that is what|which is|is it|confer|okay|so|yeah|exactly|right|correct|uh|um|hmm|sure|alright|hello)$/i.test(finalVoiceText.trim()) ||
-  /^(i am looking for|they said|it's like|you there)$/i.test(finalVoiceText.trim()) ||
-  /^(yeah they said|exactly it's like confirm|i am looking for that visit|it is chicago)$/i.test(finalVoiceText.trim()) ||
-  /^(near the park|park|clock)$/i.test(finalVoiceText.trim())
-) {
- 
-  pushTwilioDebug("dispatch_skipped_incomplete", {
-    callSid: activeCallSid,
-    text: finalVoiceText,
-    reason: "weak_fragment",
-    expectedSlot,
-  });
-
- ws.__pendingVoiceTranscript = "";
-ws.__pendingVoiceTranscriptStartedAt = 0;
-ws.__lastStableTranscript = "";
-ws.__lastStableTranscriptAt = 0;
-ws.__streamingInterim = "";
-ws.__streamingFinal = "";
-resetPhoneCapture(ws);
-
-  return;
-}
-
-   if (
-  expectedSlot &&
-  !matchesExpectedSlot(finalVoiceText, expectedSlot) &&
-  !/^(in the evening|in the morning|at night|evening|morning|night|p\.?m\.?|a\.?m\.?)$/i.test(finalVoiceText.trim())
-) {
-  pushTwilioDebug("dispatch_skipped_incomplete", {
-    callSid: activeCallSid,
-    text: finalVoiceText,
-    reason: "slot_mismatch",
-    expectedSlot,
-  });
-  return;
-}
-
-    if (!isMeaningfulUtterance(finalVoiceText) && !isValidSlotValue(finalVoiceText)) {
-      pushTwilioDebug("dispatch_skipped_incomplete", {
-        callSid: activeCallSid,
-        text: finalVoiceText,
-        reason: "not_meaningful",
-        expectedSlot,
-      });
-      return;
-    }
-
-    if (ws.__dispatchInFlight) {
-      pushTwilioDebug("dispatch_skipped_inflight", {
-        callSid: activeCallSid,
-        streamSid: activeStreamSid,
-      });
-      return;
-    }
-
-ws.__voiceTurnTimer = null;
-ws.__pendingVoiceTranscript = "";
-ws.__pendingVoiceTranscriptStartedAt = 0;
-ws.__streamingInterim = "";
-ws.__streamingFinal = "";
-
-    if (!streamActive) return;
-
-    if (isPlaybackLocked(ws)) {
-      pushTwilioDebug("dispatch_skipped_playback_lock", {
-        callSid: activeCallSid,
-        streamSid: activeStreamSid,
-      });
-      return;
-    }
-
-    if (!isMeaningfulVoiceUtterance(finalVoiceText)) {
-      pushTwilioDebug("utterance_skipped", {
-        callSid: activeCallSid,
-        text: finalVoiceText,
-      });
-      return;
-    }
-
-    ws.__dispatchInFlight = true;
-
-    try {
-      console.log(
-        `${VOICE_LOG_PREFIX} dispatch_turn`,
-        JSON.stringify({
-          callSid: activeCallSid,
-          text: finalVoiceText,
-          expectedSlot,
-        })
-      );
-
-      pushTwilioDebug("dispatch_turn", {
-        callSid: activeCallSid,
-        text: finalVoiceText.slice(0, 120),
-      });
-
-      const finalResult = handleTranscriptFinal(activeCallSid, finalVoiceText);
-      if (!finalResult || !finalResult.shouldProcess) {
-        pushTwilioDebug("dispatch_skipped_controller", {
-          callSid: activeCallSid,
-          text: finalVoiceText.slice(0, 120),
-        });
-        return;
-      }
-
-      let reply = "";
-
-      try {
-        const turnResult = await handleCallerTurn({
-          callSid: activeCallSid,
-          transcript: finalVoiceText,
-          meta: ws.__routingMeta || {},
-        });
-
-        reply = normalizeVoiceReply(turnResult?.replyText || "");
-      } catch (err) {
-        console.warn("⚠️ [twilio] handleCallerTurn failed:", err.message);
-        pushTwilioDebug("handle_caller_turn_error", {
-          callSid: activeCallSid,
-          error: err.message,
-        });
-      }
-
-      if (!reply) {
-        pushTwilioDebug("reply_empty_skipped", {
-          callSid: activeCallSid,
-          text: finalVoiceText.slice(0, 120),
-        });
-        return;
-      }
-
-      const controllerReply = handleProcessingResult(activeCallSid, {
-  shouldSpeak: true,
-  replyText: reply,
-  replyType: looksTaskCompleted(reply) ? "result" : "reply",
-});
-
-if (!controllerReply || !controllerReply.shouldSpeak) {
-  pushTwilioDebug("reply_blocked_controller", {
-    callSid: activeCallSid,
-  });
-  return;
-}
-
-// 🔥 FAST ACK — only after transcript is accepted and reply is ready
-const shouldSendAck = false;
-if (shouldSendAck) {
-  const ackText = pickAck(ws.__lastAckText || "");
-  ws.__lastAckText = ackText;
-
-  await synthesizeAndSendReply(
-    ws,
-    activeCallSid,
-    activeStreamSid,
-    tenantId,
-    tenantLangCode,
-    ackText,
-    "ack"
-  );
-
-  await new Promise((resolve) => setTimeout(resolve, 5));
-}
-// small gap so ack does not collide with main reply playback lock
-await new Promise((resolve) => setTimeout(resolve, 5));
-
-await synthesizeAndSendReply(
-  ws,
-  activeCallSid,
-  activeStreamSid,
-  tenantId,
-  tenantLangCode,
-  controllerReply.replyText,
-  "main"
-);
-      ws.__lastCommittedTranscript = finalVoiceText;
-            ws.__streamingInterim = "";
-ws.__streamingFinal = "";
-resetPhoneCapture(ws);
-    } finally {
-      ws.__dispatchInFlight = false;
-    }
-  }
 
   ws.on("message", async (msg) => {
     try {
@@ -1915,11 +1560,7 @@ if (
   }
 
   // 🔴 clear any pending assistant audio
-  ws.__pendingVoiceTranscript = "";
-  ws.__pendingVoiceTranscriptStartedAt = 0;
-  ws.__streamingInterim = "";
-ws.__streamingFinal = "";
-
+  
   // IMPORTANT: do NOT return — continue processing user speech
 }
 
