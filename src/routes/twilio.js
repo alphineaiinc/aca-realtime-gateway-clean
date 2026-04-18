@@ -769,9 +769,10 @@ ws.__streamingFinal = "";
 ws.__speechActive = false;
 ws.__lastSpeechStartAt = 0;
 ws.__lastSpeechEndAt = 0;
-ws.__pendingPhoneChunks = [];
-ws.__pendingPhoneStartedAt = 0;
-ws.__pendingPhoneLastSource = "";
+ws.__capturingPhone = false;
+ws.__phoneDigits = "";
+ws.__phoneCaptureStartedAt = 0;
+ws.__phoneCaptureLastUpdatedAt = 0;
 
 ensurePlaybackState(ws);
 
@@ -1014,32 +1015,91 @@ if (stillGrowing && stableAgeMs < 320) {
     ].includes(t);
   }
 
-  function extractDigitsOnly(text) {
-  return String(text || "").replace(/\D/g, "");
-}
 
-function isShortPhoneChunk(text) {
-  const digits = extractDigitsOnly(text);
-  return digits.length >= 2 && digits.length <= 4;
-}
-
-function isPhoneIntroPhrase(text) {
-  return /\b(phone number|my number|mobile number|contact number|reach me at)\b/i.test(
-    String(text || "")
+function isPhoneSlot(expectedSlot) {
+  return !!(
+    expectedSlot &&
+    String(expectedSlot).toLowerCase().includes("phone")
   );
 }
 
-function shouldCollectPhoneChunks(text, expectedSlot) {
-  const digits = extractDigitsOnly(text);
-  if (expectedSlot && String(expectedSlot).toLowerCase().includes("phone")) {
-    return digits.length > 0;
+function normalizePhoneDigits(text) {
+  return String(text || "").replace(/\D/g, "");
+}
+
+function stripPhoneIntro(text) {
+  return String(text || "").replace(
+    /.*?\b(?:my (?:phone )?number is|phone number is|number is|my number is|it's|it is)\b[:\s-]*/i,
+    ""
+  );
+}
+
+function startsPhoneCapture(text, expectedSlot) {
+  const raw = String(text || "");
+  const digits = normalizePhoneDigits(raw);
+
+  if (isPhoneSlot(expectedSlot) && digits.length > 0) {
+    return true;
   }
 
-  if (isPhoneIntroPhrase(text)) {
+  const hasPhoneIntro =
+    /\b(?:my (?:phone )?number is|phone number is|number is|my number is)\b/i.test(raw);
+
+  const hasMixedIntent =
+    /\b(book|appointment|table|reservation|tomorrow|today|evening|morning|afternoon|name is)\b/i.test(raw);
+
+  if (hasPhoneIntro && digits.length > 0 && !hasMixedIntent) {
+    return true;
+  }
+
+  if (/^[\d\s()+-]{3,}$/.test(raw) && digits.length >= 3) {
     return true;
   }
 
   return false;
+}
+
+function appendPhoneDigits(ws, text) {
+  const raw = String(text || "");
+  const source = /\b(?:my (?:phone )?number is|phone number is|number is|my number is)\b/i.test(raw)
+    ? stripPhoneIntro(raw)
+    : raw;
+
+  const incomingDigits = normalizePhoneDigits(source);
+  if (!incomingDigits) return ws.__phoneDigits || "";
+
+  const current = ws.__phoneDigits || "";
+
+  if (!current) {
+    ws.__phoneDigits = incomingDigits;
+    return ws.__phoneDigits;
+  }
+
+  // avoid duplicate re-append of the same chunk
+  if (current.endsWith(incomingDigits)) {
+    return current;
+  }
+
+  // append only the non-overlapping tail
+  let overlap = 0;
+  const maxOverlap = Math.min(current.length, incomingDigits.length);
+
+  for (let i = maxOverlap; i >= 1; i -= 1) {
+    if (current.slice(-i) === incomingDigits.slice(0, i)) {
+      overlap = i;
+      break;
+    }
+  }
+
+  ws.__phoneDigits = current + incomingDigits.slice(overlap);
+  return ws.__phoneDigits;
+}
+
+function resetPhoneCapture(ws) {
+  ws.__capturingPhone = false;
+  ws.__phoneDigits = "";
+  ws.__phoneCaptureStartedAt = 0;
+  ws.__phoneCaptureLastUpdatedAt = 0;
 }
 
   async function dispatchPendingVoiceTurn() {
@@ -1047,71 +1107,81 @@ function shouldCollectPhoneChunks(text, expectedSlot) {
         const session = getCurrentSession();
     const expectedSlot = session?.lastAskedSlot || null;
 
-    const expectsPhoneSlot =
-  expectedSlot && String(expectedSlot).toLowerCase().includes("phone");
+    const now = Date.now();
+const incomingDigits = normalizePhoneDigits(finalVoiceText);
 
-const phoneDigits = extractDigitsOnly(finalVoiceText);
-const normalizedPhoneText = normalizeIncomingVoiceText(finalVoiceText).toLowerCase();
-const phoneCollectionActive =
-  ws.__pendingPhoneStartedAt &&
-  Date.now() - ws.__pendingPhoneStartedAt < 3500;
+// start phone capture mode
+let justStartedPhoneCapture = false;
 
-const isMostlyPhoneUtterance =
-  phoneDigits.length > 0 &&
-  (
-    /^[\d\s()+-]+$/.test(finalVoiceText) ||
-    /^(?:my (?:phone )?number is|it's|it is|number is)\s+[\d\s()+-]+$/i.test(finalVoiceText)
-  );
-
-const shouldHandlePhoneChunks =
-  (expectsPhoneSlot && phoneDigits.length > 0) ||
-  (phoneCollectionActive && /^[\d\s()+-]+$/.test(finalVoiceText)) ||
-  isMostlyPhoneUtterance;
-
-const hasNonPhoneIntentContent =
-  /\b(book|appointment|table|reservation|tomorrow|today|evening|morning|afternoon|name is|for me|for tomorrow)\b/i.test(finalVoiceText);
-
-if ((!hasNonPhoneIntentContent || expectsPhoneSlot) && shouldHandlePhoneChunks) {
-  if (shouldHandlePhoneChunks) {
-  if (!ws.__pendingPhoneStartedAt) {
-    ws.__pendingPhoneStartedAt = Date.now();
-  }
+if (!ws.__capturingPhone && startsPhoneCapture(finalVoiceText, expectedSlot)) {
+  ws.__capturingPhone = true;
+  ws.__phoneCaptureStartedAt = now;
+  ws.__phoneCaptureLastUpdatedAt = now;
+  ws.__phoneDigits = "";
+  appendPhoneDigits(ws, finalVoiceText);
+  justStartedPhoneCapture = true;
 }
 
-  const sourceKey = `${finalVoiceText}__${phoneDigits}`;
-
-  if (phoneDigits && ws.__pendingPhoneLastSource !== sourceKey) {
-    ws.__pendingPhoneChunks.push(phoneDigits);
-    ws.__pendingPhoneLastSource = sourceKey;
+if (ws.__capturingPhone) {
+  if (incomingDigits && !justStartedPhoneCapture) {
+    appendPhoneDigits(ws, finalVoiceText);
+    ws.__phoneCaptureLastUpdatedAt = now;
   }
 
-  let mergedPhone = ws.__pendingPhoneChunks.join("");
+  let digits = ws.__phoneDigits || "";
 
-  if (mergedPhone.length === 11 && mergedPhone.startsWith("1")) {
-    mergedPhone = mergedPhone.slice(1);
+  // normalize 11-digit NANP with leading 1
+  if (digits.length === 11 && digits.startsWith("1")) {
+    digits = digits.slice(1);
+    ws.__phoneDigits = digits;
   }
 
-  const ageMs = Date.now() - ws.__pendingPhoneStartedAt;
+  // if complete, convert this turn into the final 10-digit phone answer
+  if (digits.length >= 10) {
+    digits = digits.slice(0, 10);
+    ws.__phoneDigits = digits;
+    finalVoiceText = digits;
+    resetPhoneCapture(ws);
+  } else {
+    const idleMs = now - (ws.__phoneCaptureLastUpdatedAt || now);
+    const totalMs = now - (ws.__phoneCaptureStartedAt || now);
 
-  if (mergedPhone.length < 10 && ageMs < 3000) {
-    pushTwilioDebug("dispatch_skipped_incomplete", {
-      callSid: activeCallSid,
-      text: finalVoiceText,
-      reason: "waiting_phone_chunks",
-      expectedSlot,
-    });
+    // keep waiting across pauses until complete
+    if (idleMs < 1800 && totalMs < 5000) {
+      pushTwilioDebug("dispatch_skipped_incomplete", {
+        callSid: activeCallSid,
+        text: finalVoiceText,
+        reason: "waiting_phone_chunks",
+        expectedSlot,
+      });
 
-    clearPendingVoiceTurn(ws);
-    ws.__voiceTurnTimer = setTimeout(async () => {
-      await dispatchPendingVoiceTurn();
-    }, 500);
+      clearPendingVoiceTurn(ws);
+      ws.__voiceTurnTimer = setTimeout(async () => {
+        await dispatchPendingVoiceTurn();
+      }, 400);
+
+      return;
+    }
+
+    // timeout with incomplete phone number
+    const partialDigits = ws.__phoneDigits || "";
+    resetPhoneCapture(ws);
+    ws.__pendingVoiceTranscript = "";
+    ws.__pendingVoiceTranscriptStartedAt = 0;
+    ws.__streamingInterim = "";
+ws.__streamingFinal = "";
+
+    await synthesizeAndSendReply(
+      ws,
+      activeCallSid,
+      activeStreamSid,
+      tenantId,
+      tenantLangCode,
+      "Sorry, I only got part of the number. Please say the full 10-digit phone number.",
+      "main"
+    );
 
     return;
-  }
-
-  if (mergedPhone.length >= 10) {
-    ws.__pendingVoiceTranscript = mergedPhone;
-    finalVoiceText = mergedPhone;
   }
 }
 
@@ -1134,6 +1204,8 @@ if ((!hasNonPhoneIntentContent || expectsPhoneSlot) && shouldHandlePhoneChunks) 
         });
         ws.__pendingVoiceTranscript = "";
         ws.__pendingVoiceTranscriptStartedAt = 0;
+        ws.__streamingInterim = "";
+ws.__streamingFinal = "";
         return;
       }
 
@@ -1176,6 +1248,8 @@ if ((!hasNonPhoneIntentContent || expectsPhoneSlot) && shouldHandlePhoneChunks) 
         });
         ws.__pendingVoiceTranscript = "";
         ws.__pendingVoiceTranscriptStartedAt = 0;
+        ws.__streamingInterim = "";
+ws.__streamingFinal = "";
         return;
       }
 
@@ -1328,6 +1402,8 @@ if (pendingAgeMs >= 1800) {
           });
           ws.__pendingVoiceTranscript = "";
           ws.__pendingVoiceTranscriptStartedAt = 0;
+          ws.__streamingInterim = "";
+ws.__streamingFinal = "";
           return;
         }
 
@@ -1370,9 +1446,9 @@ if (
 ws.__pendingVoiceTranscriptStartedAt = 0;
 ws.__lastStableTranscript = "";
 ws.__lastStableTranscriptAt = 0;
-ws.__pendingPhoneChunks = [];
-ws.__pendingPhoneStartedAt = 0;
-ws.__pendingPhoneLastSource = "";
+ws.__streamingInterim = "";
+ws.__streamingFinal = "";
+resetPhoneCapture(ws);
 
   return;
 }
@@ -1412,6 +1488,8 @@ ws.__pendingPhoneLastSource = "";
 ws.__voiceTurnTimer = null;
 ws.__pendingVoiceTranscript = "";
 ws.__pendingVoiceTranscriptStartedAt = 0;
+ws.__streamingInterim = "";
+ws.__streamingFinal = "";
 
     if (!streamActive) return;
 
@@ -1497,14 +1575,7 @@ if (!controllerReply || !controllerReply.shouldSpeak) {
 }
 
 // 🔥 FAST ACK — only after transcript is accepted and reply is ready
-const shouldSendAck =
-  controllerReply.replyText &&
-  controllerReply.replyText.length > 60 &&
-  !looksTaskCompleted(controllerReply.replyText) &&
-  !/^(what|which|when|can i|may i|what’s|whats|and what|what time|what date|may i have|what’s the best number|sorry)/i.test(
-    controllerReply.replyText.trim()
-  );
-
+const shouldSendAck = false;
 if (shouldSendAck) {
   const ackText = pickAck(ws.__lastAckText || "");
   ws.__lastAckText = ackText;
@@ -1536,9 +1607,7 @@ await synthesizeAndSendReply(
       ws.__lastCommittedTranscript = finalVoiceText;
             ws.__streamingInterim = "";
 ws.__streamingFinal = "";
-ws.__pendingPhoneChunks = [];
-ws.__pendingPhoneStartedAt = 0;
-ws.__pendingPhoneLastSource = "";
+resetPhoneCapture(ws);
     } finally {
       ws.__dispatchInFlight = false;
     }
@@ -1599,6 +1668,7 @@ ws.__pendingPhoneLastSource = "";
         ws.__lastCommittedTranscript = "";
         ws.__pendingVoiceTranscriptStartedAt = 0;
         ws.__lastAckText = "";
+        
 
         const playback = ensurePlaybackState(ws);
         playback.active = false;
@@ -1686,9 +1756,10 @@ ws.__streamingFinal = "";
 ws.__speechActive = false;
 ws.__lastSpeechStartAt = 0;
 ws.__lastSpeechEndAt = 0;
-ws.__pendingPhoneChunks = [];
-ws.__pendingPhoneStartedAt = 0;
-ws.__pendingPhoneLastSource = "";
+ws.__capturingPhone = false;
+ws.__phoneDigits = "";
+ws.__phoneCaptureStartedAt = 0;
+ws.__phoneCaptureLastUpdatedAt = 0;
 
 ws.__sttStream = createStreamingTranscriber({
   languageCode: tenantLangCode,
@@ -1924,6 +1995,7 @@ return;
 ws.__sttBufferBytes = 0;
 clearPendingVoiceTurn(ws);
 endPlaybackLock(ws, activeCallSid, activeStreamSid, "stream_stop");
+resetPhoneCapture(ws);
 handleCallEnded(activeCallSid);
       }
     } catch (err) {
@@ -1953,6 +2025,7 @@ handleCallEnded(activeCallSid);
     streamActive = false;
 ws.__sttBufferBytes = 0;
 endPlaybackLock(ws, activeCallSid, activeStreamSid, "ws_close");
+resetPhoneCapture(ws);
 handleCallEnded(activeCallSid);
   });
 }
