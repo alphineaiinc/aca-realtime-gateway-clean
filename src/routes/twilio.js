@@ -34,8 +34,8 @@ const MIN_TRANSCRIPT_CHARS = 3;
 const MIN_ALNUM_CHARS = 2;
 const MIN_INTERIM_STABLE_LEN = 4;
 
-const VOICE_TURN_SILENCE_MS = Number(process.env.VOICE_TURN_SILENCE_MS || 700);
-const VOICE_STT_COOLDOWN_MS = Number(process.env.VOICE_STT_COOLDOWN_MS || 400);
+const VOICE_TURN_SILENCE_MS = Number(process.env.VOICE_TURN_SILENCE_MS || 350);
+const VOICE_STT_COOLDOWN_MS = Number(process.env.VOICE_STT_COOLDOWN_MS || 150);
 const VOICE_POST_TTS_IGNORE_MS = Number(process.env.VOICE_POST_TTS_IGNORE_MS || 350);
 
 const VOICE_MIN_UTTERANCE_CHARS = Number(process.env.VOICE_MIN_UTTERANCE_CHARS || 3);
@@ -75,16 +75,16 @@ const twilioDebugState = {
 
 function pushTwilioDebug(event, details = {}) {
   const ALLOWED_EVENTS = new Set([
-    "dispatch_turn",
-    "reply_ready",
-    "mark_received",
-    "playback_lock_start",
-    "playback_lock_end",
-    "dispatch_skipped_incomplete",
-    "stt_return",
-    "stt_invalid_skipped",
-  ]);
-
+  "dispatch_turn",
+  "reply_ready",
+  "mark_received",
+  "playback_lock_start",
+  "playback_lock_end",
+  "dispatch_skipped_incomplete",
+  "stt_return",
+  "stt_invalid_skipped",
+  "barge_in_detected",
+]);
   if (!ALLOWED_EVENTS.has(event)) return;
 
   const entry = {
@@ -317,7 +317,9 @@ function endPlaybackLock(ws, activeCallSid, activeStreamSid, reason = "unknown")
 function sendTwilioAudioWithMark(ws, activeCallSid, activeStreamSid, ttsBuffer, branch = "main") {
   if (!ws || !activeStreamSid || !ttsBuffer?.length) return;
 
+  if (branch !== "ack") {
   beginPlaybackLock(ws, activeCallSid, activeStreamSid, ttsBuffer, branch);
+}
 
   const playback = ensurePlaybackState(ws);
   const payload = ttsBuffer.toString("base64");
@@ -552,6 +554,16 @@ function normalizeVoiceReply(reply) {
   return text;
 }
 
+const ACKS = ["Okay.", "Got it.", "Alright.", "Sure.", "Mm-hm."];
+
+function pickAck(previousAck = "") {
+  const filtered = ACKS.filter(
+    (ack) => ack.toLowerCase() !== String(previousAck || "").toLowerCase()
+  );
+  const pool = filtered.length ? filtered : ACKS;
+  return pool[Math.floor(Math.random() * pool.length)];
+}
+
 async function synthesizeAndSendReply(
   ws,
   activeCallSid,
@@ -561,8 +573,14 @@ async function synthesizeAndSendReply(
   replyText,
   branch = "main"
 ) {
-  const shapedReply = normalizeVoiceReply(replyText);
+  let shapedReply = normalizeVoiceReply(replyText);
+if (!shapedReply) return false;
+
+if (branch === "ack") {
+  shapedReply = shapedReply.split(/[.!?]/)[0].trim();
   if (!shapedReply) return false;
+  if (!/[.!?]$/.test(shapedReply)) shapedReply += ".";
+}
 
   console.log(
     `${VOICE_LOG_PREFIX} reply_ready`,
@@ -979,7 +997,7 @@ async function handleTwilioStream(ws, req) {
 
   async function dispatchPendingVoiceTurn() {
     const finalVoiceText = normalizeIncomingVoiceText(ws.__pendingVoiceTranscript);
-    const session = getCurrentSession();
+        const session = getCurrentSession();
     const expectedSlot = session?.lastAskedSlot || null;
 
     if (/^(my name is|i am|this is)$/i.test(finalVoiceText.trim())) {
@@ -1022,6 +1040,7 @@ async function handleTwilioStream(ws, req) {
 
   return;
 }
+
 
  if (shouldWaitForMoreSpeech(ws, expectedSlot)) {
   pushTwilioDebug("dispatch_skipped_incomplete", {
@@ -1318,28 +1337,52 @@ ws.__pendingVoiceTranscriptStartedAt = 0;
       }
 
       const controllerReply = handleProcessingResult(activeCallSid, {
-        shouldSpeak: true,
-        replyText: reply,
-        replyType: looksTaskCompleted(reply) ? "result" : "reply",
-      });
+  shouldSpeak: true,
+  replyText: reply,
+  replyType: looksTaskCompleted(reply) ? "result" : "reply",
+});
 
-      if (!controllerReply || !controllerReply.shouldSpeak) {
-        pushTwilioDebug("reply_blocked_controller", {
-          callSid: activeCallSid,
-        });
-        return;
-      }
+if (!controllerReply || !controllerReply.shouldSpeak) {
+  pushTwilioDebug("reply_blocked_controller", {
+    callSid: activeCallSid,
+  });
+  return;
+}
 
-      await synthesizeAndSendReply(
-        ws,
-        activeCallSid,
-        activeStreamSid,
-        tenantId,
-        tenantLangCode,
-        controllerReply.replyText,
-        "main"
-      );
+// 🔥 FAST ACK — only after transcript is accepted and reply is ready
+const shouldSendAck =
+  controllerReply.replyText &&
+  controllerReply.replyText.length > 12 &&   // avoid trivial replies
+  !looksTaskCompleted(controllerReply.replyText);
 
+if (shouldSendAck) {
+  const ackText = pickAck(ws.__lastAckText || "");
+  ws.__lastAckText = ackText;
+
+  await synthesizeAndSendReply(
+    ws,
+    activeCallSid,
+    activeStreamSid,
+    tenantId,
+    tenantLangCode,
+    ackText,
+    "ack"
+  );
+
+  await new Promise((resolve) => setTimeout(resolve, 100));
+}
+// small gap so ack does not collide with main reply playback lock
+await new Promise((resolve) => setTimeout(resolve, 120));
+
+await synthesizeAndSendReply(
+  ws,
+  activeCallSid,
+  activeStreamSid,
+  tenantId,
+  tenantLangCode,
+  controllerReply.replyText,
+  "main"
+);
       ws.__lastCommittedTranscript = finalVoiceText;
     } finally {
       ws.__dispatchInFlight = false;
@@ -1402,6 +1445,7 @@ ws.__pendingVoiceTranscriptStartedAt = 0;
         ws.__lastStableTranscriptAt = 0;
         ws.__lastCommittedTranscript = "";
         ws.__pendingVoiceTranscriptStartedAt = 0;
+        ws.__lastAckText = "";
 
         const playback = ensurePlaybackState(ws);
         playback.active = false;
@@ -1496,6 +1540,56 @@ ws.__pendingVoiceTranscriptStartedAt = 0;
         mediaPacketCount += 1;
 
         const payloadBuffer = Buffer.from(data.media.payload, "base64");
+
+        // 🔥 HARD BARGE-IN DETECTION (NEW)
+const session = getSession(activeCallSid);
+const playback = ensurePlaybackState(ws);
+
+// detect ANY speech while assistant is speaking
+const userTalkingWhileAssistant =
+  ws.__isSpeaking ||
+  playback.active ||
+  (session && session.voiceGate && session.voiceGate.assistantSpeaking);
+
+// lightweight energy check (reuse your analyzer)
+const audioCheckFast = analyzeMulawAudio(payloadBuffer);
+
+// if real speech detected → INTERRUPT immediately
+if (
+  userTalkingWhileAssistant &&
+  (audioCheckFast.rms > VOICE_MIN_AUDIO_RMS ||
+ audioCheckFast.peak > VOICE_MIN_AUDIO_PEAK)
+) {
+  console.log("🛑 [BARGE-IN] User started speaking — interrupting TTS", {
+    callSid: activeCallSid,
+    rms: audioCheckFast.rms,
+    peak: audioCheckFast.peak,
+  });
+
+  pushTwilioDebug("barge_in_detected", {
+    callSid: activeCallSid,
+    rms: audioCheckFast.rms,
+    peak: audioCheckFast.peak,
+  });
+
+  // 🔴 HARD STOP playback immediately
+  endPlaybackLock(ws, activeCallSid, activeStreamSid, "barge_in");
+
+  // 🔴 reset speaking flags
+  ws.__isSpeaking = false;
+  ws.__speakUntil = 0;
+
+  if (session && session.voiceGate) {
+    session.voiceGate.assistantSpeaking = false;
+    session.voiceGate.pendingMarks.clear();
+  }
+
+  // 🔴 clear any pending assistant audio
+  ws.__pendingVoiceTranscript = "";
+  ws.__pendingVoiceTranscriptStartedAt = 0;
+
+  // IMPORTANT: do NOT return — continue processing user speech
+}
 
         if (mediaPacketCount <= 5 || mediaPacketCount % 50 === 0) {
           pushTwilioDebug("media", {

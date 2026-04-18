@@ -826,11 +826,14 @@ async function handleCallerTurn({ callSid, businessId = null, transcript, meta =
   }
 
   if (replyText === normalizeText(session.lastAssistantReply)) {
-    const alternateFallback = buildSafeFallbackReply(session);
-    if (alternateFallback && alternateFallback !== replyText) {
-      replyText = alternateFallback;
-    }
+  if (workflowState.nextMissingSlot) {
+    replyText = buildSlotQuestion(workflowState.nextMissingSlot);
+  } else if (workflowState.confirmationPending) {
+    replyText = "Let me confirm that once.";
+  } else {
+    replyText = "Sorry, could you repeat that?";
   }
+}
 
   session.lastAssistantReply = replyText;
 
