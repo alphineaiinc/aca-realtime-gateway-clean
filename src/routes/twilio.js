@@ -32,7 +32,7 @@ const MIN_TRANSCRIPT_CHARS = 3;
 const MIN_ALNUM_CHARS = 2;
 const MIN_INTERIM_STABLE_LEN = 4;
 
-const VOICE_TURN_SILENCE_MS = Number(process.env.VOICE_TURN_SILENCE_MS || 1500);
+const VOICE_TURN_SILENCE_MS = Number(process.env.VOICE_TURN_SILENCE_MS || 700);
 const VOICE_STT_COOLDOWN_MS = Number(process.env.VOICE_STT_COOLDOWN_MS || 400);
 const VOICE_POST_TTS_IGNORE_MS = Number(process.env.VOICE_POST_TTS_IGNORE_MS || 350);
 
@@ -751,55 +751,51 @@ async function handleTwilioStream(ws, req) {
   ws.__sttBufferBytes = 0;
   ensurePlaybackState(ws);
 
-  function isMeaningfulUtterance(text) {
+function isMeaningfulUtterance(text) {
   const t = String(text || "").trim();
 
   if (!t) return false;
 
   const words = t.split(/\s+/);
 
-  // Too short
-  if (words.length <= 1 && t.length < 6) return false;
-
-  // Junk fragments
+  // obvious junk fragments only
   if (/^(for|and|the|a|an|to|of|on|in)$/i.test(t)) return false;
+  if (/^(um+|uh+|hmm+|mm+|ah+|er+)$/i.test(t)) return false;
 
-  // Looks like broken STT fragments
-  if (/^[a-z]+\.?$/i.test(t) && words.length === 1) return false;
+  // single random alphabetic fragment like "talk." or "store."
+  if (/^[a-z]+\.?$/i.test(t) && words.length === 1 && t.length <= 5) return false;
 
-  // Must contain meaningful structure
-  const hasVerb =
-    /\b(book|need|want|schedule|check|have|is|are|was|do|did|can)\b/i.test(t);
-
-  const hasTime =
-    /\b\d{1,2}(:\d{2})?\s?(am|pm)?\b/i.test(t);
-
-  const hasDate =
-    /\b(today|tomorrow|monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b/i.test(t);
-
-  const hasNameLike =
-    /^[A-Z][a-z]+(\s[A-Z][a-z]+)?$/.test(t);
-
-  return hasVerb || hasTime || hasDate || hasNameLike || words.length >= 3;
+  return true;
 }
 
-  async function dispatchPendingVoiceTurn() {
-    const finalVoiceText = normalizeIncomingVoiceText(ws.__pendingVoiceTranscript);
+function isValidSlotValue(text) {
+  const t = String(text || "").trim();
 
-    // 🚫 BLOCK INCOMPLETE FRAGMENTS (CRITICAL FIX)
-if (!isMeaningfulUtterance(finalVoiceText)) {
-  pushTwilioDebug("dispatch_skipped_incomplete", {
-    callSid: activeCallSid,
-    text: finalVoiceText,
-  });
+  // time: 2, 2:00, 2 pm, 2:00 pm
+  if (/^\d{1,2}(:\d{2})?\s?(am|pm)?$/i.test(t)) return true;
 
-  // give user more time to continue speaking
-  ws.__voiceTurnTimer = setTimeout(() => {
-    dispatchPendingVoiceTurn();
-  }, 500);
+  // date/day
+  if (
+    /^(today|tomorrow|monday|tuesday|wednesday|thursday|friday|saturday|sunday)$/i.test(t)
+  ) return true;
 
-  return;
+  // simple name: Prem / Prem Kumar
+  if (/^[A-Za-z]{2,}(?:\s[A-Za-z]{2,})?$/.test(t)) return true;
+
+  return false;
 }
+
+async function dispatchPendingVoiceTurn() {
+  const finalVoiceText = normalizeIncomingVoiceText(ws.__pendingVoiceTranscript);
+
+  if (!isMeaningfulUtterance(finalVoiceText) && !isValidSlotValue(finalVoiceText)) {
+    pushTwilioDebug("dispatch_skipped_incomplete", {
+      callSid: activeCallSid,
+      text: finalVoiceText,
+    });
+
+    return;
+  }
 
     console.log("🚀 DISPATCH TRIGGERED:", finalVoiceText);
 
@@ -1234,12 +1230,23 @@ if (/^(um+|uh+|hmm+|mm+|ah+|er+)$/i.test(cleanedText)) {
 
         handleTranscriptPartial(activeCallSid, cleanedText);
 
-        if (ws.__pendingVoiceTranscript) {
-          ws.__pendingVoiceTranscript = `${ws.__pendingVoiceTranscript} ${cleanedText}`.trim();
-        } else {
-          ws.__pendingVoiceTranscript = cleanedText;
-        }
+        // Only append if it's clearly continuation
+const looksLikeStandaloneSlotValue =
+  /^\d{1,2}(:\d{2})?\s?(am|pm)?$/i.test(cleanedText) ||   // time
+  /^(today|tomorrow|monday|tuesday|wednesday|thursday|friday|saturday|sunday)$/i.test(cleanedText) || // date
+  /^[A-Za-z]{2,}(?:\s[A-Za-z]{2,})?$/.test(cleanedText); // name
 
+// Only append if it's real continuation
+if (
+  ws.__pendingVoiceTranscript &&
+  !looksLikeStandaloneSlotValue &&
+  cleanedText.length > 3
+) {
+  ws.__pendingVoiceTranscript =
+    `${ws.__pendingVoiceTranscript} ${cleanedText}`.trim();
+} else {
+  ws.__pendingVoiceTranscript = cleanedText;
+}
         const previousInputAt = ws.__lastVoiceInputAt || 0;
         const inputAt = Date.now();
         const deltaFromPreviousInput = previousInputAt > 0 ? inputAt - previousInputAt : 0;
@@ -1248,9 +1255,9 @@ if (/^(um+|uh+|hmm+|mm+|ah+|er+)$/i.test(cleanedText)) {
         clearPendingVoiceTurn(ws);
 
         const adjustedDelay =
-          previousInputAt > 0
-            ? Math.max(350, VOICE_TURN_SILENCE_MS - Math.min(deltaFromPreviousInput, 200))
-            : VOICE_TURN_SILENCE_MS;
+  previousInputAt > 0
+    ? Math.max(250, VOICE_TURN_SILENCE_MS - Math.min(deltaFromPreviousInput, 300))
+    : VOICE_TURN_SILENCE_MS;
 
         ws.__voiceTurnTimer = setTimeout(async () => {
           try {
