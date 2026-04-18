@@ -7,8 +7,8 @@ const path = require("path");
 const WebSocket = require("ws");
 const { retrieveAnswer } = require("../../retriever");
 const { synthesizeSpeech } = require("../../tts");
-const { getTenantRegion } = require("../brain/utils/tenantContext"); // ✅ tenant region helper
-const { transcribeMulaw } = require("../brain/utils/sttGoogle"); // ✅ Google STT helper
+const { getTenantRegion } = require("../brain/utils/tenantContext");
+const { transcribeMulaw } = require("../brain/utils/sttGoogle");
 
 const {
   handleCallStarted,
@@ -19,6 +19,7 @@ const {
   handleSpeak,
   handleSpeechComplete,
   handleCallEnded,
+  handleCallerTurn,
 } = require("../voice/sessionController");
 
 require("dotenv").config({ path: path.resolve(__dirname, "../../.env") });
@@ -31,12 +32,16 @@ const VOICE_MIN_UTTERANCE_CHARS = Number(process.env.VOICE_MIN_UTTERANCE_CHARS |
 const VOICE_MAX_REPLY_CHARS = Number(process.env.VOICE_MAX_REPLY_CHARS || 220);
 const VOICE_LOG_PREFIX = "[twilio_voice_intel]";
 
-// ✅ Loop protection / playback gating
+const DEFAULT_TENANT_BUSINESS_TYPE = String(
+  process.env.DEFAULT_TENANT_BUSINESS_TYPE || "generic"
+)
+  .trim()
+  .toLowerCase();
+
 const VOICE_PLAYBACK_TAIL_MS = Number(process.env.VOICE_PLAYBACK_TAIL_MS || 700);
 const VOICE_PLAYBACK_PADDING_MS = Number(process.env.VOICE_PLAYBACK_PADDING_MS || 250);
-const TWILIO_MULAW_BYTES_PER_SEC = 8000; // μ-law 8k => ~8000 bytes/sec
+const TWILIO_MULAW_BYTES_PER_SEC = 8000;
 
-// ✅ Tenant voice profile loader (to get language_code for live calls)
 let getTenantVoiceProfile = async () => null;
 try {
   ({ getTenantVoiceProfile } = require("../brain/utils/voiceProfileLoader"));
@@ -44,9 +49,6 @@ try {
   console.warn("⚠️ [twilio] voiceProfileLoader not found, using default lang=en-US.");
 }
 
-/**
- * Story 13.1.9 — Durable Twilio debug snapshot
- */
 const twilioDebugState = {
   updatedAt: null,
   events: [],
@@ -307,9 +309,6 @@ function getSharedConversationHandler() {
   return null;
 }
 
-/**
- * ✅ Keep voice replies short and natural for live calls
- */
 function normalizeVoiceReply(reply) {
   let text = "";
 
@@ -473,9 +472,6 @@ async function synthesizeAndSendReply(
   return false;
 }
 
-/**
- * Shared handler for Twilio voice webhook
- */
 async function handleVoiceWebhook(req, res) {
   console.log("🛰️  Incoming Twilio Voice webhook:", req.body);
 
@@ -509,9 +505,6 @@ async function handleVoiceWebhook(req, res) {
   res.send(xmlResponse);
 }
 
-/**
- * Shared handler for Twilio status callback
- */
 function handleStatusWebhook(req, res) {
   const status = req.body?.CallStatus || "unknown";
   console.log("📡  Twilio Status update:", status);
@@ -551,9 +544,6 @@ router.get("/stream-status", handleStreamStatusWebhook);
 router.post("/status", handleStatusWebhook);
 router.get("/status", handleStatusWebhook);
 
-/**
- * App-level WebSocket handler for /ws/twilio-stream
- */
 async function handleTwilioStream(ws, req) {
   console.log("🌐  Twilio WebSocket connected");
   pushTwilioDebug("ws_connected", {});
@@ -594,7 +584,7 @@ async function handleTwilioStream(ws, req) {
           sessionId,
           message: safeText,
           channel: "voice",
-          tenantBusinessType: null,
+          tenantBusinessType: DEFAULT_TENANT_BUSINESS_TYPE,
           tenantId,
           locale: tenantLangCode,
         });
@@ -632,10 +622,7 @@ async function handleTwilioStream(ws, req) {
           return "Sorry — could you repeat that once for me?";
         }
       } catch (err) {
-        console.warn(
-          "⚠️ [twilio] Shared handler failed:",
-          err.message
-        );
+        console.warn("⚠️ [twilio] Shared handler failed:", err.message);
 
         if (ws.__acaStructuredFlowActive) {
           console.warn(
@@ -721,20 +708,50 @@ async function handleTwilioStream(ws, req) {
       return;
     }
 
-    const reply = await onFinalTranscript(finalVoiceText);
+    let reply = "";
+
+    try {
+      const turnResult = await handleCallerTurn({
+        callSid: activeCallSid,
+        businessId: null,
+        transcript: finalVoiceText,
+      });
+
+      reply = turnResult?.replyText || "";
+
+      if (reply) {
+        ws.__acaStructuredFlowActive = true;
+      }
+    } catch (err) {
+      console.warn("⚠️ [twilio] handleCallerTurn failed:", err.message);
+      pushTwilioDebug("handle_caller_turn_error", {
+        callSid: activeCallSid,
+        error: err.message,
+      });
+    }
 
     if (!reply) {
-      console.log("ℹ️ [twilio] Empty reply after handler, skipping TTS.");
-      pushTwilioDebug("reply_empty", {
-        callSid: activeCallSid,
-      });
+      if (ws.__acaStructuredFlowActive) {
+        console.warn("⚠️ Structured flow active — refusing fallback");
+        reply = "Sorry — could you repeat that once for me?";
+      } else {
+        const fallbackReply = await onFinalTranscript(finalVoiceText);
+        reply = normalizeVoiceReply(fallbackReply);
 
-      handleProcessingResult(activeCallSid, {
-        shouldSpeak: false,
-        replyText: "",
-        replyType: "silent",
-      });
-      return;
+        if (!reply) {
+          console.log("ℹ️ [twilio] Empty reply after handler, skipping TTS.");
+          pushTwilioDebug("reply_empty", {
+            callSid: activeCallSid,
+          });
+
+          handleProcessingResult(activeCallSid, {
+            shouldSpeak: false,
+            replyText: "",
+            replyType: "silent",
+          });
+          return;
+        }
+      }
     }
 
     const controllerReply = handleProcessingResult(activeCallSid, {
@@ -894,7 +911,6 @@ async function handleTwilioStream(ws, req) {
           });
         }
 
-        // ✅ Ignore caller STT while ACA audio is playing / mark is pending / tail cooldown is active
         if (isPlaybackLocked(ws)) {
           if (mediaPacketCount <= 5 || mediaPacketCount % 50 === 0) {
             pushTwilioDebug("media_ignored_playback_lock", {
