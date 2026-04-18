@@ -573,156 +573,117 @@ async function handleTwilioStream(ws, req) {
   ws.__dispatchInFlight = false;
   ensurePlaybackState(ws);
 
-  async function onFinalTranscript(userText) {
-    const safeText = normalizeIncomingVoiceText(userText);
-    if (!safeText) return "";
-
-    const sessionId =
-      ws.__acaSessionId ||
-      `call_${activeCallSid || activeStreamSid || "unknown"}`;
-
-    const sharedHandler = getSharedConversationHandler();
-
-    if (sharedHandler) {
-      try {
-        const sharedResult = await sharedHandler({
-          sessionId,
-          message: safeText,
-          channel: "voice",
-          tenantBusinessType: DEFAULT_TENANT_BUSINESS_TYPE,
-          tenantId,
-          locale: tenantLangCode,
-        });
-
-        if (sharedResult && sharedResult.ok) {
-          if (sharedResult.scenario) {
-            ws.__acaStructuredFlowActive = true;
-          }
-
-          const normalizedSharedReply = normalizeVoiceReply(sharedResult.reply);
-
-          console.log("🧠 [twilio] Shared conversation handler reply:", {
-            callSid: activeCallSid,
-            sessionId,
-            user: safeText,
-            bot: normalizedSharedReply,
-            scenario: sharedResult.scenario || null,
-            source: sharedResult.source || null,
-            context: sharedResult.context || "",
-          });
-
-          if (normalizedSharedReply) {
-            return normalizedSharedReply;
-          }
-        }
-
-        if (ws.__acaStructuredFlowActive) {
-          console.warn(
-            "⚠️ [twilio] Structured flow active but shared handler returned empty reply; refusing stateless fallback.",
-            {
-              callSid: activeCallSid,
-              sessionId,
-            }
-          );
-          return "Sorry — could you repeat that once for me?";
-        }
-      } catch (err) {
-        console.warn("⚠️ [twilio] Shared handler failed:", err.message);
-
-        if (ws.__acaStructuredFlowActive) {
-          console.warn(
-            "⚠️ [twilio] Structured flow already active; refusing retrieveAnswer fallback.",
-            {
-              callSid: activeCallSid,
-              sessionId,
-              error: err.message,
-            }
-          );
-          return "Sorry — could you say that again?";
-        }
-      }
+  async function dispatchPendingVoiceTurn() {
+    if (ws.__dispatchInFlight) {
+      pushTwilioDebug("dispatch_skipped_inflight", {
+        callSid: activeCallSid,
+        streamSid: activeStreamSid,
+      });
+      return;
     }
 
-    const fallbackReply = await retrieveAnswer(
-      safeText,
-      tenantId,
-      tenantLangCode,
-      activeCallSid
-    );
+    const finalVoiceText = normalizeIncomingVoiceText(ws.__pendingVoiceTranscript);
 
-    const normalizedFallbackReply = normalizeVoiceReply(fallbackReply);
+    ws.__voiceTurnTimer = null;
+    ws.__pendingVoiceTranscript = "";
 
-    console.log("💬 [twilio:fallback]", {
-      callSid: activeCallSid,
-      sessionId,
-      user: safeText,
-      bot: normalizedFallbackReply,
-    });
+    if (!streamActive) return;
+    if (isPlaybackLocked(ws)) {
+      pushTwilioDebug("dispatch_skipped_playback_lock", {
+        callSid: activeCallSid,
+        streamSid: activeStreamSid,
+      });
+      return;
+    }
 
-    return normalizedFallbackReply;
-  }
+    if (!isMeaningfulVoiceUtterance(finalVoiceText)) {
+      console.log(
+        `${VOICE_LOG_PREFIX} skip_non_meaningful`,
+        JSON.stringify({
+          callSid: activeCallSid,
+          text: finalVoiceText,
+        })
+      );
+      pushTwilioDebug("utterance_skipped", {
+        callSid: activeCallSid,
+        text: finalVoiceText,
+      });
+      return;
+    }
 
-    async function dispatchPendingVoiceTurn() {
-  if (ws.__dispatchInFlight) return;
-
-  const finalVoiceText = normalizeIncomingVoiceText(ws.__pendingVoiceTranscript);
-
-  ws.__voiceTurnTimer = null;
-  ws.__pendingVoiceTranscript = "";
-
-  if (!streamActive) return;
-  if (isPlaybackLocked(ws)) return;
-  if (!isMeaningfulVoiceUtterance(finalVoiceText)) return;
-
-  ws.__dispatchInFlight = true;
-
-  try {
-    const finalResult = handleTranscriptFinal(activeCallSid, finalVoiceText);
-    if (!finalResult || !finalResult.shouldProcess) return;
-
-    let reply = "";
+    ws.__dispatchInFlight = true;
 
     try {
-      const turnResult = await handleCallerTurn({
+      console.log(
+        `${VOICE_LOG_PREFIX} dispatch_turn`,
+        JSON.stringify({
+          callSid: activeCallSid,
+          text: finalVoiceText,
+        })
+      );
+      pushTwilioDebug("dispatch_turn", {
         callSid: activeCallSid,
-        transcript: finalVoiceText,
-        meta: ws.__routingMeta || {},
+        text: finalVoiceText.slice(0, 120),
       });
 
-      reply = turnResult?.replyText || "";
-    } catch (err) {
-      console.warn("⚠️ handleCallerTurn failed:", err.message);
+      const finalResult = handleTranscriptFinal(activeCallSid, finalVoiceText);
+      if (!finalResult || !finalResult.shouldProcess) {
+        pushTwilioDebug("dispatch_skipped_controller", {
+          callSid: activeCallSid,
+          text: finalVoiceText.slice(0, 120),
+        });
+        return;
+      }
+
+      let reply = "";
+
+      try {
+        const turnResult = await handleCallerTurn({
+          callSid: activeCallSid,
+          transcript: finalVoiceText,
+          meta: ws.__routingMeta || {},
+        });
+
+        reply = turnResult?.replyText || "";
+      } catch (err) {
+        console.warn("⚠️ [twilio] handleCallerTurn failed:", err.message);
+        pushTwilioDebug("handle_caller_turn_error", {
+          callSid: activeCallSid,
+          error: err.message,
+        });
+      }
+
+      if (!reply) {
+        console.warn("⚠️ No reply from workflow — forcing controller fallback");
+        reply = "Sorry — could you repeat that once for me?";
+      }
+
+      const controllerReply = handleProcessingResult(activeCallSid, {
+        shouldSpeak: true,
+        replyText: reply,
+        replyType: looksTaskCompleted(reply) ? "result" : "reply",
+      });
+
+      if (!controllerReply || !controllerReply.shouldSpeak) {
+        pushTwilioDebug("reply_blocked_controller", {
+          callSid: activeCallSid,
+        });
+        return;
+      }
+
+      await synthesizeAndSendReply(
+        ws,
+        activeCallSid,
+        activeStreamSid,
+        tenantId,
+        tenantLangCode,
+        controllerReply.replyText,
+        "main"
+      );
+    } finally {
+      ws.__dispatchInFlight = false;
     }
-
-    // 🔒 SINGLE WORKFLOW CONTROL (no fallback to other systems)
-    if (!reply) {
-      reply = "Sorry — could you repeat that once for me?";
-    }
-
-    const controllerReply = handleProcessingResult(activeCallSid, {
-      shouldSpeak: true,
-      replyText: reply,
-      replyType: looksTaskCompleted(reply) ? "result" : "reply",
-    });
-
-    if (!controllerReply || !controllerReply.shouldSpeak) return;
-
-    await synthesizeAndSendReply(
-      ws,
-      activeCallSid,
-      activeStreamSid,
-      tenantId,
-      tenantLangCode,
-      controllerReply.replyText,
-      "main"
-    );
-
-  } finally {
-    ws.__dispatchInFlight = false;
   }
-}}
-  
-  
 
   ws.on("message", async (msg) => {
     try {
@@ -1074,10 +1035,11 @@ async function handleTwilioStream(ws, req) {
     endPlaybackLock(ws, activeCallSid, activeStreamSid, "ws_close");
     handleCallEnded(activeCallSid);
   });
-
+}
 
 module.exports = {
   router,
   handleTwilioStream,
   getTwilioDebugState,
 };
+
