@@ -49,7 +49,7 @@ const VOICE_MIN_BUFFER_BYTES_FOR_STT = Number(
   process.env.VOICE_MIN_BUFFER_BYTES_FOR_STT || 1600
 );
 
-ws.__sttBufferBytes = (ws.__sttBufferBytes || 0) + payloadBuffer.length;
+
 
 const DEFAULT_TENANT_BUSINESS_TYPE = String(
   process.env.DEFAULT_TENANT_BUSINESS_TYPE || "generic"
