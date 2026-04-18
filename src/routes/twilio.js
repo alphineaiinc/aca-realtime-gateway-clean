@@ -51,8 +51,6 @@ const VOICE_MIN_BUFFER_BYTES_FOR_STT = Number(
   process.env.VOICE_MIN_BUFFER_BYTES_FOR_STT || 1600
 );
 
-
-
 const DEFAULT_TENANT_BUSINESS_TYPE = String(
   process.env.DEFAULT_TENANT_BUSINESS_TYPE || "generic"
 )
@@ -102,6 +100,7 @@ function pushTwilioDebug(event, details = {}) {
     twilioDebugState.events = twilioDebugState.events.slice(-200);
   }
 }
+
 function getTwilioDebugState() {
   return {
     updatedAt: twilioDebugState.updatedAt,
@@ -506,18 +505,19 @@ function normalizeVoiceReply(reply) {
 
   if (!text) return "";
 
-  text = text.replace(
-    /\s*(would you like anything else(\s*today)?\??|can i help with anything else\??|let me know if you need anything else\??)\s*$/i,
-    ""
-  ).trim();
+  text = text
+    .replace(
+      /\s*(would you like anything else(\s*today)?\??|can i help with anything else\??|let me know if you need anything else\??)\s*$/i,
+      ""
+    )
+    .trim();
 
-  // soften tone (human-like)
-text = text
-  .replace(/could you please/gi, "can you")
-  .replace(/would you please/gi, "can you")
-  .replace(/please tell me/gi, "")
-  .replace(/kindly/gi, "")
-  .trim();
+  text = text
+    .replace(/could you please/gi, "can you")
+    .replace(/would you please/gi, "can you")
+    .replace(/please tell me/gi, "")
+    .replace(/kindly/gi, "")
+    .trim();
 
   const parts = text.match(/[^.!?]+[.!?]?/g) || [text];
   const trimmedParts = [];
@@ -541,10 +541,12 @@ text = text
   }
 
   if (looksTaskCompleted(text)) {
-    text = text.replace(
-      /\s*(what else can i help with\??|anything else\??|do you need anything more\??)\s*$/i,
-      ""
-    ).trim();
+    text = text
+      .replace(
+        /\s*(what else can i help with\??|anything else\??|do you need anything more\??)\s*$/i,
+        ""
+      )
+      .trim();
   }
 
   return text;
@@ -572,14 +574,12 @@ async function synthesizeAndSendReply(
     })
   );
 
-   pushTwilioDebug("reply_ready", {
+  pushTwilioDebug("reply_ready", {
     callSid: activeCallSid,
     chars: shapedReply.length,
     completed: looksTaskCompleted(shapedReply),
     branch,
   });
-
-  
 
   console.log("💬  Voice reply:", shapedReply);
 
@@ -587,10 +587,7 @@ async function synthesizeAndSendReply(
   try {
     regionCode = await getTenantRegion(tenantId);
   } catch (e) {
-    console.warn(
-      `⚠️  Failed to get tenant region for tenant=${tenantId}:`,
-      e.message
-    );
+    console.warn(`⚠️  Failed to get tenant region for tenant=${tenantId}:`, e.message);
   }
 
   let ttsBuffer = null;
@@ -634,13 +631,7 @@ async function synthesizeAndSendReply(
 
   if (ttsBuffer && activeStreamSid) {
     handleSpeak(activeCallSid);
-    sendTwilioAudioWithMark(
-      ws,
-      activeCallSid,
-      activeStreamSid,
-      ttsBuffer,
-      branch
-    );
+    sendTwilioAudioWithMark(ws, activeCallSid, activeStreamSid, ttsBuffer, branch);
     return true;
   }
 
@@ -748,17 +739,13 @@ async function handleTwilioStream(ws, req) {
   ws.__acaSessionId = null;
   ws.__acaStructuredFlowActive = false;
   ws.__routingMeta = {};
-    ws.__dispatchInFlight = false;
+  ws.__dispatchInFlight = false;
   ws.__sttInFlight = false;
   ws.__sttBufferBytes = 0;
   ws.__lastStableTranscript = "";
   ws.__lastStableTranscriptAt = 0;
   ws.__lastCommittedTranscript = "";
   ensurePlaybackState(ws);
-
-    
-
-  // 👇 ADD THIS BLOCK HERE (Point 2)
 
   function getOpenExpectedSlot() {
     if (!activeCallSid) return null;
@@ -771,53 +758,6 @@ async function handleTwilioStream(ws, req) {
       .replace(/[.,!?]+$/g, "")
       .trim();
   }
-
-  function matchesExpectedSlot(text, expectedSlot) {
-    const t = normalizeSlotValue(text);
-
-    if (!t || !expectedSlot) return false;
-
-    const slot = String(expectedSlot).toLowerCase();
-
-    if (slot.includes("time")) {
-      return (
-        /^\d{1,2}(:\d{2})?\s?(am|pm)?$/i.test(t) ||
-        /^(am|pm)$/i.test(t) ||
-        /^(morning|afternoon|evening|night)$/i.test(t)
-      );
-    }
-
-    if (slot.includes("date") || slot.includes("day")) {
-      return (
-        /^(today|tomorrow|monday|tuesday|wednesday|thursday|friday|saturday|sunday)$/i.test(t) ||
-        /^(jan|january|feb|february|mar|march|apr|april|may|jun|june|jul|july|aug|august|sep|sept|september|oct|october|nov|november|dec|december)$/i.test(t) ||
-        /^\d{1,2}$/.test(t)
-      );
-    }
-
-    if (slot.includes("name")) {
-      return /^[A-Za-z]{2,}(?:\s[A-Za-z]{2,}){0,2}$/.test(t);
-    }
-
-    if (
-      slot.includes("party") ||
-      slot.includes("size") ||
-      slot.includes("guest") ||
-      slot.includes("people")
-    ) {
-    return /^\d{1,2}$/.test(t);
-  }
-
-  if (slot.includes("phone")) {
-    return /^[\d\s()+-]{7,}$/.test(t);
-  }
-
-  if (slot.includes("email")) {
-    return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(t);
-  }
-
-  return true;
-}
 
   function normalizeForStability(text) {
     return String(text || "")
@@ -838,34 +778,86 @@ async function handleTwilioStream(ws, req) {
     return false;
   }
 
-  function noteTranscriptStability(ws, text) {
+  function noteTranscriptStability(targetWs, text) {
     const normalized = normalizeIncomingVoiceText(text);
-    const previous = ws.__lastStableTranscript || "";
+    const previous = targetWs.__lastStableTranscript || "";
 
     if (!normalized) return;
 
     if (!previous) {
-      ws.__lastStableTranscript = normalized;
-      ws.__lastStableTranscriptAt = Date.now();
+      targetWs.__lastStableTranscript = normalized;
+      targetWs.__lastStableTranscriptAt = Date.now();
       return;
     }
 
     if (isTranscriptExtension(previous, normalized)) {
-      ws.__lastStableTranscript = normalized;
-      ws.__lastStableTranscriptAt = Date.now();
+      targetWs.__lastStableTranscript = normalized;
+      targetWs.__lastStableTranscriptAt = Date.now();
       return;
     }
 
     if (normalizeForStability(previous) !== normalizeForStability(normalized)) {
-      ws.__lastStableTranscript = normalized;
-      ws.__lastStableTranscriptAt = Date.now();
+      targetWs.__lastStableTranscript = normalized;
+      targetWs.__lastStableTranscriptAt = Date.now();
     }
   }
 
-  function shouldWaitForMoreSpeech(ws, expectedSlot) {
-    const pending = normalizeIncomingVoiceText(ws.__pendingVoiceTranscript);
-    const stable = normalizeIncomingVoiceText(ws.__lastStableTranscript);
-    const stableAgeMs = Date.now() - (ws.__lastStableTranscriptAt || 0);
+  function matchesExpectedSlot(text, expectedSlot) {
+    const t = normalizeSlotValue(text);
+
+    if (!t || !expectedSlot) return false;
+
+    const slot = String(expectedSlot).toLowerCase();
+
+    if (slot.includes("time")) {
+      return (
+        /^\d{1,2}(:\d{2})?\s?(am|pm)?$/i.test(t) ||
+        /^(am|pm)$/i.test(t) ||
+        /^(morning|afternoon|evening|night)$/i.test(t)
+      );
+    }
+
+    if (slot.includes("date") || slot.includes("day")) {
+      return (
+        /^(today|tomorrow|monday|tuesday|wednesday|thursday|friday|saturday|sunday)$/i.test(
+          t
+        ) ||
+        /^(jan|january|feb|february|mar|march|apr|april|may|jun|june|jul|july|aug|august|sep|sept|september|oct|october|nov|november|dec|december)$/i.test(
+          t
+        ) ||
+        /^\d{1,2}$/.test(t)
+      );
+    }
+
+    if (slot.includes("name")) {
+      return /^[A-Za-z]{2,}(?:\s[A-Za-z]{2,}){0,2}$/.test(t);
+    }
+
+    if (
+      slot.includes("party") ||
+      slot.includes("size") ||
+      slot.includes("guest") ||
+      slot.includes("people") ||
+      slot.includes("person")
+    ) {
+      return /^\d{1,2}$/.test(t);
+    }
+
+    if (slot.includes("phone")) {
+      return /^[\d\s()+-]{7,}$/.test(t);
+    }
+
+    if (slot.includes("email")) {
+      return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(t);
+    }
+
+    return true;
+  }
+
+  function shouldWaitForMoreSpeech(targetWs, expectedSlot) {
+    const pending = normalizeIncomingVoiceText(targetWs.__pendingVoiceTranscript);
+    const stable = normalizeIncomingVoiceText(targetWs.__lastStableTranscript);
+    const stableAgeMs = Date.now() - (targetWs.__lastStableTranscriptAt || 0);
 
     if (!pending) return false;
 
@@ -874,7 +866,11 @@ async function handleTwilioStream(ws, req) {
     }
 
     const wordCount = pending.split(/\s+/).filter(Boolean).length;
-    const stillGrowing = stable && isTranscriptExtension(pending, stable) && normalizeForStability(pending) !== normalizeForStability(ws.__lastCommittedTranscript || "");
+    const stillGrowing =
+      stable &&
+      isTranscriptExtension(pending, stable) &&
+      normalizeForStability(pending) !==
+        normalizeForStability(targetWs.__lastCommittedTranscript || "");
 
     if (wordCount < 4) {
       return true;
@@ -891,376 +887,165 @@ async function handleTwilioStream(ws, req) {
     return false;
   }
 
-  // 👇 your existing code continues here...
+  function isMeaningfulUtterance(text) {
+    const t = String(text || "").trim();
+    if (!t) return false;
 
-function isMeaningfulUtterance(text) {
-  const t = String(text || "").trim();
+    const words = t.split(/\s+/);
 
-  if (!t) return false;
+    if (/^(for|and|the|a|an|to|of|on|in)$/i.test(t)) return false;
+    if (/^(um+|uh+|hmm+|mm+|ah+|er+)$/i.test(t)) return false;
+    if (/^[a-z]+\.?$/i.test(t) && words.length === 1 && t.length <= 5) return false;
 
-  const words = t.split(/\s+/);
-
-  // obvious junk fragments only
-  if (/^(for|and|the|a|an|to|of|on|in)$/i.test(t)) return false;
-  if (/^(um+|uh+|hmm+|mm+|ah+|er+)$/i.test(t)) return false;
-
-  // single random alphabetic fragment like "talk." or "store."
-  if (/^[a-z]+\.?$/i.test(t) && words.length === 1 && t.length <= 5) return false;
-
-  return true;
-}
-
-function isValidSlotValue(text) {
-  const t = String(text || "").trim().replace(/[.,!?]+$/g, "");
-
-  // full time: 2, 2:00, 2 pm, 2:00 pm
-  if (/^\d{1,2}(:\d{2})?\s?(am|pm)?$/i.test(t)) return true;
-
-  // am / pm fragment
-  if (/^(am|pm)$/i.test(t)) return true;
-
-  // relative / weekday date
-  if (
-    /^(today|tomorrow|monday|tuesday|wednesday|thursday|friday|saturday|sunday)$/i.test(t)
-  ) return true;
-
-  // month names
-  if (
-    /^(jan|january|feb|february|mar|march|apr|april|may|jun|june|jul|july|aug|august|sep|sept|september|oct|october|nov|november|dec|december)$/i.test(t)
-  ) return true;
-
-  // day-of-month piece
-  if (/^\d{1,2}$/.test(t)) return true;
-
-  // simple name
-  if (/^[A-Za-z]{2,}(?:\s[A-Za-z]{2,})?$/.test(t)) return true;
-
-  return false;
-}
-
-function getCurrentSession() {
-  if (!activeCallSid) return null;
-  try {
-    const { getSession } = require("../voice/voiceSessionStore");
-    return getSession(activeCallSid);
-  } catch (_) {
-    return null;
-  }
-}
-
-function normalizeSlotText(text) {
-  return String(text || "")
-    .toLowerCase()
-    .replace(/[.,!?]+$/g, "")
-    .trim();
-}
-
-function isWeakFragment(text) {
-  const t = normalizeSlotText(text);
-
-  if (!t) return true;
-
-  return [
-    "looking for",
-    "are you",
-    "yes i said",
-    "that is",
-    "its",
-    "it's",
-    "appointment",
-    "doctor",
-    "doctors",
-    "mint",
-    "point",
-    "being well",
-    "into 1 month",
-    "support 1 month",
-    "did you get it",
-    "you get it",
-  ].includes(t);
-}
-
-function matchesExpectedSlot(text, expectedSlot) {
-  const t = String(text || "").trim().replace(/[.,!?]+$/g, "");
-
-  if (!expectedSlot) return true;
-
-  const slot = String(expectedSlot).toLowerCase();
-
-  if (slot.includes("time")) {
-    return (
-      /^\d{1,2}(:\d{2})?\s?(am|pm)?$/i.test(t) ||
-      /^(am|pm)$/i.test(t) ||
-      /^(morning|afternoon|evening|night)$/i.test(t)
-    );
+    return true;
   }
 
-  if (slot.includes("date") || slot.includes("day")) {
-    return (
-      /^(today|tomorrow|monday|tuesday|wednesday|thursday|friday|saturday|sunday)$/i.test(t) ||
-      /^(jan|january|feb|february|mar|march|apr|april|may|jun|june|jul|july|aug|august|sep|sept|september|oct|october|nov|november|dec|december)$/i.test(t) ||
-      /^\d{1,2}$/.test(t)
-    );
-  }
+  function isValidSlotValue(text) {
+    const t = String(text || "")
+      .trim()
+      .replace(/[.,!?]+$/g, "");
 
-  if (slot.includes("name")) {
-    return /^[A-Za-z]{2,}(?:\s[A-Za-z]{2,})?$/.test(t);
-  }
+    if (/^\d{1,2}(:\d{2})?\s?(am|pm)?$/i.test(t)) return true;
+    if (/^(am|pm)$/i.test(t)) return true;
 
-  if (
-    slot.includes("party") ||
-    slot.includes("size") ||
-    slot.includes("guest") ||
-    slot.includes("people") ||
-    slot.includes("person")
-  ) {
-    return /^\d{1,2}$/.test(t);
-  }
-
-  return true;
-}
-
-async function dispatchPendingVoiceTurn() {
-  const finalVoiceText = normalizeIncomingVoiceText(ws.__pendingVoiceTranscript);
-  const session = getCurrentSession();
-  const expectedSlot = session?.lastAskedSlot || null;
-
-  if (shouldWaitForMoreSpeech(ws, expectedSlot)) {
-    pushTwilioDebug("dispatch_skipped_incomplete", {
-      callSid: activeCallSid,
-      text: finalVoiceText,
-      reason: expectedSlot ? "waiting_slot_stability" : "waiting_free_turn_stability",
-      expectedSlot,
-    });
-    return;
-  }
-
-  if (!finalVoiceText) {
-    pushTwilioDebug("dispatch_skipped_incomplete", {
-      callSid: activeCallSid,
-      text: finalVoiceText,
-      reason: "empty",
-      expectedSlot,
-    });
-    return;
-  }
-
-  const normalized = finalVoiceText.trim();
-  const words = normalized.split(/\s+/).filter(Boolean);
-  const wordCount = words.length;
-
-  const looksUnfinished =
-    /(?:\b(and|or|for|with|to|at|on|in|my|the|a|an)\s*)$/i.test(normalized) ||
-    /^(i|i'm|i am|hi|hello|yeah|yes|no|please)$/i.test(normalized) ||
-    (/^[a-z]+$/i.test(normalized) && wordCount === 1);
-
-  const looksTooShortForFreeTurn =
-    wordCount < 3 && normalized.length < 12;
-
-  if (!expectedSlot && (looksUnfinished || looksTooShortForFreeTurn)) {
-    pushTwilioDebug("dispatch_skipped_incomplete", {
-      callSid: activeCallSid,
-      text: finalVoiceText,
-      reason: looksUnfinished ? "unfinished_free_turn" : "too_short_free_turn",
-      expectedSlot,
-    });
-    return;
-  }
-
-  if (isWeakFragment(finalVoiceText)) {
-    pushTwilioDebug("dispatch_skipped_incomplete", {
-      callSid: activeCallSid,
-      text: finalVoiceText,
-      reason: "weak_fragment",
-      expectedSlot,
-    });
-    return;
-  }
-
-  if (expectedSlot && !matchesExpectedSlot(finalVoiceText, expectedSlot)) {
-    pushTwilioDebug("dispatch_skipped_incomplete", {
-      callSid: activeCallSid,
-      text: finalVoiceText,
-      reason: "slot_mismatch",
-      expectedSlot,
-    });
-    return;
-  }
-
-  if (!isMeaningfulUtterance(finalVoiceText) && !isValidSlotValue(finalVoiceText)) {
-    pushTwilioDebug("dispatch_skipped_incomplete", {
-      callSid: activeCallSid,
-      text: finalVoiceText,
-      reason: "not_meaningful",
-      expectedSlot,
-    });
-    return;
-  }
-
-  if (ws.__dispatchInFlight) {
-    pushTwilioDebug("dispatch_skipped_inflight", {
-      callSid: activeCallSid,
-      streamSid: activeStreamSid,
-    });
-    return;
-  }
-
-  ws.__voiceTurnTimer = null;
-  ws.__pendingVoiceTranscript = "";
-
-  if (!streamActive) return;
-
-  if (isPlaybackLocked(ws)) {
-    pushTwilioDebug("dispatch_skipped_playback_lock", {
-      callSid: activeCallSid,
-      streamSid: activeStreamSid,
-    });
-    return;
-  }
-
-  if (!isMeaningfulVoiceUtterance(finalVoiceText)) {
-    pushTwilioDebug("utterance_skipped", {
-      callSid: activeCallSid,
-      text: finalVoiceText,
-    });
-    return;
-  }
-
-  ws.__dispatchInFlight = true;
-
-  try {
-    pushTwilioDebug("dispatch_turn", {
-      callSid: activeCallSid,
-      text: finalVoiceText.slice(0, 120),
-    });
-
-    const finalResult = handleTranscriptFinal(activeCallSid, finalVoiceText);
-    if (!finalResult || !finalResult.shouldProcess) {
-      pushTwilioDebug("dispatch_skipped_controller", {
-        callSid: activeCallSid,
-        text: finalVoiceText.slice(0, 120),
-      });
-      return;
+    if (
+      /^(today|tomorrow|monday|tuesday|wednesday|thursday|friday|saturday|sunday)$/i.test(
+        t
+      )
+    ) {
+      return true;
     }
 
-    let reply = "";
+    if (
+      /^(jan|january|feb|february|mar|march|apr|april|may|jun|june|jul|july|aug|august|sep|sept|september|oct|october|nov|november|dec|december)$/i.test(
+        t
+      )
+    ) {
+      return true;
+    }
 
+    if (/^\d{1,2}$/.test(t)) return true;
+    if (/^[A-Za-z]{2,}(?:\s[A-Za-z]{2,})?$/.test(t)) return true;
+
+    return false;
+  }
+
+  function getCurrentSession() {
+    if (!activeCallSid) return null;
     try {
-      const turnResult = await handleCallerTurn({
-        callSid: activeCallSid,
-        transcript: finalVoiceText,
-        meta: ws.__routingMeta || {},
-      });
-
-      reply = normalizeVoiceReply(turnResult?.replyText || "");
-    } catch (err) {
-      console.warn("⚠️ [twilio] handleCallerTurn failed:", err.message);
-      pushTwilioDebug("handle_caller_turn_error", {
-        callSid: activeCallSid,
-        error: err.message,
-      });
+      return getSession(activeCallSid);
+    } catch (_) {
+      return null;
     }
+  }
 
-    if (!reply) {
-      pushTwilioDebug("reply_empty_skipped", {
+  function normalizeSlotText(text) {
+    return String(text || "")
+      .toLowerCase()
+      .replace(/[.,!?]+$/g, "")
+      .trim();
+  }
+
+  function isWeakFragment(text) {
+    const t = normalizeSlotText(text);
+
+    if (!t) return true;
+
+    return [
+      "looking for",
+      "are you",
+      "yes i said",
+      "that is",
+      "its",
+      "it's",
+      "appointment",
+      "doctor",
+      "doctors",
+      "mint",
+      "point",
+      "being well",
+      "into 1 month",
+      "support 1 month",
+      "did you get it",
+      "you get it",
+    ].includes(t);
+  }
+
+  async function dispatchPendingVoiceTurn() {
+    const finalVoiceText = normalizeIncomingVoiceText(ws.__pendingVoiceTranscript);
+    const session = getCurrentSession();
+    const expectedSlot = session?.lastAskedSlot || null;
+
+    if (shouldWaitForMoreSpeech(ws, expectedSlot)) {
+      pushTwilioDebug("dispatch_skipped_incomplete", {
         callSid: activeCallSid,
-        text: finalVoiceText.slice(0, 120),
+        text: finalVoiceText,
+        reason: expectedSlot ? "waiting_slot_stability" : "waiting_free_turn_stability",
+        expectedSlot,
       });
       return;
     }
 
-    const controllerReply = handleProcessingResult(activeCallSid, {
-      shouldSpeak: true,
-      replyText: reply,
-      replyType: looksTaskCompleted(reply) ? "result" : "reply",
-    });
-
-    if (!controllerReply || !controllerReply.shouldSpeak) {
-      pushTwilioDebug("reply_blocked_controller", {
+    if (!finalVoiceText) {
+      pushTwilioDebug("dispatch_skipped_incomplete", {
         callSid: activeCallSid,
+        text: finalVoiceText,
+        reason: "empty",
+        expectedSlot,
       });
       return;
     }
 
-    await synthesizeAndSendReply(
-      ws,
-      activeCallSid,
-      activeStreamSid,
-      tenantId,
-      tenantLangCode,
-      controllerReply.replyText,
-      "main"
-    );
+    const normalized = finalVoiceText.trim();
+    const words = normalized.split(/\s+/).filter(Boolean);
+    const wordCount = words.length;
 
-    ws.__lastCommittedTranscript = finalVoiceText;
-  } finally {
-    ws.__dispatchInFlight = false;
-  }
-}
+    const looksUnfinished =
+      /(?:\b(and|or|for|with|to|at|on|in|my|the|a|an)\s*)$/i.test(normalized) ||
+      /^(i|i'm|i am|hi|hello|yeah|yes|no|please)$/i.test(normalized) ||
+      (/^[a-z]+$/i.test(normalized) && wordCount === 1);
 
-  const normalized = finalVoiceText.trim();
-const words = normalized.split(/\s+/).filter(Boolean);
-const wordCount = words.length;
+    const looksTooShortForFreeTurn = wordCount < 3 && normalized.length < 12;
 
-const looksUnfinished =
-  /(?:\b(and|or|for|with|to|at|on|in|my|the|a|an)\s*)$/i.test(normalized) ||
-  /^(i|i'm|i am|hi|hello|yeah|yes|no|please)$/i.test(normalized) ||
-  /^[a-z]+$/i.test(normalized) && wordCount === 1;
+    if (!expectedSlot && (looksUnfinished || looksTooShortForFreeTurn)) {
+      pushTwilioDebug("dispatch_skipped_incomplete", {
+        callSid: activeCallSid,
+        text: finalVoiceText,
+        reason: looksUnfinished ? "unfinished_free_turn" : "too_short_free_turn",
+        expectedSlot,
+      });
+      return;
+    }
 
-const looksTooShortForFreeTurn =
-  wordCount < 3 && normalized.length < 12;
+    if (isWeakFragment(finalVoiceText)) {
+      pushTwilioDebug("dispatch_skipped_incomplete", {
+        callSid: activeCallSid,
+        text: finalVoiceText,
+        reason: "weak_fragment",
+        expectedSlot,
+      });
+      return;
+    }
 
-if (!expectedSlot && (looksUnfinished || looksTooShortForFreeTurn)) {
-  pushTwilioDebug("dispatch_skipped_incomplete", {
-    callSid: activeCallSid,
-    text: finalVoiceText,
-    reason: looksUnfinished ? "unfinished_free_turn" : "too_short_free_turn",
-    expectedSlot,
-  });
-  return;
-}
+    if (expectedSlot && !matchesExpectedSlot(finalVoiceText, expectedSlot)) {
+      pushTwilioDebug("dispatch_skipped_incomplete", {
+        callSid: activeCallSid,
+        text: finalVoiceText,
+        reason: "slot_mismatch",
+        expectedSlot,
+      });
+      return;
+    }
 
-  if (!finalVoiceText) {
-    pushTwilioDebug("dispatch_skipped_incomplete", {
-      callSid: activeCallSid,
-      text: finalVoiceText,
-      reason: "empty",
-      expectedSlot,
-    });
-    return;
-  }
-
-  if (isWeakFragment(finalVoiceText)) {
-    pushTwilioDebug("dispatch_skipped_incomplete", {
-      callSid: activeCallSid,
-      text: finalVoiceText,
-      reason: "weak_fragment",
-      expectedSlot,
-    });
-    return;
-  }
-
-  if (expectedSlot && !matchesExpectedSlot(finalVoiceText, expectedSlot)) {
-    pushTwilioDebug("dispatch_skipped_incomplete", {
-      callSid: activeCallSid,
-      text: finalVoiceText,
-      reason: "slot_mismatch",
-      expectedSlot,
-    });
-    return;
-  }
-
-  if (!isMeaningfulUtterance(finalVoiceText) && !isValidSlotValue(finalVoiceText)) {
-    pushTwilioDebug("dispatch_skipped_incomplete", {
-      callSid: activeCallSid,
-      text: finalVoiceText,
-      reason: "not_meaningful",
-      expectedSlot,
-    });
-    return;
-  }
-
-    console.log("🚀 DISPATCH TRIGGERED:", finalVoiceText);
+    if (!isMeaningfulUtterance(finalVoiceText) && !isValidSlotValue(finalVoiceText)) {
+      pushTwilioDebug("dispatch_skipped_incomplete", {
+        callSid: activeCallSid,
+        text: finalVoiceText,
+        reason: "not_meaningful",
+        expectedSlot,
+      });
+      return;
+    }
 
     if (ws.__dispatchInFlight) {
       pushTwilioDebug("dispatch_skipped_inflight", {
@@ -1284,13 +1069,6 @@ if (!expectedSlot && (looksUnfinished || looksTooShortForFreeTurn)) {
     }
 
     if (!isMeaningfulVoiceUtterance(finalVoiceText)) {
-      console.log(
-        `${VOICE_LOG_PREFIX} skip_non_meaningful`,
-        JSON.stringify({
-          callSid: activeCallSid,
-          text: finalVoiceText,
-        })
-      );
       pushTwilioDebug("utterance_skipped", {
         callSid: activeCallSid,
         text: finalVoiceText,
@@ -1306,8 +1084,10 @@ if (!expectedSlot && (looksUnfinished || looksTooShortForFreeTurn)) {
         JSON.stringify({
           callSid: activeCallSid,
           text: finalVoiceText,
+          expectedSlot,
         })
       );
+
       pushTwilioDebug("dispatch_turn", {
         callSid: activeCallSid,
         text: finalVoiceText.slice(0, 120),
@@ -1341,7 +1121,6 @@ if (!expectedSlot && (looksUnfinished || looksTooShortForFreeTurn)) {
       }
 
       if (!reply) {
-        console.warn("⚠️ [twilio] No reply returned for caller turn; skipping TTS.");
         pushTwilioDebug("reply_empty_skipped", {
           callSid: activeCallSid,
           text: finalVoiceText.slice(0, 120),
@@ -1371,6 +1150,8 @@ if (!expectedSlot && (looksUnfinished || looksTooShortForFreeTurn)) {
         controllerReply.replyText,
         "main"
       );
+
+      ws.__lastCommittedTranscript = finalVoiceText;
     } finally {
       ws.__dispatchInFlight = false;
     }
@@ -1386,10 +1167,7 @@ if (!expectedSlot && (looksUnfinished || looksTooShortForFreeTurn)) {
 
         console.log("🧭 [twilio] customParameters:", customParams);
 
-        tenantId =
-          customParams.tenantId ||
-          customParams.tenant_id ||
-          tenantId;
+        tenantId = customParams.tenantId || customParams.tenant_id || tenantId;
 
         const calledNumber =
           customParams.calledNumber ||
@@ -1398,10 +1176,7 @@ if (!expectedSlot && (looksUnfinished || looksTooShortForFreeTurn)) {
           customParams.To ||
           null;
 
-        const businessId =
-          customParams.businessId ||
-          customParams.business_id ||
-          null;
+        const businessId = customParams.businessId || customParams.business_id || null;
 
         ws.__routingMeta = {
           tenantId,
@@ -1431,7 +1206,7 @@ if (!expectedSlot && (looksUnfinished || looksTooShortForFreeTurn)) {
         ws.__speakUntil = 0;
         ws.__acaSessionId = `call_${activeCallSid || activeStreamSid || Date.now()}`;
         ws.__acaStructuredFlowActive = false;
-                ws.__dispatchInFlight = false;
+        ws.__dispatchInFlight = false;
         ws.__sttInFlight = false;
         ws.__sttBufferBytes = 0;
         ws.__lastStableTranscript = "";
@@ -1569,8 +1344,8 @@ if (!expectedSlot && (looksUnfinished || looksTooShortForFreeTurn)) {
         ws.__sttBufferBytes = (ws.__sttBufferBytes || 0) + payloadBuffer.length;
 
         if ((ws.__sttBufferBytes || 0) < VOICE_MIN_BUFFER_BYTES_FOR_STT) {
-  return;
-}
+          return;
+        }
 
         const now = Date.now();
         if (now - lastResponseAt < VOICE_STT_COOLDOWN_MS) {
@@ -1659,97 +1434,108 @@ if (!expectedSlot && (looksUnfinished || looksTooShortForFreeTurn)) {
 
         const cleanedText = normalizeIncomingVoiceText(userText);
 
-if (!cleanedText) {
-  pushTwilioDebug("stt_invalid_skipped", {
-    callSid: activeCallSid,
-    raw: userText,
-    cleaned: cleanedText,
-    reason: "empty_transcript",
-    ignoredDuringPlayback: isPlaybackLocked(ws),
-  });
-  return;
-}
+        if (!cleanedText) {
+          pushTwilioDebug("stt_invalid_skipped", {
+            callSid: activeCallSid,
+            raw: userText,
+            cleaned: cleanedText,
+            reason: "empty_transcript",
+            ignoredDuringPlayback: isPlaybackLocked(ws),
+          });
+          return;
+        }
 
-const canonicalText = cleanedText.replace(/[.,!?]+$/g, "").trim();
+        const canonicalText = cleanedText.replace(/[.,!?]+$/g, "").trim();
 
-const isShortSlotFragment =
-  /^\d{1,2}$/.test(canonicalText) ||                // 2, 20
-  /^(am|pm)$/i.test(canonicalText) ||              // am, pm
-  /^(jan|january|feb|february|mar|march|apr|april|may|jun|june|jul|july|aug|august|sep|sept|september|oct|october|nov|november|dec|december)$/i.test(canonicalText);
+        const isShortSlotFragment =
+          /^\d{1,2}$/.test(canonicalText) ||
+          /^(am|pm)$/i.test(canonicalText) ||
+          /^(jan|january|feb|february|mar|march|apr|april|may|jun|june|jul|july|aug|august|sep|sept|september|oct|october|nov|november|dec|december)$/i.test(
+            canonicalText
+          );
 
-if (cleanedText.length < 3 && !isShortSlotFragment) {
-  pushTwilioDebug("stt_invalid_skipped", {
-    callSid: activeCallSid,
-    raw: userText,
-    cleaned: cleanedText,
-    reason: "too_short",
-    ignoredDuringPlayback: isPlaybackLocked(ws),
-  });
-  return;
-}
+        if (cleanedText.length < 3 && !isShortSlotFragment) {
+          pushTwilioDebug("stt_invalid_skipped", {
+            callSid: activeCallSid,
+            raw: userText,
+            cleaned: cleanedText,
+            reason: "too_short",
+            ignoredDuringPlayback: isPlaybackLocked(ws),
+          });
+          return;
+        }
 
-if (/^(um+|uh+|hmm+|mm+|ah+|er+)$/i.test(cleanedText)) {
-  pushTwilioDebug("stt_invalid_skipped", {
-    callSid: activeCallSid,
-    raw: userText,
-    cleaned: cleanedText,
-    reason: "filler_only",
-    ignoredDuringPlayback: isPlaybackLocked(ws),
-  });
-  return;
-}
+        if (/^(um+|uh+|hmm+|mm+|ah+|er+)$/i.test(cleanedText)) {
+          pushTwilioDebug("stt_invalid_skipped", {
+            callSid: activeCallSid,
+            raw: userText,
+            cleaned: cleanedText,
+            reason: "filler_only",
+            ignoredDuringPlayback: isPlaybackLocked(ws),
+          });
+          return;
+        }
 
         console.log(`👂  Heard (Call ${activeCallSid}):`, cleanedText);
 
         handleTranscriptPartial(activeCallSid, cleanedText);
+        noteTranscriptStability(ws, cleanedText);
 
-        // Only append if it's clearly continuation
-const mergeCanonicalText = cleanedText.replace(/[.,!?]+$/g, "").trim();
-const pendingCanonical = String(ws.__pendingVoiceTranscript || "")
-  .replace(/[.,!?]+$/g, "")
-  .trim();
+        const mergeCanonicalText = cleanedText.replace(/[.,!?]+$/g, "").trim();
+        const pendingCanonical = String(ws.__pendingVoiceTranscript || "")
+          .replace(/[.,!?]+$/g, "")
+          .trim();
 
-const isStandaloneCompleteSlot =
-  /^\d{1,2}(:\d{2})?\s?(am|pm)?$/i.test(mergeCanonicalText) ||
-  /^(today|tomorrow|monday|tuesday|wednesday|thursday|friday|saturday|sunday)$/i.test(mergeCanonicalText) ||
-  /^[A-Za-z]{2,}(?:\s[A-Za-z]{2,})?$/.test(mergeCanonicalText);
+        const isStandaloneCompleteSlot =
+          /^\d{1,2}(:\d{2})?\s?(am|pm)?$/i.test(mergeCanonicalText) ||
+          /^(today|tomorrow|monday|tuesday|wednesday|thursday|friday|saturday|sunday)$/i.test(
+            mergeCanonicalText
+          ) ||
+          /^[A-Za-z]{2,}(?:\s[A-Za-z]{2,})?$/.test(mergeCanonicalText);
 
-const isDateOrTimeFragment =
-  /^(am|pm)$/i.test(mergeCanonicalText) ||
-  /^\d{1,2}$/.test(mergeCanonicalText) ||
-  /^(jan|january|feb|february|mar|march|apr|april|may|jun|june|jul|july|aug|august|sep|sept|september|oct|october|nov|november|dec|december)$/i.test(mergeCanonicalText) ||
-  /^(in the morning|in the evening|at night)$/i.test(mergeCanonicalText);
+        const isDateOrTimeFragment =
+          /^(am|pm)$/i.test(mergeCanonicalText) ||
+          /^\d{1,2}$/.test(mergeCanonicalText) ||
+          /^(jan|january|feb|february|mar|march|apr|april|may|jun|june|jul|july|aug|august|sep|sept|september|oct|october|nov|november|dec|december)$/i.test(
+            mergeCanonicalText
+          ) ||
+          /^(in the morning|in the evening|at night)$/i.test(mergeCanonicalText);
 
-const pendingLooksDateOrTimeLike =
-  /^\d{1,2}(:\d{2})?$/i.test(pendingCanonical) ||
-  /^(jan|january|feb|february|mar|march|apr|april|may|jun|june|jul|july|aug|august|sep|sept|september|oct|october|nov|november|dec|december)$/i.test(pendingCanonical) ||
-  /^(today|tomorrow|monday|tuesday|wednesday|thursday|friday|saturday|sunday)$/i.test(pendingCanonical) ||
-  /\b(jan|january|feb|february|mar|march|apr|april|may|jun|june|jul|july|aug|august|sep|sept|september|oct|october|nov|november|dec|december)\b/i.test(pendingCanonical);
+        const pendingLooksDateOrTimeLike =
+          /^\d{1,2}(:\d{2})?$/i.test(pendingCanonical) ||
+          /^(jan|january|feb|february|mar|march|apr|april|may|jun|june|jul|july|aug|august|sep|sept|september|oct|october|nov|november|dec|december)$/i.test(
+            pendingCanonical
+          ) ||
+          /^(today|tomorrow|monday|tuesday|wednesday|thursday|friday|saturday|sunday)$/i.test(
+            pendingCanonical
+          ) ||
+          /\b(jan|january|feb|february|mar|march|apr|april|may|jun|june|jul|july|aug|august|sep|sept|september|oct|october|nov|november|dec|december)\b/i.test(
+            pendingCanonical
+          );
 
-// Append when current piece looks like it belongs to an unfinished date/time expression
-if (
-  ws.__pendingVoiceTranscript &&
-  (
-    (isDateOrTimeFragment && pendingLooksDateOrTimeLike) ||
-    (!isStandaloneCompleteSlot && mergeCanonicalText.length > 3)
-  )
-) {
-  ws.__pendingVoiceTranscript =
-    `${ws.__pendingVoiceTranscript} ${mergeCanonicalText}`.trim();
-} else {
-  ws.__pendingVoiceTranscript = mergeCanonicalText;
-}
+        if (
+          ws.__pendingVoiceTranscript &&
+          ((isDateOrTimeFragment && pendingLooksDateOrTimeLike) ||
+            (!isStandaloneCompleteSlot && mergeCanonicalText.length > 3))
+        ) {
+          ws.__pendingVoiceTranscript =
+            `${ws.__pendingVoiceTranscript} ${mergeCanonicalText}`.trim();
+        } else {
+          ws.__pendingVoiceTranscript = mergeCanonicalText;
+        }
+
         const previousInputAt = ws.__lastVoiceInputAt || 0;
         const inputAt = Date.now();
-        const deltaFromPreviousInput = previousInputAt > 0 ? inputAt - previousInputAt : 0;
+        const deltaFromPreviousInput =
+          previousInputAt > 0 ? inputAt - previousInputAt : 0;
         ws.__lastVoiceInputAt = inputAt;
 
         clearPendingVoiceTurn(ws);
 
         const adjustedDelay =
-  previousInputAt > 0
-    ? Math.max(250, VOICE_TURN_SILENCE_MS - Math.min(deltaFromPreviousInput, 300))
-    : VOICE_TURN_SILENCE_MS;
+          previousInputAt > 0
+            ? Math.max(250, VOICE_TURN_SILENCE_MS - Math.min(deltaFromPreviousInput, 300))
+            : VOICE_TURN_SILENCE_MS;
 
         ws.__voiceTurnTimer = setTimeout(async () => {
           try {
@@ -1841,7 +1627,7 @@ if (
     endPlaybackLock(ws, activeCallSid, activeStreamSid, "ws_close");
     handleCallEnded(activeCallSid);
   });
-
+}
 
 module.exports = {
   router,
