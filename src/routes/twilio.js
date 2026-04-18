@@ -1249,21 +1249,21 @@ if (/^(um+|uh+|hmm+|mm+|ah+|er+)$/i.test(cleanedText)) {
         handleTranscriptPartial(activeCallSid, cleanedText);
 
         // Only append if it's clearly continuation
-const canonicalText = cleanedText.replace(/[.,!?]+$/g, "").trim();
+const mergeCanonicalText = cleanedText.replace(/[.,!?]+$/g, "").trim();
 const pendingCanonical = String(ws.__pendingVoiceTranscript || "")
   .replace(/[.,!?]+$/g, "")
   .trim();
 
 const isStandaloneCompleteSlot =
-  /^\d{1,2}(:\d{2})?\s?(am|pm)?$/i.test(canonicalText) || // 4, 4:00, 4 pm
-  /^(today|tomorrow|monday|tuesday|wednesday|thursday|friday|saturday|sunday)$/i.test(canonicalText) ||
-  /^[A-Za-z]{2,}(?:\s[A-Za-z]{2,})?$/.test(canonicalText);
+  /^\d{1,2}(:\d{2})?\s?(am|pm)?$/i.test(mergeCanonicalText) ||
+  /^(today|tomorrow|monday|tuesday|wednesday|thursday|friday|saturday|sunday)$/i.test(mergeCanonicalText) ||
+  /^[A-Za-z]{2,}(?:\s[A-Za-z]{2,})?$/.test(mergeCanonicalText);
 
 const isDateOrTimeFragment =
-  /^(am|pm)$/i.test(canonicalText) ||
-  /^\d{1,2}$/.test(canonicalText) ||
-  /^(jan|january|feb|february|mar|march|apr|april|may|jun|june|jul|july|aug|august|sep|sept|september|oct|october|nov|november|dec|december)$/i.test(canonicalText) ||
-  /^(in the morning|in the evening|at night)$/i.test(canonicalText);
+  /^(am|pm)$/i.test(mergeCanonicalText) ||
+  /^\d{1,2}$/.test(mergeCanonicalText) ||
+  /^(jan|january|feb|february|mar|march|apr|april|may|jun|june|jul|july|aug|august|sep|sept|september|oct|october|nov|november|dec|december)$/i.test(mergeCanonicalText) ||
+  /^(in the morning|in the evening|at night)$/i.test(mergeCanonicalText);
 
 const pendingLooksDateOrTimeLike =
   /^\d{1,2}(:\d{2})?$/i.test(pendingCanonical) ||
@@ -1276,13 +1276,13 @@ if (
   ws.__pendingVoiceTranscript &&
   (
     (isDateOrTimeFragment && pendingLooksDateOrTimeLike) ||
-    (!isStandaloneCompleteSlot && canonicalText.length > 3)
+    (!isStandaloneCompleteSlot && mergeCanonicalText.length > 3)
   )
 ) {
   ws.__pendingVoiceTranscript =
-    `${ws.__pendingVoiceTranscript} ${canonicalText}`.trim();
+    `${ws.__pendingVoiceTranscript} ${mergeCanonicalText}`.trim();
 } else {
-  ws.__pendingVoiceTranscript = canonicalText;
+  ws.__pendingVoiceTranscript = mergeCanonicalText;
 }
         const previousInputAt = ws.__lastVoiceInputAt || 0;
         const inputAt = Date.now();
