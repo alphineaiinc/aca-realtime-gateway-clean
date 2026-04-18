@@ -162,6 +162,13 @@ function titleCase(text) {
     .join(" ");
 }
 
+function buildConversationTranscript(session) {
+  return (session?.recentTurns || [])
+    .map((turn) => `${turn.role}: ${normalizeText(turn.text)}`)
+    .filter(Boolean)
+    .join("\n");
+}
+
 function extractDateValue(text) {
   const value = normalizeText(text).toLowerCase();
   if (!value) return "";
@@ -389,6 +396,41 @@ function inferHeuristicSlotsFromUtterance(session, utterance) {
   return inferred;
 }
 
+function inferHolisticSlotsFromConversation(session) {
+  const transcript = buildConversationTranscript(session);
+  const inferred = {};
+
+  if (!transcript) return inferred;
+
+  const dateValue = extractDateValue(transcript);
+  if (dateValue) inferred.date = dateValue;
+
+  const timeValue = extractTimeValue(transcript);
+  if (timeValue) inferred.time = timeValue;
+
+  const nameValue = extractNameValue(transcript);
+  if (nameValue) inferred.name = nameValue;
+
+  const typeValue = extractTypeValue(transcript);
+  if (typeValue) inferred.type = typeValue;
+
+  const phoneValue = extractPhoneValue(transcript);
+  if (phoneValue) inferred.phone = phoneValue;
+
+  const emailValue = extractEmailValue(transcript);
+  if (emailValue) inferred.email = emailValue;
+
+  const expectedSlot = normalizeSlotName(session?.lastAskedSlot || "");
+  if (expectedSlot) {
+    const expectedValue = inferSlotValueFromUtterance(expectedSlot, transcript);
+    if (expectedValue && session.lastAskedSlot) {
+      inferred[session.lastAskedSlot] = expectedValue;
+    }
+  }
+
+  return inferred;
+}
+
 function mergeSlotsWithoutEmpty(existingSlots = {}, incomingSlots = {}) {
   const merged = { ...existingSlots };
 
@@ -445,7 +487,7 @@ function buildSlotQuestion(slotName) {
   const slot = String(slotName || "").toLowerCase();
 
   if (!slot) {
-    return "Sorry, I missed that — could you say it again?";
+    return "Sorry, I missed that — could you say that again?";
   }
 
   if (slot.includes("date") || slot.includes("day")) {
@@ -522,8 +564,8 @@ function pushRecentTurn(session, role, text) {
     at: Date.now(),
   });
 
-  if (session.recentTurns.length > 8) {
-    session.recentTurns = session.recentTurns.slice(-8);
+  if (session.recentTurns.length > 12) {
+    session.recentTurns = session.recentTurns.slice(-12);
   }
 }
 
@@ -692,11 +734,17 @@ async function handleCallerTurn({ callSid, businessId = null, transcript, meta =
   }
 
   const deterministicSlots = inferHeuristicSlotsFromUtterance(session, utterance);
+  const holisticSlots = inferHolisticSlotsFromConversation(session);
   const extractionSlots = extraction?.slots || {};
-  const augmentedSlots = mergeSlotsWithoutEmpty(extractionSlots, deterministicSlots);
+
+  const combinedExtractionSlots = mergeSlotsWithoutEmpty(
+    mergeSlotsWithoutEmpty(extractionSlots, deterministicSlots),
+    holisticSlots
+  );
+
   const effectiveExtraction = {
     ...(extraction || {}),
-    slots: augmentedSlots,
+    slots: combinedExtractionSlots,
   };
 
   let workflowState;
@@ -724,7 +772,10 @@ async function handleCallerTurn({ callSid, businessId = null, transcript, meta =
   session.active_intent = workflowState.intent || session.active_intent || null;
   session.workflow = workflowState.intent || session.workflow || null;
 
-  const newSlots = mergeSlotsWithoutEmpty(workflowState.slots || {}, deterministicSlots);
+  const newSlots = mergeSlotsWithoutEmpty(
+    mergeSlotsWithoutEmpty(workflowState.slots || {}, deterministicSlots),
+    holisticSlots
+  );
 
   session.slots = mergeSlotsWithoutEmpty(session.slots, newSlots);
   session.workflowSlots = mergeSlotsWithoutEmpty(session.workflowSlots || {}, newSlots);
@@ -797,6 +848,8 @@ async function handleCallerTurn({ callSid, businessId = null, transcript, meta =
     slots: session.slots,
     nextMissingSlot: session.lastAskedSlot,
     deterministicSlots,
+    holisticSlots,
+    conversationTranscript: buildConversationTranscript(session),
   });
 
   return {
