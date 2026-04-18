@@ -44,11 +44,14 @@ function extractRoutingCandidates(input = {}) {
     calledNumber:
       normalizePhoneNumber(
         input.calledNumber ||
+          input.called_number ||
           input.toNumber ||
           input.to ||
           input.twilioNumber ||
           customParameters.calledNumber ||
+          customParameters.called_number ||
           customParameters.to ||
+          customParameters.To ||
           customParameters.phone_number ||
           null
       ),
@@ -75,8 +78,13 @@ async function lookupTenantByTenantId(tenantId) {
     LIMIT 1
   `;
 
-  const result = await pool.query(query, [tenantId]);
-  return result.rows[0] || null;
+  try {
+    const result = await pool.query(query, [tenantId]);
+    return result.rows[0] || null;
+  } catch (err) {
+    console.warn("[tenantResolver] tenantId lookup failed:", err.message);
+    return null;
+  }
 }
 
 async function lookupTenantByBusinessId(businessId) {
@@ -92,8 +100,13 @@ async function lookupTenantByBusinessId(businessId) {
     LIMIT 1
   `;
 
-  const result = await pool.query(query, [businessId]);
-  return result.rows[0] || null;
+  try {
+    const result = await pool.query(query, [businessId]);
+    return result.rows[0] || null;
+  } catch (err) {
+    console.warn("[tenantResolver] businessId lookup failed:", err.message);
+    return null;
+  }
 }
 
 async function lookupTenantByPhoneNumber(calledNumber) {
@@ -163,12 +176,11 @@ function buildResolutionResult(resolved, candidates) {
     };
   }
 
-
   return {
     ok: true,
-    tenantId: resolved.tenant_id || resolved.tenantId || null,
-    businessId: resolved.business_id || resolved.businessId || null,
-    clusterId: resolved.cluster_id || resolved.clusterId || null,
+    tenantId: resolved.tenant_id || resolved.tenantId || 1,
+    businessId: resolved.business_id || resolved.businessId || candidates.businessId || null,
+    clusterId: resolved.cluster_id || resolved.clusterId || "generic_service",
     callSid: candidates.callSid || null,
     calledNumber: candidates.calledNumber || null,
     reason: null
@@ -178,21 +190,32 @@ function buildResolutionResult(resolved, candidates) {
 async function resolveTenantFromVoiceContext(input = {}) {
   const candidates = extractRoutingCandidates(input);
 
+  console.log("🧭 [tenantResolver] candidates:", candidates);
+
   let resolved = null;
 
-  if (candidates.tenantId) {
-    resolved = await lookupTenantByTenantId(candidates.tenantId);
+  try {
+    if (candidates.tenantId) {
+      resolved = await lookupTenantByTenantId(candidates.tenantId);
+    }
+
+    if (!resolved && candidates.businessId) {
+      resolved = await lookupTenantByBusinessId(candidates.businessId);
+    }
+
+    if (!resolved && candidates.calledNumber) {
+      resolved = await lookupTenantByPhoneNumber(candidates.calledNumber);
+    }
+  } catch (err) {
+    console.warn("[tenantResolver] resolve flow failed, using fallback:", err.message);
+    resolved = null;
   }
 
-  if (!resolved && candidates.businessId) {
-    resolved = await lookupTenantByBusinessId(candidates.businessId);
-  }
+  const result = buildResolutionResult(resolved, candidates);
 
-  if (!resolved && candidates.calledNumber) {
-    resolved = await lookupTenantByPhoneNumber(candidates.calledNumber);
-  }
+  console.log("🧭 [tenantResolver] result:", result);
 
-  return buildResolutionResult(resolved, candidates);
+  return result;
 }
 
 module.exports = {
