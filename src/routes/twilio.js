@@ -745,6 +745,7 @@ async function handleTwilioStream(ws, req) {
   ws.__lastStableTranscript = "";
   ws.__lastStableTranscriptAt = 0;
   ws.__lastCommittedTranscript = "";
+  ws.__pendingVoiceTranscriptStartedAt = 0;
   ensurePlaybackState(ws);
 
   function getOpenExpectedSlot() {
@@ -855,38 +856,43 @@ async function handleTwilioStream(ws, req) {
   }
 
   function shouldWaitForMoreSpeech(targetWs, expectedSlot) {
-    const pending = normalizeIncomingVoiceText(targetWs.__pendingVoiceTranscript);
-    const stable = normalizeIncomingVoiceText(targetWs.__lastStableTranscript);
-    const stableAgeMs = Date.now() - (targetWs.__lastStableTranscriptAt || 0);
+  const pending = normalizeIncomingVoiceText(targetWs.__pendingVoiceTranscript);
+  const stable = normalizeIncomingVoiceText(targetWs.__lastStableTranscript);
+  const stableAgeMs = Date.now() - (targetWs.__lastStableTranscriptAt || 0);
+  const pendingAgeMs =
+    Date.now() - (targetWs.__pendingVoiceTranscriptStartedAt || Date.now());
 
-    if (!pending) return false;
+  if (!pending) return false;
 
-    if (expectedSlot) {
-      return stableAgeMs < 350;
-    }
+  const wordCount = pending.split(/\s+/).filter(Boolean).length;
+  const stillGrowing =
+    stable &&
+    isTranscriptExtension(pending, stable) &&
+    normalizeForStability(pending) !==
+      normalizeForStability(targetWs.__lastCommittedTranscript || "");
 
-    const wordCount = pending.split(/\s+/).filter(Boolean).length;
-    const stillGrowing =
-      stable &&
-      isTranscriptExtension(pending, stable) &&
-      normalizeForStability(pending) !==
-        normalizeForStability(targetWs.__lastCommittedTranscript || "");
-
-    if (wordCount < 4) {
-      return true;
-    }
-
-    if (stableAgeMs < 650) {
-      return true;
-    }
-
-    if (stillGrowing && stableAgeMs < 900) {
-      return true;
-    }
-
+  if (expectedSlot) {
+    if (stableAgeMs < 350 && pendingAgeMs < 1400) return true;
     return false;
   }
 
+  if (wordCount < 4) {
+    if (stableAgeMs < 650 && pendingAgeMs < 1800) return true;
+    return false;
+  }
+
+  if (stableAgeMs < 650) {
+    if (pendingAgeMs < 1800) return true;
+    return false;
+  }
+
+  if (stillGrowing && stableAgeMs < 900) {
+    if (pendingAgeMs < 2200) return true;
+    return false;
+  }
+
+  return false;
+}
   function isMeaningfulUtterance(text) {
     const t = String(text || "").trim();
     if (!t) return false;
@@ -994,6 +1000,7 @@ async function handleTwilioStream(ws, req) {
           streamSid: activeStreamSid,
         });
         ws.__pendingVoiceTranscript = "";
+        ws.__pendingVoiceTranscriptStartedAt = 0;
         return;
       }
 
@@ -1047,7 +1054,7 @@ async function handleTwilioStream(ws, req) {
       return;
     }
 
-   if (isWeakFragment(finalVoiceText)) {
+if (isWeakFragment(finalVoiceText)) {
   pushTwilioDebug("dispatch_skipped_incomplete", {
     callSid: activeCallSid,
     text: finalVoiceText,
@@ -1056,6 +1063,7 @@ async function handleTwilioStream(ws, req) {
   });
 
   ws.__pendingVoiceTranscript = "";
+  ws.__pendingVoiceTranscriptStartedAt = 0;
   ws.__lastStableTranscript = "";
   ws.__lastStableTranscriptAt = 0;
 
@@ -1090,8 +1098,9 @@ async function handleTwilioStream(ws, req) {
       return;
     }
 
-    ws.__voiceTurnTimer = null;
-    ws.__pendingVoiceTranscript = "";
+ws.__voiceTurnTimer = null;
+ws.__pendingVoiceTranscript = "";
+ws.__pendingVoiceTranscriptStartedAt = 0;
 
     if (!streamActive) return;
 
@@ -1247,6 +1256,7 @@ async function handleTwilioStream(ws, req) {
         ws.__lastStableTranscript = "";
         ws.__lastStableTranscriptAt = 0;
         ws.__lastCommittedTranscript = "";
+        ws.__pendingVoiceTranscriptStartedAt = 0;
 
         const playback = ensurePlaybackState(ws);
         playback.active = false;
@@ -1517,47 +1527,48 @@ async function handleTwilioStream(ws, req) {
         noteTranscriptStability(ws, cleanedText);
 
         const mergeCanonicalText = cleanedText.replace(/[.,!?]+$/g, "").trim();
-        const pendingCanonical = String(ws.__pendingVoiceTranscript || "")
-          .replace(/[.,!?]+$/g, "")
-          .trim();
+const pendingCanonical = String(ws.__pendingVoiceTranscript || "")
+  .replace(/[.,!?]+$/g, "")
+  .trim();
 
-        const isStandaloneCompleteSlot =
-          /^\d{1,2}(:\d{2})?\s?(am|pm)?$/i.test(mergeCanonicalText) ||
-          /^(today|tomorrow|monday|tuesday|wednesday|thursday|friday|saturday|sunday)$/i.test(
-            mergeCanonicalText
-          ) ||
-          /^[A-Za-z]{2,}(?:\s[A-Za-z]{2,})?$/.test(mergeCanonicalText);
+const pendingWordCount = pendingCanonical.split(/\s+/).filter(Boolean).length;
 
-        const isDateOrTimeFragment =
-          /^(am|pm)$/i.test(mergeCanonicalText) ||
-          /^\d{1,2}$/.test(mergeCanonicalText) ||
-          /^(jan|january|feb|february|mar|march|apr|april|may|jun|june|jul|july|aug|august|sep|sept|september|oct|october|nov|november|dec|december)$/i.test(
-            mergeCanonicalText
-          ) ||
-          /^(in the morning|in the evening|at night)$/i.test(mergeCanonicalText);
+const isDateOrTimeFragment =
+  /^(am|pm)$/i.test(mergeCanonicalText) ||
+  /^\d{1,2}$/.test(mergeCanonicalText) ||
+  /^(today|tomorrow|monday|tuesday|wednesday|thursday|friday|saturday|sunday)$/i.test(mergeCanonicalText) ||
+  /^(jan|january|feb|february|mar|march|apr|april|may|jun|june|jul|july|aug|august|sep|sept|september|oct|october|nov|november|dec|december)$/i.test(mergeCanonicalText) ||
+  /^(in the morning|in the evening|at night)$/i.test(mergeCanonicalText);
 
-        const pendingLooksDateOrTimeLike =
-          /^\d{1,2}(:\d{2})?$/i.test(pendingCanonical) ||
-          /^(jan|january|feb|february|mar|march|apr|april|may|jun|june|jul|july|aug|august|sep|sept|september|oct|october|nov|november|dec|december)$/i.test(
-            pendingCanonical
-          ) ||
-          /^(today|tomorrow|monday|tuesday|wednesday|thursday|friday|saturday|sunday)$/i.test(
-            pendingCanonical
-          ) ||
-          /\b(jan|january|feb|february|mar|march|apr|april|may|jun|june|jul|july|aug|august|sep|sept|september|oct|october|nov|november|dec|december)\b/i.test(
-            pendingCanonical
-          );
+const pendingLooksDateOrTimeLike =
+  /^\d{1,2}(:\d{2})?$/i.test(pendingCanonical) ||
+  /^(today|tomorrow|monday|tuesday|wednesday|thursday|friday|saturday|sunday)$/i.test(pendingCanonical) ||
+  /^(jan|january|feb|february|mar|march|apr|april|may|jun|june|jul|july|aug|august|sep|sept|september|oct|october|nov|november|dec|december)$/i.test(pendingCanonical) ||
+  /\b(today|tomorrow|monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b/i.test(pendingCanonical) ||
+  /\b(jan|january|feb|february|mar|march|apr|april|may|jun|june|jul|july|aug|august|sep|sept|september|oct|october|nov|november|dec|december)\b/i.test(pendingCanonical);
 
-        if (
-          ws.__pendingVoiceTranscript &&
-          ((isDateOrTimeFragment && pendingLooksDateOrTimeLike) ||
-            (!isStandaloneCompleteSlot && mergeCanonicalText.length > 3))
-        ) {
-          ws.__pendingVoiceTranscript =
-            `${ws.__pendingVoiceTranscript} ${mergeCanonicalText}`.trim();
-        } else {
-          ws.__pendingVoiceTranscript = mergeCanonicalText;
-        }
+const shouldAppendToExisting =
+  !pendingCanonical
+    ? false
+    : isDateOrTimeFragment
+      ? true
+      : pendingLooksDateOrTimeLike
+        ? true
+        : pendingWordCount >= 2
+          ? true
+          : mergeCanonicalText.length > 3;
+
+if (!ws.__pendingVoiceTranscriptStartedAt) {
+  ws.__pendingVoiceTranscriptStartedAt = Date.now();
+}
+
+if (pendingCanonical && shouldAppendToExisting) {
+  ws.__pendingVoiceTranscript =
+    `${ws.__pendingVoiceTranscript} ${mergeCanonicalText}`.trim();
+} else {
+  ws.__pendingVoiceTranscript = mergeCanonicalText;
+  ws.__pendingVoiceTranscriptStartedAt = Date.now();
+}
 
         const previousInputAt = ws.__lastVoiceInputAt || 0;
         const inputAt = Date.now();
@@ -1583,8 +1594,9 @@ async function handleTwilioStream(ws, req) {
                 callSid: activeCallSid,
                 streamSid: activeStreamSid,
               });
-              ws.__pendingVoiceTranscript = "";
-              return;
+            ws.__pendingVoiceTranscript = "";
+ws.__pendingVoiceTranscriptStartedAt = 0;
+return;
             }
 
             await dispatchPendingVoiceTurn();
