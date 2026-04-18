@@ -137,6 +137,132 @@ function handleTranscriptFinal(callSid, text) {
   };
 }
 
+function normalizeText(text) {
+  return String(text || "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function isUsableReply(text) {
+  return normalizeText(text).length > 0;
+}
+
+function buildConfirmationReplyFromSession(session) {
+  const slots = session?.slots || {};
+  const values = Object.entries(slots)
+    .filter(([, value]) => normalizeText(value))
+    .map(([key, value]) => ({ key, value: normalizeText(value) }));
+
+  if (!values.length) {
+    return "Let me confirm the details I have. Is that correct?";
+  }
+
+  const findValue = (matcher) => {
+    const hit = values.find(({ key }) => matcher(String(key).toLowerCase()));
+    return hit ? hit.value : "";
+  };
+
+  const dateValue = findValue((key) => key.includes("date") || key.includes("day"));
+  const timeValue = findValue((key) => key.includes("time"));
+  const partyValue = findValue((key) =>
+    key.includes("party") ||
+    key.includes("size") ||
+    key.includes("guest") ||
+    key.includes("people") ||
+    key.includes("person")
+  );
+  const nameValue = findValue((key) => key.includes("name"));
+
+  const parts = [];
+  if (dateValue) parts.push(dateValue);
+  if (timeValue) parts.push(`at ${timeValue}`);
+  if (partyValue) parts.push(`for ${partyValue}`);
+  if (nameValue) parts.push(`under ${nameValue}`);
+
+  if (parts.length > 0) {
+    return `Let me confirm: ${parts.join(" ")}. Is that correct?`;
+  }
+
+  return "Let me confirm the details I have. Is that correct?";
+}
+
+function buildSlotQuestion(slotName) {
+  const slot = String(slotName || "").toLowerCase();
+
+  if (!slot) {
+    return "Could you tell me that one more time?";
+  }
+
+  if (slot.includes("date") || slot.includes("day")) {
+    return "What date would you like?";
+  }
+
+  if (slot.includes("time")) {
+    return "What time works for you?";
+  }
+
+  if (
+    slot.includes("party") ||
+    slot.includes("size") ||
+    slot.includes("guest") ||
+    slot.includes("people") ||
+    slot.includes("person")
+  ) {
+    return "How many people should I put down?";
+  }
+
+  if (slot.includes("name")) {
+    return "Can I have your full name?";
+  }
+
+  if (slot.includes("phone")) {
+    return "What’s the best phone number for you?";
+  }
+
+  if (slot.includes("email")) {
+    return "What’s the best email address for you?";
+  }
+
+  return "Could you tell me that one more time?";
+}
+
+function buildSafeFallbackReply(session) {
+  const workflowStatus = String(session?.workflowStatus || "").toLowerCase();
+
+  if (workflowStatus === "ready_for_confirmation" || workflowStatus === "completed") {
+    return buildConfirmationReplyFromSession(session);
+  }
+
+  if (session?.lastAskedSlot) {
+    return buildSlotQuestion(session.lastAskedSlot);
+  }
+
+  const slots = session?.slots || {};
+  const knownSlotCount = Object.keys(slots).filter((key) => normalizeText(slots[key])).length;
+
+  if (knownSlotCount > 0) {
+    return "Got it. What’s the next detail I should note down?";
+  }
+
+  return "Sorry — could you say that again?";
+}
+
+function pushRecentTurn(session, role, text) {
+  if (!session.recentTurns) {
+    session.recentTurns = [];
+  }
+
+  session.recentTurns.push({
+    role,
+    text,
+    at: Date.now(),
+  });
+
+  if (session.recentTurns.length > 8) {
+    session.recentTurns = session.recentTurns.slice(-8);
+  }
+}
+
 function handleProcessingResult(callSid, brainResult) {
   const session = getSession(callSid);
   if (!session) return null;
@@ -148,11 +274,24 @@ function handleProcessingResult(callSid, brainResult) {
     return null;
   }
 
+  let replyText = normalizeText(brainResult.replyText);
+
+  if (!isUsableReply(replyText)) {
+    replyText = buildSafeFallbackReply(session);
+
+    logDecision(callSid, "Empty processing reply replaced with fallback", {
+      workflowStatus: session.workflowStatus,
+      lastAskedSlot: session.lastAskedSlot,
+      slots: session.slots || {},
+      fallbackReplyText: replyText,
+    });
+  }
+
   transition(session, STATES.READY_TO_SPEAK, "brain_ready");
 
   return {
     shouldSpeak: true,
-    replyText: brainResult.replyText,
+    replyText,
     replyType: brainResult.replyType || "reply",
   };
 }
@@ -184,28 +323,6 @@ function handleCallEnded(callSid) {
   removeSession(callSid);
 
   logEvent(callSid, "CALL_ENDED");
-}
-
-function normalizeText(text) {
-  return String(text || "")
-    .replace(/\s+/g, " ")
-    .trim();
-}
-
-function pushRecentTurn(session, role, text) {
-  if (!session.recentTurns) {
-    session.recentTurns = [];
-  }
-
-  session.recentTurns.push({
-    role,
-    text,
-    at: Date.now(),
-  });
-
-  if (session.recentTurns.length > 8) {
-    session.recentTurns = session.recentTurns.slice(-8);
-  }
 }
 
 async function handleCallerTurn({ callSid, businessId = null, transcript, meta = {} }) {
@@ -355,11 +472,38 @@ async function handleCallerTurn({ callSid, businessId = null, transcript, meta =
       intent: workflowState.intent || null,
     });
 
-    replyText = "Sorry — could you repeat that?";
+    replyText = "";
+  }
+
+  replyText = normalizeText(replyText);
+
+  if (!isUsableReply(replyText)) {
+    replyText = buildSafeFallbackReply(session);
+
+    logDecision(callSid, "Workflow reply replaced with fallback", {
+      tenantId: session.tenantId,
+      businessId: session.businessId,
+      clusterId: session.clusterId,
+      intent: session.active_intent,
+      workflowStatus: session.workflowStatus,
+      slots: session.slots,
+      nextMissingSlot: session.lastAskedSlot,
+      fallbackReplyText: replyText,
+    });
+  }
+
+  if (replyText === normalizeText(session.lastAssistantReply)) {
+    const alternateFallback = buildSafeFallbackReply(session);
+    if (alternateFallback && alternateFallback !== replyText) {
+      replyText = alternateFallback;
+    }
   }
 
   session.lastAssistantReply = replyText;
-  pushRecentTurn(session, "assistant", replyText);
+
+  if (isUsableReply(replyText)) {
+    pushRecentTurn(session, "assistant", replyText);
+  }
 
   logDecision(callSid, "AI workflow turn processed", {
     tenantId: session.tenantId,
