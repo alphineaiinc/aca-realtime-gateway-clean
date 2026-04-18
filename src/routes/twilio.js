@@ -22,6 +22,8 @@ const {
   handleCallerTurn,
 } = require("../voice/sessionController");
 
+const { getSession } = require("../voice/voiceSessionStore");
+
 require("dotenv").config({ path: path.resolve(__dirname, "../../.env") });
 
 console.log("🧩 [twilio->tts] resolved module:", require.resolve("../../tts"));
@@ -751,6 +753,71 @@ async function handleTwilioStream(ws, req) {
   ws.__sttBufferBytes = 0;
   ensurePlaybackState(ws);
 
+    
+
+  // 👇 ADD THIS BLOCK HERE (Point 2)
+
+  function getOpenExpectedSlot() {
+    if (!activeCallSid) return null;
+    const session = getSession(activeCallSid);
+    return session?.lastAskedSlot || null;
+  }
+
+  function normalizeSlotValue(text) {
+    return String(text || "")
+      .replace(/[.,!?]+$/g, "")
+      .trim();
+  }
+
+  function matchesExpectedSlot(text, expectedSlot) {
+    const t = normalizeSlotValue(text);
+
+    if (!t || !expectedSlot) return false;
+
+    const slot = String(expectedSlot).toLowerCase();
+
+    if (slot.includes("time")) {
+      return (
+        /^\d{1,2}(:\d{2})?\s?(am|pm)?$/i.test(t) ||
+        /^(am|pm)$/i.test(t) ||
+        /^(morning|afternoon|evening|night)$/i.test(t)
+      );
+    }
+
+    if (slot.includes("date") || slot.includes("day")) {
+      return (
+        /^(today|tomorrow|monday|tuesday|wednesday|thursday|friday|saturday|sunday)$/i.test(t) ||
+        /^(jan|january|feb|february|mar|march|apr|april|may|jun|june|jul|july|aug|august|sep|sept|september|oct|october|nov|november|dec|december)$/i.test(t) ||
+        /^\d{1,2}$/.test(t)
+      );
+    }
+
+    if (slot.includes("name")) {
+      return /^[A-Za-z]{2,}(?:\s[A-Za-z]{2,}){0,2}$/.test(t);
+    }
+
+    if (
+      slot.includes("party") ||
+      slot.includes("size") ||
+      slot.includes("guest") ||
+      slot.includes("people")
+    ) {
+    return /^\d{1,2}$/.test(t);
+  }
+
+  if (slot.includes("phone")) {
+    return /^[\d\s()+-]{7,}$/.test(t);
+  }
+
+  if (slot.includes("email")) {
+    return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(t);
+  }
+
+  return true;
+}
+
+  // 👇 your existing code continues here...
+
 function isMeaningfulUtterance(text) {
   const t = String(text || "").trim();
 
@@ -796,15 +863,130 @@ function isValidSlotValue(text) {
   return false;
 }
 
+function getCurrentSession() {
+  if (!activeCallSid) return null;
+  try {
+    const { getSession } = require("../voice/voiceSessionStore");
+    return getSession(activeCallSid);
+  } catch (_) {
+    return null;
+  }
+}
+
+function normalizeSlotText(text) {
+  return String(text || "")
+    .toLowerCase()
+    .replace(/[.,!?]+$/g, "")
+    .trim();
+}
+
+function isWeakFragment(text) {
+  const t = normalizeSlotText(text);
+
+  if (!t) return true;
+
+  return [
+    "looking for",
+    "are you",
+    "yes i said",
+    "that is",
+    "its",
+    "it's",
+    "appointment",
+    "doctor",
+    "doctors",
+    "mint",
+    "point",
+    "being well",
+    "into 1 month",
+    "support 1 month",
+    "did you get it",
+    "you get it",
+  ].includes(t);
+}
+
+function matchesExpectedSlot(text, expectedSlot) {
+  const t = String(text || "").trim().replace(/[.,!?]+$/g, "");
+
+  if (!expectedSlot) return true;
+
+  const slot = String(expectedSlot).toLowerCase();
+
+  if (slot.includes("time")) {
+    return (
+      /^\d{1,2}(:\d{2})?\s?(am|pm)?$/i.test(t) ||
+      /^(am|pm)$/i.test(t) ||
+      /^(morning|afternoon|evening|night)$/i.test(t)
+    );
+  }
+
+  if (slot.includes("date") || slot.includes("day")) {
+    return (
+      /^(today|tomorrow|monday|tuesday|wednesday|thursday|friday|saturday|sunday)$/i.test(t) ||
+      /^(jan|january|feb|february|mar|march|apr|april|may|jun|june|jul|july|aug|august|sep|sept|september|oct|october|nov|november|dec|december)$/i.test(t) ||
+      /^\d{1,2}$/.test(t)
+    );
+  }
+
+  if (slot.includes("name")) {
+    return /^[A-Za-z]{2,}(?:\s[A-Za-z]{2,})?$/.test(t);
+  }
+
+  if (
+    slot.includes("party") ||
+    slot.includes("size") ||
+    slot.includes("guest") ||
+    slot.includes("people") ||
+    slot.includes("person")
+  ) {
+    return /^\d{1,2}$/.test(t);
+  }
+
+  return true;
+}
+
 async function dispatchPendingVoiceTurn() {
   const finalVoiceText = normalizeIncomingVoiceText(ws.__pendingVoiceTranscript);
+  const session = getCurrentSession();
+  const expectedSlot = session?.lastAskedSlot || null;
+
+  if (!finalVoiceText) {
+    pushTwilioDebug("dispatch_skipped_incomplete", {
+      callSid: activeCallSid,
+      text: finalVoiceText,
+      reason: "empty",
+      expectedSlot,
+    });
+    return;
+  }
+
+  if (isWeakFragment(finalVoiceText)) {
+    pushTwilioDebug("dispatch_skipped_incomplete", {
+      callSid: activeCallSid,
+      text: finalVoiceText,
+      reason: "weak_fragment",
+      expectedSlot,
+    });
+    return;
+  }
+
+  if (expectedSlot && !matchesExpectedSlot(finalVoiceText, expectedSlot)) {
+    pushTwilioDebug("dispatch_skipped_incomplete", {
+      callSid: activeCallSid,
+      text: finalVoiceText,
+      reason: "slot_mismatch",
+      expectedSlot,
+    });
+    return;
+  }
 
   if (!isMeaningfulUtterance(finalVoiceText) && !isValidSlotValue(finalVoiceText)) {
     pushTwilioDebug("dispatch_skipped_incomplete", {
       callSid: activeCallSid,
       text: finalVoiceText,
+      reason: "not_meaningful",
+      expectedSlot,
     });
-
     return;
   }
 
