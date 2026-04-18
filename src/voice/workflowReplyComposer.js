@@ -3,14 +3,7 @@
 /**
  * src/voice/workflowReplyComposer.js
  *
- * Short, natural, phone-friendly workflow reply composition.
- *
- * Rules:
- * - No awkward phrasing
- * - One short question only
- * - No repetition
- * - If workflowStatus is ready_for_confirmation, always produce confirmation
- * - If OpenAI reply is empty / weak, deterministic fallback must still speak
+ * Compatibility-safe for current sessionController.js contract.
  */
 
 function safeString(value) {
@@ -25,6 +18,34 @@ function normalizeWhitespace(text) {
   return safeString(text).replace(/\s+/g, " ").trim();
 }
 
+function cleanPhoneReply(text) {
+  let value = normalizeWhitespace(text);
+
+  if (!value) return "";
+
+  value = value
+    .replace(/\s+([,?.!])/g, "$1")
+    .replace(/\bcan you tell date\b/gi, "What date would you like?")
+    .replace(/\bwhat time\b\??/gi, "What time works for you?")
+    .replace(/\bsure,\s*when you would like to book\??/gi, "What time would you like?")
+    .replace(/\bkindly\b/gi, "")
+    .replace(/\bplease provide\b/gi, "Can I get")
+    .replace(/\s{2,}/g, " ")
+    .trim();
+
+  const questionCount = (value.match(/\?/g) || []).length;
+  if (questionCount > 1) {
+    const segments = value.split("?").map((s) => s.trim()).filter(Boolean);
+    value = segments[0] ? `${segments[0]}?` : value;
+  }
+
+  if (value.length > 220) {
+    value = `${value.slice(0, 217).trim()}...`;
+  }
+
+  return value;
+}
+
 function getSlotPrompt(slotKey, schema) {
   if (!slotKey) return "";
   const slotDef = Array.isArray(schema?.slots)
@@ -32,15 +53,6 @@ function getSlotPrompt(slotKey, schema) {
     : null;
 
   return safeString(slotDef?.prompt || slotDef?.question || "");
-}
-
-function humanLabel(slotKey) {
-  return String(slotKey || "")
-    .replace(/_/g, " ")
-    .replace(/\bparty size\b/i, "how many people")
-    .replace(/\bcustomer name\b/i, "your full name")
-    .trim()
-    .toLowerCase();
 }
 
 function buildDeterministicQuestion(nextMissingSlot, schema) {
@@ -74,18 +86,18 @@ function buildDeterministicQuestion(nextMissingSlot, schema) {
     return "What’s the best email address for you?";
   }
 
-  return `Can I get ${humanLabel(nextMissingSlot)}?`;
+  return "Could I get that detail one more time?";
 }
 
-function buildConfirmationReply({ workflow, schema }) {
-  const slots = workflow?.slots || {};
-  const requiredSlots = Array.isArray(workflow?.requiredSlots)
-    ? workflow.requiredSlots
-    : Object.keys(slots);
-
+function buildConfirmationReply(workflowState) {
+  const slots = workflowState?.slots || {};
+  const keys = Object.keys(slots);
   const values = {};
-  for (const key of requiredSlots) {
-    if (isNonEmptyString(slots[key])) values[key] = slots[key];
+
+  for (const key of keys) {
+    if (isNonEmptyString(slots[key])) {
+      values[key] = slots[key];
+    }
   }
 
   const nameKey = Object.keys(values).find((k) => k.toLowerCase().includes("name"));
@@ -96,20 +108,19 @@ function buildConfirmationReply({ workflow, schema }) {
   );
 
   const parts = [];
-
   if (values[dateKey]) parts.push(values[dateKey]);
   if (values[timeKey]) parts.push(`at ${values[timeKey]}`);
   if (values[sizeKey]) parts.push(`for ${values[sizeKey]}`);
   if (values[nameKey]) parts.push(`under ${values[nameKey]}`);
 
-  if (parts.length > 0) {
+  if (parts.length) {
     return cleanPhoneReply(`Let me confirm: ${parts.join(" ")}. Is that correct?`);
   }
 
-  // fallback if schema is generic and slot labels are unknown
-  const genericSummary = safeString(workflow?.confirmationSummary);
-  if (genericSummary) {
-    return cleanPhoneReply(`Let me confirm: ${genericSummary}. Is that correct?`);
+  if (safeString(workflowState?.confirmationSummary)) {
+    return cleanPhoneReply(
+      `Let me confirm: ${workflowState.confirmationSummary}. Is that correct?`
+    );
   }
 
   return "Let me confirm the details I have. Is that correct?";
@@ -135,54 +146,38 @@ function looksWeakReply(text) {
   return banned.some((phrase) => value === phrase || value.includes(phrase));
 }
 
-function cleanPhoneReply(text) {
-  let value = normalizeWhitespace(text);
+/**
+ * Compatibility-safe composeReply for current sessionController.js
+ * sessionController sends:
+ * composeReply({ clusterSchema, session, workflowState, utterance })
+ */
+async function composeReply({
+  clusterSchema,
+  session,
+  workflowState,
+  utterance
+} = {}) {
+  const schema = clusterSchema || {};
+  const state = workflowState || {};
+  const status = String(state.workflowStatus || "").toLowerCase();
 
-  if (!value) return "";
+  const extractedReply =
+    state.reply ||
+    state.replyText ||
+    state.openAIReply ||
+    "";
 
-  value = value
-    .replace(/\s+([,?.!])/g, "$1")
-    .replace(/\bcan you tell date\b/gi, "What date would you like?")
-    .replace(/\bwhat time\b\??/gi, "What time works for you?")
-    .replace(/\bsure,\s*when you would like to book\??/gi, "What time would you like?")
-    .replace(/\bkindly\b/gi, "")
-    .replace(/\bplease provide\b/gi, "Can I get")
-    .replace(/\s{2,}/g, " ")
-    .trim();
-
-  // Keep only one short question at the end for phone flow.
-  const questionCount = (value.match(/\?/g) || []).length;
-  if (questionCount > 1) {
-    const segments = value.split("?").map((s) => s.trim()).filter(Boolean);
-    value = segments[0] ? `${segments[0]}?` : value;
-  }
-
-  // Keep voice response short.
-  if (value.length > 220) {
-    value = `${value.slice(0, 217).trim()}...`;
-  }
-
-  return value;
-}
-
-function chooseOpenAIReply({ openAIReply, workflow, schema }) {
-  const candidate = cleanPhoneReply(openAIReply);
-  if (looksWeakReply(candidate)) return "";
-  if ((workflow?.workflowStatus || workflow?.status) === "ready_for_confirmation") {
-    // Confirmation must be deterministic at this stage.
-    return "";
-  }
-  return candidate;
-}
-
-function buildFallbackReply({ workflow, schema }) {
-  const status = workflow?.workflowStatus || workflow?.status || "collecting";
+  const cleaned = cleanPhoneReply(extractedReply);
 
   if (status === "ready_for_confirmation") {
-    return buildConfirmationReply({ workflow, schema });
+    return buildConfirmationReply(state);
   }
 
-  const nextMissingSlot = workflow?.nextMissingSlot || workflow?.missingSlots?.[0] || null;
+  if (!looksWeakReply(cleaned)) {
+    return cleaned;
+  }
+
+  const nextMissingSlot = state.nextMissingSlot || null;
   if (nextMissingSlot) {
     return buildDeterministicQuestion(nextMissingSlot, schema);
   }
@@ -190,24 +185,8 @@ function buildFallbackReply({ workflow, schema }) {
   return "Could you say that one more time?";
 }
 
-function composeReply({
-  workflow,
-  schema,
-  openAIReply
-} = {}) {
-  const preferred = chooseOpenAIReply({ openAIReply, workflow, schema });
-  if (preferred) return preferred;
-
-  const fallback = buildFallbackReply({ workflow, schema });
-  return cleanPhoneReply(fallback);
-}
-
 module.exports = {
   composeReply,
-  buildFallbackReply,
   buildConfirmationReply,
-  cleanPhoneReply,
-
-  // backward-friendly aliases
-  composeWorkflowReply: composeReply
+  cleanPhoneReply
 };
