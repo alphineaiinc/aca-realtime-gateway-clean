@@ -1140,19 +1140,24 @@ async function dispatchPendingVoiceTurn() {
       ws.__phoneDigits = digits;
     }
 
-    if (digits.length >= 10) {
-      finalVoiceText = digits.slice(0, 10);
-      resetPhoneCapture(ws);
-    } else {
-      pushTwilioDebug("dispatch_skipped_incomplete", {
-        callSid: activeCallSid,
-        text: finalVoiceText,
-        reason: "phone_accumulating",
-        expectedSlot,
-      });
-      // DO NOT BLOCK
-    }
+   if (digits.length >= 10) {
+  finalVoiceText = digits.slice(0, 10);
+  resetPhoneCapture(ws);
+} else {
+  pushTwilioDebug("dispatch_skipped_incomplete", {
+    callSid: activeCallSid,
+    text: finalVoiceText,
+    reason: "phone_accumulating",
+    expectedSlot,
+  });
+
+  // ✅ BLOCK ONLY numeric-only fragments
+  const isOnlyDigits = /^\d+$/.test(normalizePhoneDigits(finalVoiceText));
+
+  if (isOnlyDigits) {
+    return; // 🚀 prevents premature dispatch like "416388"
   }
+}
 
   // =========================
   // INCOMPLETE IDENTITY GUARD
