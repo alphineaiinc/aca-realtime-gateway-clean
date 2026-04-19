@@ -1152,11 +1152,28 @@ async function dispatchPendingVoiceTurn() {
   });
 
   // ✅ BLOCK ONLY numeric-only fragments
-  const isOnlyDigits = /^\d+$/.test(normalizePhoneDigits(finalVoiceText));
+  // 🚀 keep phone capture active until full number is collected
+// 🚀 STRICT phone capture lock (final fix)
 
-  if (isOnlyDigits) {
-    return; // 🚀 prevents premature dispatch like "416388"
+const digitsNow = normalizePhoneDigits(finalVoiceText);
+
+// Detect true intent switch
+const looksLikeNewIntent =
+  /\b(book|appointment|cancel|change|reschedule|help|question|start over)\b/i.test(
+    finalVoiceText
+  );
+
+// Detect conversational noise (should NOT trigger dispatch)
+const isPhoneConversationNoise =
+  /\b(phone|number|said|told|did you|get it|hear me)\b/i.test(finalVoiceText);
+
+// 🔴 HARD LOCK until phone is complete
+if (ws.__capturingPhone && (ws.__phoneDigits || "").length < 10) {
+  if (!looksLikeNewIntent) {
+    // block EVERYTHING except real new intent
+    return;
   }
+}
 }
   }
 
