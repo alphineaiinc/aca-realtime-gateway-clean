@@ -1158,6 +1158,7 @@ async function dispatchPendingVoiceTurn() {
     return; // 🚀 prevents premature dispatch like "416388"
   }
 }
+  }
 
   // =========================
   // INCOMPLETE IDENTITY GUARD
