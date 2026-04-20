@@ -13,6 +13,7 @@ const { synthesizeSpeech } = require("../../tts");
 const { getTenantRegion } = require("../brain/utils/tenantContext");
 const { createStreamingTranscriber } = require("../brain/utils/sttGoogle");
 
+
 const {
   handleCallStarted,
   handleGreeting,
@@ -64,6 +65,7 @@ const DEFAULT_TENANT_BUSINESS_TYPE = String(
   .toLowerCase();
 
 const VOICE_PLAYBACK_TAIL_MS = Number(process.env.VOICE_PLAYBACK_TAIL_MS || 200);
+const PHONE_CAPTURE_STALL_MS = Number(process.env.PHONE_CAPTURE_STALL_MS || 2500);  
 const VOICE_PLAYBACK_PADDING_MS = Number(process.env.VOICE_PLAYBACK_PADDING_MS || 250);
 const TWILIO_MULAW_BYTES_PER_SEC = 8000;
 
@@ -1227,8 +1229,34 @@ const isPhoneConversationNoise =
 
 // 🔴 HARD LOCK until phone is complete
 if (ws.__capturingPhone && (ws.__phoneDigits || "").length < 10) {
+  const digitsSoFar = ws.__phoneDigits || "";
+  const noNewDigits = !incomingDigits;
+  const stalledForMs = Date.now() - (ws.__phoneCaptureLastUpdatedAt || ws.__phoneCaptureStartedAt || Date.now());
+
+  const askingAboutPhone =
+    /\b(phone|number|did you get|are you there|hello|can you hear me)\b/i.test(finalVoiceText);
+
   if (!looksLikeNewIntent) {
-    // block EVERYTHING except real new intent
+    if (noNewDigits && (askingAboutPhone || stalledForMs >= PHONE_CAPTURE_STALL_MS)) {
+      resetPhoneCapture(ws);
+
+      await synthesizeAndSendReply(
+        ws,
+        activeCallSid,
+        activeStreamSid,
+        tenantId,
+        tenantLangCode,
+        "I only got part of the number. Could you please repeat the full 10-digit phone number?",
+        "main"
+      );
+
+      ws.__pendingVoiceTranscript = "";
+      ws.__pendingVoiceTranscriptStartedAt = 0;
+      ws.__streamingInterim = "";
+      ws.__streamingFinal = "";
+      return;
+    }
+
     return;
   }
 }
