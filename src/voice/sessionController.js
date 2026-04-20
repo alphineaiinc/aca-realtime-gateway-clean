@@ -697,17 +697,66 @@ function handleProcessingResult(callSid, brainResult) {
   let replyText = normalizeText(brainResult.replyText);
 
   if (!isUsableReply(replyText)) {
-    replyText = buildSafeFallbackReply(session);
+  replyText = buildSafeFallbackReply(session);
 
-    logDecision(callSid, "Empty processing reply replaced with fallback", {
-      workflowStatus: session.workflowStatus,
-      lastAskedSlot: session.lastAskedSlot,
-      slots: session.slots || {},
-      fallbackReplyText: replyText,
-    });
+  logDecision(callSid, "Workflow reply replaced with fallback", {
+    tenantId: session.tenantId,
+    businessId: session.businessId,
+    clusterId: session.clusterId,
+    intent: session.active_intent,
+    workflowStatus: session.workflowStatus,
+    slots: session.slots,
+    nextMissingSlot: session.lastAskedSlot,
+    fallbackReplyText: replyText,
+  });
+}
+
+if (session.confirmationBlocked && !canConfirmNow(session.businessType, session.slots)) {
+  const nextMissingSlot = getNextMissingRequiredSlot(
+    session.businessType || "generic",
+    session.slots || {}
+  );
+
+  if (nextMissingSlot) {
+    replyText = getNextSlotQuestion(
+      session.businessType || "generic",
+      nextMissingSlot
+    );
+    session.lastAskedSlot = nextMissingSlot;
   }
+}
 
-  transition(session, STATES.READY_TO_SPEAK, "brain_ready");
+if (replyText === normalizeText(session.lastAssistantReply)) {
+  if (session.lastAskedSlot) {
+    replyText = getNextSlotQuestion(
+      session.businessType || "generic",
+      session.lastAskedSlot
+    );
+  } else if (workflowState.confirmationPending) {
+    replyText = "Let me confirm that once.";
+  } else {
+    replyText = "Sorry, could you repeat that?";
+  }
+}
+
+session.lastAssistantReply = replyText;
+
+if (isUsableReply(replyText)) {
+  pushRecentTurn(session, "assistant", replyText);
+}
+
+logDecision(callSid, "AI workflow turn processed", {
+  tenantId: session.tenantId,
+  businessId: session.businessId,
+  clusterId: session.clusterId,
+  intent: session.active_intent,
+  workflowStatus: session.workflowStatus,
+  slots: session.slots,
+  nextMissingSlot: session.lastAskedSlot,
+  deterministicSlots,
+  holisticSlots,
+  conversationTranscript: buildConversationTranscript(session),
+});
 
   return {
     shouldSpeak: true,
@@ -923,9 +972,7 @@ if (expectedSlot && justFilledValue) {
   });
 }
 
-if (workflowState.nextMissingSlot) {
-  session.lastAskedSlot = workflowState.nextMissingSlot;
-}
+
   session.workflowStatus = workflowState.workflowStatus || "idle";
 
   let replyText;
@@ -1013,6 +1060,21 @@ if (workflowState.nextMissingSlot) {
     conversationTranscript: buildConversationTranscript(session),
   });
 
+  if (session.confirmationBlocked && !canConfirmNow(session.businessType, session.slots)) {
+  const nextMissingSlot = getNextMissingRequiredSlot(
+    session.businessType || "generic",
+    session.slots || {}
+  );
+
+  if (nextMissingSlot) {
+    replyText = getNextSlotQuestion(
+      session.businessType || "generic",
+      nextMissingSlot
+    );
+    session.lastAskedSlot = nextMissingSlot;
+  }
+}
+
   return {
     shouldSpeak: true,
     replyText,
@@ -1027,6 +1089,9 @@ if (workflowState.nextMissingSlot) {
   };
 }
 
+
+
+  
 module.exports = {
   handleCallStarted,
   handleGreeting,
