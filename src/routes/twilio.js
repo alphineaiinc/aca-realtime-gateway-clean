@@ -41,12 +41,12 @@ const MIN_TRANSCRIPT_CHARS = 3;
 const MIN_ALNUM_CHARS = 2;
 const MIN_INTERIM_STABLE_LEN = 4;
 
-const VOICE_TURN_SILENCE_MS = Number(process.env.VOICE_TURN_SILENCE_MS || 350);
-const VOICE_STT_COOLDOWN_MS = Number(process.env.VOICE_STT_COOLDOWN_MS || 150);
-const VOICE_POST_TTS_IGNORE_MS = Number(process.env.VOICE_POST_TTS_IGNORE_MS || 120);
+const VOICE_TURN_SILENCE_MS = Number(process.env.VOICE_TURN_SILENCE_MS || 280);
+const VOICE_STT_COOLDOWN_MS = Number(process.env.VOICE_STT_COOLDOWN_MS || 100);
+const VOICE_POST_TTS_IGNORE_MS = Number(process.env.VOICE_POST_TTS_IGNORE_MS || 90);
 
 const VOICE_MIN_UTTERANCE_CHARS = Number(process.env.VOICE_MIN_UTTERANCE_CHARS || 3);
-const VOICE_MAX_REPLY_CHARS = Number(process.env.VOICE_MAX_REPLY_CHARS || 220);
+const VOICE_MAX_REPLY_CHARS = Number(process.env.VOICE_MAX_REPLY_CHARS || 140);
 const VOICE_LOG_PREFIX = "[twilio_voice_intel]";
 
 const VOICE_MIN_AUDIO_BYTES = Number(process.env.VOICE_MIN_AUDIO_BYTES || 640);
@@ -1311,7 +1311,7 @@ if (ws.__capturingPhone && (ws.__phoneDigits || "").length < 10) {
     ws.__voiceTurnTimer = setTimeout(async () => {
       if (isPlaybackLocked(ws)) return;
       await dispatchPendingVoiceTurn();
-    }, expectedSlot ? 90 : 110);
+    }, expectedSlot ? 70 : 90);
 
     return;
   }
@@ -1588,7 +1588,7 @@ ws.__sttStream = createStreamingTranscriber({
           error: err?.message || String(err),
         });
       }
-    }, 120);
+    }, 90);
   },
 
   onSpeechStart: () => {
@@ -1633,7 +1633,7 @@ ws.__sttStream = createStreamingTranscriber({
             error: err?.message || String(err),
           });
         }
-      }, 220);
+      }, 160);
     }
   },
 
