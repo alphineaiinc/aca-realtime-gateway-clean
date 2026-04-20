@@ -1295,26 +1295,41 @@ if (ws.__capturingPhone && (ws.__phoneDigits || "").length < 10) {
 
     let reply = "";
 
-    try {
-      const turnResult = await handleCallerTurn({
-        callSid: activeCallSid,
-        transcript: finalVoiceText,
-        meta: ws.__routingMeta || {},
-      });
+try {
+  const turnResult = await handleCallerTurn({
+    callSid: activeCallSid,
+    transcript: finalVoiceText,
+    meta: ws.__routingMeta || {},
+  });
 
-      reply = normalizeVoiceReply(turnResult?.replyText || "");
-    } catch (err) {
-      console.warn("handleCallerTurn failed", err.message);
-    }
+  reply = normalizeVoiceReply(turnResult?.replyText || "");
+} catch (err) {
+  console.warn("handleCallerTurn failed", err.message);
+}
 
-    if (!reply) return;
+const controllerReply = handleProcessingResult(activeCallSid, {
+  shouldSpeak: true,
+  replyText: reply || "",
+});
 
-    const controllerReply = handleProcessingResult(activeCallSid, {
-      shouldSpeak: true,
-      replyText: reply,
-    });
+if (!controllerReply?.shouldSpeak) {
+  return;
+}
 
-    if (!controllerReply?.shouldSpeak) return;
+const safeReply = normalizeVoiceReply(controllerReply.replyText || "");
+
+if (!safeReply) {
+  await synthesizeAndSendReply(
+    ws,
+    activeCallSid,
+    activeStreamSid,
+    tenantId,
+    tenantLangCode,
+    "Sorry, could you say that again?",
+    "main"
+  );
+  return;
+}
 
     await synthesizeAndSendReply(
       ws,
@@ -1322,7 +1337,7 @@ if (ws.__capturingPhone && (ws.__phoneDigits || "").length < 10) {
       activeStreamSid,
       tenantId,
       tenantLangCode,
-      controllerReply.replyText,
+      safeReply,
       "main"
     );
 
