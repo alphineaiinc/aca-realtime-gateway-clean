@@ -954,6 +954,14 @@ ensurePlaybackState(ws);
   if (!pending) return false;
 
   const wordCount = pending.split(/\s+/).filter(Boolean).length;
+    const looksLikeContinuation =
+    /^(for\s+\d{1,2}|for\s+\w+|at\s+\d{1,2}(:\d{2})?\s?(am|pm)?|going to be|it's going to be|yes it's going to be|i'd like to make sure)$/i.test(
+      pending
+    );
+
+  if (looksLikeContinuation) {
+    if (pendingAgeMs < 1400) return true;
+  }
   const stillGrowing =
     stable &&
     isTranscriptExtension(pending, stable) &&
@@ -993,17 +1001,25 @@ if (stillGrowing && stableAgeMs < 320) {
   return false;
 }
   function isMeaningfulUtterance(text) {
-    const t = String(text || "").trim();
-    if (!t) return false;
+  const t = String(text || "").trim();
+  if (!t) return false;
 
-    const words = t.split(/\s+/);
+  const lower = t.toLowerCase();
+  const words = lower.split(/\s+/).filter(Boolean);
 
-    if (/^(for|and|the|a|an|to|of|on|in)$/i.test(t)) return false;
-    if (/^(um+|uh+|hmm+|mm+|ah+|er+)$/i.test(t)) return false;
-    if (/^[a-z]+\.?$/i.test(t) && words.length === 1 && t.length <= 5) return false;
+  if (/^(for|and|the|a|an|to|of|on|in)$/i.test(lower)) return false;
+  if (/^(um+|uh+|hmm+|mm+|ah+|er+)$/i.test(lower)) return false;
+  if (/^[a-z]+\.?$/i.test(lower) && words.length === 1 && lower.length <= 5) return false;
 
-    return true;
+  // block obvious incomplete conversational fragments
+  if (
+    /^(for\s+\d{1,2}|for\s+\w+|at\s+\d{1,2}(:\d{2})?\s?(am|pm)?|going to be|it's going to be|yes it's going to be|i'd like to make sure)$/i.test(lower)
+  ) {
+    return false;
   }
+
+  return true;
+}
 
   function isValidSlotValue(text) {
     const t = String(text || "")
@@ -1658,8 +1674,8 @@ const audioCheckFast = analyzeMulawAudio(payloadBuffer);
 // if real speech detected → INTERRUPT immediately
 if (
   userTalkingWhileAssistant &&
-  (audioCheckFast.rms > VOICE_MIN_AUDIO_RMS ||
- audioCheckFast.peak > VOICE_MIN_AUDIO_PEAK)
+  (audioCheckFast.rms > Math.max(VOICE_MIN_AUDIO_RMS, 260) ||
+   audioCheckFast.peak > Math.max(VOICE_MIN_AUDIO_PEAK, 1400))
 ) {
   console.log("🛑 [BARGE-IN] User started speaking — interrupting TTS", {
     callSid: activeCallSid,
