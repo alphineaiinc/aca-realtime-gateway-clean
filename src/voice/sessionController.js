@@ -205,9 +205,17 @@ function buildConversationTranscript(session) {
 }
 
 function applyBusinessSlotProfile(session, clusterSchema = null) {
+    const recentCallerText = String(session?.lastCallerText || "").toLowerCase();
+
+  const inferredBusinessType =
+    /\b(table|reservation|reserve|booking)\b/.test(recentCallerText)
+      ? "restaurant"
+      : null;
+
   const schemaBusinessType =
     clusterSchema?.businessType ||
     clusterSchema?.business_type ||
+    inferredBusinessType ||
     session?.businessType ||
     "generic";
 
@@ -441,6 +449,19 @@ function inferHeuristicSlotsFromUtterance(session, utterance) {
   const nameValue = extractNameValue(text);
   if (nameValue) {
     inferred.name = inferred.name || nameValue;
+  }
+
+    const partySizeMatch = text.match(/\bfor\s+(\d{1,2})\b/i);
+  if (partySizeMatch) {
+    inferred.party_size = inferred.party_size || partySizeMatch[1];
+  }
+
+  const bookingIntent =
+    /\b(book|booking|reserve|reservation|table)\b/i.test(text);
+
+  if (bookingIntent) {
+    inferred.intent = inferred.intent || "reservation";
+    inferred.type = inferred.type || "table";
   }
 
   const typeValue = extractTypeValue(text);
