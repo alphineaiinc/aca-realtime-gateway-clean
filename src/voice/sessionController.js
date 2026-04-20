@@ -294,6 +294,22 @@ function extractTimeValue(text) {
     return `${hour}:00 AM`;
   }
 
+    const atTime = value.match(/\bat\s+(\d{1,2})(?::(\d{2}))?\s*(am|pm)?\b/i);
+  if (atTime) {
+    let hour = Number(atTime[1]);
+    const mins = atTime[2] || "00";
+    const period = atTime[3] ? atTime[3].toUpperCase() : "";
+
+    if (hour === 0) hour = 12;
+    if (hour > 12) hour = ((hour - 1) % 12) + 1;
+
+    if (period) {
+      return `${hour}:${mins} ${period}`;
+    }
+
+    return `${hour}:${mins}`;
+  }
+
   const simple = value.match(/\b(\d{1,2})\b/);
   const hasPm = /\b(pm|evening|night)\b/.test(value);
   const hasAm = /\b(am|morning)\b/.test(value);

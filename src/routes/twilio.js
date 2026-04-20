@@ -568,6 +568,8 @@ function normalizeVoiceReply(reply) {
     .replace(/\s+/g, " ")
     .trim();
 
+      text = text.replace(/\bdot\b[.!?]?$/i, "").trim();
+
   if (!text) return "";
 
   text = text
