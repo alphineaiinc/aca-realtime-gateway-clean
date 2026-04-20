@@ -10,6 +10,18 @@ const { extractWorkflowTurn } = require("./workflowExtractor");
 const { computeWorkflowState } = require("./workflowStateEngine");
 const { composeReply } = require("./workflowReplyComposer");
 
+const {
+  getMissingRequiredSlots,
+  getNextMissingRequiredSlot,
+  canConfirmNow,
+  getNextSlotQuestion,
+} = require("./slotEnforcement");
+
+const {
+  getBusinessSlotProfile,
+  normalizeBusinessType,
+} = require("./businessSlotProfiles");
+
 function handleCallStarted(callSid, meta = {}) {
   let session = getSession(callSid);
 
@@ -49,8 +61,31 @@ function handleCallStarted(callSid, meta = {}) {
     session.businessId = null;
   }
 
+    if (!session.businessType) {
+    session.businessType = "generic";
+  }
+
+  if (!session.requiredSlots) {
+    session.requiredSlots = [];
+  }
+
+  if (!session.optionalSlots) {
+    session.optionalSlots = [];
+  }
+
+  if (typeof session.confirmationBlocked !== "boolean") {
+    session.confirmationBlocked = true;
+  }
   if (!session.lastAskedSlot) {
     session.lastAskedSlot = null;
+  }
+
+    if (!session.phoneCapture) {
+    session.phoneCapture = {
+      active: false,
+      digits: "",
+      startedAt: null,
+    };
   }
 
   if (!session.lastAssistantReply) {
@@ -167,6 +202,23 @@ function buildConversationTranscript(session) {
     .map((turn) => `${turn.role}: ${normalizeText(turn.text)}`)
     .filter(Boolean)
     .join("\n");
+}
+
+function applyBusinessSlotProfile(session, clusterSchema = null) {
+  const schemaBusinessType =
+    clusterSchema?.businessType ||
+    clusterSchema?.business_type ||
+    session?.businessType ||
+    "generic";
+
+  const businessType = normalizeBusinessType(schemaBusinessType);
+  const profile = getBusinessSlotProfile(businessType);
+
+  session.businessType = businessType;
+  session.requiredSlots = Array.isArray(profile.required) ? [...profile.required] : [];
+  session.optionalSlots = Array.isArray(profile.optional) ? [...profile.optional] : [];
+
+  return profile;
 }
 
 function extractDateValue(text) {
@@ -464,70 +516,17 @@ function getSlotValueByAlias(slots = {}, aliases = []) {
   return "";
 }
 
-function getCanonicalRequiredSlotStatus(slots = {}) {
-  return {
-    type: getSlotValueByAlias(slots, [
-      "type",
-      "reason",
-      "purpose",
-      "service",
-      "appointment type",
-      "appointment_type",
-    ]),
-    date: getSlotValueByAlias(slots, [
-      "date",
-      "day",
-      "appointment date",
-      "appointment_date",
-    ]),
-    time: getSlotValueByAlias(slots, [
-      "time",
-      "appointment time",
-      "appointment_time",
-    ]),
-    name: getSlotValueByAlias(slots, [
-      "name",
-      "customer name",
-      "full name",
-      "client name",
-      "customer_name",
-      "full_name",
-    ]),
-    phone: getSlotValueByAlias(slots, [
-  "phone number",
-  "contact number",
-  "mobile number",
-  "telephone number",
-  "phone_number",
-  "contact_number",
-  "mobile_number",
-  "telephone_number",
-  "phone",
-  "mobile",
-  "telephone",
-  "number",
-]),
-  };
-}
-
-function getFirstMissingCanonicalRequiredSlot(slots = {}) {
-  const status = getCanonicalRequiredSlotStatus(slots);
-
-  if (!status.type) return "type";
-  if (!status.date) return "date";
-  if (!status.time) return "time";
-  if (!status.name) return "name";
-  if (!status.phone) return "phone";
-
-  return null;
-}
 
 function buildConfirmationReplyFromSession(session) {
-   const missingRequired = getFirstMissingCanonicalRequiredSlot(session?.slots || {});
+  const missingRequired = getNextMissingRequiredSlot(
+    session?.businessType || "generic",
+    session?.slots || {}
+  );
 
-if (missingRequired) {
-  return buildSlotQuestion(missingRequired);
-}
+  if (missingRequired) {
+    return getNextSlotQuestion(session?.businessType || "generic", missingRequired);
+  }
+
   const slots = session?.slots || {};
   const values = Object.entries(slots)
     .filter(([, value]) => normalizeText(value))
@@ -542,25 +541,42 @@ if (missingRequired) {
     return hit ? hit.value : "";
   };
 
-  const canonicalStatus = getCanonicalRequiredSlotStatus(slots);
+  const dateValue =
+    findValue((key) => key.includes("date") || key.includes("day")) || "";
+  const timeValue =
+    findValue((key) => key.includes("time")) || "";
+  const nameValue =
+    findValue((key) => key.includes("name")) || "";
+  const phoneValue =
+    findValue((key) => key.includes("phone") || key.includes("number")) || "";
+  const partyValue =
+    findValue((key) =>
+      key.includes("party") ||
+      key.includes("size") ||
+      key.includes("guest") ||
+      key.includes("people") ||
+      key.includes("person")
+    ) || "";
 
-const dateValue = canonicalStatus.date;
-const timeValue = canonicalStatus.time;
-const nameValue = canonicalStatus.name;
-
-const partyValue = findValue((key) =>
-  key.includes("party") ||
-  key.includes("size") ||
-  key.includes("guest") ||
-  key.includes("people") ||
-  key.includes("person")
-);
+  const serviceValue =
+    findValue((key) =>
+      key.includes("service") ||
+      key.includes("type") ||
+      key.includes("reason") ||
+      key.includes("purpose")
+    ) || "";
 
   const parts = [];
+
+  if (serviceValue && session?.businessType === "medical") {
+    parts.push(serviceValue);
+  }
+
   if (dateValue) parts.push(dateValue);
   if (timeValue) parts.push(`at ${timeValue}`);
   if (partyValue) parts.push(`for ${partyValue}`);
   if (nameValue) parts.push(`under ${nameValue}`);
+  if (phoneValue) parts.push(`contact ${phoneValue}`);
 
   if (parts.length > 0) {
     return `Let me confirm: ${parts.join(" ")}. Is that correct?`;
@@ -568,6 +584,7 @@ const partyValue = findValue((key) =>
 
   return "Let me confirm the details I have. Is that correct?";
 }
+
 
 function buildSlotQuestion(slotName) {
   const slot = String(slotName || "").toLowerCase();
@@ -617,22 +634,27 @@ function buildSlotQuestion(slotName) {
 
  return "Sorry, I missed that — could you say it again?";
 }
-
 function buildSafeFallbackReply(session) {
   const workflowStatus = String(session?.workflowStatus || "").toLowerCase();
 
- const missingRequired = getFirstMissingCanonicalRequiredSlot(session?.slots || {});
+  const missingRequired = getNextMissingRequiredSlot(
+    session?.businessType || "generic",
+    session?.slots || {}
+  );
 
-if (missingRequired) {
-  return buildSlotQuestion(missingRequired);
-}
+  if (missingRequired) {
+    return getNextSlotQuestion(session?.businessType || "generic", missingRequired);
+  }
 
-if (workflowStatus === "ready_for_confirmation" || workflowStatus === "completed") {
-  return buildConfirmationReplyFromSession(session);
-}
+  if (workflowStatus === "ready_for_confirmation" || workflowStatus === "completed") {
+    return buildConfirmationReplyFromSession(session);
+  }
 
   if (session?.lastAskedSlot) {
-    return buildSlotQuestion(session.lastAskedSlot);
+    return getNextSlotQuestion(
+      session?.businessType || "generic",
+      session.lastAskedSlot
+    );
   }
 
   const slots = session?.slots || {};
@@ -794,12 +816,14 @@ async function handleCallerTurn({ callSid, businessId = null, transcript, meta =
       tenantId: session.tenantId,
     });
 
-    return {
+     return {
       shouldSpeak: true,
       replyText: "Sorry — something went wrong. Please try again.",
       replyType: "error",
     };
   }
+
+  applyBusinessSlotProfile(session, clusterSchema);
 
   let extraction;
   try {
@@ -872,6 +896,22 @@ async function handleCallerTurn({ callSid, businessId = null, transcript, meta =
   session.slots = mergeSlotsWithoutEmpty(session.slots, newSlots);
   session.workflowSlots = mergeSlotsWithoutEmpty(session.workflowSlots || {}, newSlots);
 
+    const missingRequired = getMissingRequiredSlots(
+    session.businessType || "generic",
+    session.slots || {}
+  );
+
+  session.confirmationBlocked = missingRequired.length > 0;
+
+  if (missingRequired.length > 0) {
+    session.lastAskedSlot = getNextMissingRequiredSlot(
+      session.businessType || "generic",
+      session.slots || {}
+    );
+  } else {
+    session.lastAskedSlot = null;
+  }
+
   // 🔥 Detect if we just filled the expected slot
 const expectedSlot = session.lastAskedSlot;
 const justFilledValue = expectedSlot ? session.slots[expectedSlot] : null;
@@ -918,6 +958,19 @@ if (workflowState.nextMissingSlot) {
 
   if (!isUsableReply(replyText)) {
     replyText = buildSafeFallbackReply(session);
+
+
+      if (session.confirmationBlocked && !canConfirmNow(session.businessType, session.slots)) {
+    const nextMissingSlot = getNextMissingRequiredSlot(
+      session.businessType || "generic",
+      session.slots || {}
+    );
+
+    if (nextMissingSlot) {
+      replyText = getNextSlotQuestion(session.businessType || "generic", nextMissingSlot);
+      session.lastAskedSlot = nextMissingSlot;
+    }
+  }
 
     logDecision(callSid, "Workflow reply replaced with fallback", {
       tenantId: session.tenantId,

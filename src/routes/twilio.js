@@ -1,9 +1,12 @@
 // src/routes/twilio.js
+
+const path = require("path");
+require("dotenv").config({ path: path.resolve(__dirname, "../../.env") });
+
 const express = require("express");
 const router = express.Router();
 
 const twilio = require("twilio");
-const path = require("path");
 const WebSocket = require("ws");
 const { retrieveAnswer } = require("../../retriever");
 const { synthesizeSpeech } = require("../../tts");
@@ -22,9 +25,12 @@ const {
   handleCallerTurn,
 } = require("../voice/sessionController");
 
-const { getSession } = require("../voice/voiceSessionStore");
+const {
+  normalizePhoneDigits,
+  isPhoneComplete,
+} = require("../voice/slotEnforcement");
 
-require("dotenv").config({ path: path.resolve(__dirname, "../../.env") });
+const { getSession } = require("../voice/voiceSessionStore");
 
 console.log("🧩 [twilio->tts] resolved module:", require.resolve("../../tts"));
 console.log("🧩 [twilio->tts] typeof synthesizeSpeech:", typeof synthesizeSpeech);
@@ -72,6 +78,7 @@ const twilioDebugState = {
   updatedAt: null,
   events: [],
 };
+
 
 function pushTwilioDebug(event, details = {}) {
   const ALLOWED_EVENTS = new Set([
@@ -311,6 +318,61 @@ playback.ignoreInboundUntil = Date.now() + VOICE_PLAYBACK_TAIL_MS;
     reason,
     ignoreInboundUntil: playback.ignoreInboundUntil,
   });
+}
+
+function extractDigits(text) {
+  return String(text || "").replace(/\D/g, "");
+}
+
+function looksLikePhoneInput(text) {
+  const raw = String(text || "").toLowerCase().trim();
+  if (!raw) return false;
+
+  const digitCount = extractDigits(raw).length;
+  if (digitCount >= 3) return true;
+
+  return /\b(my number is|phone number is|call me at|reach me at|number is)\b/i.test(raw);
+}
+
+function updatePhoneCaptureFromUtterance(session, text) {
+  if (!session?.phoneCapture) {
+    session.phoneCapture = { active: false, digits: "", startedAt: null };
+  }
+
+  const incomingDigits = extractDigits(text);
+  const currentlyCollecting = session.phoneCapture.active;
+  const shouldStart = looksLikePhoneInput(text) || session.lastAskedSlot === "phone";
+
+  if (!shouldStart && !currentlyCollecting) {
+    return {
+      changed: false,
+      isComplete: isPhoneComplete(session?.slots?.phone),
+      suppressResponse: false,
+    };
+  }
+
+  const nextDigits = `${session.phoneCapture.digits || ""}${incomingDigits || ""}`.slice(0, 15);
+
+  session.phoneCapture.active = true;
+  session.phoneCapture.digits = nextDigits;
+  if (!session.phoneCapture.startedAt) session.phoneCapture.startedAt = Date.now();
+
+  if (nextDigits.length >= 10) {
+    session.slots = session.slots || {};
+    session.slots.phone = nextDigits.slice(0, 10);
+    session.phoneCapture.active = false;
+    return {
+      changed: true,
+      isComplete: true,
+      suppressResponse: false,
+    };
+  }
+
+  return {
+    changed: true,
+    isComplete: false,
+    suppressResponse: true,
+  };
 }
 
 function sendTwilioAudioWithMark(ws, activeCallSid, activeStreamSid, ttsBuffer, branch = "main") {
@@ -1016,10 +1078,6 @@ function isPhoneSlot(expectedSlot) {
     expectedSlot &&
     String(expectedSlot).toLowerCase().includes("phone")
   );
-}
-
-function normalizePhoneDigits(text) {
-  return String(text || "").replace(/\D/g, "");
 }
 
 function stripPhoneIntro(text) {
