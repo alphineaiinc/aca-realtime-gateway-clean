@@ -59,10 +59,50 @@ const PREMIUM_TONE = {
       "For how many people?",
       "How many should I reserve for?"
     ],
-    email: [
+      email: [
       "What email address would you like me to note?",
       "May I have your email address, please?",
       "Which email should I use for this?"
+    ],
+    appointment_type: [
+      "What type of appointment would you like to book?",
+      "What kind of appointment should I note for you?",
+      "Which type of appointment would you prefer?"
+    ],
+    consultation_type: [
+      "What type of consultation would you like to arrange?",
+      "Which consultation should I note for you?",
+      "What kind of consultation do you need?"
+    ],
+    request_type: [
+      "What kind of request should I note for you?",
+      "Which type of request is this?",
+      "How would you like me to categorize this request?"
+    ],
+    address: [
+      "What address should I use for the visit?",
+      "Could you share the service address with me?",
+      "Which address should I note for the appointment?"
+    ],
+    vehicle_make: [
+      "What is the make of the vehicle?",
+      "Which vehicle make should I note?",
+      "Could you tell me the make of the vehicle?"
+    ],
+    vehicle_model: [
+      "What is the model of the vehicle?",
+      "Which vehicle model should I note?",
+      "Could you tell me the model of the vehicle?"
+    ],
+    pet_name: [
+      "What is your pet's name?",
+      "Could you share your pet's name with me?",
+      "What name should I note for your pet?"
+    ],
+    subject_or_course: [
+      "Which subject or course should I note?",
+      "What subject would you like help with?",
+      "Which course should I put this under?"
     ]
   },
 
@@ -187,25 +227,29 @@ function pickPremiumLine(options, session, key) {
 }
 
 function getPremiumSlotKey(slotName) {
-  const slot = String(slotName || "").toLowerCase();
+  const slot = String(slotName || "").toLowerCase().trim();
 
   if (!slot) return "";
 
+  // date / time
   if (slot.includes("date") || slot.includes("day")) return "date";
-  if (slot.includes("time") || slot.includes("time_window") || slot.includes("window")) return "time";
+  if (slot.includes("time_window") || slot.includes("window")) return "time";
+  if (slot.includes("time")) return "time";
 
+  // people / count
   if (
     slot.includes("party") ||
     slot.includes("size") ||
     slot.includes("guest") ||
     slot.includes("people") ||
-    slot.includes("person")
+    slot.includes("person") ||
+    slot.includes("count")
   ) {
     return "party_size";
   }
 
+  // identity / contact
   if (slot.includes("name")) return "name";
-
   if (
     slot.includes("phone") ||
     slot.includes("number") ||
@@ -214,21 +258,23 @@ function getPremiumSlotKey(slotName) {
   ) {
     return "phone";
   }
-
   if (slot.includes("email")) return "email";
 
+  // medical / consult / request kinds
   if (
     slot.includes("appointment_type") ||
     slot.includes("consultation_type") ||
     slot.includes("request_type") ||
     slot.includes("visit_type") ||
-    slot.includes("type") ||
     slot.includes("reason") ||
-    slot.includes("purpose")
+    slot.includes("purpose") ||
+    slot === "type" ||
+    slot.endsWith("_type")
   ) {
     return "type";
   }
 
+  // service-like business fields
   if (
     slot.includes("service") ||
     slot.includes("subject_or_course") ||
@@ -237,17 +283,32 @@ function getPremiumSlotKey(slotName) {
     slot.includes("treatment") ||
     slot.includes("issue") ||
     slot.includes("problem") ||
-    slot.includes("vehicle_make") ||
-    slot.includes("vehicle_model") ||
-    slot.includes("pet_type") ||
-    slot.includes("pet_name") ||
-    slot.includes("property_reference") ||
-    slot.includes("address")
+    slot.includes("matter") ||
+    slot.includes("symptom")
   ) {
     return "service";
   }
 
-  return "";
+  // special business fields → still map to a polished prompt bucket
+  if (
+    slot.includes("vehicle_make") ||
+    slot.includes("vehicle_model") ||
+    slot.includes("vehicle_year") ||
+    slot.includes("pet_type") ||
+    slot.includes("pet_name") ||
+    slot.includes("breed") ||
+    slot.includes("property_reference") ||
+    slot.includes("location_preference") ||
+    slot.includes("address") ||
+    slot.includes("doctor_preference") ||
+    slot.includes("provider_preference") ||
+    slot.includes("trainer_preference") ||
+    slot.includes("staff_preference")
+  ) {
+    return "service";
+  }
+
+  return "service";
 }
 
 
