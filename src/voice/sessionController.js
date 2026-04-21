@@ -831,6 +831,36 @@ async function handleCallerTurn({ callSid, businessId = null, transcript, meta =
   const utterance = normalizeText(transcript);
   session.lastCallerText = utterance;
 
+ // 🔥 ADD THIS BLOCK HERE
+const askingPhoneConfirm =
+  /\b(confirm.*(phone|number)|what.*(phone|number)|did you get.*(phone|number))\b/i.test(utterance);
+
+if (askingPhoneConfirm && session?.slots?.phone) {
+  return {
+    shouldSpeak: true,
+    replyText: `Yes, I have ${formatPhone(session.slots.phone)}.`,
+    replyType: "ai"
+  };
+}
+
+const correctingName =
+  /\bno my name is\b/i.test(userText);
+
+if (correctingName) {
+  const newName = extractNameValue(userText);
+  if (newName) {
+    session.slots.name = newName;
+
+    return {
+      shouldSpeak: true,
+      replyText: `Got it — I’ll use ${newName}.`,
+      replyType: "ai"
+    };
+  }
+}
+
+if (!utterance) {
+
   if (!utterance) {
     logDecision(callSid, "Empty caller turn ignored");
     return {
