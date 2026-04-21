@@ -231,12 +231,10 @@ function getPremiumSlotKey(slotName) {
 
   if (!slot) return "";
 
-  // date / time
   if (slot.includes("date") || slot.includes("day")) return "date";
   if (slot.includes("time_window") || slot.includes("window")) return "time";
   if (slot.includes("time")) return "time";
 
-  // people / count
   if (
     slot.includes("party") ||
     slot.includes("size") ||
@@ -248,8 +246,8 @@ function getPremiumSlotKey(slotName) {
     return "party_size";
   }
 
-  // identity / contact
   if (slot.includes("name")) return "name";
+
   if (
     slot.includes("phone") ||
     slot.includes("number") ||
@@ -258,13 +256,19 @@ function getPremiumSlotKey(slotName) {
   ) {
     return "phone";
   }
+
   if (slot.includes("email")) return "email";
 
-  // medical / consult / request kinds
+  if (slot.includes("appointment_type")) return "appointment_type";
+  if (slot.includes("consultation_type")) return "consultation_type";
+  if (slot.includes("request_type")) return "request_type";
+  if (slot.includes("address")) return "address";
+  if (slot.includes("vehicle_make")) return "vehicle_make";
+  if (slot.includes("vehicle_model")) return "vehicle_model";
+  if (slot.includes("pet_name")) return "pet_name";
+  if (slot.includes("subject_or_course")) return "subject_or_course";
+
   if (
-    slot.includes("appointment_type") ||
-    slot.includes("consultation_type") ||
-    slot.includes("request_type") ||
     slot.includes("visit_type") ||
     slot.includes("reason") ||
     slot.includes("purpose") ||
@@ -274,32 +278,20 @@ function getPremiumSlotKey(slotName) {
     return "type";
   }
 
-  // service-like business fields
   if (
     slot.includes("service") ||
-    slot.includes("subject_or_course") ||
     slot.includes("subject") ||
     slot.includes("course") ||
     slot.includes("treatment") ||
     slot.includes("issue") ||
     slot.includes("problem") ||
     slot.includes("matter") ||
-    slot.includes("symptom")
-  ) {
-    return "service";
-  }
-
-  // special business fields → still map to a polished prompt bucket
-  if (
-    slot.includes("vehicle_make") ||
-    slot.includes("vehicle_model") ||
+    slot.includes("symptom") ||
     slot.includes("vehicle_year") ||
     slot.includes("pet_type") ||
-    slot.includes("pet_name") ||
     slot.includes("breed") ||
     slot.includes("property_reference") ||
     slot.includes("location_preference") ||
-    slot.includes("address") ||
     slot.includes("doctor_preference") ||
     slot.includes("provider_preference") ||
     slot.includes("trainer_preference") ||
@@ -310,7 +302,6 @@ function getPremiumSlotKey(slotName) {
 
   return "service";
 }
-
 
 function getPremiumSlotQuestion(slotName, session) {
   const premiumSlotKey = getPremiumSlotKey(slotName);
@@ -571,17 +562,9 @@ function buildConversationTranscript(session) {
 }
 
 function applyBusinessSlotProfile(session, clusterSchema = null) {
-  const recentCallerText = String(session?.lastCallerText || "").toLowerCase();
-
-  const inferredBusinessType =
-    /\b(table|reservation|reserve|booking)\b/.test(recentCallerText)
-      ? "restaurant"
-      : null;
-
   const schemaBusinessType =
     clusterSchema?.businessType ||
     clusterSchema?.business_type ||
-    inferredBusinessType ||
     session?.businessType ||
     "generic";
 
