@@ -190,8 +190,10 @@ function getPremiumSlotKey(slotName) {
   const slot = String(slotName || "").toLowerCase();
 
   if (!slot) return "";
+
   if (slot.includes("date") || slot.includes("day")) return "date";
-  if (slot.includes("time")) return "time";
+  if (slot.includes("time") || slot.includes("time_window") || slot.includes("window")) return "time";
+
   if (
     slot.includes("party") ||
     slot.includes("size") ||
@@ -201,26 +203,60 @@ function getPremiumSlotKey(slotName) {
   ) {
     return "party_size";
   }
+
   if (slot.includes("name")) return "name";
-  if (slot.includes("phone") || slot.includes("number")) return "phone";
-  if (slot.includes("email")) return "email";
+
   if (
+    slot.includes("phone") ||
+    slot.includes("number") ||
+    slot.includes("mobile") ||
+    slot.includes("contact")
+  ) {
+    return "phone";
+  }
+
+  if (slot.includes("email")) return "email";
+
+  if (
+    slot.includes("appointment_type") ||
+    slot.includes("consultation_type") ||
+    slot.includes("request_type") ||
+    slot.includes("visit_type") ||
     slot.includes("type") ||
     slot.includes("reason") ||
     slot.includes("purpose")
   ) {
     return "type";
   }
-  if (slot.includes("service")) return "service";
 
-  return slot;
+  if (
+    slot.includes("service") ||
+    slot.includes("subject_or_course") ||
+    slot.includes("subject") ||
+    slot.includes("course") ||
+    slot.includes("treatment") ||
+    slot.includes("issue") ||
+    slot.includes("problem") ||
+    slot.includes("vehicle_make") ||
+    slot.includes("vehicle_model") ||
+    slot.includes("pet_type") ||
+    slot.includes("pet_name") ||
+    slot.includes("property_reference") ||
+    slot.includes("address")
+  ) {
+    return "service";
+  }
+
+  return "";
 }
+
 
 function getPremiumSlotQuestion(slotName, session) {
   const premiumSlotKey = getPremiumSlotKey(slotName);
   const options =
     PREMIUM_TONE.slot[premiumSlotKey] ||
-    ["Could you share that with me?"];
+    PREMIUM_TONE.slot.type ||
+    ["What detail would you like me to note?"];
 
   const base = pickPremiumLine(
     options,
@@ -229,12 +265,7 @@ function getPremiumSlotQuestion(slotName, session) {
   );
 
   const connector = pickPremiumLine(
-    [
-      "",
-      "Perfect — ",
-      "Got it — ",
-      "Lovely — ",
-    ],
+    ["", "Perfect — ", "Got it — ", "Lovely — "],
     session,
     `connector:${premiumSlotKey || slotName}`
   );
@@ -1301,29 +1332,65 @@ if (isClosing) {
 
 session.confirmationBlocked = missingRequired.length > 0;
 
-const hasDate = !!session.slots?.date;
-const hasTime = !!session.slots?.time;
-const hasParty = !!session.slots?.party_size;
-const hasType = !!session.slots?.type;
-const hasService = !!session.slots?.service;
-const hasName = !!session.slots?.name;
-const hasPhone = !!session.slots?.phone;
+const has = (key) => !!normalizeText(session.slots?.[key]);
 
 let coreComplete = false;
 
-if (session.businessType === "restaurant") {
-  coreComplete = hasDate && hasTime && hasParty;
-} else if (session.businessType === "medical") {
-  coreComplete = hasDate && hasTime && hasType;
-} else if (session.businessType === "salon") {
-  coreComplete = hasDate && hasTime && hasService;
-} else {
-  coreComplete = hasDate && hasTime;
+switch (session.businessType) {
+  case "restaurant":
+  case "restaurant_hospitality":
+    coreComplete = has("date") && has("time") && has("party_size");
+    break;
+
+  case "medical":
+  case "medical_clinic":
+  case "dental_vision":
+    coreComplete = has("appointment_type") && has("date") && has("time");
+    break;
+
+  case "salon":
+  case "beauty_salon_spa":
+  case "fitness_wellness":
+    coreComplete = (has("service") || has("type")) && has("date") && has("time");
+    break;
+
+  case "auto_service":
+    coreComplete =
+      has("service") &&
+      has("vehicle_make") &&
+      has("vehicle_model") &&
+      has("date") &&
+      has("time");
+    break;
+
+  case "home_services":
+    coreComplete = has("service") && has("address") && has("date") && has("time_window");
+    break;
+
+  case "legal_finance_consulting":
+    coreComplete = has("consultation_type") && has("date") && has("time");
+    break;
+
+  case "pet_services":
+    coreComplete = has("service") && has("pet_name") && has("date") && has("time");
+    break;
+
+  case "real_estate_property":
+    coreComplete = has("request_type") && has("property_reference") && has("date") && has("time");
+    break;
+
+  case "education_tutoring_training":
+    coreComplete = has("subject_or_course") && has("date") && has("time");
+    break;
+
+  default:
+    coreComplete = has("date") && has("time");
+    break;
 }
 
-if (coreComplete && !hasName) {
+if (coreComplete && !has("name")) {
   session.lastAskedSlot = "name";
-} else if (coreComplete && hasName && !hasPhone) {
+} else if (coreComplete && has("name") && !has("phone")) {
   session.lastAskedSlot = "phone";
 } else if (missingRequired.length > 0) {
   session.lastAskedSlot = getNextMissingRequiredSlot(
