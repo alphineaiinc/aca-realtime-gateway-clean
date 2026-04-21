@@ -22,6 +22,272 @@ const {
   normalizeBusinessType,
 } = require("./businessSlotProfiles");
 
+const PREMIUM_TONE = {
+  slot: {
+    date: [
+      "Which date works best for you?",
+      "What date would you like me to note for that?",
+      "Which day would you prefer?"
+    ],
+    time: [
+      "What time would you like?",
+      "What time works best for you?",
+      "And what time would you prefer?"
+    ],
+    name: [
+      "May I have your name for the booking?",
+      "Could I have your name, please?",
+      "What name should I put this under?"
+    ],
+    phone: [
+      "What’s the best phone number for the booking?",
+      "May I have your phone number for the booking?",
+      "Which number should we use for this booking?"
+    ],
+    service: [
+      "What service would you like to book?",
+      "How may I note the service for you?",
+      "What should I put this down for?"
+    ],
+    type: [
+      "What type would you like me to note?",
+      "Which type should I put this under?",
+      "How would you like this categorized?"
+    ],
+    party_size: [
+      "How many guests should I note?",
+      "For how many people?",
+      "How many should I reserve for?"
+    ],
+    email: [
+      "What email address would you like me to note?",
+      "May I have your email address, please?",
+      "Which email should I use for this?"
+    ]
+  },
+
+  recovery: {
+    generic: [
+      "Sorry, I didn’t quite catch that — could you say that again?",
+      "I’m sorry, could you repeat that for me?",
+      "Sorry, could you say that once more?"
+    ],
+    phone: [
+      "Sorry, I didn’t catch the full number — could you repeat it for me?",
+      "I have part of the number. Could you say the full number again?",
+      "Sorry, let’s try that number once more."
+    ],
+    name: [
+      "Sorry, I didn’t quite catch the name — could you say it again?",
+      "Would you mind repeating the name for me?",
+      "Sorry, could you say the name once more?"
+    ]
+  },
+
+  correction: {
+    generic: [
+      "No problem — I’ll update that.",
+      "Of course — I’ll correct that.",
+      "Certainly — let me fix that for you."
+    ],
+    name: [
+      "No problem — I’ll update the name.",
+      "Of course — I’ll correct the name.",
+      "Certainly — I’ll fix the name for you."
+    ],
+    phone: [
+      "No problem — I’ll update the number.",
+      "Of course — I’ll correct the phone number.",
+      "Certainly — I’ll fix the number for you."
+    ]
+  },
+
+  confirm: {
+    lead: [
+      "Just to confirm —",
+      "Let me confirm that —",
+      "Just confirming —"
+    ],
+    final: [
+      "You're all set. I've confirmed that for you.",
+      "Perfect — that’s all confirmed.",
+      "Wonderful — I’ve taken care of that for you."
+    ],
+    empty: [
+      "Just to confirm the details I have — is that correct?",
+      "Let me confirm the details I have — is that correct?",
+      "Just confirming the details I have — is that right?"
+    ]
+  },
+
+  acknowledgement: {
+    generic: [
+      "Certainly.",
+      "Of course.",
+      "Absolutely.",
+      "Very good."
+    ],
+    booking: [
+      "Certainly — I can help with that.",
+      "Of course — I’ll take care of that for you.",
+      "Absolutely — let’s get that arranged."
+    ]
+  },
+
+  greeting: [
+    "Good day, and thank you for calling. How may I assist you?",
+    "Thank you for calling. How may I help you today?",
+    "Hello, and thank you for calling. How may I assist you today?"
+  ],
+
+  prompts: {
+    nextDetail: [
+      "Certainly. What’s the next detail I should note?",
+      "Of course. What’s the next detail you’d like to share?",
+      "Very good. What should I note next?"
+    ],
+      closing: [
+    "Happy to help — have a wonderful day.",
+    "You're all set. Enjoy your day.",
+    "My pleasure — have a great day ahead."
+  ],
+    phoneConfirm: [
+      "Yes — I have {phone}.",
+      "Certainly — I have {phone}.",
+      "Yes, I’ve noted {phone}."
+    ],
+    nameUpdated: [
+      "No problem — I’ll use {name}.",
+      "Of course — I’ll note the name as {name}.",
+      "Certainly — I’ll update that to {name}."
+    ],
+    error: [
+      "I’m sorry — something went wrong. Please try again.",
+      "Sorry — something went wrong. Please try again."
+    ],
+    confirmOnce: [
+      "Just to confirm —",
+      "Let me confirm that —",
+      "Just confirming —"
+    ]
+  }
+};
+
+function pickPremiumLine(options, session, key) {
+  if (!Array.isArray(options) || !options.length) return "";
+
+  const safeSession = session || {};
+  safeSession.__premiumToneCursor = safeSession.__premiumToneCursor || {};
+
+  const current = safeSession.__premiumToneCursor[key] || 0;
+  const value = options[current % options.length];
+  safeSession.__premiumToneCursor[key] = current + 1;
+
+  return value;
+}
+
+function getPremiumSlotKey(slotName) {
+  const slot = String(slotName || "").toLowerCase();
+
+  if (!slot) return "";
+  if (slot.includes("date") || slot.includes("day")) return "date";
+  if (slot.includes("time")) return "time";
+  if (
+    slot.includes("party") ||
+    slot.includes("size") ||
+    slot.includes("guest") ||
+    slot.includes("people") ||
+    slot.includes("person")
+  ) {
+    return "party_size";
+  }
+  if (slot.includes("name")) return "name";
+  if (slot.includes("phone") || slot.includes("number")) return "phone";
+  if (slot.includes("email")) return "email";
+  if (
+    slot.includes("type") ||
+    slot.includes("reason") ||
+    slot.includes("purpose")
+  ) {
+    return "type";
+  }
+  if (slot.includes("service")) return "service";
+
+  return slot;
+}
+
+function getPremiumSlotQuestion(slotName, session) {
+  const premiumSlotKey = getPremiumSlotKey(slotName);
+  const options =
+    PREMIUM_TONE.slot[premiumSlotKey] ||
+    ["Could you share that with me?"];
+
+  const base = pickPremiumLine(
+    options,
+    session,
+    `slot:${premiumSlotKey || slotName}`
+  );
+
+  const connector = pickPremiumLine(
+    [
+      "",
+      "Perfect — ",
+      "Got it — ",
+      "Lovely — ",
+    ],
+    session,
+    `connector:${premiumSlotKey || slotName}`
+  );
+
+  return `${connector}${base}`.trim();
+}
+
+function getPremiumRecoveryLine(kind, session) {
+  const options =
+    PREMIUM_TONE.recovery[kind] ||
+    PREMIUM_TONE.recovery.generic;
+
+  return pickPremiumLine(options, session, `recovery:${kind}`);
+}
+
+function getPremiumCorrectionLine(kind, session) {
+  const options =
+    PREMIUM_TONE.correction[kind] ||
+    PREMIUM_TONE.correction.generic;
+
+  return pickPremiumLine(options, session, `correction:${kind}`);
+}
+
+function getPremiumConfirmLead(session) {
+  return pickPremiumLine(PREMIUM_TONE.confirm.lead, session, "confirm:lead");
+}
+
+function getPremiumFinalConfirmation(session) {
+  return pickPremiumLine(PREMIUM_TONE.confirm.final, session, "confirm:final");
+}
+
+function getPremiumEmptyConfirmation(session) {
+  return pickPremiumLine(PREMIUM_TONE.confirm.empty, session, "confirm:empty");
+}
+
+function getPremiumAcknowledgement(kind, session) {
+  const options =
+    PREMIUM_TONE.acknowledgement[kind] ||
+    PREMIUM_TONE.acknowledgement.generic;
+
+  return pickPremiumLine(options, session, `ack:${kind}`);
+}
+
+function getPremiumPrompt(kind, session) {
+  const options = PREMIUM_TONE.prompts[kind] || [];
+  return pickPremiumLine(options, session, `prompt:${kind}`);
+}
+
+// 🔹 Wrap original slot question builder with premium tone
+function getPremiumNextSlotQuestion(businessType, slotName, session) {
+  return getPremiumSlotQuestion(slotName, session);
+}
+
 function handleCallStarted(callSid, meta = {}) {
   let session = getSession(callSid);
 
@@ -61,7 +327,7 @@ function handleCallStarted(callSid, meta = {}) {
     session.businessId = null;
   }
 
-    if (!session.businessType) {
+  if (!session.businessType) {
     session.businessType = "generic";
   }
 
@@ -80,7 +346,7 @@ function handleCallStarted(callSid, meta = {}) {
     session.lastAskedSlot = null;
   }
 
-    if (!session.phoneCapture) {
+  if (!session.phoneCapture) {
     session.phoneCapture = {
       active: false,
       digits: "",
@@ -122,7 +388,7 @@ function handleGreeting(callSid) {
 
   const reply = {
     shouldSpeak: true,
-    replyText: "Hello, thanks for calling. How can I help you today?",
+    replyText: pickPremiumLine(PREMIUM_TONE.greeting, session, "greeting"),
     replyType: "greeting",
   };
 
@@ -213,7 +479,7 @@ function buildConversationTranscript(session) {
 }
 
 function applyBusinessSlotProfile(session, clusterSchema = null) {
-    const recentCallerText = String(session?.lastCallerText || "").toLowerCase();
+  const recentCallerText = String(session?.lastCallerText || "").toLowerCase();
 
   const inferredBusinessType =
     /\b(table|reservation|reserve|booking)\b/.test(recentCallerText)
@@ -302,7 +568,7 @@ function extractTimeValue(text) {
     return `${hour}:00 AM`;
   }
 
-    const atTime = value.match(/\bat\s+(\d{1,2})(?::(\d{2}))?\s*(am|pm)?\b/i);
+  const atTime = value.match(/\bat\s+(\d{1,2})(?::(\d{2}))?\s*(am|pm)?\b/i);
   if (atTime) {
     let hour = Number(atTime[1]);
     const mins = atTime[2] || "00";
@@ -475,7 +741,7 @@ function inferHeuristicSlotsFromUtterance(session, utterance) {
     inferred.name = inferred.name || nameValue;
   }
 
-    const partySizeMatch = text.match(/\bfor\s+(\d{1,2})\b/i);
+  const partySizeMatch = text.match(/\bfor\s+(\d{1,2})\b/i);
   if (partySizeMatch) {
     inferred.party_size = inferred.party_size || partySizeMatch[1];
   }
@@ -561,7 +827,6 @@ function getSlotValueByAlias(slots = {}, aliases = []) {
   return "";
 }
 
-
 function buildConfirmationReplyFromSession(session) {
   const missingRequired = getNextMissingRequiredSlot(
     session?.businessType || "generic",
@@ -569,7 +834,11 @@ function buildConfirmationReplyFromSession(session) {
   );
 
   if (missingRequired) {
-    return getNextSlotQuestion(session?.businessType || "generic", missingRequired);
+    return getPremiumNextSlotQuestion(
+      session?.businessType || "generic",
+      missingRequired,
+      session
+    );
   }
 
   const slots = session?.slots || {};
@@ -578,7 +847,7 @@ function buildConfirmationReplyFromSession(session) {
     .map(([key, value]) => ({ key, value: normalizeText(value) }));
 
   if (!values.length) {
-    return "Let me confirm the details I have. Is that correct?";
+    return getPremiumEmptyConfirmation(session);
   }
 
   const findValue = (matcher) => {
@@ -613,37 +882,34 @@ function buildConfirmationReplyFromSession(session) {
 
   const parts = [];
 
-  if (serviceValue && session?.businessType === "medical") {
-    parts.push(serviceValue);
-  }
-
-  if (dateValue) parts.push(dateValue);
-  if (timeValue) parts.push(`at ${timeValue}`);
-  if (partyValue) parts.push(`for ${partyValue}`);
-  if (nameValue) parts.push(`under ${nameValue}`);
-  if (phoneValue) parts.push(`contact ${phoneValue}`);
-
-  if (parts.length > 0) {
-    return `Let me confirm: ${parts.join(" ")}. Is that correct?`;
-  }
-
-  return "Let me confirm the details I have. Is that correct?";
+if (serviceValue && session?.businessType === "medical") {
+  parts.push(serviceValue);
 }
 
+if (dateValue) parts.push(dateValue);
+if (timeValue) parts.push(`at ${timeValue}`);
+if (partyValue) parts.push(`for ${partyValue}`);
 
-function buildSlotQuestion(slotName) {
+if (parts.length > 0) {
+  return `${getPremiumConfirmLead(session)} ${parts.join(" ")}. Is that correct?`;
+}
+
+  return getPremiumEmptyConfirmation(session);
+}
+
+function buildSlotQuestion(slotName, session = null) {
   const slot = String(slotName || "").toLowerCase();
 
   if (!slot) {
-    return "Sorry, I missed that — could you say that again?";
+    return getPremiumRecoveryLine("generic", session);
   }
 
   if (slot.includes("date") || slot.includes("day")) {
-    return "Sorry, I missed the date there — which date should I book it for?";
+    return getPremiumSlotQuestion("date", session);
   }
 
   if (slot.includes("time")) {
-    return "Sorry, I didn’t catch the time — what time works for you?";
+    return getPremiumSlotQuestion("time", session);
   }
 
   if (
@@ -653,19 +919,19 @@ function buildSlotQuestion(slotName) {
     slot.includes("people") ||
     slot.includes("person")
   ) {
-    return "How many people should I reserve for?";
+    return getPremiumSlotQuestion("party_size", session);
   }
 
   if (slot.includes("name")) {
-   return "Sorry about that — may I have your name for the booking?";
+    return getPremiumSlotQuestion("name", session);
   }
 
   if (slot.includes("phone")) {
-   return "Sorry, I missed the number — what’s the best number to reach you?";
+    return getPremiumSlotQuestion("phone", session);
   }
 
   if (slot.includes("email")) {
-    return "What’s your email address?";
+    return getPremiumSlotQuestion("email", session);
   }
 
   if (
@@ -674,11 +940,12 @@ function buildSlotQuestion(slotName) {
     slot.includes("purpose") ||
     slot.includes("service")
   ) {
-    return "Sorry, I didn’t catch the appointment type — what type do you need?";
+    return getPremiumSlotQuestion("type", session);
   }
 
- return "Sorry, I missed that — could you say it again?";
+  return getPremiumRecoveryLine("generic", session);
 }
+
 function buildSafeFallbackReply(session) {
   const workflowStatus = String(session?.workflowStatus || "").toLowerCase();
 
@@ -688,7 +955,11 @@ function buildSafeFallbackReply(session) {
   );
 
   if (missingRequired) {
-    return getNextSlotQuestion(session?.businessType || "generic", missingRequired);
+    return getPremiumNextSlotQuestion(
+      session?.businessType || "generic",
+      missingRequired,
+      session
+    );
   }
 
   if (workflowStatus === "ready_for_confirmation" || workflowStatus === "completed") {
@@ -696,9 +967,10 @@ function buildSafeFallbackReply(session) {
   }
 
   if (session?.lastAskedSlot) {
-    return getNextSlotQuestion(
+    return getPremiumNextSlotQuestion(
       session?.businessType || "generic",
-      session.lastAskedSlot
+      session.lastAskedSlot,
+      session
     );
   }
 
@@ -706,10 +978,10 @@ function buildSafeFallbackReply(session) {
   const knownSlotCount = Object.keys(slots).filter((key) => normalizeText(slots[key])).length;
 
   if (knownSlotCount > 0) {
-    return "Got it. What’s the next detail I should note down?";
+    return getPremiumPrompt("nextDetail", session);
   }
 
-  return "Sorry — could you say that again?";
+  return getPremiumRecoveryLine("generic", session);
 }
 
 function pushRecentTurn(session, role, text) {
@@ -753,28 +1025,37 @@ function handleProcessingResult(callSid, brainResult) {
   }
 
   if (session.confirmationBlocked && !canConfirmNow(session.businessType, session.slots)) {
-    const nextMissingSlot = getNextMissingRequiredSlot(
+  const nextMissingSlot = getNextMissingRequiredSlot(
+    session.businessType || "generic",
+    session.slots || {}
+  );
+
+  if (nextMissingSlot) {
+    const slotPrompt = getPremiumNextSlotQuestion(
       session.businessType || "generic",
-      session.slots || {}
+      nextMissingSlot,
+      session
     );
 
-    if (nextMissingSlot) {
-      replyText = getNextSlotQuestion(
-        session.businessType || "generic",
-        nextMissingSlot
-      );
-      session.lastAskedSlot = nextMissingSlot;
+    if (!session.lastAssistantReply) {
+      replyText = `${getPremiumAcknowledgement("booking", session)} ${slotPrompt}`;
+    } else {
+      replyText = slotPrompt;
     }
+
+    session.lastAskedSlot = nextMissingSlot;
   }
+}
 
   if (replyText === normalizeText(session.lastAssistantReply)) {
     if (session.lastAskedSlot) {
-      replyText = getNextSlotQuestion(
+      replyText = getPremiumNextSlotQuestion(
         session.businessType || "generic",
-        session.lastAskedSlot
+        session.lastAskedSlot,
+        session
       );
     } else {
-      replyText = "Sorry, could you repeat that?";
+      replyText = getPremiumRecoveryLine("generic", session);
     }
   }
 
@@ -792,8 +1073,6 @@ function handleProcessingResult(callSid, brainResult) {
     replyType: brainResult.replyType || "reply",
   };
 }
-
-
 
 function handleSpeak(callSid) {
   const session = getSession(callSid);
@@ -831,48 +1110,62 @@ async function handleCallerTurn({ callSid, businessId = null, transcript, meta =
     logError(callSid, "handleCallerTurn called without session");
     return {
       shouldSpeak: true,
-      replyText: "Sorry — could you say that again?",
+      replyText: getPremiumRecoveryLine("generic", null),
       replyType: "repair",
     };
   }
 
   const utterance = normalizeText(transcript);
-session.lastCallerText = utterance;
+  session.lastCallerText = utterance;
 
-const askingPhoneConfirm =
-  /\b(confirm.*(phone|number)|what.*(phone|number)|did you get.*(phone|number))\b/i.test(utterance);
+  const askingPhoneConfirm =
+    /\b(confirm.*(phone|number)|what.*(phone|number)|did you get.*(phone|number))\b/i.test(utterance);
 
-if (askingPhoneConfirm && session?.slots?.phone) {
-  return {
-    shouldSpeak: true,
-    replyText: `Yes, I have ${formatPhone(session.slots.phone)}.`,
-    replyType: "ai",
-  };
-}
-
-const correctingName =
-  /\bno my name is\b/i.test(utterance);
-
-if (correctingName) {
-  const newName = extractNameValue(utterance);
-  if (newName) {
-    session.slots.name = newName;
-
+  if (askingPhoneConfirm && session?.slots?.phone) {
+    const template = getPremiumPrompt("phoneConfirm", session) || "Yes — I have {phone}.";
     return {
       shouldSpeak: true,
-      replyText: `Got it — I’ll use ${newName}.`,
+      replyText: template.replace("{phone}", formatPhone(session.slots.phone)),
       replyType: "ai",
     };
   }
-}
 
-if (!utterance) {   logDecision(callSid, "Empty caller turn ignored");
+  const correctingName =
+    /\bno my name is\b/i.test(utterance);
+
+  if (correctingName) {
+    const newName = extractNameValue(utterance);
+    if (newName) {
+      session.slots.name = newName;
+
+      const template = getPremiumPrompt("nameUpdated", session) || "No problem — I’ll use {name}.";
+      return {
+        shouldSpeak: true,
+        replyText: template.replace("{name}", newName),
+        replyType: "ai",
+      };
+    }
+  }
+
+  if (!utterance) {
+    logDecision(callSid, "Empty caller turn ignored");
     return {
       shouldSpeak: false,
       replyText: "",
       replyType: "noop",
     };
   }
+
+  const isClosing =
+  /\b(thank you|thanks|bye|goodbye|that’s all|thats all|appreciate it)\b/i.test(utterance);
+
+if (isClosing) {
+  return {
+    shouldSpeak: true,
+    replyText: getPremiumPrompt("closing", session),
+    replyType: "closing",
+  };
+}
 
   pushRecentTurn(session, "caller", utterance);
 
@@ -892,7 +1185,7 @@ if (!utterance) {   logDecision(callSid, "Empty caller turn ignored");
 
     return {
       shouldSpeak: true,
-      replyText: "Sorry — something went wrong. Please try again.",
+      replyText: getPremiumPrompt("error", session) || "Sorry — something went wrong. Please try again.",
       replyType: "error",
     };
   }
@@ -902,7 +1195,7 @@ if (!utterance) {   logDecision(callSid, "Empty caller turn ignored");
 
     return {
       shouldSpeak: true,
-      replyText: "Sorry — something went wrong. Please try again.",
+      replyText: getPremiumPrompt("error", session) || "Sorry — something went wrong. Please try again.",
       replyType: "error",
     };
   }
@@ -921,9 +1214,9 @@ if (!utterance) {   logDecision(callSid, "Empty caller turn ignored");
       tenantId: session.tenantId,
     });
 
-     return {
+    return {
       shouldSpeak: true,
-      replyText: "Sorry — something went wrong. Please try again.",
+      replyText: getPremiumPrompt("error", session) || "Sorry — something went wrong. Please try again.",
       replyType: "error",
     };
   }
@@ -949,7 +1242,7 @@ if (!utterance) {   logDecision(callSid, "Empty caller turn ignored");
 
     return {
       shouldSpeak: true,
-      replyText: "Sorry — could you repeat that?",
+      replyText: getPremiumRecoveryLine("generic", session),
       replyType: "repair",
     };
   }
@@ -985,7 +1278,7 @@ if (!utterance) {   logDecision(callSid, "Empty caller turn ignored");
 
     return {
       shouldSpeak: true,
-      replyText: "Sorry — could you repeat that?",
+      replyText: getPremiumRecoveryLine("generic", session),
       replyType: "repair",
     };
   }
@@ -1001,33 +1294,56 @@ if (!utterance) {   logDecision(callSid, "Empty caller turn ignored");
   session.slots = mergeSlotsWithoutEmpty(session.slots, newSlots);
   session.workflowSlots = mergeSlotsWithoutEmpty(session.workflowSlots || {}, newSlots);
 
-    const missingRequired = getMissingRequiredSlots(
+  const missingRequired = getMissingRequiredSlots(
+  session.businessType || "generic",
+  session.slots || {}
+);
+
+session.confirmationBlocked = missingRequired.length > 0;
+
+const hasDate = !!session.slots?.date;
+const hasTime = !!session.slots?.time;
+const hasParty = !!session.slots?.party_size;
+const hasType = !!session.slots?.type;
+const hasService = !!session.slots?.service;
+const hasName = !!session.slots?.name;
+const hasPhone = !!session.slots?.phone;
+
+let coreComplete = false;
+
+if (session.businessType === "restaurant") {
+  coreComplete = hasDate && hasTime && hasParty;
+} else if (session.businessType === "medical") {
+  coreComplete = hasDate && hasTime && hasType;
+} else if (session.businessType === "salon") {
+  coreComplete = hasDate && hasTime && hasService;
+} else {
+  coreComplete = hasDate && hasTime;
+}
+
+if (coreComplete && !hasName) {
+  session.lastAskedSlot = "name";
+} else if (coreComplete && hasName && !hasPhone) {
+  session.lastAskedSlot = "phone";
+} else if (missingRequired.length > 0) {
+  session.lastAskedSlot = getNextMissingRequiredSlot(
     session.businessType || "generic",
     session.slots || {}
   );
-
-  session.confirmationBlocked = missingRequired.length > 0;
-
-  if (missingRequired.length > 0) {
-    session.lastAskedSlot = getNextMissingRequiredSlot(
-      session.businessType || "generic",
-      session.slots || {}
-    );
-  } else {
-    session.lastAskedSlot = null;
-  }
-
-  // 🔥 Detect if we just filled the expected slot
-const expectedSlot = session.lastAskedSlot;
-const justFilledValue = expectedSlot ? session.slots[expectedSlot] : null;
-
-if (expectedSlot && justFilledValue) {
-  logDecision(callSid, "Slot captured", {
-    slot: expectedSlot,
-    value: justFilledValue,
-  });
+} else {
+  session.lastAskedSlot = null;
 }
 
+  // 🔥 Detect if we just filled the expected slot
+  const expectedSlot = session.lastAskedSlot;
+  const justFilledValue = expectedSlot ? session.slots[expectedSlot] : null;
+
+  if (expectedSlot && justFilledValue) {
+    logDecision(callSid, "Slot captured", {
+      slot: expectedSlot,
+      value: justFilledValue,
+    });
+  }
 
   session.workflowStatus = workflowState.workflowStatus || "idle";
 
@@ -1060,9 +1376,68 @@ if (expectedSlot && justFilledValue) {
   }
 
   if (!isUsableReply(replyText)) {
-  replyText = buildSafeFallbackReply(session);
+    replyText = buildSafeFallbackReply(session);
 
-  logDecision(callSid, "Workflow reply replaced with fallback", {
+    logDecision(callSid, "Workflow reply replaced with fallback", {
+      tenantId: session.tenantId,
+      businessId: session.businessId,
+      clusterId: session.clusterId,
+      intent: session.active_intent,
+      workflowStatus: session.workflowStatus,
+      slots: session.slots,
+      nextMissingSlot: session.lastAskedSlot,
+      fallbackReplyText: replyText,
+    });
+  }
+
+ if (session.confirmationBlocked && !canConfirmNow(session.businessType, session.slots)) {
+  const nextMissingSlot = getNextMissingRequiredSlot(
+    session.businessType || "generic",
+    session.slots || {}
+  );
+
+  if (nextMissingSlot) {
+    const slotPrompt = getPremiumNextSlotQuestion(
+      session.businessType || "generic",
+      nextMissingSlot,
+      session
+    );
+
+    const shouldAddBookingAck =
+      !session.lastAssistantReply &&
+      (session.active_intent === "reservation" || session.workflow === "reservation");
+
+    if (shouldAddBookingAck) {
+      replyText = `${getPremiumAcknowledgement("booking", session)} ${slotPrompt}`;
+    } else {
+      replyText = slotPrompt;
+    }
+
+    session.lastAskedSlot = nextMissingSlot;
+  }
+}
+
+  if (replyText === normalizeText(session.lastAssistantReply)) {
+    if (session.lastAskedSlot) {
+      replyText = getPremiumNextSlotQuestion(
+        session.businessType || "generic",
+        session.lastAskedSlot,
+        session
+      );
+    } else if (workflowState.confirmationPending) {
+      replyText = `${getPremiumPrompt("confirmOnce", session) || "Just to confirm —"} ${buildConfirmationReplyFromSession(session).replace(/^(Just to confirm —|Let me confirm that —|Just confirming —)\s*/i, "")}`;
+    } else {
+      replyText = getPremiumRecoveryLine("generic", session);
+    }
+  }
+
+  session.lastAssistantReply = replyText;
+
+  if (isUsableReply(replyText)) {
+    pushRecentTurn(session, "assistant", replyText);
+  }
+
+  logDecision(callSid, "AI workflow turn processed", {
     tenantId: session.tenantId,
     businessId: session.businessId,
     clusterId: session.clusterId,
@@ -1070,50 +1445,11 @@ if (expectedSlot && justFilledValue) {
     workflowStatus: session.workflowStatus,
     slots: session.slots,
     nextMissingSlot: session.lastAskedSlot,
-    fallbackReplyText: replyText,
+    deterministicSlots,
+    holisticSlots,
+    conversationTranscript: buildConversationTranscript(session),
   });
-}
 
-if (session.confirmationBlocked && !canConfirmNow(session.businessType, session.slots)) {
-  const nextMissingSlot = getNextMissingRequiredSlot(
-    session.businessType || "generic",
-    session.slots || {}
-  );
-
-  if (nextMissingSlot) {
-    replyText = getNextSlotQuestion(
-      session.businessType || "generic",
-      nextMissingSlot
-    );
-    session.lastAskedSlot = nextMissingSlot;
-  }
-}
-
-if (replyText === normalizeText(session.lastAssistantReply)) {
-  if (session.lastAskedSlot) {
-    replyText = getNextSlotQuestion(
-      session.businessType || "generic",
-      session.lastAskedSlot
-    );
-  } else if (workflowState.confirmationPending) {
-    replyText = "Let me confirm that once.";
-  } else {
-    replyText = "Sorry, could you repeat that?";
-  }
-}
-
-logDecision(callSid, "AI workflow turn processed", {
-  tenantId: session.tenantId,
-  businessId: session.businessId,
-  clusterId: session.clusterId,
-  intent: session.active_intent,
-  workflowStatus: session.workflowStatus,
-  slots: session.slots,
-  nextMissingSlot: session.lastAskedSlot,
-  deterministicSlots,
-  holisticSlots,
-  conversationTranscript: buildConversationTranscript(session),
-});
   return {
     shouldSpeak: true,
     replyText,
@@ -1128,9 +1464,6 @@ logDecision(callSid, "AI workflow turn processed", {
   };
 }
 
-
-
-  
 module.exports = {
   handleCallStarted,
   handleGreeting,
