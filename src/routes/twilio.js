@@ -41,17 +41,17 @@ const MIN_TRANSCRIPT_CHARS = 3;
 const MIN_ALNUM_CHARS = 2;
 const MIN_INTERIM_STABLE_LEN = 4;
 
-const VOICE_TURN_SILENCE_MS = Number(process.env.VOICE_TURN_SILENCE_MS || 280);
+const VOICE_TURN_SILENCE_MS = Number(process.env.VOICE_TURN_SILENCE_MS || 260);
 const VOICE_STT_COOLDOWN_MS = Number(process.env.VOICE_STT_COOLDOWN_MS || 100);
 const VOICE_POST_TTS_IGNORE_MS = Number(process.env.VOICE_POST_TTS_IGNORE_MS || 70);
 
 const VOICE_MIN_UTTERANCE_CHARS = Number(process.env.VOICE_MIN_UTTERANCE_CHARS || 3);
-const VOICE_MAX_REPLY_CHARS = Number(process.env.VOICE_MAX_REPLY_CHARS || 100);
+const VOICE_MAX_REPLY_CHARS = Number(process.env.VOICE_MAX_REPLY_CHARS || 80);
 const VOICE_LOG_PREFIX = "[twilio_voice_intel]";
 
 const VOICE_MIN_AUDIO_BYTES = Number(process.env.VOICE_MIN_AUDIO_BYTES || 640);
-const VOICE_MIN_AUDIO_RMS = Number(process.env.VOICE_MIN_AUDIO_RMS || 180);
-const VOICE_MIN_AUDIO_PEAK = Number(process.env.VOICE_MIN_AUDIO_PEAK || 900);
+const VOICE_MIN_AUDIO_RMS = Number(process.env.VOICE_MIN_AUDIO_RMS || 260);
+const VOICE_MIN_AUDIO_PEAK = Number(process.env.VOICE_MIN_AUDIO_PEAK || 1400);
 const VOICE_MIN_VOICED_SAMPLES = Number(process.env.VOICE_MIN_VOICED_SAMPLES || 24);
 
 const VOICE_MIN_BUFFER_BYTES_FOR_STT = Number(
