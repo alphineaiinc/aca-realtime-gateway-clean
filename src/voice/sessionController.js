@@ -1404,8 +1404,83 @@ if (isClosing) {
     holisticSlots
   );
 
+  if (
+  session.businessType === "medical" ||
+  session.businessType === "medical_clinic" ||
+  session.businessType === "dental_vision"
+) {
+  if (!newSlots.appointment_type) {
+    newSlots.appointment_type =
+      newSlots.appointment_type ||
+      newSlots.type ||
+      newSlots.service ||
+      "";
+  }
+}
+
+if (session.businessType === "legal_finance_consulting") {
+  if (!newSlots.consultation_type) {
+    newSlots.consultation_type =
+      newSlots.consultation_type ||
+      newSlots.type ||
+      newSlots.service ||
+      "";
+  }
+}
+
+if (session.businessType === "real_estate_property") {
+  if (!newSlots.request_type) {
+    newSlots.request_type =
+      newSlots.request_type ||
+      newSlots.type ||
+      newSlots.service ||
+      "";
+  }
+}
+
   session.slots = mergeSlotsWithoutEmpty(session.slots, newSlots);
   session.workflowSlots = mergeSlotsWithoutEmpty(session.workflowSlots || {}, newSlots);
+
+  if (
+  session.businessType === "medical" ||
+  session.businessType === "medical_clinic" ||
+  session.businessType === "dental_vision"
+) {
+  if (!session.slots.appointment_type) {
+    session.slots.appointment_type =
+      session.slots.appointment_type ||
+      session.slots.type ||
+      session.slots.service ||
+      "";
+  }
+}
+
+if (session.businessType === "legal_finance_consulting") {
+  if (!session.slots.consultation_type) {
+    session.slots.consultation_type =
+      session.slots.consultation_type ||
+      session.slots.type ||
+      session.slots.service ||
+      "";
+  }
+}
+
+if (session.businessType === "real_estate_property") {
+  if (!session.slots.request_type) {
+    session.slots.request_type =
+      session.slots.request_type ||
+      session.slots.type ||
+      session.slots.service ||
+      "";
+  }
+}
+
+// 📊 ADD THIS DEBUG RIGHT HERE
+logDecision(callSid, "Normalized slot aliases", {
+  businessType: session.businessType,
+  slots: session.slots,
+  newSlots,
+});
 
   const missingRequired = getMissingRequiredSlots(
   session.businessType || "generic",
