@@ -1247,7 +1247,27 @@ const isPhoneConversationNoise =
 
 // 🔴 HARD LOCK until phone is complete
 if (ws.__capturingPhone && (ws.__phoneDigits || "").length < 10) {
-  const digitsSoFar = ws.__phoneDigits || "";
+    // 🔥 ADD THIS BLOCK RIGHT HERE (TOP OF PHONE CAPTURE BLOCK)
+  const digits = (ws.__phoneDigits || "").replace(/\D/g, "");
+
+  if (digits.length >= 10) {
+    resetPhoneCapture(ws);
+
+    await synthesizeAndSendReply(
+      ws,
+      activeCallSid,
+      activeStreamSid,
+      tenantId,
+      tenantLangCode,
+      "Got it. Let me confirm your booking.",
+      "main"
+    );
+
+    ws.__pendingVoiceTranscript = digits;
+    ws.__pendingVoiceTranscriptStartedAt = Date.now();
+    return;
+  }
+
   const noNewDigits = !incomingDigits;
   const stalledForMs = Date.now() - (ws.__phoneCaptureLastUpdatedAt || ws.__phoneCaptureStartedAt || Date.now());
 
