@@ -197,6 +197,14 @@ function titleCase(text) {
     .join(" ");
 }
 
+function formatPhone(phone) {
+  const digits = String(phone || "").replace(/\D/g, "");
+  if (digits.length === 10) {
+    return `${digits.slice(0, 3)} ${digits.slice(3, 6)} ${digits.slice(6)}`;
+  }
+  return String(phone || "");
+}
+
 function buildConversationTranscript(session) {
   return (session?.recentTurns || [])
     .map((turn) => `${turn.role}: ${normalizeText(turn.text)}`)
@@ -829,9 +837,8 @@ async function handleCallerTurn({ callSid, businessId = null, transcript, meta =
   }
 
   const utterance = normalizeText(transcript);
-  session.lastCallerText = utterance;
+session.lastCallerText = utterance;
 
- // 🔥 ADD THIS BLOCK HERE
 const askingPhoneConfirm =
   /\b(confirm.*(phone|number)|what.*(phone|number)|did you get.*(phone|number))\b/i.test(utterance);
 
@@ -839,30 +846,27 @@ if (askingPhoneConfirm && session?.slots?.phone) {
   return {
     shouldSpeak: true,
     replyText: `Yes, I have ${formatPhone(session.slots.phone)}.`,
-    replyType: "ai"
+    replyType: "ai",
   };
 }
 
 const correctingName =
-  /\bno my name is\b/i.test(userText);
+  /\bno my name is\b/i.test(utterance);
 
 if (correctingName) {
-  const newName = extractNameValue(userText);
+  const newName = extractNameValue(utterance);
   if (newName) {
     session.slots.name = newName;
 
     return {
       shouldSpeak: true,
       replyText: `Got it — I’ll use ${newName}.`,
-      replyType: "ai"
+      replyType: "ai",
     };
   }
 }
 
-if (!utterance) {
-
-  if (!utterance) {
-    logDecision(callSid, "Empty caller turn ignored");
+if (!utterance) {   logDecision(callSid, "Empty caller turn ignored");
     return {
       shouldSpeak: false,
       replyText: "",
