@@ -778,13 +778,17 @@ function inferSlotValueFromUtterance(slotName, utterance) {
   }
 
   if (
-    normalizedSlot.includes("type") ||
-    normalizedSlot.includes("reason") ||
-    normalizedSlot.includes("purpose") ||
-    normalizedSlot.includes("service")
-  ) {
-    return extractTypeValue(text);
-  }
+  normalizedSlot.includes("appointment_type") ||
+  normalizedSlot.includes("consultation_type") ||
+  normalizedSlot.includes("request_type") ||
+  normalizedSlot.includes("visit_type") ||
+  normalizedSlot.includes("type") ||
+  normalizedSlot.includes("reason") ||
+  normalizedSlot.includes("purpose") ||
+  normalizedSlot.includes("service")
+) {
+  return extractTypeValue(text);
+}
 
   return "";
 }
@@ -830,9 +834,25 @@ function inferHeuristicSlotsFromUtterance(session, utterance) {
   }
 
   const typeValue = extractTypeValue(text);
-  if (typeValue) {
+if (typeValue) {
+  if (
+    session?.businessType === "medical" ||
+    session?.businessType === "medical_clinic" ||
+    session?.businessType === "dental_vision"
+  ) {
+    inferred.appointment_type = inferred.appointment_type || typeValue;
+  } else if (
+    session?.businessType === "legal_finance_consulting"
+  ) {
+    inferred.consultation_type = inferred.consultation_type || typeValue;
+  } else if (
+    session?.businessType === "real_estate_property"
+  ) {
+    inferred.request_type = inferred.request_type || typeValue;
+  } else {
     inferred.type = inferred.type || typeValue;
   }
+}
 
   return inferred;
 }
@@ -852,8 +872,26 @@ function inferHolisticSlotsFromConversation(session) {
   const nameValue = extractNameValue(transcript);
   if (nameValue) inferred.name = nameValue;
 
-  const typeValue = extractTypeValue(transcript);
-  if (typeValue) inferred.type = typeValue;
+const typeValue = extractTypeValue(transcript);
+if (typeValue) {
+  if (
+    session?.businessType === "medical" ||
+    session?.businessType === "medical_clinic" ||
+    session?.businessType === "dental_vision"
+  ) {
+    inferred.appointment_type = typeValue;
+  } else if (
+    session?.businessType === "legal_finance_consulting"
+  ) {
+    inferred.consultation_type = typeValue;
+  } else if (
+    session?.businessType === "real_estate_property"
+  ) {
+    inferred.request_type = typeValue;
+  } else {
+    inferred.type = typeValue;
+  }
+}
 
   const phoneValue = extractPhoneValue(transcript);
   if (phoneValue) inferred.phone = phoneValue;
