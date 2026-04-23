@@ -827,13 +827,29 @@ function inferHeuristicSlotsFromUtterance(session, utterance) {
   const text = normalizeText(utterance);
   if (!text) return inferred;
 
-  const expectedSlot = normalizeSlotName(session?.lastAskedSlot || "");
+const expectedSlot = normalizeSlotName(session?.lastAskedSlot || "");
+const rawExpectedSlotName = session?.lastAskedSlot || "";
 
-  const expectedValue = inferSlotValueFromUtterance(expectedSlot, text);
-  if (expectedSlot && expectedValue) {
-    inferred[session.lastAskedSlot] = expectedValue;
+const expectedValue = inferSlotValueFromUtterance(expectedSlot, text);
+if (expectedSlot && expectedValue) {
+  inferred[rawExpectedSlotName] = expectedValue;
+} else if (expectedSlot && text) {
+  const directCaptureSlots = new Set([
+    "appointment_type",
+    "consultation_type",
+    "request_type",
+    "service",
+    "address",
+    "vehicle_make",
+    "vehicle_model",
+    "pet_name",
+    "subject_or_course",
+  ]);
+
+  if (directCaptureSlots.has(rawExpectedSlotName)) {
+    inferred[rawExpectedSlotName] = text;
   }
-
+}
   const dateValue = extractDateValue(text);
   if (dateValue) {
     inferred.date = inferred.date || dateValue;
