@@ -1188,6 +1188,13 @@ function resetPhoneCapture(ws) {
 // Paste this ONLY replacing your dispatchPendingVoiceTurn function
 
 async function dispatchPendingVoiceTurn() {
+  console.log("[voice][dispatch_enter]", {
+  callSid: activeCallSid,
+  pending: ws.__pendingVoiceTranscript,
+  stable: ws.__lastStableTranscript,
+  speaking: ws.__isSpeaking,
+  speakUntil: ws.__speakUntil,
+});
   let finalVoiceText = normalizeIncomingVoiceText(ws.__pendingVoiceTranscript);
   const session = getCurrentSession();
   const expectedSlot = session?.lastAskedSlot || null;
@@ -1336,17 +1343,33 @@ if (ws.__capturingPhone && (ws.__phoneDigits || "").length < 10) {
     return;
   }
 
-  if (!finalVoiceText) return;
+if (!finalVoiceText) {
+  console.log("[voice][dispatch_blocked_empty]", {
+    callSid: activeCallSid,
+  });
+  return;
+}
 
   // =========================
   // DISPATCH
   // =========================
   ws.__voiceTurnTimer = null;
 
-  if (ws.__dispatchInFlight) return;
+if (ws.__dispatchInFlight) {
+  console.log("[voice][dispatch_blocked_inflight]", {
+    callSid: activeCallSid,
+  });
+  return;
+}
   if (isPlaybackLocked(ws)) return;
 
-  if (!isMeaningfulVoiceUtterance(finalVoiceText)) return;
+if (!isMeaningfulVoiceUtterance(finalVoiceText)) {
+  console.log("[voice][dispatch_blocked_not_meaningful]", {
+    callSid: activeCallSid,
+    text: finalVoiceText,
+  });
+  return;
+}
 
   ws.__dispatchInFlight = true;
 
@@ -1368,9 +1391,20 @@ try {
     meta: ws.__routingMeta || {},
   });
 
+  console.log("[voice][handleCallerTurn_result]", {
+    callSid: activeCallSid,
+    hasTurnResult: !!turnResult,
+    replyText: turnResult?.replyText || null,
+    lastAskedSlot: turnResult?.lastAskedSlot || null,
+    workflowStatus: turnResult?.workflowStatus || null,
+  });
+
   reply = normalizeVoiceReply(turnResult?.replyText || "");
 } catch (err) {
-  console.warn("handleCallerTurn failed", err.message);
+  console.error("[voice][handleCallerTurn_failed]", {
+    callSid: activeCallSid,
+    error: err?.stack || err?.message || String(err),
+  });
 }
 
 const controllerReply = handleProcessingResult(activeCallSid, {
@@ -1448,6 +1482,14 @@ if (!safeReply) {
           callSid: data.start.callSid,
           streamSid: data.start.streamSid,
         };
+
+        console.log("[voice][cluster] twilio_start_routing", {
+  tenantId,
+  businessId,
+  calledNumber,
+  callSid: data.start.callSid,
+  streamSid: data.start.streamSid,
+});
 
         console.log("🧭 [twilio] resolved routing meta:", ws.__routingMeta);
         activeCallSid = data.start.callSid;
@@ -1572,7 +1614,16 @@ ws.__sttStream = createStreamingTranscriber({
   languageCode: tenantLangCode,
 
   onInterim: (text) => {
-    if (isPlaybackLocked(ws)) return;
+    console.log("[stt][interim]", {
+  callSid: activeCallSid,
+  text,
+});
+ if (isPlaybackLocked(ws)) {
+  console.log("[voice][dispatch_blocked_playback_lock]", {
+    callSid: activeCallSid,
+  });
+  return;
+}
 
     const cleaned = normalizeIncomingVoiceText(text);
     if (!cleaned) return;
@@ -1586,6 +1637,10 @@ ws.__sttStream = createStreamingTranscriber({
   },
 
   onFinal: (text) => {
+    console.log("[stt][final]", {
+  callSid: activeCallSid,
+  text,
+});
     if (isPlaybackLocked(ws)) return;
 
     const cleaned = normalizeIncomingVoiceText(text);
@@ -1612,6 +1667,9 @@ ws.__sttStream = createStreamingTranscriber({
   },
 
   onSpeechStart: () => {
+    console.log("[stt][speech_start]", {
+  callSid: activeCallSid,
+});
     ws.__speechActive = true;
     ws.__lastSpeechStartAt = Date.now();
 
@@ -1634,6 +1692,11 @@ ws.__sttStream = createStreamingTranscriber({
   },
 
   onSpeechEnd: () => {
+    console.log("[stt][speech_end]", {
+  callSid: activeCallSid,
+  interim: ws.__streamingInterim,
+  final: ws.__streamingFinal,
+});
     ws.__speechActive = false;
     ws.__lastSpeechEndAt = Date.now();
 
