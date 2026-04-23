@@ -336,17 +336,22 @@ function computeWorkflowState({ clusterSchema, session, extraction }) {
 
   const intentSchema = getIntentSchema(clusterSchema, intent);
 
-  const filteredUpdates = filterSlotUpdates(
-    clusterSchema,
-    intentSchema,
-    safeExtraction.slot_updates
-  );
+const rawSlotUpdates =
+  safeExtraction.slot_updates ||
+  safeExtraction.slots ||
+  {};
 
-  const filteredCorrections = filterSlotUpdates(
-    clusterSchema,
-    intentSchema,
-    safeExtraction.slot_corrections
-  );
+const filteredUpdates = filterSlotUpdates(
+  clusterSchema,
+  intentSchema,
+  rawSlotUpdates
+);
+
+const filteredCorrections = filterSlotUpdates(
+  clusterSchema,
+  intentSchema,
+  safeExtraction.slot_corrections
+);
 
   const normalizedUpdates = normalizeSlotUpdates(clusterSchema, filteredUpdates);
   const normalizedCorrections = normalizeSlotUpdates(clusterSchema, filteredCorrections);

@@ -225,6 +225,23 @@ function pickPremiumLine(options, session, key) {
 
   return value;
 }
+function deriveBusinessTypeFromCluster(clusterId) {
+  if (!clusterId) return "generic";
+  return String(clusterId).trim().toLowerCase();
+}
+
+function logClusterState(prefix, session) {
+  try {
+    console.log(`[voice][cluster] ${prefix}`, {
+      sessionId: session?.id || null,
+      tenantId: session?.tenantId || null,
+      clusterId: session?.clusterId || null,
+      businessType: session?.businessType || null,
+      requiredSlots: session?.requiredSlots || [],
+      extractedSlots: session?.slots || {},
+    });
+  } catch (_) {}
+}
 
 function getPremiumSlotKey(slotName) {
   const slot = String(slotName || "").toLowerCase().trim();
@@ -562,18 +579,30 @@ function buildConversationTranscript(session) {
 }
 
 function applyBusinessSlotProfile(session, clusterSchema = null) {
+  const clusterId = String(
+    session?.clusterId ||
+    clusterSchema?.cluster_id ||
+    clusterSchema?.clusterId ||
+    ""
+  ).trim().toLowerCase();
+
   const schemaBusinessType =
     clusterSchema?.businessType ||
     clusterSchema?.business_type ||
+    deriveBusinessTypeFromCluster(clusterId) ||
     session?.businessType ||
     "generic";
 
   const businessType = normalizeBusinessType(schemaBusinessType);
   const profile = getBusinessSlotProfile(businessType);
 
+  session.clusterId = clusterId || session.clusterId || null;
   session.businessType = businessType;
+  session.clusterSchema = clusterSchema || session.clusterSchema || null;
   session.requiredSlots = Array.isArray(profile.required) ? [...profile.required] : [];
   session.optionalSlots = Array.isArray(profile.optional) ? [...profile.optional] : [];
+
+  logClusterState("applyBusinessSlotProfile", session);
 
   return profile;
 }
@@ -908,6 +937,74 @@ if (typeValue) {
   }
 
   return inferred;
+}
+
+function normalizeExtractedSlotsForSession(session, rawSlots = {}) {
+  const normalized = { ...(rawSlots || {}) };
+  const clusterId = String(session?.clusterId || "").trim().toLowerCase();
+  const businessType = String(session?.businessType || "").trim().toLowerCase();
+
+  if (!normalized.phone && normalized.phone_number) {
+    normalized.phone = normalized.phone_number;
+  }
+
+  if (!normalized.name && normalized.full_name) {
+    normalized.name = normalized.full_name;
+  }
+
+  const isClinic =
+    clusterId === "medical_clinic" ||
+    clusterId === "dental_vision" ||
+    businessType === "medical";
+
+  const isConsulting =
+    clusterId === "legal_finance_consulting" ||
+    businessType === "legal_finance_consulting";
+
+  const isProperty =
+    clusterId === "real_estate_property" ||
+    businessType === "real_estate_property";
+
+  if (isClinic && !normalized.appointment_type) {
+    normalized.appointment_type =
+      normalized.appointment_type ||
+      normalized.type ||
+      normalized.service ||
+      normalized.service_type ||
+      "";
+  }
+
+  if (isConsulting && !normalized.consultation_type) {
+    normalized.consultation_type =
+      normalized.consultation_type ||
+      normalized.type ||
+      normalized.service ||
+      normalized.service_type ||
+      "";
+  }
+
+  if (isProperty && !normalized.request_type) {
+    normalized.request_type =
+      normalized.request_type ||
+      normalized.type ||
+      normalized.service ||
+      normalized.service_type ||
+      "";
+  }
+
+  if ((clusterId === "auto_service" || businessType === "auto_service") && !normalized.vehicle_make && normalized.make) {
+    normalized.vehicle_make = normalized.make;
+  }
+
+  if ((clusterId === "auto_service" || businessType === "auto_service") && !normalized.vehicle_model && normalized.model) {
+    normalized.vehicle_model = normalized.model;
+  }
+
+  if ((clusterId === "home_services" || businessType === "home_services") && !normalized.address && normalized.location) {
+    normalized.address = normalized.location;
+  }
+
+  return normalized;
 }
 
 function mergeSlotsWithoutEmpty(existingSlots = {}, incomingSlots = {}) {
@@ -1317,6 +1414,14 @@ if (isClosing) {
   session.businessId = routing.businessId || businessId || null;
   session.clusterId = routing.clusterId || null;
 
+  logDecision(callSid, "Tenant cluster resolved", {
+  tenantId: session.tenantId,
+  businessId: session.businessId,
+  clusterId: session.clusterId,
+  businessType: session.businessType,
+});
+
+ 
   let clusterSchema;
   try {
     clusterSchema = await loadClusterSchema(session.clusterId);
@@ -1335,6 +1440,14 @@ if (isClosing) {
   }
 
   applyBusinessSlotProfile(session, clusterSchema);
+
+  logDecision(callSid, "Cluster profile applied", {
+  tenantId: session.tenantId,
+  clusterId: session.clusterId,
+  businessType: session.businessType,
+  requiredSlots: session.requiredSlots,
+  optionalSlots: session.optionalSlots,
+});
 
   let extraction;
   try {
@@ -1360,19 +1473,26 @@ if (isClosing) {
     };
   }
 
-  const deterministicSlots = inferHeuristicSlotsFromUtterance(session, utterance);
-  const holisticSlots = inferHolisticSlotsFromConversation(session);
-  const extractionSlots = extraction?.slots || {};
+ const deterministicSlots = inferHeuristicSlotsFromUtterance(session, utterance);
+const holisticSlots = inferHolisticSlotsFromConversation(session);
+const extractionSlots = extraction?.slots || {};
 
-  const combinedExtractionSlots = mergeSlotsWithoutEmpty(
+const combinedExtractionSlots = normalizeExtractedSlotsForSession(
+  session,
+  mergeSlotsWithoutEmpty(
     mergeSlotsWithoutEmpty(extractionSlots, deterministicSlots),
     holisticSlots
-  );
+  )
+);
 
-  const effectiveExtraction = {
-    ...(extraction || {}),
-    slots: combinedExtractionSlots,
-  };
+const effectiveExtraction = {
+  ...(extraction || {}),
+  slots: combinedExtractionSlots,
+  slot_updates: mergeSlotsWithoutEmpty(
+    extraction?.slot_updates || {},
+    combinedExtractionSlots
+  ),
+};
 
   let workflowState;
   try {
@@ -1399,82 +1519,35 @@ if (isClosing) {
   session.active_intent = workflowState.intent || session.active_intent || null;
   session.workflow = workflowState.intent || session.workflow || null;
 
-  const newSlots = mergeSlotsWithoutEmpty(
+const newSlots = normalizeExtractedSlotsForSession(
+  session,
+  mergeSlotsWithoutEmpty(
     mergeSlotsWithoutEmpty(workflowState.slots || {}, deterministicSlots),
     holisticSlots
-  );
+  )
+);
 
-  if (
-  session.businessType === "medical" ||
-  session.businessType === "medical_clinic" ||
-  session.businessType === "dental_vision"
-) {
-  if (!newSlots.appointment_type) {
-    newSlots.appointment_type =
-      newSlots.appointment_type ||
-      newSlots.type ||
-      newSlots.service ||
-      "";
-  }
-}
 
-if (session.businessType === "legal_finance_consulting") {
-  if (!newSlots.consultation_type) {
-    newSlots.consultation_type =
-      newSlots.consultation_type ||
-      newSlots.type ||
-      newSlots.service ||
-      "";
-  }
-}
+session.slots = normalizeExtractedSlotsForSession(
+  session,
+  mergeSlotsWithoutEmpty(session.slots, newSlots)
+);
 
-if (session.businessType === "real_estate_property") {
-  if (!newSlots.request_type) {
-    newSlots.request_type =
-      newSlots.request_type ||
-      newSlots.type ||
-      newSlots.service ||
-      "";
-  }
-}
+session.workflowSlots = normalizeExtractedSlotsForSession(
+  session,
+  mergeSlotsWithoutEmpty(session.workflowSlots || {}, newSlots)
+);
 
-  session.slots = mergeSlotsWithoutEmpty(session.slots, newSlots);
-  session.workflowSlots = mergeSlotsWithoutEmpty(session.workflowSlots || {}, newSlots);
+logDecision(callSid, "Cluster slots normalized", {
+  tenantId: session.tenantId,
+  clusterId: session.clusterId,
+  businessType: session.businessType,
+  requiredSlots: session.requiredSlots,
+  extractedSlots: newSlots,
+  sessionSlots: session.slots,
+});
 
-  if (
-  session.businessType === "medical" ||
-  session.businessType === "medical_clinic" ||
-  session.businessType === "dental_vision"
-) {
-  if (!session.slots.appointment_type) {
-    session.slots.appointment_type =
-      session.slots.appointment_type ||
-      session.slots.type ||
-      session.slots.service ||
-      "";
-  }
-}
-
-if (session.businessType === "legal_finance_consulting") {
-  if (!session.slots.consultation_type) {
-    session.slots.consultation_type =
-      session.slots.consultation_type ||
-      session.slots.type ||
-      session.slots.service ||
-      "";
-  }
-}
-
-if (session.businessType === "real_estate_property") {
-  if (!session.slots.request_type) {
-    session.slots.request_type =
-      session.slots.request_type ||
-      session.slots.type ||
-      session.slots.service ||
-      "";
-  }
-}
-
+  
 // 📊 ADD THIS DEBUG RIGHT HERE
 logDecision(callSid, "Normalized slot aliases", {
   businessType: session.businessType,
@@ -1482,10 +1555,20 @@ logDecision(callSid, "Normalized slot aliases", {
   newSlots,
 });
 
-  const missingRequired = getMissingRequiredSlots(
+ const missingRequired = getMissingRequiredSlots(
   session.businessType || "generic",
   session.slots || {}
 );
+
+logDecision(callSid, "Required slot resolution", {
+  tenantId: session.tenantId,
+  clusterId: session.clusterId,
+  businessType: session.businessType,
+  requiredSlots: session.requiredSlots,
+  extractedSlots: session.slots,
+  missingRequired,
+});
+
 
 session.confirmationBlocked = missingRequired.length > 0;
 
