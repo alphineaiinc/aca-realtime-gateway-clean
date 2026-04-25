@@ -16,18 +16,17 @@ const BUSINESS_SLOT_PROFILES = {
   },
 
   medical: {
-   medical: {
   required: ["appointment_type", "date", "time", "name", "phone"],
-    optional: ["symptoms", "doctor_preference", "patient_status", "urgency"],
-    slotQuestions: {
-      intent: "How can I help with your appointment today?",
-      appointment_type: "What type of appointment would you like to book?",
-      date: "Which date would you like to come in?",
-      time: "What time works best for you?",
-      name: "May I have your full name?",
-      phone: "What phone number should we use to reach you?"
-    }
-  },
+  optional: ["symptoms", "doctor_preference", "patient_status", "urgency"],
+  slotQuestions: {
+    intent: "How can I help with your appointment today?",
+    appointment_type: "What type of appointment would you like to book?",
+    date: "Which date would you like to come in?",
+    time: "What time works best for you?",
+    name: "May I have your full name?",
+    phone: "What phone number should we use to reach you?"
+  }
+},
 
   salon: {
     required: ["intent", "service", "date", "time", "name", "phone"],
