@@ -969,9 +969,34 @@ ensurePlaybackState(ws);
       normalizeForStability(targetWs.__lastCommittedTranscript || "");
 
   if (expectedSlot) {
-    if (stableAgeMs < 350 && pendingAgeMs < 1400) return true;
+  const slotName = String(expectedSlot).toLowerCase();
+
+  const isOpenTextSlot =
+    slotName.includes("appointment_type") ||
+    slotName.includes("consultation_type") ||
+    slotName.includes("request_type") ||
+    slotName.includes("service") ||
+    slotName.includes("address") ||
+    slotName.includes("vehicle_make") ||
+    slotName.includes("vehicle_model") ||
+    slotName.includes("subject_or_course") ||
+    slotName.includes("pet_name");
+
+  const looksIncompleteSlotLead =
+    /^(it is|it's|its|for|um|uh|yeah|yes|um it is|um it's|yes it is|yeah it is)$/i.test(
+      pending
+    ) ||
+    /^(it is for|it's for|for a|for an)$/i.test(pending);
+
+  if (isOpenTextSlot) {
+    if (looksIncompleteSlotLead && pendingAgeMs < 1800) return true;
+    if (stableAgeMs < 550 && pendingAgeMs < 1800) return true;
     return false;
   }
+
+  if (stableAgeMs < 350 && pendingAgeMs < 1400) return true;
+  return false;
+}
 
  // allow short meaningful answers immediately
 if (wordCount <= 2) {
@@ -1311,23 +1336,51 @@ if (ws.__capturingPhone && (ws.__phoneDigits || "").length < 10) {
   // =========================
   // INCOMPLETE IDENTITY GUARD
   // =========================
+
   if (/^(my name is|i am|this is)$/i.test(finalVoiceText.trim())) {
-    pushTwilioDebug("dispatch_skipped_incomplete", {
-      callSid: activeCallSid,
-      text: finalVoiceText,
-      reason: "incomplete_identity_phrase",
-      expectedSlot,
-    });
+  pushTwilioDebug("dispatch_skipped_incomplete", {
+    callSid: activeCallSid,
+    text: finalVoiceText,
+    reason: "incomplete_identity_phrase",
+    expectedSlot,
+  });
 
-    clearPendingVoiceTurn(ws);
+  clearPendingVoiceTurn(ws);
 
-    ws.__voiceTurnTimer = setTimeout(async () => {
-      if (isPlaybackLocked(ws)) return;
-      await dispatchPendingVoiceTurn();
-    }, 900);
+  ws.__voiceTurnTimer = setTimeout(async () => {
+   if (isPlaybackLocked(ws)) {
+  console.log("[voice][dispatch_blocked_playback_lock]", {
+    callSid: activeCallSid,
+  });
+  return;
+}
+    await dispatchPendingVoiceTurn();
+  }, 900);
 
-    return;
-  }
+  return;
+}
+
+  if (
+  /^(it is|it's|its|for|um it is|um it's|yeah it is|yes it is)$/i.test(
+    finalVoiceText.trim()
+  )
+) {
+  pushTwilioDebug("dispatch_skipped_incomplete", {
+    callSid: activeCallSid,
+    text: finalVoiceText,
+    reason: "incomplete_slot_phrase",
+    expectedSlot,
+  });
+
+  clearPendingVoiceTurn(ws);
+
+  ws.__voiceTurnTimer = setTimeout(async () => {
+    if (isPlaybackLocked(ws)) return;
+    await dispatchPendingVoiceTurn();
+  }, 900);
+
+  return;
+}
 
   // =========================
   // TURN STABILITY
@@ -1637,34 +1690,61 @@ ws.__sttStream = createStreamingTranscriber({
   },
 
   onFinal: (text) => {
-    console.log("[stt][final]", {
-  callSid: activeCallSid,
-  text,
-});
-    if (isPlaybackLocked(ws)) return;
+  console.log("[stt][final]", {
+    callSid: activeCallSid,
+    text,
+  });
 
-    const cleaned = normalizeIncomingVoiceText(text);
-    if (!cleaned) return;
+  if (isPlaybackLocked(ws)) return;
 
-    ws.__streamingFinal = cleaned;
-    ws.__pendingVoiceTranscript = cleaned;
-    ws.__pendingVoiceTranscriptStartedAt =
-      ws.__pendingVoiceTranscriptStartedAt || Date.now();
-    ws.__lastVoiceInputAt = Date.now();
+  const cleaned = normalizeIncomingVoiceText(text);
+  if (!cleaned) return;
 
-    clearPendingVoiceTurn(ws);
+  const existingPending = normalizeIncomingVoiceText(ws.__pendingVoiceTranscript);
+  const expectedSlot = getOpenExpectedSlot();
+  const expectedSlotName = String(expectedSlot || "").toLowerCase();
 
-    ws.__voiceTurnTimer = setTimeout(async () => {
-      try {
-        await dispatchPendingVoiceTurn();
-      } catch (err) {
-        console.error(`${VOICE_LOG_PREFIX} streaming_final_dispatch_error`, {
-          callSid: activeCallSid,
-          error: err?.message || String(err),
-        });
-      }
-    }, 90);
-  },
+  const isOpenTextSlot =
+    expectedSlotName.includes("appointment_type") ||
+    expectedSlotName.includes("consultation_type") ||
+    expectedSlotName.includes("request_type") ||
+    expectedSlotName.includes("service") ||
+    expectedSlotName.includes("address") ||
+    expectedSlotName.includes("vehicle_make") ||
+    expectedSlotName.includes("vehicle_model") ||
+    expectedSlotName.includes("subject_or_course") ||
+    expectedSlotName.includes("pet_name");
+
+  let mergedFinal = cleaned;
+
+  if (
+    isOpenTextSlot &&
+    existingPending &&
+    existingPending !== cleaned &&
+    !cleaned.startsWith(existingPending)
+  ) {
+    mergedFinal = `${existingPending} ${cleaned}`.replace(/\s+/g, " ").trim();
+  }
+
+  ws.__streamingFinal = mergedFinal;
+  ws.__pendingVoiceTranscript = mergedFinal;
+  ws.__pendingVoiceTranscriptStartedAt =
+    ws.__pendingVoiceTranscriptStartedAt || Date.now();
+  ws.__lastVoiceInputAt = Date.now();
+
+  clearPendingVoiceTurn(ws);
+
+  ws.__voiceTurnTimer = setTimeout(async () => {
+    try {
+      await dispatchPendingVoiceTurn();
+    } catch (err) {
+      console.error(`${VOICE_LOG_PREFIX} streaming_final_dispatch_error`, {
+        callSid: activeCallSid,
+        error: err?.message || String(err),
+      });
+    }
+  }, isOpenTextSlot ? 220 : 90);
+},
 
   onSpeechStart: () => {
     console.log("[stt][speech_start]", {
