@@ -169,7 +169,7 @@ function buildResolutionResult(resolved, candidates) {
       ok: true,
       tenantId: 1,
       businessId: candidates.businessId || null,
-      clusterId: "generic_service",
+     clusterId: process.env.DEFAULT_VOICE_CLUSTER_ID || "medical_clinic",
       callSid: candidates.callSid || null,
       calledNumber: candidates.calledNumber || null,
       reason: "FALLBACK_DEFAULT"
@@ -180,7 +180,7 @@ function buildResolutionResult(resolved, candidates) {
     ok: true,
     tenantId: resolved.tenant_id || resolved.tenantId || 1,
     businessId: resolved.business_id || resolved.businessId || candidates.businessId || null,
-    clusterId: resolved.cluster_id || resolved.clusterId || "generic_service",
+    clusterId: resolved.cluster_id || resolved.clusterId || process.env.DEFAULT_VOICE_CLUSTER_ID || "medical_clinic",
     callSid: candidates.callSid || null,
     calledNumber: candidates.calledNumber || null,
     reason: null
