@@ -16,7 +16,8 @@ const BUSINESS_SLOT_PROFILES = {
   },
 
   medical: {
-    required: ["intent", "appointment_type", "date", "time", "name", "phone"],
+   medical: {
+  required: ["appointment_type", "date", "time", "name", "phone"],
     optional: ["symptoms", "doctor_preference", "patient_status", "urgency"],
     slotQuestions: {
       intent: "How can I help with your appointment today?",
