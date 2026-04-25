@@ -188,16 +188,16 @@ function mergeSlots(currentSlots, updates, corrections) {
   };
 }
 
-function getNextMissingSlot(intentSchema, slots) {
-  if (!intentSchema) return null;
-
-  const required = safeArray(intentSchema.required_slots);
+function getNextMissingSlot(intentSchema, slots, fallbackRequiredSlots = []) {
+  const required = intentSchema
+    ? safeArray(intentSchema.required_slots)
+    : safeArray(fallbackRequiredSlots);
 
   for (const slot of required) {
     if (
-  !isFilled(slots[slot]) ||
-  (slot === "time" && /^(am|pm)$/i.test(slots[slot]))
-) {
+      !isFilled(slots[slot]) ||
+      (slot === "time" && /^(am|pm)$/i.test(slots[slot]))
+    ) {
       return slot;
     }
   }
@@ -205,15 +205,15 @@ function getNextMissingSlot(intentSchema, slots) {
   return null;
 }
 
-function getConfirmationSlots(intentSchema, slots) {
-  if (!intentSchema) return {};
-
-  const confirmationSlotNames = safeArray(intentSchema.confirmation_slots).length
-    ? safeArray(intentSchema.confirmation_slots)
-    : [
-        ...safeArray(intentSchema.required_slots),
-        ...safeArray(intentSchema.optional_slots),
-      ];
+ 
+function getConfirmationSlots(intentSchema, slots, fallbackRequiredSlots = [], fallbackOptionalSlots = []) {
+  const confirmationSlotNames =
+    intentSchema && safeArray(intentSchema.confirmation_slots).length
+      ? safeArray(intentSchema.confirmation_slots)
+      : [
+          ...(intentSchema ? safeArray(intentSchema.required_slots) : safeArray(fallbackRequiredSlots)),
+          ...(intentSchema ? safeArray(intentSchema.optional_slots) : safeArray(fallbackOptionalSlots)),
+        ];
 
   const output = {};
   for (const slotName of confirmationSlotNames) {
@@ -225,6 +225,7 @@ function getConfirmationSlots(intentSchema, slots) {
   return output;
 }
 
+ 
 function computeWorkflowStatus({
   intent,
   nextMissingSlot,
@@ -363,26 +364,45 @@ const filteredCorrections = filterSlotUpdates(
     safeExtraction
   );
 
-  const nextMissingSlot = getNextMissingSlot(intentSchema, mergedSlots);
-  const handoffRequired = Boolean(safeExtraction.handoff_required);
-  const hasWeakTime =
+ const fallbackRequiredSlots = safeArray(safeSession.requiredSlots);
+const fallbackOptionalSlots = safeArray(safeSession.optionalSlots);
+
+const nextMissingSlot = getNextMissingSlot(
+  intentSchema,
+  mergedSlots,
+  fallbackRequiredSlots
+);
+
+const handoffRequired = Boolean(safeExtraction.handoff_required);
+const hasWeakTime =
   typeof mergedSlots.time === "string" &&
   /^(am|pm)$/i.test(mergedSlots.time);
 
+const hasWorkflowContext = Boolean(
+  intent ||
+  fallbackRequiredSlots.length ||
+  Object.keys(mergedSlots || {}).length
+);
+
 const confirmationPending = Boolean(
-  intent &&
+  hasWorkflowContext &&
   !nextMissingSlot &&
   !hasWeakTime
 );
 
-  const workflowStatus = computeWorkflowStatus({
-    intent,
-    nextMissingSlot,
-    handoffRequired,
-    confirmationPending,
-  });
+const workflowStatus = computeWorkflowStatus({
+  intent: intent || (hasWorkflowContext ? "voice_intake" : null),
+  nextMissingSlot,
+  handoffRequired,
+  confirmationPending,
+});
 
-  const confirmationSlots = getConfirmationSlots(intentSchema, mergedSlots);
+const confirmationSlots = getConfirmationSlots(
+  intentSchema,
+  mergedSlots,
+  fallbackRequiredSlots,
+  fallbackOptionalSlots
+);
   const state = computeSessionState(workflowStatus);
 
   return {
