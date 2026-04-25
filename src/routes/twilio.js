@@ -1208,9 +1208,9 @@ async function dispatchPendingVoiceTurn() {
   speakUntil: ws.__speakUntil,
 });
   let finalVoiceText = normalizeIncomingVoiceText(ws.__pendingVoiceTranscript);
-  const session = getCurrentSession();
+ const session = getCurrentSession();
 
-  if (
+if (
   session &&
   (session.workflowStatus === "ready_for_confirmation" ||
     session.workflowStatus === "completed")
