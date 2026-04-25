@@ -1670,6 +1670,43 @@ if (coreComplete && !has("name")) {
 
   session.workflowStatus = workflowState.workflowStatus || "idle";
 
+  if (
+  session.workflowStatus === "ready_for_confirmation" ||
+  session.workflowStatus === "completed"
+) {
+  session.lastAskedSlot = null;
+  session.confirmationBlocked = false;
+
+  const replyText = buildConfirmationReplyFromSession(session);
+
+  session.lastAssistantReply = replyText;
+  if (isUsableReply(replyText)) {
+    pushRecentTurn(session, "assistant", replyText);
+  }
+
+  logDecision(callSid, "Workflow ready for confirmation", {
+    tenantId: session.tenantId,
+    clusterId: session.clusterId,
+    businessType: session.businessType,
+    workflowStatus: session.workflowStatus,
+    slots: session.slots,
+    replyText,
+  });
+
+  return {
+    shouldSpeak: true,
+    replyText,
+    replyType: "confirmation",
+    workflow: session.workflow,
+    intent: session.active_intent,
+    slots: session.slots,
+    lastAskedSlot: session.lastAskedSlot,
+    workflowStatus: session.workflowStatus,
+    tenantId: session.tenantId,
+    clusterId: session.clusterId,
+  };
+}
+
   let replyText;
   try {
     replyText = await composeReply({
