@@ -1209,8 +1209,23 @@ async function dispatchPendingVoiceTurn() {
 });
   let finalVoiceText = normalizeIncomingVoiceText(ws.__pendingVoiceTranscript);
   const session = getCurrentSession();
+
+  if (
+  session &&
+  (session.workflowStatus === "ready_for_confirmation" ||
+    session.workflowStatus === "completed")
+) {
+  console.log("[voice][dispatch_blocked_completed_workflow]", {
+    callSid: activeCallSid,
+  });
+
+  clearPendingVoiceTurn(ws);
+  return;
+}
   const expectedSlot = session?.lastAskedSlot || null;
   const now = Date.now();
+
+  
 
   const incomingDigits = normalizePhoneDigits(finalVoiceText);
 
