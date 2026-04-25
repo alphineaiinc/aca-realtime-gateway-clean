@@ -1136,25 +1136,12 @@ function startsPhoneCapture(text, expectedSlot) {
   const raw = String(text || "");
   const digits = normalizePhoneDigits(raw);
 
-  if (isPhoneSlot(expectedSlot) && digits.length > 0) {
-    return true;
+  // Phone capture must only start when the workflow is actively asking for phone.
+  if (!isPhoneSlot(expectedSlot)) {
+    return false;
   }
 
-  const hasPhoneIntro =
-    /\b(?:my (?:phone )?number is|phone number is|number is|my number is)\b/i.test(raw);
-
-  const hasMixedIntent =
-    /\b(book|appointment|table|reservation|tomorrow|today|evening|morning|afternoon|name is)\b/i.test(raw);
-
-  if (hasPhoneIntro && digits.length > 0 && !hasMixedIntent) {
-    return true;
-  }
-
-  if (/^[\d\s()+-]{3,}$/.test(raw) && digits.length >= 3) {
-    return true;
-  }
-
-  return false;
+  return digits.length > 0;
 }
 
 function appendPhoneDigits(ws, text) {
