@@ -1241,10 +1241,12 @@ if (
 
   if (ws.__capturingPhone) {
     if (incomingDigits) {
-      appendPhoneDigits(ws, finalVoiceText);
-      ws.__phoneCaptureLastUpdatedAt = now;
-    }
-
+  appendPhoneDigits(ws, finalVoiceText);
+  ws.__phoneCaptureLastUpdatedAt = now;
+} else {
+  // 🚀 STOP phone capture if no digits are present
+  resetPhoneCapture(ws);
+}
     let digits = ws.__phoneDigits || "";
 
     if (digits.length === 11 && digits.startsWith("1")) {
