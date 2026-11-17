@@ -4,7 +4,7 @@ const { createSession, getSession, removeSession } = require("./voiceSessionStor
 const { STATES, transition } = require("./stateMachine");
 const { logEvent, logDecision, logError } = require("./voiceLogger");
 
-const { resolveTenantFromVoiceContext } = require("./tenantResolver");
+const { isValidatedRoutingContext } = require("./tenantResolver");
 const { loadClusterSchema } = require("./clusterSchemaLoader");
 const { extractWorkflowTurn } = require("./workflowExtractor");
 const { computeWorkflowState } = require("./workflowStateEngine");
@@ -385,6 +385,8 @@ function getPremiumPrompt(kind, session) {
 
 // 🔹 Wrap original slot question builder with premium tone
 function getPremiumNextSlotQuestion(businessType, slotName, session) {
+  const explicit = session?.clusterSchema?.intake_profile?.slotQuestions?.[slotName];
+  if (explicit) return explicit;
   return getPremiumSlotQuestion(slotName, session);
 }
 
@@ -578,32 +580,21 @@ function buildConversationTranscript(session) {
     .join("\n");
 }
 
-function applyBusinessSlotProfile(session, clusterSchema = null) {
-  const clusterId = String(
-    session?.clusterId ||
-    clusterSchema?.cluster_id ||
-    clusterSchema?.clusterId ||
-    ""
-  ).trim().toLowerCase();
+function getSessionSlotProfile(session) {
+  const schema = session?.clusterSchema || session?.routingContext?.schema;
+  const base = schema?.intake_profile;
+  if (!base) throw new Error("MISSING_WORKFLOW_PROFILE");
+  const intent = schema.intents.find((i) => i.intent === session.active_intent);
+  return intent ? { ...base, required: intent.required_slots, optional: intent.optional_slots } : base;
+}
 
-  const schemaBusinessType =
-    clusterSchema?.businessType ||
-    clusterSchema?.business_type ||
-    deriveBusinessTypeFromCluster(clusterId) ||
-    session?.businessType ||
-    "generic";
-
-  const businessType = normalizeBusinessType(schemaBusinessType);
-  const profile = getBusinessSlotProfile(businessType);
-
-  session.clusterId = clusterId || session.clusterId || null;
-  session.businessType = businessType;
-  session.clusterSchema = clusterSchema || session.clusterSchema || null;
-  session.requiredSlots = Array.isArray(profile.required) ? [...profile.required] : [];
-  session.optionalSlots = Array.isArray(profile.optional) ? [...profile.optional] : [];
-
-  logClusterState("applyBusinessSlotProfile", session);
-
+function applyBusinessSlotProfile(session, clusterSchema) {
+  session.clusterSchema = clusterSchema;
+  // Generic controls legacy extraction heuristics only; it never selects a workflow.
+  session.businessType = "generic";
+  const profile = getSessionSlotProfile(session);
+  session.requiredSlots = [...profile.required];
+  session.optionalSlots = [...profile.optional];
   return profile;
 }
 
@@ -1055,7 +1046,7 @@ function getSlotValueByAlias(slots = {}, aliases = []) {
 
 function buildConfirmationReplyFromSession(session) {
   const missingRequired = getNextMissingRequiredSlot(
-    session?.businessType || "generic",
+    getSessionSlotProfile(session),
     session?.slots || {}
   );
 
@@ -1176,7 +1167,7 @@ function buildSafeFallbackReply(session) {
   const workflowStatus = String(session?.workflowStatus || "").toLowerCase();
 
   const missingRequired = getNextMissingRequiredSlot(
-    session?.businessType || "generic",
+    getSessionSlotProfile(session),
     session?.slots || {}
   );
 
@@ -1250,9 +1241,9 @@ function handleProcessingResult(callSid, brainResult) {
     });
   }
 
-  if (session.confirmationBlocked && !canConfirmNow(session.businessType, session.slots)) {
+  if (session.confirmationBlocked && !canConfirmNow(getSessionSlotProfile(session), session.slots)) {
   const nextMissingSlot = getNextMissingRequiredSlot(
-    session.businessType || "generic",
+    getSessionSlotProfile(session),
     session.slots || {}
   );
 
@@ -1341,6 +1332,13 @@ async function handleCallerTurn({ callSid, businessId = null, transcript, meta =
     };
   }
 
+  const routing = session.routingContext;
+  if (!isValidatedRoutingContext(routing) || routing.callSid !== callSid ||
+      (meta.routingContext && meta.routingContext !== routing) ||
+      businessId !== null || meta.tenantId !== undefined || meta.businessId !== undefined) {
+    return { shouldSpeak: false, replyText: "", replyType: "routing_error" };
+  }
+
   const utterance = normalizeText(transcript);
   session.lastCallerText = utterance;
 
@@ -1395,41 +1393,6 @@ if (isClosing) {
 
   pushRecentTurn(session, "caller", utterance);
 
-  let routing;
-  try {
-    routing = await resolveTenantFromVoiceContext({
-      callSid,
-      businessId,
-      ...meta,
-    });
-  } catch (err) {
-    logError(callSid, "Tenant resolution crashed", {
-      error: err.message,
-      businessId,
-      meta,
-    });
-
-    return {
-      shouldSpeak: true,
-      replyText: getPremiumPrompt("error", session) || "Sorry — something went wrong. Please try again.",
-      replyType: "error",
-    };
-  }
-
-  if (!routing || !routing.ok || !routing.tenantId || !routing.clusterId) {
-    logError(callSid, "Tenant resolution failed", routing || { businessId, meta });
-
-    return {
-      shouldSpeak: true,
-      replyText: getPremiumPrompt("error", session) || "Sorry — something went wrong. Please try again.",
-      replyType: "error",
-    };
-  }
-
-  session.tenantId = routing.tenantId || null;
-  session.businessId = routing.businessId || businessId || null;
-  session.clusterId = routing.clusterId || null;
-
   logDecision(callSid, "Tenant cluster resolved", {
   tenantId: session.tenantId,
   businessId: session.businessId,
@@ -1440,7 +1403,7 @@ if (isClosing) {
  
   let clusterSchema;
   try {
-    clusterSchema = await loadClusterSchema(session.clusterId);
+    clusterSchema = await loadClusterSchema(routing);
   } catch (err) {
     logError(callSid, "Cluster schema load failed", {
       error: err.message,
@@ -1489,8 +1452,10 @@ if (isClosing) {
     };
   }
 
- const deterministicSlots = inferHeuristicSlotsFromUtterance(session, utterance);
-const holisticSlots = inferHolisticSlotsFromConversation(session);
+ const configuredSlots = (slots) => Object.fromEntries(Object.entries(slots).filter(([key]) =>
+  Object.hasOwn(clusterSchema.slot_definitions, key)));
+const deterministicSlots = configuredSlots(inferHeuristicSlotsFromUtterance(session, utterance));
+const holisticSlots = configuredSlots(inferHolisticSlotsFromConversation(session));
 const extractionSlots = extraction?.slots || {};
 
 const combinedExtractionSlots = normalizeExtractedSlotsForSession(
@@ -1572,7 +1537,7 @@ logDecision(callSid, "Normalized slot aliases", {
 });
 
  const missingRequired = getMissingRequiredSlots(
-  session.businessType || "generic",
+  getSessionSlotProfile(session),
   session.slots || {}
 );
 
@@ -1644,13 +1609,13 @@ switch (session.businessType) {
     break;
 }
 
-if (coreComplete && !has("name")) {
+if (coreComplete && session.requiredSlots.includes("name") && !has("name")) {
   session.lastAskedSlot = "name";
-} else if (coreComplete && has("name") && !has("phone")) {
+} else if (coreComplete && session.requiredSlots.includes("phone") && has("name") && !has("phone")) {
   session.lastAskedSlot = "phone";
 } else if (missingRequired.length > 0) {
   session.lastAskedSlot = getNextMissingRequiredSlot(
-    session.businessType || "generic",
+    getSessionSlotProfile(session),
     session.slots || {}
   );
 } else {
@@ -1750,9 +1715,9 @@ if (coreComplete && !has("name")) {
     });
   }
 
- if (session.confirmationBlocked && !canConfirmNow(session.businessType, session.slots)) {
+ if (session.confirmationBlocked && !canConfirmNow(getSessionSlotProfile(session), session.slots)) {
   const nextMissingSlot = getNextMissingRequiredSlot(
-    session.businessType || "generic",
+    getSessionSlotProfile(session),
     session.slots || {}
   );
 

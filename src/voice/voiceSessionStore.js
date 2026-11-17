@@ -1,15 +1,21 @@
 // src/voice/voiceSessionStore.js
 
 const sessions = new Map();
+const { isValidatedRoutingContext } = require("./tenantResolver");
 
 function createSession(callSid, meta = {}) {
+  const routing = meta.routingContext;
+  if (!isValidatedRoutingContext(routing) || routing.callSid !== callSid || sessions.has(callSid)) {
+    throw new Error("UNVERIFIED_ROUTING_CONTEXT");
+  }
   const now = Date.now();
 
   const session = {
     callSid,
-    tenantId: meta.tenantId || null,
-    businessId: meta.businessId || null,
-    clusterId: meta.clusterId || null,
+    tenantId: routing.tenantId,
+    businessId: null,
+    clusterId: routing.clusterId,
+    routingContext: routing,
 
     state: "idle",
     greeted: false,
@@ -54,6 +60,9 @@ function createSession(callSid, meta = {}) {
     updatedAt: now,
   };
 
+  for (const key of ["tenantId", "businessId", "clusterId", "routingContext"]) {
+    Object.defineProperty(session, key, { writable: false, configurable: false });
+  }
   sessions.set(callSid, session);
 
   console.log(`🆕 [SESSION CREATED] ${callSid}`);

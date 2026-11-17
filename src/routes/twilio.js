@@ -10,7 +10,6 @@ const twilio = require("twilio");
 const WebSocket = require("ws");
 const { retrieveAnswer } = require("../../retriever");
 const { synthesizeSpeech } = require("../../tts");
-const { getTenantRegion } = require("../brain/utils/tenantContext");
 const { createStreamingTranscriber } = require("../brain/utils/sttGoogle");
 
 
@@ -32,6 +31,7 @@ const {
 } = require("../voice/slotEnforcement");
 
 const { getSession } = require("../voice/voiceSessionStore");
+const { getRouting } = require("../voice/twilioRouting");
 
 console.log("🧩 [twilio->tts] resolved module:", require.resolve("../../tts"));
 console.log("🧩 [twilio->tts] typeof synthesizeSpeech:", typeof synthesizeSpeech);
@@ -666,12 +666,7 @@ if (branch === "ack") {
 
   console.log("💬  Voice reply:", shapedReply);
 
-  let regionCode = null;
-  try {
-    regionCode = await getTenantRegion(tenantId);
-  } catch (e) {
-    console.warn(`⚠️  Failed to get tenant region for tenant=${tenantId}:`, e.message);
-  }
+  const regionCode = getSession(activeCallSid)?.routingContext?.region || null;
 
   let ttsBuffer = null;
   try {
@@ -732,32 +727,8 @@ if (branch === "ack") {
 }
 
 async function handleVoiceWebhook(req, res) {
-  console.log("🛰️ Twilio webhook:", {
-    method: req.method,
-    query: req.query,
-    body: req.body || null,
-    contentType: req.headers["content-type"] || null,
-  });
-
-  const VoiceResponse = twilio.twiml.VoiceResponse;
-  const twiml = new VoiceResponse();
-
-  const connect = twiml.connect();
-  connect.stream({
-    url: "wss://aca-realtime-gateway-clean.onrender.com/ws/twilio-stream",
-    name: "aca-live-stream",
-    statusCallback: "https://aca-realtime-gateway-clean.onrender.com/twilio/stream-status",
-    statusCallbackMethod: "POST",
-  });
-
-  twiml.pause({ length: 60 });
-
-  const xmlResponse = twiml.toString();
-  console.log("📤 Returning TwiML to Twilio:\n", xmlResponse);
-
-  res.status(200);
-  res.set("Content-Type", "text/xml");
-  res.send(xmlResponse);
+  try { return await getRouting().voiceWebhook(req, res); }
+  catch { return res.status(503).send("Call routing unavailable"); }
 }
 
 function handleStatusWebhook(req, res) {
@@ -790,8 +761,7 @@ function handleStreamStatusWebhook(req, res) {
   res.sendStatus(200);
 }
 
-router.post("/voice", handleVoiceWebhook);
-router.get("/voice", handleVoiceWebhook);
+router.post("/voice", express.urlencoded({ extended: false, limit: "16kb" }), handleVoiceWebhook);
 
 router.post("/stream-status", handleStreamStatusWebhook);
 router.get("/stream-status", handleStreamStatusWebhook);
@@ -808,8 +778,12 @@ async function handleTwilioStream(ws, req) {
   let streamActive = true;
   let mediaPacketCount = 0;
 
-  let tenantId = 1;
-  let tenantLangCode = "en-US";
+  let tenantId = null;
+  let tenantLangCode = null;
+  let startSeen = false;
+  let routingReady = false;
+  const startTimer = setTimeout(() => ws.close(1008, "Routing required"), 10000);
+  startTimer.unref?.();
 
   ws.__voiceTurnTimer = null;
 ws.__lastVoiceInputAt = 0;
@@ -1516,39 +1490,23 @@ if (!safeReply) {
       const data = JSON.parse(msg);
       console.log("📥 [twilio] WS event:", data?.event || "(unknown)");
 
+      if (data.event !== "start" && data.event !== "connected" && !routingReady) {
+        ws.close(1008, "Routing required");
+        return;
+      }
       if (data.event === "start") {
-        const customParams = data.start.customParameters || {};
-
-        console.log("🧭 [twilio] customParameters:", customParams);
-
-        tenantId = customParams.tenantId || customParams.tenant_id || tenantId;
-
-        const calledNumber =
-          customParams.calledNumber ||
-          customParams.called_number ||
-          customParams.to ||
-          customParams.To ||
-          null;
-
-        const businessId = customParams.businessId || customParams.business_id || null;
-
-        ws.__routingMeta = {
-          tenantId,
-          businessId,
-          calledNumber,
-          callSid: data.start.callSid,
-          streamSid: data.start.streamSid,
-        };
-
-        console.log("[voice][cluster] twilio_start_routing", {
-  tenantId,
-  businessId,
-  calledNumber,
-  callSid: data.start.callSid,
-  streamSid: data.start.streamSid,
-});
-
-        console.log("🧭 [twilio] resolved routing meta:", ws.__routingMeta);
+        if (startSeen) { ws.close(1008, "Repeated start"); return; }
+        startSeen = true;
+        const routing = await getRouting().consumeStart(data.start);
+        if (!routing || getSession(data.start.callSid)) {
+          clearTimeout(startTimer);
+          ws.close(1008, "Invalid routing");
+          return;
+        }
+        if (ws.readyState !== WebSocket.OPEN) return;
+        tenantId = routing.tenantId;
+        tenantLangCode = routing.languageCode;
+        ws.__routingMeta = { routingContext: routing };
         activeCallSid = data.start.callSid;
         activeStreamSid = data.start.streamSid;
         streamActive = true;
@@ -1589,11 +1547,12 @@ if (!safeReply) {
         });
 
         handleCallStarted(activeCallSid, {
-          tenantId,
-          businessId: null,
+          routingContext: routing,
           streamSid: activeStreamSid,
           source: "twilio",
         });
+        routingReady = true;
+        clearTimeout(startTimer);
 
         if (
           String(activeCallSid || "").startsWith("CA_TEST_") ||
@@ -1633,9 +1592,9 @@ if (!safeReply) {
 
         try {
           if (getTenantVoiceProfile) {
-            const profile = await getTenantVoiceProfile(tenantId, null);
-            if (profile && profile.language_code) {
-              tenantLangCode = profile.language_code;
+            const profile = await getTenantVoiceProfile(tenantId, tenantLangCode);
+            if (profile && profile.lang_code) {
+              tenantLangCode = profile.lang_code;
               console.log("🌍 [twilio] Using tenant voice language:", {
                 tenantId,
                 language_code: tenantLangCode,
@@ -1652,6 +1611,7 @@ if (!safeReply) {
             e.message
           );
         }
+if (ws.readyState !== WebSocket.OPEN) return;
 if (ws.__sttStream) {
   ws.__sttStream.destroy();
   ws.__sttStream = null;
@@ -1949,14 +1909,16 @@ resetPhoneCapture(ws);
 handleCallEnded(activeCallSid);
       }
     } catch (err) {
-      console.error("❌  Stream error:", err);
+      console.error("❌ Stream event rejected");
+      ws.close(1008, "Invalid stream event");
       pushTwilioDebug("stream_error", {
-        error: err?.message || String(err),
+        error: "INVALID_STREAM_EVENT",
       });
     }
   });
 
    ws.on("close", () => {
+    clearTimeout(startTimer);
     if (ws.__sttStream) {
   ws.__sttStream.destroy();
   ws.__sttStream = null;
