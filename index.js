@@ -1191,7 +1191,7 @@ const {
 app.use("/twilio", twilioRouter);
 console.log("✅ Mounted /twilio routes");
 
-app.get("/monitor/twilio-debug", (req, res) => {
+app.get("/monitor/twilio-debug", requireAdmin, (req, res) => {
   try {
     return res.status(200).json({
       ok: true,
