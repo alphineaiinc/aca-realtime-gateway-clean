@@ -14,6 +14,7 @@ test("migration enforces routing constraints, atomic grants, and reversible roll
   try {
     await db.exec("CREATE TABLE public.master_tenants (id INTEGER PRIMARY KEY, preferred_lang TEXT, region TEXT); INSERT INTO master_tenants VALUES (7, 'fr-CA', 'CA'), (9, 'en-GB', 'GB');");
     await db.exec(fs.readFileSync(path.join(__dirname, "../migrations/007_secure_voice_routing.sql"), "utf8"));
+    await db.exec(fs.readFileSync(path.join(__dirname, "../migrations/008_voice_webhook_retries.sql"), "utf8"));
     const schema = { cluster_id: "synthetic_intake", version: 1,
       slot_definitions: { request: { type: "string" } },
       intents: [{ intent: "capture_request", required_slots: ["request"], optional_slots: [], confirmation_slots: ["request"] }],
@@ -38,14 +39,22 @@ test("migration enforces routing constraints, atomic grants, and reversible roll
     assert.equal(response.code, 200);
     const start = { accountSid: body.AccountSid, callSid: body.CallSid, streamSid: `MZ${"c".repeat(32)}`,
       customParameters: { routingToken: response.xml.match(/name="routingToken" value="([^"]+)"/)[1] } };
+    const signedRequest = { body, headers: { "x-twilio-signature": twilio.getExpectedTwilioSignature(env.TWILIO_AUTH_TOKEN, env.TWILIO_VOICE_WEBHOOK_URL, body) } };
+    const concurrentRetries = await Promise.all([1, 2, 3].map(async () => {
+      const retry = { ...response }; await routing.voiceWebhook(signedRequest, retry); return retry;
+    }));
+    assert.ok(concurrentRetries.every((r) => r.code === 200 && r.xml === response.xml));
+    assert.equal((await db.query("SELECT count(*)::integer AS n FROM voice_stream_grants")).rows[0].n, 1);
     const claims = await Promise.all([routing.consumeStart(start), routing.consumeStart(start)]);
     assert.equal(claims.filter(Boolean).length, 1);
     assert.equal(claims.find(Boolean).tenantId, 7);
     assert.equal(await routing.consumeStart(start), null);
     await routing.voiceWebhook({ body, headers: { "x-twilio-signature": twilio.getExpectedTwilioSignature(env.TWILIO_AUTH_TOKEN, env.TWILIO_VOICE_WEBHOOK_URL, body) } }, response);
-    assert.equal(response.code, 503, "Repeated webhook must not create another grant");
+    assert.equal(response.code, 200);
+    assert.ok(!response.xml.includes("<Stream"), "Consumed retry must not create another Stream");
     await db.exec("UPDATE tenant_phone_numbers SET is_active = false WHERE tenant_id = 7");
     assert.equal((await resolve({ calledNumber: "+14165550101" })).reason, "INACTIVE_NUMBER");
+    await db.exec(fs.readFileSync(path.join(__dirname, "../migrations/rollback/008_voice_webhook_retries.sql"), "utf8"));
     await db.exec(fs.readFileSync(path.join(__dirname, "../migrations/rollback/007_secure_voice_routing.sql"), "utf8"));
     assert.equal((await db.query("SELECT count(*)::integer AS n FROM master_tenants")).rows[0].n, 2);
     assert.equal((await db.query("SELECT to_regclass('public.tenant_phone_numbers') AS relation")).rows[0].relation, null);

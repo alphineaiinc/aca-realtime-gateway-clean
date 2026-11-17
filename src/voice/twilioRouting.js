@@ -5,6 +5,23 @@ const { isValidatedRoutingContext } = require("./tenantResolver");
 const hash = (token) => crypto.createHash("sha256").update(token).digest("hex");
 const sid = (value, prefix) => typeof value === "string" && new RegExp(`^${prefix}[a-fA-F0-9]{32}$`).test(value);
 function createTwilioRouting({ query, resolve, env = process.env }) {
+  // Separate encryption key/domain from Twilio's request-signature computation.
+  function tokenKey() {
+    return crypto.hkdfSync("sha256", env.TWILIO_AUTH_TOKEN, "aca-029", "stream-token-retry-v1", 32);
+  }
+  function seal(token) {
+    const iv = crypto.randomBytes(12);
+    const cipher = crypto.createCipheriv("aes-256-gcm", tokenKey(), iv);
+    const ciphertext = Buffer.concat([cipher.update(token, "utf8"), cipher.final()]);
+    return Buffer.concat([iv, cipher.getAuthTag(), ciphertext]).toString("base64url");
+  }
+  function open(envelope) {
+    const bytes = Buffer.from(envelope, "base64url");
+    if (bytes.length !== 71) throw new Error("INVALID_GRANT");
+    const decipher = crypto.createDecipheriv("aes-256-gcm", tokenKey(), bytes.subarray(0, 12));
+    decipher.setAuthTag(bytes.subarray(12, 28));
+    return Buffer.concat([decipher.update(bytes.subarray(28)), decipher.final()]).toString("utf8");
+  }
   function configuration() {
     try {
       const webhook = new URL(env.TWILIO_VOICE_WEBHOOK_URL);
@@ -27,13 +44,26 @@ function createTwilioRouting({ query, resolve, env = process.env }) {
     }
     const context = await resolve({ calledNumber: body.To, callSid: body.CallSid, accountSid: body.AccountSid });
     if (!context.ok) return res.status(403).send("Call routing unavailable");
-    const token = crypto.randomBytes(32).toString("base64url");
+    const candidate = crypto.randomBytes(32).toString("base64url");
+    let token;
     try {
-      // One outstanding/consumed grant per CallSid until retention cleanup.
-      await query(`INSERT INTO public.voice_stream_grants
-        (token_hash, call_sid, account_sid, tenant_id, called_number, expires_at)
-        VALUES ($1, $2, $3, $4, $5, CURRENT_TIMESTAMP + INTERVAL '60 seconds')`,
-      [hash(token), context.callSid, context.accountSid, context.tenantId, context.calledNumber]);
+      // Concurrent/retried signed requests get the SAME still-pending capability.
+      // No rotation, expiry extension or second admission, even across workers.
+      const grants = await query(`INSERT INTO public.voice_stream_grants AS existing
+        (token_hash, call_sid, account_sid, tenant_id, called_number, expires_at, token_ciphertext)
+        VALUES ($1, $2, $3, $4, $5, CURRENT_TIMESTAMP + INTERVAL '60 seconds', $6)
+        ON CONFLICT (call_sid) DO UPDATE SET call_sid = existing.call_sid
+        WHERE existing.account_sid = EXCLUDED.account_sid AND existing.tenant_id = EXCLUDED.tenant_id
+          AND existing.called_number = EXCLUDED.called_number AND existing.consumed_at IS NULL
+          AND existing.expires_at > CURRENT_TIMESTAMP
+        RETURNING token_hash, token_ciphertext`,
+      [hash(candidate), context.callSid, context.accountSid, context.tenantId, context.calledNumber, seal(candidate)]);
+      if (grants.rows.length !== 1) {
+        // Acknowledge already-consumed/expired/conflicting replay without a Stream.
+        return res.status(200).type("text/xml").send(new twilio.twiml.VoiceResponse().toString());
+      }
+      token = open(grants.rows[0].token_ciphertext);
+      if (hash(token) !== grants.rows[0].token_hash) throw new Error("INVALID_GRANT");
     } catch { return res.status(503).send("Call routing unavailable"); }
     const response = new twilio.twiml.VoiceResponse();
     const stream = response.connect().stream({ url: config.stream, name: "aca-live-stream",

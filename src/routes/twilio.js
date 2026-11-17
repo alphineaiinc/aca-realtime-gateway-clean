@@ -32,6 +32,7 @@ const {
 
 const { getSession } = require("../voice/voiceSessionStore");
 const { getRouting } = require("../voice/twilioRouting");
+const { acquireStream, MAX_MESSAGE_BYTES } = require("../voice/streamSecurity");
 
 console.log("🧩 [twilio->tts] resolved module:", require.resolve("../../tts"));
 console.log("🧩 [twilio->tts] typeof synthesizeSpeech:", typeof synthesizeSpeech);
@@ -707,7 +708,7 @@ if (branch === "ack") {
     });
   }
 
-  if (ttsBuffer && activeStreamSid) {
+  if (ttsBuffer && activeStreamSid && ws.readyState === WebSocket.OPEN && getSession(activeCallSid)) {
     handleSpeak(activeCallSid);
     sendTwilioAudioWithMark(ws, activeCallSid, activeStreamSid, ttsBuffer, branch);
     return true;
@@ -781,9 +782,13 @@ async function handleTwilioStream(ws, req) {
   let tenantId = null;
   let tenantLangCode = null;
   let startSeen = false;
+  let connectedSeen = false;
   let routingReady = false;
-  const startTimer = setTimeout(() => ws.close(1008, "Routing required"), 10000);
-  startTimer.unref?.();
+  const pendingMedia = [];
+  let pendingMediaBytes = 0;
+  let cleaned = false;
+  const guard = acquireStream(ws, cleanup);
+  if (guard.closed) return;
 
   ws.__voiceTurnTimer = null;
 ws.__lastVoiceInputAt = 0;
@@ -1174,6 +1179,7 @@ function resetPhoneCapture(ws) {
 // Paste this ONLY replacing your dispatchPendingVoiceTurn function
 
 async function dispatchPendingVoiceTurn() {
+  if (!streamActive || !routingReady || guard.closed) return;
   console.log("[voice][dispatch_enter]", {
   callSid: activeCallSid,
   pending: ws.__pendingVoiceTranscript,
@@ -1485,25 +1491,53 @@ if (!safeReply) {
   }
 }
 
-  ws.on("message", async (msg) => {
+  async function onMessage(msg, isBinary = false) {
+    if (guard.closed || ws.readyState !== WebSocket.OPEN) return;
     try {
+      if (isBinary) { guard.fail(1003, "Text messages required"); return; }
+      if (Buffer.byteLength(msg) > MAX_MESSAGE_BYTES) { guard.fail(1009, "Message too large"); return; }
       const data = JSON.parse(msg);
+      if (!data || typeof data !== "object" || Array.isArray(data) ||
+          !["connected", "start", "media", "mark", "stop", "dtmf"].includes(data.event)) {
+        guard.fail(); return;
+      }
+      if (data.event === "connected") {
+        if (connectedSeen || startSeen) guard.fail();
+        connectedSeen = true;
+        return;
+      }
+      guard.touch();
+      if (data.streamSid && activeStreamSid && data.streamSid !== activeStreamSid) { guard.fail(); return; }
+      if (data.event === "media") {
+        const payload = data.media?.payload;
+        if (typeof payload !== "string" || !payload.length || payload.length % 4 !== 0 ||
+            !/^[A-Za-z0-9+/]+={0,2}$/.test(payload)) { guard.fail(); return; }
+        if (startSeen && !routingReady) {
+          pendingMediaBytes += Buffer.byteLength(msg);
+          if (pendingMedia.length >= 128 || pendingMediaBytes > 64 * 1024) { guard.fail(1009, "Initialization buffer full"); return; }
+          pendingMedia.push(msg); return;
+        }
+      }
+      if (data.event === "stop" && startSeen && !routingReady) { guard.fail(1000, "Stream stopped"); return; }
       console.log("📥 [twilio] WS event:", data?.event || "(unknown)");
 
       if (data.event !== "start" && data.event !== "connected" && !routingReady) {
-        ws.close(1008, "Routing required");
+        guard.fail(1008, "Routing required");
         return;
       }
+      if (data.event === "dtmf") {
+        if (typeof data.dtmf?.digit !== "string" || !/^[0-9A-D*#]$/.test(data.dtmf.digit)) guard.fail();
+        return; // Existing voice workflow has no keypad action; do not terminate valid calls.
+      }
       if (data.event === "start") {
-        if (startSeen) { ws.close(1008, "Repeated start"); return; }
+        if (startSeen) { guard.fail(1008, "Repeated start"); return; }
         startSeen = true;
         const routing = await getRouting().consumeStart(data.start);
         if (!routing || getSession(data.start.callSid)) {
-          clearTimeout(startTimer);
-          ws.close(1008, "Invalid routing");
+          guard.fail(1008, "Invalid routing");
           return;
         }
-        if (ws.readyState !== WebSocket.OPEN) return;
+        if (guard.closed || ws.readyState !== WebSocket.OPEN) return;
         tenantId = routing.tenantId;
         tenantLangCode = routing.languageCode;
         ws.__routingMeta = { routingContext: routing };
@@ -1551,8 +1585,7 @@ if (!safeReply) {
           streamSid: activeStreamSid,
           source: "twilio",
         });
-        routingReady = true;
-        clearTimeout(startTimer);
+        // Admission stays pending until voice initialization is complete.
 
         if (
           String(activeCallSid || "").startsWith("CA_TEST_") ||
@@ -1611,7 +1644,7 @@ if (!safeReply) {
             e.message
           );
         }
-if (ws.readyState !== WebSocket.OPEN) return;
+if (guard.closed || ws.readyState !== WebSocket.OPEN) return;
 if (ws.__sttStream) {
   ws.__sttStream.destroy();
   ws.__sttStream = null;
@@ -1631,6 +1664,7 @@ ws.__sttStream = createStreamingTranscriber({
   languageCode: tenantLangCode,
 
   onInterim: (text) => {
+    if (!streamActive || !routingReady || guard.closed) return;
     console.log("[stt][interim]", {
   callSid: activeCallSid,
   text,
@@ -1654,6 +1688,7 @@ ws.__sttStream = createStreamingTranscriber({
   },
 
   onFinal: (text) => {
+    if (!streamActive || !routingReady || guard.closed) return;
   console.log("[stt][final]", {
     callSid: activeCallSid,
     text,
@@ -1711,6 +1746,7 @@ ws.__sttStream = createStreamingTranscriber({
 },
 
   onSpeechStart: () => {
+    if (!streamActive || !routingReady || guard.closed) return;
     console.log("[stt][speech_start]", {
   callSid: activeCallSid,
 });
@@ -1736,6 +1772,7 @@ ws.__sttStream = createStreamingTranscriber({
   },
 
   onSpeechEnd: () => {
+    if (!streamActive || !routingReady || guard.closed) return;
     console.log("[stt][speech_end]", {
   callSid: activeCallSid,
   interim: ws.__streamingInterim,
@@ -1765,9 +1802,20 @@ ws.__sttStream = createStreamingTranscriber({
   },
 
   onError: (err) => {
-    console.error("❌ [stt-stream] error:", err?.message || err);
+    console.error("❌ [stt-stream] failed");
+    guard.fail(1011, "Transcription failed");
   },
 });
+        if (!guard.admit()) {
+          try { ws.__sttStream?.destroy(); } catch {}
+          ws.__sttStream = null;
+          cleanup();
+          return;
+        }
+        routingReady = true;
+        for (const buffered of pendingMedia.splice(0)) await onMessage(buffered);
+        pendingMediaBytes = 0;
+        if (guard.closed || !streamActive) return;
         const greetingResult = handleGreeting(activeCallSid);
         if (greetingResult && greetingResult.shouldSpeak && streamActive) {
           await synthesizeAndSendReply(
@@ -1870,6 +1918,7 @@ if (ws.__sttStream) {
 }
 return;
       } else if (data.event === "mark") {
+        if (typeof data.mark?.name !== "string") { guard.fail(); return; }
         const playback = ensurePlaybackState(ws);
         const markName = data.mark && data.mark.name;
 
@@ -1892,54 +1941,38 @@ return;
           handleSpeechComplete(activeCallSid);
         }
       } else if (data.event === "stop") {
-        console.log("🛑  Stream stopped for Call SID:", data.stop.callSid);
-        if (ws.__sttStream) {
-  ws.__sttStream.end();
-  ws.__sttStream = null;
-}
-        pushTwilioDebug("stop", {
-          callSid: data?.stop?.callSid || activeCallSid,
-        });
-        
-        streamActive = false;
-ws.__sttBufferBytes = 0;
-clearPendingVoiceTurn(ws);
-endPlaybackLock(ws, activeCallSid, activeStreamSid, "stream_stop");
-resetPhoneCapture(ws);
-handleCallEnded(activeCallSid);
+        cleanup();
+        guard.fail(1000, "Stream stopped");
       }
     } catch (err) {
       console.error("❌ Stream event rejected");
-      ws.close(1008, "Invalid stream event");
+      guard.fail(1008, "Invalid stream event");
       pushTwilioDebug("stream_error", {
         error: "INVALID_STREAM_EVENT",
       });
     }
-  });
-
-   ws.on("close", () => {
-    clearTimeout(startTimer);
-    if (ws.__sttStream) {
-  ws.__sttStream.destroy();
-  ws.__sttStream = null;
-}
-    clearPendingVoiceTurn(ws);
-    pushTwilioDebug("ws_closed", {
-      callSid: activeCallSid,
-    });
-    console.log(
-      `${VOICE_LOG_PREFIX} socket_closed`,
-      JSON.stringify({
-        callSid: activeCallSid,
-      })
-    );
-    console.log("⚡  Twilio WebSocket disconnected");
+    if (guard.closed) cleanup();
+  }
+  function cleanup() {
+    if (cleaned) return;
+    cleaned = true;
+    routingReady = false;
     streamActive = false;
-ws.__sttBufferBytes = 0;
-endPlaybackLock(ws, activeCallSid, activeStreamSid, "ws_close");
-resetPhoneCapture(ws);
-handleCallEnded(activeCallSid);
-  });
+    pendingMedia.length = 0;
+    pendingMediaBytes = 0;
+    if (ws.__sttStream) {
+      try { ws.__sttStream.destroy(); } catch {}
+      ws.__sttStream = null;
+    }
+    clearPendingVoiceTurn(ws);
+    ws.__sttBufferBytes = 0;
+    endPlaybackLock(ws, activeCallSid, activeStreamSid, "stream_closed");
+    resetPhoneCapture(ws);
+    handleCallEnded(activeCallSid);
+  }
+  ws.on("message", onMessage);
+  ws.on("error", cleanup);
+  ws.on("close", cleanup);
 }
 
 module.exports = {

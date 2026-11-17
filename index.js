@@ -1130,7 +1130,7 @@ app.post("/api/gpt/chat", async (req, res) => {
 
 // ✅ Initialize express-ws so WebSocket routes actually work
 try {
-  require("express-ws")(app, server); // ✅ bind to the real listening server
+  require("express-ws")(app, server, { wsOptions: require("./src/voice/streamSecurity").WS_OPTIONS }); // ✅ bind to the real listening server
   console.log("✅ express-ws WebSocket support initialized");
 } catch (err) {
   console.warn("⚠️ express-ws init failed:", err.message);
