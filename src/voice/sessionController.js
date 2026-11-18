@@ -530,8 +530,8 @@ function handleTranscriptFinal(callSid, text) {
     return null;
   }
 
-  transition(session, STATES.PROCESSING, "final_transcript_received");
-
+  cancelSpeech(callSid);
+  if (!transition(session, STATES.PROCESSING, "final_transcript_received")) return { shouldProcess: false };
   session.isProcessing = true;
 
   return {
@@ -1299,17 +1299,41 @@ function prepareSpeech(callSid) {
   if (![STATES.LISTENING, STATES.AWAITING_INPUT, STATES.AWAITING_END_OF_TURN].includes(session.state)) return false;
   return transition(session, STATES.READY_TO_SPEAK, "repair_prepared");
 }
-function handleSpeak(callSid) {
+function claimSpeech(callSid) {
+  if (!prepareSpeech(callSid)) return null;
+  const owner = {};
+  getSession(callSid).__speechOwner = owner;
+  return owner;
+}
+function isSpeechCurrent(callSid, owner) {
   const session = getSession(callSid);
-  if (!session || session.state !== STATES.READY_TO_SPEAK) return false;
+  return !!session && !!owner && session.__speechOwner === owner;
+}
+function cancelSpeech(callSid) {
+  const session = getSession(callSid);
+  if (!session) return false;
+  session.__speechOwner = null;
+  if ([STATES.READY_TO_SPEAK, STATES.SPEAKING, STATES.PROCESSING].includes(session.state)) {
+    if (!transition(session, STATES.LISTENING, "speech_cancelled")) return false;
+  }
+  session.isSpeaking = false;
+  session.isProcessing = false;
+  return true;
+}
+function handleSpeak(callSid, owner) {
+  const session = getSession(callSid);
+  if (!session || session.state !== STATES.READY_TO_SPEAK || (owner !== undefined && !isSpeechCurrent(callSid, owner))) return false;
   if (!transition(session, STATES.SPEAKING, "tts_start")) return false;
   session.isSpeaking = true;
   return true;
 }
-function handleSpeechFailed(callSid) {
+function handleSpeechFailed(callSid, owner) {
   const session = getSession(callSid);
-  if (!session || session.state !== STATES.READY_TO_SPEAK) return false;
+  if (!session || ![STATES.READY_TO_SPEAK, STATES.SPEAKING].includes(session.state) ||
+      (session.state === STATES.SPEAKING && owner === undefined) ||
+      (owner !== undefined && !isSpeechCurrent(callSid, owner))) return false;
   if (!transition(session, STATES.LISTENING, "tts_failed")) return false;
+  session.__speechOwner = null;
   session.isSpeaking = false;
   return true;
 }
@@ -1317,15 +1341,12 @@ function handleSpeechComplete(callSid) {
   const session = getSession(callSid);
   if (!session || session.state !== STATES.SPEAKING) return false;
   if (!transition(session, STATES.AWAITING_INPUT, "tts_complete")) return false;
+  session.__speechOwner = null;
   session.isSpeaking = false;
   return true;
 }
 function handleSpeechInterrupted(callSid) {
-  const session = getSession(callSid);
-  if (!session || session.state !== STATES.SPEAKING) return false;
-  if (!transition(session, STATES.LISTENING, "tts_interrupted")) return false;
-  session.isSpeaking = false;
-  return true;
+  return cancelSpeech(callSid);
 }
 
 function handleCallEnded(callSid) {
@@ -1809,6 +1830,9 @@ if (coreComplete && session.requiredSlots.includes("name") && !has("name")) {
 }
 
 module.exports = {
+  claimSpeech,
+  isSpeechCurrent,
+  cancelSpeech,
   prepareSpeech,
   handleSpeechFailed,
   handleSpeechInterrupted,

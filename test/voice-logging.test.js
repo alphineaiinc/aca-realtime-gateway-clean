@@ -62,7 +62,7 @@ test("Twilio transcript callbacks and debug buffer retain only operational metad
     "../voice/twilioRouting": { getRouting: () => ({ consumeStart: async () => ({ tenantId: 7, languageCode: "en-US", calledNumber: canary }) }) },
     "../voice/voiceSessionStore": { getSession: () => null },
     "../voice/sessionController": { handleCallStarted() {}, handleGreeting: () => ({ shouldSpeak: false }),
-      handleTranscriptPartial() {}, handleTranscriptFinal: () => ({ shouldProcess: true }),
+      cancelSpeech() {}, handleTranscriptPartial() {}, handleTranscriptFinal: () => ({ shouldProcess: true }),
       handleCallerTurn: async () => ({ replyText: canary }), handleProcessingResult: () => ({ shouldSpeak: false }),
       handleCallEnded() {} },
   });

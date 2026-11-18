@@ -321,3 +321,34 @@ These changes do not change booking confirmation dispatch/acceptance or persiste
 provider selection, audio framing, workflow assignments or token replay semantics.
 Existing real Twilio audio/retry, target PostgreSQL, ingress-rate-limit, grant
 retention and external logging checks remain necessary before production approval.
+
+
+## Corrective local review: speech ownership and provider errors
+
+Every real TTS operation now claims an opaque, per-session speech owner. New caller
+input, interruption and cleanup invalidate the old owner before asynchronous
+completion can send audio or alter state. A cancelled greeting cannot win a race
+against a newer caller response, and its late failure cannot reset the caller's
+playback state. State transitions must succeed before caller processing begins;
+direct LISTENING -> SPEAKING is still prohibited.
+
+Pending input has its own version. A completed response acknowledges only the
+version it processed, and only after both media and mark have been accepted by
+`ws.send` callbacks. Newer input is retained and dispatched after the in-flight
+turn exits. Failed/cancelled delivery retains input and does not mark it committed.
+There is no unbounded automatic TTS retry of the same failed turn. Accepted-for-
+delivery means accepted by the local WebSocket transport, not proof that a caller
+heard the audio. Partial-send failure and active interruption clear Twilio's queued
+audio; distinct playback marks prevent an old completion from ending new speech.
+
+TTS errors crossing the public synthesis boundary contain only the fixed
+`TTS_PROVIDER_ERROR` code, a sanitized message, an allowlisted provider name and an
+optional bounded HTTP status. They do not include original causes, provider bodies,
+request objects, credentials, transcripts, or original error stacks. The actual
+voice-preview route also uses the existing strict operational logging boundary.
+Regression tests exercise its real Express/JWT path with synthetic provider-body
+canaries, rather than inspecting only direct TTS log calls.
+
+The tenant/workflow/token-grant contract and migration files are unchanged.
+Real Twilio scheduling, audio interruption and delivery semantics still need
+controlled staging validation; local queue acceptance is not a playback receipt.

@@ -21,7 +21,9 @@ const {
   handleTranscriptFinal,
   handleProcessingResult,
   handleSpeak,
-  prepareSpeech,
+  claimSpeech,
+  isSpeechCurrent,
+  cancelSpeech,
   handleSpeechFailed,
   handleSpeechInterrupted,
   handleSpeechComplete,
@@ -305,7 +307,9 @@ function endPlaybackLock(ws, activeCallSid, activeStreamSid, reason = "unknown")
 ws.__speakUntil = 0;
 
 const playback = ensurePlaybackState(ws);
-
+if (["barge_in", "delivery_failed"].includes(reason) && playback.active && activeStreamSid && ws.readyState === WebSocket.OPEN) {
+  try { ws.send(JSON.stringify({ event: "clear", streamSid: activeStreamSid }), () => {}); } catch {}
+}
 playback.active = false;
 playback.currentMark = null;
 playback.ignoreInboundUntil = Date.now() + VOICE_PLAYBACK_TAIL_MS;
@@ -383,8 +387,26 @@ function updatePhoneCaptureFromUtterance(session, text) {
   };
 }
 
-function sendTwilioAudioWithMark(ws, activeCallSid, activeStreamSid, ttsBuffer, branch = "main") {
-  if (!ws || !activeStreamSid || !ttsBuffer?.length) return;
+function sendTwilioFrame(ws, frame) {
+  return new Promise((resolve, reject) => {
+    if (ws.readyState !== WebSocket.OPEN) { reject(new Error("STREAM_CLOSED")); return; }
+    let settled = false;
+    const done = (error) => {
+      if (settled) return;
+      settled = true;
+      ws.removeListener("close", closed);
+      ws.removeListener("error", failed);
+      if (error) reject(new Error("STREAM_SEND_FAILED")); else resolve();
+    };
+    const closed = () => done(new Error("STREAM_CLOSED"));
+    const failed = () => done(new Error("STREAM_SEND_FAILED"));
+    ws.once("close", closed); ws.once("error", failed);
+    try { ws.send(JSON.stringify(frame), done); } catch { done(new Error("STREAM_SEND_FAILED")); }
+  });
+}
+
+async function sendTwilioAudioWithMark(ws, activeCallSid, activeStreamSid, ttsBuffer, branch = "main", current = () => true) {
+  if (!ws || !activeStreamSid || !ttsBuffer?.length || !current()) return false;
 
   if (branch !== "ack") {
   beginPlaybackLock(ws, activeCallSid, activeStreamSid, ttsBuffer, branch);
@@ -392,7 +414,8 @@ function sendTwilioAudioWithMark(ws, activeCallSid, activeStreamSid, ttsBuffer, 
 
   const playback = ensurePlaybackState(ws);
   const payload = ttsBuffer.toString("base64");
-  const markName = `aca_tts_${Date.now()}`;
+  ws.__playbackSequence = (ws.__playbackSequence || 0) + 1;
+  const markName = `aca_tts_${Date.now()}_${ws.__playbackSequence}`;
 
   playback.currentMark = markName;
 
@@ -414,25 +437,10 @@ function sendTwilioAudioWithMark(ws, activeCallSid, activeStreamSid, ttsBuffer, 
 
   console.log("📤 [twilio] Sending WS media event back to Twilio");
 
-  ws.send(
-    JSON.stringify({
-      event: "media",
-      streamSid: activeStreamSid,
-      media: {
-        payload,
-      },
-    })
-  );
-
-  ws.send(
-    JSON.stringify({
-      event: "mark",
-      streamSid: activeStreamSid,
-      mark: {
-        name: markName,
-      },
-    })
-  );
+  await sendTwilioFrame(ws, { event: "media", streamSid: activeStreamSid, media: { payload } });
+  if (!current() || ws.readyState !== WebSocket.OPEN) return false;
+  await sendTwilioFrame(ws, { event: "mark", streamSid: activeStreamSid, mark: { name: markName } });
+  if (!current() || ws.readyState !== WebSocket.OPEN) return false;
 
   console.log("🔖 [twilio] Sent mark after outbound media", {
     callSid: activeCallSid,
@@ -448,6 +456,7 @@ function sendTwilioAudioWithMark(ws, activeCallSid, activeStreamSid, ttsBuffer, 
     markName,
     branch,
   });
+  return true;
 }
 
 function muLawByteToLinearSample(muLawByte) {
@@ -674,7 +683,8 @@ if (branch === "ack") {
 
   const regionCode = getSession(activeCallSid)?.routingContext?.region || null;
 
-  if (!prepareSpeech(activeCallSid)) return false;
+  const owner = claimSpeech(activeCallSid);
+  if (!owner) return false;
   let ttsBuffer = null;
   try {
     console.log("🗣️ [twilio] about to call synthesizeSpeech", {
@@ -715,12 +725,20 @@ if (branch === "ack") {
   }
 
   if (ttsBuffer && activeStreamSid && ws.readyState === WebSocket.OPEN && getSession(activeCallSid)) {
-    if (!handleSpeak(activeCallSid)) return false;
-    sendTwilioAudioWithMark(ws, activeCallSid, activeStreamSid, ttsBuffer, branch);
-    return true;
+    if (!isSpeechCurrent(activeCallSid, owner) || !handleSpeak(activeCallSid, owner)) return false;
+    try {
+      const accepted = await sendTwilioAudioWithMark(ws, activeCallSid, activeStreamSid, ttsBuffer, branch,
+        () => isSpeechCurrent(activeCallSid, owner));
+      if (accepted) return true;
+    } catch {
+      // Acceptance is local WebSocket delivery, not a promise of caller playback.
+      if (isSpeechCurrent(activeCallSid, owner)) endPlaybackLock(ws, activeCallSid, activeStreamSid, "delivery_failed");
+    }
+    handleSpeechFailed(activeCallSid, owner);
+    return false;
   }
 
-  handleSpeechFailed(activeCallSid);
+  handleSpeechFailed(activeCallSid, owner);
   if (!activeStreamSid) {
     console.warn(
       "⚠️  Skipping TTS send: activeStreamSid is missing, cannot send media event."
@@ -768,6 +786,8 @@ async function handleTwilioStream(ws, req) {
   let startSeen = false;
   let connectedSeen = false;
   let routingReady = false;
+  let inputVersion = 0;
+  let pendingVersion = 0;
   const pendingMedia = [];
   let pendingMediaBytes = 0;
   let cleaned = false;
@@ -1164,6 +1184,8 @@ function resetPhoneCapture(ws) {
 
 async function dispatchPendingVoiceTurn() {
   if (!streamActive || !routingReady || guard.closed) return;
+  const dispatchedVersion = inputVersion;
+  const dispatchedPendingVersion = pendingVersion;
   console.log("[voice][dispatch_enter]", {
   callSid: activeCallSid,
   pending: ws.__pendingVoiceTranscript,
@@ -1278,7 +1300,7 @@ if (ws.__capturingPhone && (ws.__phoneDigits || "").length < 10) {
     if (noNewDigits && (askingAboutPhone || stalledForMs >= PHONE_CAPTURE_STALL_MS)) {
       resetPhoneCapture(ws);
 
-      await synthesizeAndSendReply(
+      const repairAccepted = await synthesizeAndSendReply(
         ws,
         activeCallSid,
         activeStreamSid,
@@ -1288,6 +1310,7 @@ if (ws.__capturingPhone && (ws.__phoneDigits || "").length < 10) {
         "main"
       );
 
+      if (!repairAccepted || dispatchedVersion !== inputVersion) return;
       ws.__pendingVoiceTranscript = "";
       ws.__pendingVoiceTranscriptStartedAt = 0;
       ws.__streamingInterim = "";
@@ -1428,6 +1451,7 @@ try {
   });
 }
 
+if (dispatchedVersion !== inputVersion || guard.closed || !streamActive) return;
 const controllerReply = handleProcessingResult(activeCallSid, {
   shouldSpeak: true,
   replyText: reply || "",
@@ -1452,7 +1476,7 @@ if (!safeReply) {
   return;
 }
 
-    await synthesizeAndSendReply(
+    const accepted = await synthesizeAndSendReply(
       ws,
       activeCallSid,
       activeStreamSid,
@@ -1462,7 +1486,8 @@ if (!safeReply) {
       "main"
     );
 
-    // ✅ ONLY PLACE WHERE WE CLEAR
+    if (!accepted || dispatchedVersion !== inputVersion) return;
+    // Acknowledge only the input whose response was accepted for delivery.
     ws.__lastCommittedTranscript = finalVoiceText;
     ws.__pendingVoiceTranscript = "";
     ws.__pendingVoiceTranscriptStartedAt = 0;
@@ -1472,6 +1497,10 @@ if (!safeReply) {
 
   } finally {
     ws.__dispatchInFlight = false;
+    if (dispatchedPendingVersion !== pendingVersion && ws.__pendingVoiceTranscript && streamActive && !guard.closed) {
+      clearPendingVoiceTurn(ws);
+      ws.__voiceTurnTimer = setTimeout(() => { dispatchPendingVoiceTurn().catch(() => {}); }, 0);
+    }
   }
 }
 
@@ -1662,6 +1691,11 @@ ws.__sttStream = createStreamingTranscriber({
 
     const cleaned = normalizeIncomingVoiceText(text);
     if (!cleaned) return;
+    // Some transcribers deliver interim text without a voice-activity begin.
+    if (getSession(activeCallSid)?.__speechOwner) {
+      inputVersion += 1;
+      cancelSpeech(activeCallSid);
+    }
 
     ws.__speechActive = true;
     ws.__lastSpeechStartAt = ws.__lastSpeechStartAt || Date.now();
@@ -1683,6 +1717,9 @@ ws.__sttStream = createStreamingTranscriber({
   const cleaned = normalizeIncomingVoiceText(text);
   if (!cleaned) return;
 
+  inputVersion += 1;
+  pendingVersion += 1;
+  cancelSpeech(activeCallSid);
   const existingPending = normalizeIncomingVoiceText(ws.__pendingVoiceTranscript);
   const expectedSlot = getOpenExpectedSlot();
   const expectedSlotName = String(expectedSlot || "").toLowerCase();
@@ -1731,6 +1768,8 @@ ws.__sttStream = createStreamingTranscriber({
 
   onSpeechStart: () => {
     if (!streamActive || !routingReady || guard.closed) return;
+    inputVersion += 1;
+    handleSpeechInterrupted(activeCallSid);
     console.log("[stt][speech_start]", {
   callSid: activeCallSid,
 });
@@ -1767,6 +1806,9 @@ ws.__sttStream = createStreamingTranscriber({
     ws.__lastSpeechEndAt = Date.now();
 
     if (ws.__streamingInterim && !ws.__streamingFinal) {
+      inputVersion += 1;
+      pendingVersion += 1;
+      cancelSpeech(activeCallSid);
       ws.__pendingVoiceTranscript = ws.__streamingInterim;
       ws.__pendingVoiceTranscriptStartedAt =
         ws.__pendingVoiceTranscriptStartedAt || Date.now();
@@ -1942,6 +1984,8 @@ return;
   function cleanup() {
     if (cleaned) return;
     cleaned = true;
+    inputVersion += 1;
+    cancelSpeech(activeCallSid);
     routingReady = false;
     streamActive = false;
     pendingMedia.length = 0;

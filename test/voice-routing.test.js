@@ -192,7 +192,7 @@ test("actual WebSocket path validates routing before session, profile, STT and T
   });
   class Socket extends EventEmitter {
     readyState = 1;
-    send() {}
+    send(_data, done) { done?.(); }
     close() { this.readyState = 3; this.emit("close"); }
     async start(start) { await this.listeners("message")[0](JSON.stringify({ event: "start", start })); }
   }
@@ -287,7 +287,7 @@ class SecuritySocket extends EventEmitter {
   readyState = 1;
   sent = [];
   closeCode = null;
-  send(data) { this.sent.push(JSON.parse(data)); }
+  send(data, done) { this.sent.push(JSON.parse(data)); done?.(); }
   close(code) { this.closeCode = code; this.readyState = 3; this.emit("close"); }
   terminate() { this.readyState = 3; this.emit("close"); }
   async packet(data, binary = false) {
@@ -302,7 +302,8 @@ function voiceHarness(f, overrides = {}) {
     handleCallEnded: (id) => { if (store.getSession(id)) store.removeSession(id); },
     handleGreeting: () => ({ shouldSpeak: false }),
     handleTranscriptPartial() {}, handleTranscriptFinal() {}, handleProcessingResult() {},
-    prepareSpeech() { return true; }, handleSpeechFailed() {}, handleSpeechInterrupted() {},
+    prepareSpeech() { return true; }, claimSpeech() { return {}; }, isSpeechCurrent() { return true; }, cancelSpeech() {},
+    handleSpeechFailed() {}, handleSpeechInterrupted() {},
     handleSpeak() { return true; }, handleSpeechComplete() { effects.speechComplete += 1; }, handleCallerTurn() {},
     ...overrides.controller,
   };

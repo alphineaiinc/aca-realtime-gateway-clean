@@ -391,6 +391,19 @@ async function buildVoiceContext(text, langCode, options = {}) {
 // ------------------------------------------------------
 // OpenAI TTS branch
 // ------------------------------------------------------
+function ttsFailure(provider, error) {
+  const failure = new Error("Speech synthesis unavailable");
+  failure.code = "TTS_PROVIDER_ERROR";
+  failure.provider = provider === "elevenlabs" ? "elevenlabs" : "openai";
+  // No cause, raw body, status text, request, key fragments or original stack.
+  try {
+    const own = (value, key) => value && typeof value === "object" ? Object.getOwnPropertyDescriptor(value, key)?.value : undefined;
+    const status = own(error, "statusCode") ?? own(error, "status") ?? own(own(error, "response"), "status");
+    if (Number.isInteger(status) && status >= 100 && status <= 599) failure.statusCode = status;
+  } catch {}
+  return failure;
+}
+
 async function synthesizeWithOpenAI(text, langCode = "en-US", options = {}) {
   const apiKey = normalizeApiKey(process.env.OPENAI_API_KEY);
 
@@ -488,15 +501,9 @@ async function synthesizeWithOpenAI(text, langCode = "en-US", options = {}) {
 
     return finalBuffer;
   } catch (err) {
-    const status = err.status || err.response?.status || null;
-    const statusText = err.statusText || err.response?.statusText || null;
-    const decodedError = decodeErrorBody(err.response?.data) || err.message;
-
-    console.error("TTS_PROVIDER_FAILURE", { statusCode: status });
-    console.error("❌ [tts:openai] elapsedMs:", Date.now() - startedAt);
-    console.error("❌ [tts:openai] request failed in file:", __filename);
-
-    throw new Error("OpenAI TTS failed: " + (statusText || decodedError || err.message));
+    const failure = ttsFailure("openai", err);
+    console.error("TTS_PROVIDER_FAILURE", { statusCode: failure.statusCode, elapsedMs: Date.now() - startedAt });
+    throw failure;
   }
 }
 
@@ -594,17 +601,9 @@ async function synthesizeWithElevenLabs(text, langCode = "en-US", options = {}) 
 
     return finalBuffer;
   } catch (err) {
-    const status = err.response?.status || null;
-    const statusText = err.response?.statusText || null;
-    const decodedError = decodeErrorBody(err.response?.data);
-
-    console.error("TTS_PROVIDER_FAILURE", { statusCode: status });
-    console.error("❌ [tts:elevenlabs] request failed in file:", __filename);
-    console.error("❌ [tts:elevenlabs] axios error code:", err.code || null);
-
-    throw new Error(
-      "ElevenLabs TTS failed: " + (statusText || decodedError || err.message)
-    );
+    const failure = ttsFailure("elevenlabs", err);
+    console.error("TTS_PROVIDER_FAILURE", { statusCode: failure.statusCode });
+    throw failure;
   }
 }
 
@@ -625,11 +624,12 @@ async function synthesizeSpeech(text, langCode = "en-US", options = {}) {
     .trim()
     .toLowerCase();
 
-  if (provider === "elevenlabs") {
-    return synthesizeWithElevenLabs(text, langCode, options);
+  try {
+    if (provider === "elevenlabs") return await synthesizeWithElevenLabs(text, langCode, options);
+    return await synthesizeWithOpenAI(text, langCode, options);
+  } catch (error) {
+    throw ttsFailure(provider, error);
   }
-
-  return synthesizeWithOpenAI(text, langCode, options);
 }
 
 module.exports = { synthesizeSpeech };
