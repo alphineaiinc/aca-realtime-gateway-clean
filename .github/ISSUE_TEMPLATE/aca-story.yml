@@ -1,0 +1,38 @@
+name: ACA story
+description: Implementation story with evidence and safety requirements
+title: "ACA-XXX — "
+labels: []
+body:
+  - type: textarea
+    id: outcome
+    attributes:
+      label: Business outcome
+      description: What must work for the customer?
+    validations:
+      required: true
+  - type: textarea
+    id: scope
+    attributes:
+      label: Scope and out of scope
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria
+      description: Include functional, security, failure-mode and regression checks
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Existing evidence and dependencies
+      description: Link code, existing PRs, tests, migrations and relevant docs
+    validations:
+      required: false
+  - type: textarea
+    id: rollout
+    attributes:
+      label: Rollout, rollback and approval gates
+    validations:
+      required: true
