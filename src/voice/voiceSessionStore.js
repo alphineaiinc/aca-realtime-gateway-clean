@@ -1,3 +1,4 @@
+const console = require("./voiceLogger").operationalConsole;
 // src/voice/voiceSessionStore.js
 
 const sessions = new Map();
@@ -65,7 +66,7 @@ function createSession(callSid, meta = {}) {
   }
   sessions.set(callSid, session);
 
-  console.log(`🆕 [SESSION CREATED] ${callSid}`);
+  console.log("SESSION_CREATED");
 
   return session;
 }
@@ -76,7 +77,7 @@ function getSession(callSid) {
 
 function removeSession(callSid) {
   sessions.delete(callSid);
-  console.log(`🧹 [SESSION REMOVED] ${callSid}`);
+  console.log("SESSION_REMOVED");
 }
 
 module.exports = {

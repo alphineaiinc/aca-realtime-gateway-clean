@@ -1,3 +1,4 @@
+const console = require("./src/voice/voiceLogger").operationalConsole;
 // index.js – Orchestrator with Tanglish detection + debug logging
 console.log("🧭 process.cwd():", process.cwd());
 console.log("🧭 __dirname:", __dirname);
@@ -1155,7 +1156,7 @@ app.use((err, req, res, next) => {
 
   if (isJsonSyntax) {
     console.warn("⚠️ Invalid JSON received:", {
-      path: req.originalUrl || req.url,
+      path: req.path,
       method: req.method,
       ip: req.ip,
       contentType: req.headers["content-type"],

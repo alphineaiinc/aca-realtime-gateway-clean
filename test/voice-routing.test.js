@@ -302,7 +302,8 @@ function voiceHarness(f, overrides = {}) {
     handleCallEnded: (id) => { if (store.getSession(id)) store.removeSession(id); },
     handleGreeting: () => ({ shouldSpeak: false }),
     handleTranscriptPartial() {}, handleTranscriptFinal() {}, handleProcessingResult() {},
-    handleSpeak() {}, handleSpeechComplete() { effects.speechComplete += 1; }, handleCallerTurn() {},
+    prepareSpeech() { return true; }, handleSpeechFailed() {}, handleSpeechInterrupted() {},
+    handleSpeak() { return true; }, handleSpeechComplete() { effects.speechComplete += 1; }, handleCallerTurn() {},
     ...overrides.controller,
   };
   const route = isolated("src/routes/twilio.js", {
@@ -483,4 +484,46 @@ test("explicit workflow intent and configured slots still drive the actual contr
   assert.equal(reply.workflowStatus, "ready_for_confirmation");
   assert.ok(Object.keys(reply.slots).every((key) => Object.hasOwn(context.schema.slot_definitions, key)));
   controller.handleCallEnded(context.callSid);
+});
+
+test("infrastructure resolver failures and exceptions return retryable 503 without grants", async () => {
+  for (const thrown of [false, true]) {
+    let grants = 0;
+    const s = createTwilioRouting({ env, query: async () => { grants += 1; throw new Error("must not mint grant"); },
+      resolve: async () => { if (thrown) throw new Error("synthetic DB error"); return { ok: false, reason: "ROUTING_UNAVAILABLE" }; } });
+    const response = await webhookReply({ routing: s }, thrown ? 601 : 600);
+    assert.equal(response.code, 503); assert.equal(grants, 0); assert.ok(!response.xml.includes("<Stream"));
+  }
+  const f = fixture(); assert.equal((await webhookReply(f, 602, "+14165559999")).code, 403);
+  assert.equal(f.grants.size, 0); assert.equal((await webhookReply(f, 602)).code, 200);
+});
+
+test("malformed voice requests remain denials rather than infrastructure failures", async () => {
+  let reads = 0;
+  const s = createTwilioRouting({ env, query: async () => { reads += 1; }, resolve: async () => { reads += 1; } });
+  for (const body of [null, [], "invalid", { AccountSid: account, CallSid: { nested: "invalid" } }]) {
+    const response = { status(code) { this.code = code; return this; }, send() { return this; } };
+    await s.voiceWebhook({ body, headers: { "x-twilio-signature": "invalid" } }, response);
+    assert.equal(response.code, 403);
+  }
+  assert.equal(reads, 0);
+});
+
+test("HTTP infrastructure failures advertise retry without Streams and recover safely", async (t) => {
+  const f = fixture(); let healthy = false;
+  const unavailable = createTwilioRouting({ env, query: async () => { throw new Error("must not create grant"); },
+    resolve: async () => ({ ok: false, reason: "ROUTING_UNAVAILABLE" }) });
+  const app = express(); app.post("/twilio/voice", express.urlencoded({ extended: false }), (req, res) =>
+    (healthy ? f.routing : unavailable).voiceWebhook(req, res));
+  const listener = app.listen(0, "127.0.0.1"); await new Promise((r) => listener.once("listening", r));
+  t.after(() => new Promise((r) => listener.close(r)));
+  const body = { AccountSid: account, CallSid: call(603), To: "+14165550101" };
+  const headers = { "content-type": "application/x-www-form-urlencoded", "x-twilio-signature": twilio.getExpectedTwilioSignature(env.TWILIO_AUTH_TOKEN, env.TWILIO_VOICE_WEBHOOK_URL, body) };
+  const url = `http://127.0.0.1:${listener.address().port}/twilio/voice`;
+  const failed = await fetch(url, { method: "POST", headers, body: new URLSearchParams(body) });
+  assert.equal(failed.status, 503); assert.equal(failed.headers.get("retry-after"), "5");
+  assert.ok(!(await failed.text()).includes("<Stream")); assert.equal(f.grants.size, 0);
+  healthy = true;
+  const recovered = await fetch(url, { method: "POST", headers, body: new URLSearchParams(body) });
+  assert.equal(recovered.status, 200); assert.ok((await recovered.text()).includes("<Stream")); assert.equal(f.grants.size, 1);
 });

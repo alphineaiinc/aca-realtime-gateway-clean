@@ -69,7 +69,7 @@ custom WebSocket headers or query-string support. The upgrade itself is not
 signature-validated. Do not log TwiML bodies, custom parameters, or tokens at a
 proxy/APM layer; possession of the token plus its matching call/account metadata
 is a capability until consumption/expiry. Use TLS end to end at the public edge.
-Existing status callback endpoints are unchanged and are not used as routing authority.
+Status callbacks now require signed form POST requests and are never used as routing authority. See the Phase B contract below.
 
 At consumption, phone/workflow authorization is checked again. Reassignment to
 another tenant or deactivation before admission is denied. The resulting deeply
@@ -238,3 +238,86 @@ this timer. Peers ignoring close are forcibly terminated after one second.
 Provider teardown and session removal are idempotent, and late STT/TTS callbacks
 cannot send audio or dispatch work after cleanup. There is no booking confirmation
 or persistence change in this hardening pass.
+
+
+## Phase B: content-free diagnostics, callbacks, infrastructure failures and speech lifecycle
+
+No additional database migration is needed. Phone/workflow mappings, immutable
+session identity and atomic grant consumption are unchanged.
+
+### Diagnostic privacy boundary
+
+`src/voice/voiceLogger.js` allowlists bounded numeric metrics, booleans, finite
+state/status enums, fixed event codes, and a small set of nested error codes.
+All other values are discarded, including call/stream/account/tenant identifiers,
+phone numbers, routing contexts, transcripts, replies, slots, token material,
+API-key fragments, raw SDK errors/stacks and provider response bodies. Unknown
+nested objects, arrays, JSON strings and accessor properties are never serialized.
+The Twilio debug buffer applies the same boundary when collecting an event, rather
+than depending on admin authentication to make sensitive content safe.
+
+The affected root entry point, Twilio/controller/session/state modules, database
+startup diagnostics, STT/TTS modules and retrieval errors use the module-local
+operational console boundary. It does not replace the process-wide console or
+change provider inputs/outputs. Retrieval retry telemetry uses a fixed failure
+code instead of a raw error message. Numeric counts and state/status events remain
+available, but per-call log correlation and full-text debugging are intentionally
+removed. There is no flag to enable unsafe raw logging. Review proxy/APM/provider
+logging separately; this application change cannot sanitize external systems.
+
+### Status callback signing contract
+
+Both `/twilio/status` and `/twilio/stream-status` now support **POST only** with
+`application/x-www-form-urlencoded` (charset parameters allowed). GET and other
+methods return 405 with `Allow: POST`; no GET signing contract is established in
+the repository, so even signed GETs are rejected. JSON and other content types
+return 415. Route-local parsing uses a 16 KiB body limit, 64 parameters and no
+nested form objects; oversized requests return 413 and malformed forms return 400.
+
+Signatures use the existing `TWILIO_AUTH_TOKEN` and `TWILIO_ACCOUNT_SID`. Canonical
+URLs default to the fixed endpoint path on the configured
+`TWILIO_VOICE_WEBHOOK_URL` origin. Optional names for explicitly configured public
+callback URLs are `TWILIO_STATUS_WEBHOOK_URL` and
+`TWILIO_STREAM_STATUS_WEBHOOK_URL`. Overrides must be HTTPS, have the exact endpoint
+path and no credentials, query or fragment. The stream-status override is also used
+in generated TwiML. Invalid server configuration fails closed with 503. Request
+Host and forwarded headers are never used to select a signature-validation URL.
+
+Check the actual staging Twilio configuration against these URL/method contracts
+before activation; no live settings were inspected or changed. Deployments using
+GET callbacks must explicitly move to reviewed POST configuration or separately
+approve/implement a complete GET contract. No insecure GET compatibility fallback
+exists. Callback signatures, account and CallSid shape are verified before any
+callback-derived operational event. Invalid callbacks produce no callback-data log
+record. Valid callbacks record only allowlisted status/event enums, not arbitrary
+StreamError/StreamName fields or identifiers. Authentication does not require DB,
+workflow, KB or voice-provider access.
+
+### Infrastructure response contract
+
+`ROUTING_UNAVAILABLE` and unexpected resolver exceptions now yield HTTP 503 with
+`Retry-After: 5`, never a Stream. Grant-store errors retain 503 and the same retry
+hint. Invalid signatures/account bindings and malformed identity requests remain
+denials; unknown/inactive/unconfigured/invalid workflow mappings remain 403.
+Database failures cannot become another tenant or create a grant. Recovery uses
+the existing unextended token lifetime and atomic retry/claim contract. A retry
+hint is not a promise that Twilio will retry: validate the configured Twilio retry
+policy in staging. Persistent schema/permission misconfiguration still requires
+operator intervention, not unlimited retries. WebSocket database failure continues
+to deny admission; HTTP status codes do not apply to an admitted upgrade.
+
+### Speech lifecycle
+
+Greeting preparation now moves `GREETING -> READY_TO_SPEAK`; successful audio start
+moves `READY_TO_SPEAK -> SPEAKING`, and a matching playback mark moves
+`SPEAKING -> AWAITING_INPUT`. Prepared local repair responses may move from
+LISTENING/AWAITING_INPUT/AWAITING_END_OF_TURN to READY_TO_SPEAK before synthesis.
+Direct LISTENING -> SPEAKING remains invalid. Speaking flags and outbound audio
+require a successful transition. Synthesis failure before playback recovers from
+READY_TO_SPEAK to LISTENING. Barge-in uses the existing SPEAKING -> LISTENING path;
+repeated marks and late results do not mutate a cleaned-up/incorrect-state session.
+
+These changes do not change booking confirmation dispatch/acceptance or persistence,
+provider selection, audio framing, workflow assignments or token replay semantics.
+Existing real Twilio audio/retry, target PostgreSQL, ingress-rate-limit, grant
+retention and external logging checks remain necessary before production approval.

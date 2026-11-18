@@ -1,3 +1,4 @@
+const console = require("../voice/voiceLogger").operationalConsole;
 // src/routes/twilio.js
 
 const path = require("path");
@@ -20,6 +21,9 @@ const {
   handleTranscriptFinal,
   handleProcessingResult,
   handleSpeak,
+  prepareSpeech,
+  handleSpeechFailed,
+  handleSpeechInterrupted,
   handleSpeechComplete,
   handleCallEnded,
   handleCallerTurn,
@@ -32,6 +36,7 @@ const {
 
 const { getSession } = require("../voice/voiceSessionStore");
 const { getRouting } = require("../voice/twilioRouting");
+const { sanitizeMetadata } = require("../voice/voiceLogger");
 const { acquireStream, MAX_MESSAGE_BYTES } = require("../voice/streamSecurity");
 
 console.log("🧩 [twilio->tts] resolved module:", require.resolve("../../tts"));
@@ -100,7 +105,7 @@ function pushTwilioDebug(event, details = {}) {
   const entry = {
     ts: new Date().toISOString(),
     event,
-    ...details,
+    ...sanitizeMetadata(details),
   };
 
   twilioDebugState.updatedAt = entry.ts;
@@ -669,6 +674,7 @@ if (branch === "ack") {
 
   const regionCode = getSession(activeCallSid)?.routingContext?.region || null;
 
+  if (!prepareSpeech(activeCallSid)) return false;
   let ttsBuffer = null;
   try {
     console.log("🗣️ [twilio] about to call synthesizeSpeech", {
@@ -709,11 +715,12 @@ if (branch === "ack") {
   }
 
   if (ttsBuffer && activeStreamSid && ws.readyState === WebSocket.OPEN && getSession(activeCallSid)) {
-    handleSpeak(activeCallSid);
+    if (!handleSpeak(activeCallSid)) return false;
     sendTwilioAudioWithMark(ws, activeCallSid, activeStreamSid, ttsBuffer, branch);
     return true;
   }
 
+  handleSpeechFailed(activeCallSid);
   if (!activeStreamSid) {
     console.warn(
       "⚠️  Skipping TTS send: activeStreamSid is missing, cannot send media event."
@@ -732,43 +739,20 @@ async function handleVoiceWebhook(req, res) {
   catch { return res.status(503).send("Call routing unavailable"); }
 }
 
-function handleStatusWebhook(req, res) {
-  const status = req.body?.CallStatus || "unknown";
-  console.log("📡  Twilio Status update:", status);
-
-  if (status === "completed") {
-    console.log("✅  Call completed successfully.");
-  } else if (status === "failed" || status === "busy") {
-    console.log("⚠️  Call ended with status:", status);
-  }
-
-  res.sendStatus(200);
+function callbackForm(req, res, next) {
+  if (!req.is("application/x-www-form-urlencoded")) return res.status(415).send("Unsupported media type");
+  return next();
 }
-
-function handleStreamStatusWebhook(req, res) {
-  const payload = {
-    accountSid: req.body?.AccountSid || null,
-    callSid: req.body?.CallSid || null,
-    streamSid: req.body?.StreamSid || null,
-    streamName: req.body?.StreamName || null,
-    streamEvent: req.body?.StreamEvent || null,
-    streamError: req.body?.StreamError || null,
-    timestamp: req.body?.Timestamp || null,
-  };
-
-  console.log("📡 [twilio] Stream status callback:", payload);
-  pushTwilioDebug("stream_status", payload);
-
-  res.sendStatus(200);
+const parseCallback = express.urlencoded({ extended: false, limit: "16kb", parameterLimit: 64 });
+function callbackParserError(err, req, res, next) {
+  if (!err) return next();
+  return res.status(err.status === 413 ? 413 : 400).send("Invalid callback request");
 }
-
 router.post("/voice", express.urlencoded({ extended: false, limit: "16kb" }), handleVoiceWebhook);
-
-router.post("/stream-status", handleStreamStatusWebhook);
-router.get("/stream-status", handleStreamStatusWebhook);
-
-router.post("/status", handleStatusWebhook);
-router.get("/status", handleStatusWebhook);
+for (const endpoint of ["status", "stream-status"]) {
+  router.post(`/${endpoint}`, callbackForm, parseCallback, (req, res) => getRouting().statusCallback(endpoint, req, res), callbackParserError);
+  router.all(`/${endpoint}`, (req, res) => { res.set("Allow", "POST"); return res.status(405).send("Method not allowed"); });
+}
 
 async function handleTwilioStream(ws, req) {
   console.log("🌐  Twilio WebSocket connected");
@@ -1758,6 +1742,7 @@ ws.__sttStream = createStreamingTranscriber({
       const livePlayback = ensurePlaybackState(ws);
 
       endPlaybackLock(ws, activeCallSid, activeStreamSid, "barge_in");
+      handleSpeechInterrupted(activeCallSid);
 
       ws.__isSpeaking = false;
       ws.__speakUntil = 0;
@@ -1866,6 +1851,7 @@ if (
 
   // 🔴 HARD STOP playback immediately
   endPlaybackLock(ws, activeCallSid, activeStreamSid, "barge_in");
+      handleSpeechInterrupted(activeCallSid);
 
   // 🔴 reset speaking flags
   ws.__isSpeaking = false;

@@ -1,3 +1,4 @@
+const console = require("./src/voice/voiceLogger").operationalConsole;
 // ===============================================
 // tts.js — Alphine AI Text-to-Speech Handler
 // Story 9.3 / 9.5 / 10.3 Integration + Global 113-language layer
@@ -393,9 +394,6 @@ async function buildVoiceContext(text, langCode, options = {}) {
 async function synthesizeWithOpenAI(text, langCode = "en-US", options = {}) {
   const apiKey = normalizeApiKey(process.env.OPENAI_API_KEY);
 
-  console.log("🔐 [tts:openai] key exists:", !!process.env.OPENAI_API_KEY);
-  console.log("🔐 [tts:openai] key trimmed exists:", !!apiKey);
-  console.log("🔐 [tts:openai] key length:", apiKey ? apiKey.length : 0);
 
   if (!apiKey) {
     throw new Error("Missing OPENAI_API_KEY in environment");
@@ -420,8 +418,6 @@ async function synthesizeWithOpenAI(text, langCode = "en-US", options = {}) {
   });
 
   console.log("🧠 [tts:openai] Text pipeline preview:", {
-    original_preview: safePreview(text),
-    processed_preview: safePreview(ctx.processedText),
     langCode,
     regionCode: ctx.regionCode,
     tonePreset: ctx.tonePreset,
@@ -439,7 +435,6 @@ async function synthesizeWithOpenAI(text, langCode = "en-US", options = {}) {
     model,
     voice,
     requestedFormat,
-    text_preview: safePreview(ctx.processedText),
   });
 
   try {
@@ -497,9 +492,7 @@ async function synthesizeWithOpenAI(text, langCode = "en-US", options = {}) {
     const statusText = err.statusText || err.response?.statusText || null;
     const decodedError = decodeErrorBody(err.response?.data) || err.message;
 
-    console.error("❌ [tts:openai] status:", status);
-    console.error("❌ [tts:openai] statusText:", statusText);
-    console.error("❌ [tts:openai] error body:", decodedError);
+    console.error("TTS_PROVIDER_FAILURE", { statusCode: status });
     console.error("❌ [tts:openai] elapsedMs:", Date.now() - startedAt);
     console.error("❌ [tts:openai] request failed in file:", __filename);
 
@@ -514,10 +507,6 @@ async function synthesizeWithElevenLabs(text, langCode = "en-US", options = {}) 
   const rawApiKey = process.env.ELEVENLABS_API_KEY;
   const apiKey = normalizeApiKey(rawApiKey);
 
-  console.log("🔐 [tts:elevenlabs] key exists:", !!rawApiKey);
-  console.log("🔐 [tts:elevenlabs] key trimmed exists:", !!apiKey);
-  console.log("🔐 [tts:elevenlabs] key length:", apiKey ? apiKey.length : 0);
-  console.log("🔐 [tts:elevenlabs] key prefix:", apiKey ? apiKey.slice(0, 5) : "NONE");
 
   if (!apiKey) {
     throw new Error("Missing ELEVENLABS_API_KEY in environment");
@@ -537,8 +526,6 @@ async function synthesizeWithElevenLabs(text, langCode = "en-US", options = {}) 
   );
 
   console.log("🧠 [tts:elevenlabs] Text pipeline preview:", {
-    original_preview: safePreview(text),
-    processed_preview: safePreview(ctx.processedText),
     langCode,
     regionCode: ctx.regionCode,
     tonePreset: ctx.tonePreset,
@@ -566,13 +553,10 @@ async function synthesizeWithElevenLabs(text, langCode = "en-US", options = {}) 
     url,
     model_id: "eleven_multilingual_v2",
     language_code: baseLang,
-    text_preview: safePreview(ctx.processedText),
     stability,
     similarity_boost,
     outputFormat: ctx.outputFormat,
     acceptMime: ctx.acceptMime,
-    keyPrefix: apiKey ? apiKey.slice(0, 5) : "NONE",
-    keyLength: apiKey ? apiKey.length : 0,
   });
 
   try {
@@ -614,9 +598,7 @@ async function synthesizeWithElevenLabs(text, langCode = "en-US", options = {}) 
     const statusText = err.response?.statusText || null;
     const decodedError = decodeErrorBody(err.response?.data);
 
-    console.error("❌ [tts:elevenlabs] status:", status);
-    console.error("❌ [tts:elevenlabs] statusText:", statusText);
-    console.error("❌ [tts:elevenlabs] error body:", decodedError || err.message);
+    console.error("TTS_PROVIDER_FAILURE", { statusCode: status });
     console.error("❌ [tts:elevenlabs] request failed in file:", __filename);
     console.error("❌ [tts:elevenlabs] axios error code:", err.code || null);
 
@@ -636,7 +618,6 @@ async function synthesizeSpeech(text, langCode = "en-US", options = {}) {
     file: __filename,
     provider: DEFAULT_TTS_PROVIDER,
     langCode,
-    textPreview: safePreview(text, 120),
     optionKeys: Object.keys(options || {}),
   });
 

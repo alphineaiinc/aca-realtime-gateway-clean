@@ -1,3 +1,4 @@
+const console = require("./voiceLogger").operationalConsole;
 // src/voice/sessionController.js
 
 const { createSession, getSession, removeSession } = require("./voiceSessionStore");
@@ -484,9 +485,8 @@ function handleGreeting(callSid) {
     return null;
   }
 
+  if (!transition(session, STATES.READY_TO_SPEAK, "greeting_prepared")) return null;
   session.greeted = true;
-
-  transition(session, STATES.LISTENING, "greeting_sent");
 
   const reply = {
     shouldSpeak: true,
@@ -1291,22 +1291,41 @@ function handleProcessingResult(callSid, brainResult) {
   };
 }
 
+function prepareSpeech(callSid) {
+  const session = getSession(callSid);
+  if (!session) return false;
+  if (session.state === STATES.READY_TO_SPEAK) return true;
+  // These paths produce a concrete local repair reply before normal processing.
+  if (![STATES.LISTENING, STATES.AWAITING_INPUT, STATES.AWAITING_END_OF_TURN].includes(session.state)) return false;
+  return transition(session, STATES.READY_TO_SPEAK, "repair_prepared");
+}
 function handleSpeak(callSid) {
   const session = getSession(callSid);
-  if (!session) return;
-
+  if (!session || session.state !== STATES.READY_TO_SPEAK) return false;
+  if (!transition(session, STATES.SPEAKING, "tts_start")) return false;
   session.isSpeaking = true;
-
-  transition(session, STATES.SPEAKING, "tts_start");
+  return true;
 }
-
+function handleSpeechFailed(callSid) {
+  const session = getSession(callSid);
+  if (!session || session.state !== STATES.READY_TO_SPEAK) return false;
+  if (!transition(session, STATES.LISTENING, "tts_failed")) return false;
+  session.isSpeaking = false;
+  return true;
+}
 function handleSpeechComplete(callSid) {
   const session = getSession(callSid);
-  if (!session) return;
-
+  if (!session || session.state !== STATES.SPEAKING) return false;
+  if (!transition(session, STATES.AWAITING_INPUT, "tts_complete")) return false;
   session.isSpeaking = false;
-
-  transition(session, STATES.AWAITING_INPUT, "tts_complete");
+  return true;
+}
+function handleSpeechInterrupted(callSid) {
+  const session = getSession(callSid);
+  if (!session || session.state !== STATES.SPEAKING) return false;
+  if (!transition(session, STATES.LISTENING, "tts_interrupted")) return false;
+  session.isSpeaking = false;
+  return true;
 }
 
 function handleCallEnded(callSid) {
@@ -1790,6 +1809,9 @@ if (coreComplete && session.requiredSlots.includes("name") && !has("name")) {
 }
 
 module.exports = {
+  prepareSpeech,
+  handleSpeechFailed,
+  handleSpeechInterrupted,
   handleCallStarted,
   handleGreeting,
   handleTranscriptPartial,

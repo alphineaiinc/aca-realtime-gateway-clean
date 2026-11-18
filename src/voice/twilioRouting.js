@@ -1,5 +1,6 @@
 "use strict";
 const crypto = require("node:crypto");
+const { logEvent } = require("./voiceLogger");
 const twilio = require("twilio");
 const { isValidatedRoutingContext } = require("./tenantResolver");
 const hash = (token) => crypto.createHash("sha256").update(token).digest("hex");
@@ -22,6 +23,40 @@ function createTwilioRouting({ query, resolve, env = process.env }) {
     decipher.setAuthTag(bytes.subarray(12, 28));
     return Buffer.concat([decipher.update(bytes.subarray(28)), decipher.final()]).toString("utf8");
   }
+  function callbackUrl(kind) {
+    const suffix = kind === "status" ? "/twilio/status" : "/twilio/stream-status";
+    const configured = kind === "status" ? env.TWILIO_STATUS_WEBHOOK_URL : env.TWILIO_STREAM_STATUS_WEBHOOK_URL;
+    const url = new URL(configured || new URL(suffix, env.TWILIO_VOICE_WEBHOOK_URL).href);
+    if (url.protocol !== "https:" || url.pathname !== suffix || url.search || url.hash || url.username || url.password) throw new Error("INVALID_CALLBACK_URL");
+    return url.href;
+  }
+  function unavailable(res) {
+    res.set?.("Retry-After", "5");
+    return res.status(503).send("Call routing unavailable");
+  }
+  function statusCallback(kind, req, res) {
+    // Only POST form callbacks have an established contract in this deployment.
+    if (req.method !== "POST") { res.set?.("Allow", "POST"); return res.status(405).send("Method not allowed"); }
+    if (String(req.headers["content-type"] || "").split(";")[0].trim().toLowerCase() !== "application/x-www-form-urlencoded") return res.status(415).send("Unsupported media type");
+    let url;
+    try {
+      url = callbackUrl(kind);
+      if (!env.TWILIO_AUTH_TOKEN || !sid(env.TWILIO_ACCOUNT_SID, "AC")) return unavailable(res);
+    } catch { return unavailable(res); }
+    const body = req.body;
+    const signature = req.headers["x-twilio-signature"];
+    let verified = false;
+    try {
+      verified = !!body && !Array.isArray(body) && typeof signature === "string" &&
+        body.AccountSid === env.TWILIO_ACCOUNT_SID && sid(body.CallSid, "CA") &&
+        twilio.validateRequest(env.TWILIO_AUTH_TOKEN, signature, url, body);
+    } catch {}
+    if (!verified) return res.status(403).send("Forbidden");
+    logEvent(null, kind === "status" ? "STATUS_CALLBACK" : "STREAM_STATUS_CALLBACK", {
+      status: body.CallStatus, streamEvent: body.StreamEvent,
+    });
+    return res.sendStatus(200);
+  }
   function configuration() {
     try {
       const webhook = new URL(env.TWILIO_VOICE_WEBHOOK_URL);
@@ -29,7 +64,7 @@ function createTwilioRouting({ query, resolve, env = process.env }) {
       if (!env.TWILIO_AUTH_TOKEN || !sid(env.TWILIO_ACCOUNT_SID, "AC") ||
           webhook.protocol !== "https:" || webhook.pathname !== "/twilio/voice" || webhook.search || webhook.hash || webhook.username || webhook.password ||
           stream.protocol !== "wss:" || stream.pathname !== "/ws/twilio-stream" || stream.search || stream.hash || stream.username || stream.password) return null;
-      return { webhook: webhook.href, stream: stream.href };
+      return { webhook: webhook.href, stream: stream.href, streamStatus: callbackUrl("stream-status") };
     } catch { return null; }
   }
   async function voiceWebhook(req, res) {
@@ -37,12 +72,17 @@ function createTwilioRouting({ query, resolve, env = process.env }) {
     if (!config) return res.status(503).send("Voice routing unavailable");
     const body = req.body;
     const signature = req.headers["x-twilio-signature"];
-    if (!body || typeof signature !== "string" ||
-        !twilio.validateRequest(env.TWILIO_AUTH_TOKEN, signature, config.webhook, body) ||
-        body.AccountSid !== env.TWILIO_ACCOUNT_SID || !sid(body.CallSid, "CA")) {
-      return res.status(403).send("Forbidden");
-    }
-    const context = await resolve({ calledNumber: body.To, callSid: body.CallSid, accountSid: body.AccountSid });
+    let verified = false;
+    try {
+      verified = !!body && typeof body === "object" && !Array.isArray(body) &&
+        typeof signature === "string" && body.AccountSid === env.TWILIO_ACCOUNT_SID &&
+        sid(body.CallSid, "CA") && twilio.validateRequest(env.TWILIO_AUTH_TOKEN, signature, config.webhook, body);
+    } catch {}
+    if (!verified) return res.status(403).send("Forbidden");
+    let context;
+    try { context = await resolve({ calledNumber: body.To, callSid: body.CallSid, accountSid: body.AccountSid }); }
+    catch { return unavailable(res); }
+    if (!context || context.reason === "ROUTING_UNAVAILABLE") return unavailable(res);
     if (!context.ok) return res.status(403).send("Call routing unavailable");
     const candidate = crypto.randomBytes(32).toString("base64url");
     let token;
@@ -64,10 +104,10 @@ function createTwilioRouting({ query, resolve, env = process.env }) {
       }
       token = open(grants.rows[0].token_ciphertext);
       if (hash(token) !== grants.rows[0].token_hash) throw new Error("INVALID_GRANT");
-    } catch { return res.status(503).send("Call routing unavailable"); }
+    } catch { return unavailable(res); }
     const response = new twilio.twiml.VoiceResponse();
     const stream = response.connect().stream({ url: config.stream, name: "aca-live-stream",
-      statusCallback: new URL("/twilio/stream-status", config.webhook).href,
+      statusCallback: config.streamStatus,
       statusCallbackMethod: "POST" });
     stream.parameter({ name: "routingToken", value: token });
     // Informational only; the stream consumer never trusts this value.
@@ -93,7 +133,7 @@ function createTwilioRouting({ query, resolve, env = process.env }) {
       return context;
     } catch { return null; }
   }
-  return { voiceWebhook, consumeStart };
+  return { voiceWebhook, consumeStart, statusCallback };
 }
 let service;
 function getRouting() {
