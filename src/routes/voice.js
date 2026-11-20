@@ -1,3 +1,4 @@
+const console = require("../voice/voiceLogger").operationalConsole;
 // src/routes/voice.js
 // Server-side routes for tenant voice profile & preview
 // IMPORTANT: This file runs on Node.js (no window/document here)

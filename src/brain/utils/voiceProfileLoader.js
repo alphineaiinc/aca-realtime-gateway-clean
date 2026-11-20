@@ -46,6 +46,7 @@ async function getTenantVoiceProfile(tenantId, langCode = "en-US") {
     const defaultProfile = {
       tenant_id: tenantId,
       lang_code: langCode,
+      language_code: langCode,
       voice_id: null,
       tone_preset: "friendly",
       stability: 0.4,
@@ -57,7 +58,8 @@ async function getTenantVoiceProfile(tenantId, langCode = "en-US") {
     return defaultProfile;
   }
 
-  const row = result.rows[0];
+  // lang_code is the unique lookup key; expose a consistent legacy alias.
+  const row = { ...result.rows[0], language_code: result.rows[0].lang_code };
   cache.set(key, { ts: now, data: row });
   return row;
 }
