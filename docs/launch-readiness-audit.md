@@ -1,308 +1,286 @@
 # Launch-Readiness Audit (ACA-AUDIT-001)
 
-## 1) Executive verdict
+## 1) Executive Verdict
 
-### What we can demonstrate today (VERIFIED)
-- A Node/Express call-attendant codebase exists with Twilio voice webhook + media-stream handling, chat APIs, partner/billing routes, and migration artifacts.
-- CI foundations exist (`ACA CI`) with a single `Node tests` job and human-approval language in repository governance docs.
-- A minimum local test baseline currently passes in this workspace:
-  - `node --test test/*.test.js` -> `9 passed, 0 failed`
-  - `git ls-files -z '*.js' | grep -zv '^node_modules/' | xargs -0 -r -n 1 node --check` -> exited `0`
-- Draft PR #2 (`ACA-029`) contains substantial hardening work, but it is unmerged/unreleased.
+### What is demonstrably true now
+- The repository contains a working Node/Express application with voice, chat, billing, partner, and migration code paths.
+- `main` has CI foundations (`ACA CI`, `Node tests`) and explicit human approval language for merge/deploy decisions.
+- Draft PR #2 (`ACA-029`) contains substantial security/routing hardening work but is still unmerged and unreleased.
+- This audit revision includes a feature-by-feature dashboard/UI plus backend wiring inventory and explicitly separates file presence from proven runtime behavior.
 
-### What we cannot demonstrate today (UNVERIFIED)
-- We cannot demonstrate staging-verified or production-verified Twilio call quality, retry semantics, stream reliability, or multi-tenant safety under live load.
-- We cannot demonstrate full launch readiness for a generic multi-industry paying customer because key controls are partial/inconsistent on `main` (tenant defaults, webhook trust/signature controls, privacy-safe logging boundaries, secrets hygiene).
-- We cannot demonstrate complete historical backlog coverage from visible issues alone.
+### What is not yet demonstrated
+- End-to-end staging-verified Twilio behavior for merged `main` under realistic retries/failures.
+- Production-grade tenant isolation confidence across all entry points.
+- Complete, tested dashboard/admin experience as currently wired in this branch.
+- Complete historical backlog/original roadmap from repository evidence alone.
 
-### Overall decision
-- Current `main` state is **not production-ready** for a first paying customer without additional hardening and staging validation.
-- There is a plausible shortest path to a commercially usable pilot if work is focused on security/privacy/tenant-routing correctness and end-to-end staging evidence first.
+### Bottom line
+- `main` is **not launch-ready for a general-industry paying customer** yet.
+- The shortest credible path is a focused hardening + wiring + validation phase that closes dashboard/backend disconnects and security/tenant-risk items before commercialization claims.
 
-## Status legend used in this report
-- `VERIFIED`: Directly evidenced by repository files, GitHub metadata, and/or commands executed in this audit.
-- `IMPLEMENTED-UNVERIFIED`: Code exists, but no adequate validation evidence for launch claims.
-- `PARTIAL`: Some implementation exists, but with material gaps or contradictions.
-- `MISSING`: No evidence of required implementation in accessible scope.
-- `UNKNOWN`: Could exist outside accessible evidence; cannot be confirmed.
+## Status Legend
+- `VERIFIED`: directly evidenced by source + command/API evidence in this audit.
+- `IMPLEMENTED-UNVERIFIED`: code exists, but launch-relevant validation is missing.
+- `PARTIAL`: mixed implementation with clear gaps/disconnects.
+- `MISSING`: expected capability not found in accessible evidence.
+- `UNKNOWN`: may exist outside accessible evidence.
 
-## 2) Architecture inventory and source-of-truth map
+## 2) Methodology, Scope, and Evidence Limits
 
-### Runtime entrypoints and composition
-- `package.json` -> `main: index.js`, `scripts.start: node index.js`.
-- `index.js` builds Express + HTTP server, mounts REST and WS routes, and listens on `PORT || 8080`.
-- Twilio routing is mounted via `app.use('/twilio', twilioRouter)` and WS media route `/ws/twilio-stream` delegates to `handleTwilioStream`.
+### Methodology used for this revision
+- Inspected source files for runtime wiring (`index.js`, `src/routes/*`, `src/voice/*`, `public/dashboard/*`, `migrations/*`, CI docs/workflows).
+- Mapped each requested dashboard page to its concrete API calls and matched those against mounted backend routes and auth/tenant behavior.
+- Re-checked GitHub Actions evidence using MCP tools (`list_workflow_runs`, `list_workflow_jobs`, `get_job_logs`).
+- Re-ran safe local validations:
+  - `node --test test/*.test.js` -> `9 pass, 0 fail`.
+  - `git ls-files -z '*.js' | grep -zv '^node_modules/' | xargs -0 -r -n 1 node --check` -> exit `0`.
 
-### Core voice stack
-- Voice webhook/status handlers: `src/routes/twilio.js`.
-- Voice orchestration pipeline: `src/voice/sessionController.js` + `workflowExtractor.js` + `workflowStateEngine.js` + `workflowReplyComposer.js` + `slotEnforcement.js`.
-- STT: Google Speech streaming in `src/brain/utils/sttGoogle.js`.
-- TTS: `tts.js` (OpenAI default, ElevenLabs optional path).
+### Evidence boundaries
+- This is a read-only repository audit; no app/runtime behavior was changed.
+- Passing local tests/CI checks are not proof of staging/production call quality or operations readiness.
+- External infrastructure, production settings, and private historical artifacts remain unverified unless explicitly evidenced.
 
-### Tenant and auth surfaces
-- Tenant resolver: `src/voice/tenantResolver.js`.
-- Brain route with JWT-based tenant checks: `src/routes/brain.js`.
-- Admin monitor protection middleware in `index.js` (`requireAdmin`) used for selected monitor endpoints.
-- Tenant provisioning/login: `src/routes/tenant.js` (mounted under `/tenant`).
-- Partner auth middleware: `src/auth/partnerAuth.js`.
+## 3) Source-of-Truth Map (Main Branch Behavior)
 
-### Data and schema artifacts
-- Core schema bootstrap: `migrations/001_core_schema.sql`.
-- Tenant isolation hardening migration: `migrations/003_tenant_isolation_hardening.sql`.
-- Tenant metadata columns: `migrations/004_add_tenant_columns.sql`.
-- Billing/analytics migrations: `migrations/004_billing_invoices.sql`, `005_billing_payments.sql`, `006_billing_stats.sql`, `006_create_analytics_events.sql`.
+### Runtime and route composition
+- Entrypoint: `package.json` -> `index.js`.
+- Core mounts in `index.js` include:
+  - `/twilio` (`src/routes/twilio.js`)
+  - `/api/voice` (`src/routes/voice.js`)
+  - `/api/chat` (`src/routes/chat.js`) plus `/api/chat/stream` (via `src/routes/chat_stream.js` mounted at `/api`)
+  - `/api/billing` (`src/routes/billing.js`)
+  - `/api/stripe` (`src/routes/stripeWebhook.js`)
+  - `/partner` (`src/routes/partner.js`, `/partner/*` dashboard/leaderboard modules)
+  - `/tenant` (`src/routes/tenant.js`)
+  - `/api/demo` (`src/routes/demo.js`)
+- Static files are served from `public/`, so dashboard HTML files are accessible as static assets.
 
-### CI and governance
-- CI workflow: `.github/workflows/ci.yml` (`ACA CI`, `Node tests`).
-- PR approval template: `.github/pull_request_template.md`.
-- Agent governance constraints: `AGENTS.md`.
+### Important wiring caveat
+- `src/routes/dashboard.js` exists (`/dashboard`, `/dashboard/data`, `/dashboard/brain-status`) but no `/dashboard` router mount was found in `index.js`. Dashboard pages expecting `/dashboard/*` APIs are therefore currently disconnected unless mounted elsewhere not visible in this repository snapshot.
 
-## 3) Capability matrix (main vs draft PR #2)
+### Voice workflow stack
+- Twilio stream processing: `src/routes/twilio.js` + `src/voice/sessionController.js`.
+- Workflow extraction/state/composition: `workflowExtractor.js`, `workflowStateEngine.js`, `workflowReplyComposer.js`.
+- STT/TTS providers: `src/brain/utils/sttGoogle.js`, `tts.js`.
 
-| Feature | Main (`122a426`) | Draft PR #2 (`f1eee70` head, unmerged) | Evidence | Missing validation | Launch impact |
-|---|---|---|---|---|---|
-| Twilio voice webhook + stream wiring | `IMPLEMENTED-UNVERIFIED` | `IMPLEMENTED-UNVERIFIED` with hardening claims | `src/routes/twilio.js`, `index.js`; PR #2 commits (`5d6b96e`..`f1eee70`) | No live staging call evidence | P0 |
-| Twilio signature/callback verification | `PARTIAL` (webhooks/status accept GET+POST; no signature validation in current main handler) | Claimed hardened in PR #2 but unreleased | `src/routes/twilio.js` lines around `handleVoiceWebhook`, `/status`, `/stream-status`; PR #2 description/commits | Staging verification of signed callbacks and retry behavior | P0 |
-| Tenant routing isolation for voice | `PARTIAL` (resolver fallback to tenant `1`/cluster default) | Claimed strict verified routing in PR #2 | `src/voice/tenantResolver.js` fallback block | No merged enforcement + no staging evidence | P0 |
-| Immutable session tenant context | `IMPLEMENTED-UNVERIFIED` (session controller stores tenant context) | Claimed strengthened in PR #2 | `src/voice/sessionController.js` + PR #2 commits | End-to-end replay/admission tests in staging | P0 |
-| Chat APIs with JWT tenant checks | `PARTIAL` (`/brain/query`, `/api/chat/*` have checks; `/api/gpt/chat` sets `tenantId: 1`) | N/A | `src/routes/brain.js`, `src/routes/chat*.js`, `index.js` `tenantId: 1` | Security test matrix for tenant override paths | P0 |
-| Admin-protected Twilio debug endpoint | `VERIFIED` for route auth behavior | N/A | PR #1 merged (`d26ed0b`), `test/twilio-debug-auth.test.js` passing | Scope/privacy of debug payload still not production-proven | P1 |
-| Logging/privacy controls (no transcript/provider bodies/secrets) | `PARTIAL` (many logs include payload objects/text/state; some security intent docs exist) | Claimed improved in PR #2 | `src/voice/voiceLogger.js`, `src/routes/twilio.js`, `src/routes/stripeWebhook.js` | Formal log redaction tests + runtime log review in staging | P0 |
-| Secrets hygiene in tracked config | `MISSING` (tracked `.env.example` contains secret-like values) | N/A | `.env.example` | Secret rotation + repository cleanup not validated | P0 |
-| DB schema for multi-tenant + billing + analytics | `IMPLEMENTED-UNVERIFIED` | Expanded in PR #2 (unreleased migrations) | `migrations/*.sql`; PR #2 file list includes additional migration/docs/tests | Migration application + rollback rehearsal in target DB | P0 |
-| CI baseline | `VERIFIED` foundation, `PARTIAL` reliability evidence | N/A | `.github/workflows/ci.yml`; workflow runs include successes and jobless runs | Need stable CI runs with full job execution on active PRs | P1 |
-| Test coverage depth | `PARTIAL` on main (local visible test focus is narrow) | Broader suite claimed in PR #2 but unmerged | `test/twilio-debug-auth.test.js`; PR #2 adds many tests | Execute and pass full relevant suites on merged code in CI + staging | P0 |
-| Pilot/ops docs | `PARTIAL` (`docs/development-automation.md` exists) | PR #2 includes routing doc (unmerged) | PR #6 merged doc; PR #2 doc changes | Runbook for incident/retry/retention and on-call operations | P1 |
+## 4) Dashboard/UI + Backend Feature Inventory (Requested)
 
-## 4) Safety, security, and privacy findings
+## 4.1 Dashboard pages and concrete wiring
 
-### Tenant isolation and routing
-- `main` still contains fallback routing to tenant `1` and default cluster (`medical_clinic`) in `src/voice/tenantResolver.js`. This conflicts with strict verified routing expectations for a multi-tenant launch.
-- `index.js` `/api/gpt/chat` injects `tenantId: 1`, indicating a hardcoded tenant path in active code.
+| UI page (static path) | Frontend API calls | Backend evidence | Auth / tenant isolation | Tests found | Status | Staging evidence needed |
+|---|---|---|---|---|---|---|
+| `/dashboard/index.html` (`public/dashboard/index.html`) | `GET /dashboard/brain-status`, `GET /dashboard/data` | Endpoints exist only in `src/routes/dashboard.js`; no `app.use('/dashboard', ...)` found in `index.js` | No page-level auth; backend route auth not shown (router not mounted) | None specific | `PARTIAL` (API contract present, wiring gap) | Prove router mount + authenticated/authorized access expectations + live response with realistic data |
+| `/dashboard/billing.html` | Uses `/api/billing/*`, including `/download-all` and `/invoice/:id` | `src/routes/billing.js` has `/generate,/history,/pay,/status/:id,/stats,/summary,/export,/email/:id,/download-all`; no `/invoice/:id` route | JWT required via `authenticate`; tenant scoped by `tenant_id` from token | No billing tests in `test/` on main | `PARTIAL` (mostly wired, one endpoint mismatch, untested) | Verify all UI actions against implemented endpoints; resolve `/invoice/:id` mismatch; run tenant-isolation tests |
+| `/dashboard/voice.html` + `voice.js` | `/api/voice/profile` (GET/POST), `/api/voice/preview` (POST) | Implemented in `src/routes/voice.js` and mounted at `/api/voice` | JWT required; tenant from token | No dedicated voice route tests in `test/` on main | `IMPLEMENTED-UNVERIFIED` | Validate end-to-end profile save/load/preview and provider-failure handling in staging |
+| `/dashboard/monitor.html` | `GET /monitor/deploy-matrix` | Endpoint exists in `index.js` and is `requireAdmin` protected | Admin JWT required; page does not attach auth header in fetch call | No monitor page tests | `PARTIAL` (endpoint exists; UI request path likely unauthorized as written) | Validate authenticated monitor access path and expected failure UX for unauthorized users |
+| `/dashboard/chat.html` + `chat.js`/`chat_stream.js`/`chat_ws_client.js` | `/api/demo/token`, `/api/chat`, `/api/chat/stream`, WS `/ws/chat` | All endpoints/routes exist and are mounted | JWT/demo token required; tenant behavior varies by route | No chat route tests in `test/` on main | `IMPLEMENTED-UNVERIFIED` | Validate REST/SSE/WS chat flows with valid/invalid tokens and tenant isolation in staging |
+| `/dashboard/confidence.html` | No direct API calls in this page (branding shell) | No direct backend dependency in file | N/A | None | `PARTIAL` (page present, no demonstrated functional data path) | Define intended behavior and connect to monitored data source if required |
+| `/dashboard/partners.html` | `/partner/profile`, `/partner/rewards`, `/partner/referrals`; builds referral link to `/tenant/provision?ref=...` | `profile/rewards/referrals` exist in `src/routes/partnerDashboard.js` mounted under `/partner`; `/tenant/provision` exists but expects API key, not referral query | Partner JWT required for partner routes; tenant provisioning endpoint uses `x-api-key` | No partner dashboard tests on main | `PARTIAL` (core partner reads exist; referral-to-provision UX appears disconnected from provisioning auth model) | Validate partner token issuance, referral onboarding flow, and provisioning mechanism alignment |
+| `/dashboard/leaderboard.html` | `/partner/leaderboard`, `/partner/payouts/request` | Implemented in `src/routes/partnerLeaderboard.js` | JWT required; payout request uses partner token | No leaderboard/payout-request tests on main | `IMPLEMENTED-UNVERIFIED` | Validate leaderboard scopes/data quality and payout request lifecycle |
+| `/dashboard/payouts_admin.html` | `/partner/payouts/admin`, `/partner/payouts/admin/decision` | Implemented in `src/routes/partnerLeaderboard.js` (admin gated) | Admin role required in JWT (`requireAdmin`) | No admin-payout tests on main | `IMPLEMENTED-UNVERIFIED` | Validate admin decision workflow, audit trail, and rejected/paid edge cases |
 
-### Webhook/signature/replay boundaries
-- Current `main` Twilio route implementation (`src/routes/twilio.js`) shows webhook/status handlers without explicit Twilio request-signature validation and accepts both GET/POST for voice/status callbacks.
-- PR #2 claims hardened signed routing + replay protections, but that remains unreleased until merged and validated.
+## 4.2 Backend capability domains requested in review
 
-### Authentication and admin controls
-- Positive: `/monitor/twilio-debug` requires admin JWT on `main` (from PR #1), and this behavior is locally test-verified.
-- Risk: auth strategies vary across routes (different secrets/claims/middleware conventions), increasing consistency and maintenance risk.
+| Domain | Evidence on main | Current state | Test evidence on main | Validation required |
+|---|---|---|---|---|
+| Onboarding/provisioning | `src/routes/tenant.js` (`/tenant/provision`, `/tenant/login`, `/tenant/profile`), `src/routes/public.js` exists but no mount found | `PARTIAL` | No dedicated tests in `test/` | Verify mounted onboarding paths, referral compatibility, and auth model coherence |
+| Configuration/workflow management | Voice workflow logic in `src/voice/*`, cluster schema loading in `src/voice/clusterSchemaLoader.js` | `IMPLEMENTED-UNVERIFIED` | None on main beyond Twilio debug auth test | Staging calls proving workflow selection, slot capture, and tenant correctness |
+| Usage/billing | `src/routes/billing.js`, `src/brain/billingEngine.js`, billing migrations | `IMPLEMENTED-UNVERIFIED` with UI/API mismatch (`/invoice/:id`) | No billing tests on main | Exercise all billing endpoints + invoice retrieval/export paths |
+| Stripe | `src/routes/stripeWebhook.js` mounted at `/api/stripe` | `IMPLEMENTED-UNVERIFIED` | No stripe webhook tests on main | Signature handling + event processing tests in CI/staging |
+| Partner/legal/payouts | `partner.js`, `partnerDashboard.js`, `partnerLeaderboard.js`, `partnerPayout.js`, `partnerLegal.js` | `PARTIAL` (broad surface exists; overlap/inconsistency risk) | No dedicated tests on main | End-to-end partner lifecycle tests + auth consistency pass |
+| Analytics/monitoring | `migrations/006_create_analytics_events.sql`, `src/analytics/eventCollector.js`, monitor endpoints in `index.js` | `PARTIAL` | No explicit monitor/analytics tests | Validate event completeness, retention/privacy, and dashboard correctness |
 
-### Secrets handling and privacy
-- High-risk hygiene issue: tracked `.env.example` includes credential-like and secret-like values (API keys, SMTP/password-like entries, DB credentials format). This is not acceptable launch posture even if values are placeholders/expired.
-- Logging still includes broad payload/object logging in multiple paths (`twilio.js`, `voiceLogger.js`, Stripe webhook logging patterns), so privacy guarantees are not yet demonstrably robust.
+## 5) Main vs Draft PR #2 (ACA-029) Separation
 
-### Data retention and PII
-- No clearly enforced retention policy evidence for call diagnostics/session traces in accessible `main` artifacts.
-- Call/transcript-safe operational logging boundary is not demonstrated as comprehensive on `main`.
+### Main (`main` branch) summary
+- Voice/chat system and admin diagnostics route protections exist.
+- Material risk remains around webhook verification rigor, tenant fallback defaults, and broad logging/privacy posture.
 
-## 5) CI/test coverage and gaps
+### Draft PR #2 summary (unmerged, unreleased)
+- PR #2 contains substantial hardening claims (verified Twilio routing, replay handling, diagnostics redaction, speech lifecycle fixes), but it is still draft and not merged into `main`.
+- None of PR #2 behavior should be treated as production-complete for current launch decisions.
 
-### Commands run in this audit
-- `node --test test/*.test.js`
-  - Result: `9 tests`, `9 pass`, `0 fail`, `0 skipped`, `0 cancelled`.
-- `git ls-files -z '*.js' | grep -zv '^node_modules/' | xargs -0 -r -n 1 node --check`
-  - Result: exit code `0`, no syntax errors emitted.
+## 6) Security, Privacy, and Tenant Isolation Findings
 
-### GitHub Actions evidence
-- Workflow: `ACA CI` (`.github/workflows/ci.yml`), single job `Node tests`.
-- Recent run history includes successful runs but also runs with `0 jobs` (`failure` and `action_required` conclusions), which means no executable test evidence from those attempts.
+### `.env.example` classification correction
+- The file contains **credential-like / secret-like strings and placeholders**.
+- This audit does **not** prove those values are live/active production secrets.
+- Risk classification for launch: treat as potential exposure until owners complete secure review and rotation confirmation.
+- No secret values are reproduced in this document.
 
-### Coverage assessment
-- `main` visible in-repo test coverage is narrow (locally observed test file focuses on Twilio debug admin route behavior).
-- PR #2 claims broad voice/routing tests but is draft/unmerged and therefore not releasable evidence for `main` behavior.
+### Key security findings on `main`
+- Tenant fallback risks remain in runtime paths (e.g., hard fallback behavior in `tenantResolver`, hardcoded tenant context in some chat pathing).
+- Twilio callback/webhook handlers in current main source show permissive method handling and no explicit request-signature enforcement in visible code.
+- Logging surfaces include broad payload/object logging in sensitive domains; privacy-safe boundary is not yet demonstrated comprehensively.
 
-## 6) External dependencies and blockers
+## 7) CI/Test Coverage and Corrected Evidence Limits
 
-### Technical dependencies for real launch evidence
-- Twilio account/number provisioning and signed webhook configuration.
-- Accessible staging environment with safe synthetic traffic.
-- Target PostgreSQL environment for migration rehearsal and rollback drills.
-- OpenAI/STT/TTS provider credentials with budget controls.
+### Verified CI facts
+- Active CI workflow: `.github/workflows/ci.yml` with required job name `Node tests`.
+- Successful post-merge `main` run exists: `ACA CI` run `44831732013` (`success`).
+- PR runs `44833911528` and `44834614188` ended `action_required` with `total_jobs: 0`.
 
-### Operational/business blockers (outside repo unless proven)
-- Customer onboarding flow, contracts, billing operations, support/on-call, incident management, and privacy/legal approvals are not fully evidenced in-repo.
-- Monitoring/alert dashboards, SLOs, and production runbooks are partially documented at best.
+### Interpretation correction
+- Not all zero-job events should be interpreted as unexplained execution failures.
+- Current evidence is consistent with runs requiring workflow/job approval in some AI-created PR contexts, as noted by owner feedback.
+- Evidence limit: run metadata confirms zero executed jobs for those runs; root policy configuration details are outside source control and must be validated in GitHub settings.
 
-## 7) Prioritized launch-blocking gaps (P0/P1/P2)
+### Ruleset correction
+- Per owner-provided review evidence, an active `ACA - Protect Main` ruleset requires PRs and `Node tests`.
+- Repository files alone cannot fully prove live ruleset configuration; this remains operator-verified context.
 
-### P0 (must resolve before first paying customer)
-- Remove/replace hardcoded tenant/fallback routing behavior (`tenantId: 1`, default tenant/cluster fallbacks).
-- Enforce verified webhook/auth boundaries (voice + callback signature checks, replay controls) on merged `main` code.
-- Fix secrets hygiene (`.env.example` and repository scanning/rotation process).
-- Prove privacy-safe logging boundaries (no secrets/transcripts/provider bodies in operational logs).
-- Execute end-to-end staging validation of Twilio call path and failure modes.
+### Test coverage reality on main
+- In-tree test files currently visible: `test/twilio-debug-auth.test.js` only.
+- Local run: `9/9` passing confirms that one test suite and syntax checks, not full platform readiness.
 
-### P1 (required for commercially reliable operation)
-- Expand and stabilize CI evidence (no jobless runs; explicit required checks).
-- Increase test depth on merged codepaths (routing, replay, auth, tenant isolation, callback handling).
-- Add production-like runbooks for operations, rollback, and support escalation.
+## 8) External Scope and Historical-Scope Honesty
 
-### P2 (hardening/scale)
-- Broaden observability and retention controls.
-- Formalize automation guardrails and dispatch orchestration beyond current pilot docs.
+- `aca-realtime-gateway-clean` is treated as the primary ACA runtime repository based on owner guidance in this review thread.
+- `alphineai-website` is separate and appears customer/marketing-facing; deployment/runtime relevance to call-attendant production is `UNKNOWN` from this repository evidence.
+- Other repositories/infrastructure/backlog sources are `UNKNOWN` unless separately evidenced.
+- Therefore Path B planning below is limited to substantiated evidence plus explicit `UNKNOWN` markers where historical requirements are missing.
 
-## 8) Go/no-go checklists: commercial pilot vs production-ready
+## 9) Prioritized Launch-Blocking Gaps (P0/P1/P2)
 
-### Commercial pilot go/no-go (industry-agnostic, paying pilot)
-Go only if all are true:
-- P0 items above completed and evidenced on merged `main`.
-- One controlled staging tenant/business profile can be configured without hardcoded identity assumptions.
-- End-to-end synthetic Twilio calls succeed with documented pass/fail criteria.
-- Billing path for pilot charging is validated with synthetic/non-sensitive data.
-- Human approval gates for merge/deploy remain enforced.
+### P0
+- Close dashboard/backend disconnects for business-critical operations (dashboard router mount and endpoint mismatches).
+- Remove hard tenant defaults/fallback assumptions from launch-critical call/chat paths.
+- Enforce and verify secure webhook/callback trust boundaries on merged code.
+- Complete secrets-hygiene review and rotation decision for credential-like tracked examples.
+- Prove privacy-safe operational logging in staging.
 
-### Production-ready go/no-go
-Go only if pilot checklist passes plus:
-- Repeatable multi-tenant onboarding with no tenant-specific code edits.
-- Security/privacy review sign-off (independent), including log-data minimization checks.
-- Operational readiness (monitoring/alerts, on-call, incident response, rollback rehearsals).
-- Capacity/reliability objectives demonstrated under representative load.
+### P1
+- Consolidate auth/authorization patterns across partner/admin/tenant surfaces.
+- Expand CI and tests to cover billing, partner payouts/legal, chat/voice path regressions.
+- Validate onboarding/provisioning flow end-to-end with realistic roles and approvals.
 
-## 9) Unverified inventory and questions requiring operator proof
+### P2
+- Observability, retention governance, and operational hardening at scale.
+- Advanced automation and wider capability expansion after secure core is proven.
 
-### Explicitly unverified from accessible evidence
-- Complete historical backlog and product requirements beyond visible issues/PRs.
-- Cloud infrastructure/IaC state, staging/prod environment parity, and deployment controls in host platforms.
-- Real customer configurations, dashboards, and external integrations beyond repository artifacts.
-- Twilio real-call behavior under retries/network faults for current merged code.
+## 10) Path A vs Path B Completion Plans
 
-### Operator proof requests
-- Provide current branch protection/ruleset screenshots or API evidence for required checks/reviews.
-- Provide staging validation artifacts for Twilio webhook signing and stream behavior.
-- Provide production logging policy and sampled redacted logs demonstrating no sensitive leakage.
-- Provide migration execution logs from target DB and rollback rehearsal evidence.
+## Path A — Earliest fully functional, safe, general-industry commercial release
 
-## 10) Additional automation (Level 2) review
+### Definition
+- Not a telephony-only proof-of-concept.
+- Includes telephony + dashboard/admin + onboarding + billing foundations needed for a paying pilot that can operate safely under human supervision.
 
-### Current state
-- Repository has CI + governance scaffolding and documented human approvals.
-- Full Level 2 automation (issue dispatch, state tracking, guarded retries, approvals orchestration) is **not implemented/proven** in accessible evidence.
+### Dependency-ordered critical path
+1. **Security and tenancy baseline**: remove default tenant/fallback behaviors; verify webhook trust chain on merged code.
+2. **Dashboard/backend wiring correctness**: mount/repair dashboard API paths, fix endpoint mismatches (`billing` UI/API), verify role-protected monitor/admin flows.
+3. **Onboarding + provisioning**: align referral onboarding UX with actual provisioning auth model.
+4. **Billing + partner essentials**: validate invoice lifecycle and partner payout/legal flows with role checks.
+5. **Staging validation pack**: scripted pass/fail matrix across voice/chat/dashboard/billing/admin.
+6. **Independent review gate**: security/privacy + ops check before first paid pilot.
 
-### What Level 2 needs before trust
-- Deterministic issue intake/ownership model.
-- State machine for attempt tracking and bounded retry policies.
-- Explicit gates for high-risk actions (migrations, deploy, secrets, security config).
-- Independent audit trail for approvals and stop conditions.
-- Failure-mode drills proving safe halt/escalation behavior.
+### Path A acceptance gates
+- Pilot gate: all P0 complete + staging matrix pass + documented rollback.
+- Commercially usable gate: repeatable onboarding and billing flows with bounded operator load.
+- Production-hardened gate: independent security/ops review + stronger reliability evidence.
 
-### Steps that still require manual approval
-- Merge authorization, deployment authorization, migration execution, production credential changes, and customer-impacting configuration updates.
+### Path A effort ranges
+- Engineering implementation: **40-110 hours**.
+- Staging/live validation effort: **20-55 hours**.
+- Operator approvals/coordination: **10-35 hours**.
+- Independent security/operational review: **8-30 hours**.
 
-## Mandatory dual-path completion plan (owner requirement)
+### Deferred in Path A
+- Broad advanced analytics expansion.
+- Fully automated Level 2 orchestration.
+- Non-critical feature polish unrelated to first paying customer outcomes.
 
-## Path A — Earliest fully functional commercial release
+## Path B — Widest substantiated original ambition completion
 
-### Objective
-Deliver the smallest release that is functional, safe, end-to-end tested in staging, configurable for different businesses, and chargeable.
+### Definition
+- Build out the broadest capability set supported by repository evidence, while marking missing original requirements as `UNKNOWN`.
 
-### Scope boundaries
-- Must include: secure tenant routing, webhook/callback verification, privacy-safe logs, one reliable voice flow, pilot billing flow, CI baseline, runbooks.
-- Can defer: advanced analytics breadth, extensive partner ecosystem features, broad automation beyond controlled workflows.
+### Expanded workstreams beyond Path A
+- Auth model unification across all route families.
+- Full partner/legal/payout operational maturity and auditability.
+- Observability + retention controls with stronger governance.
+- Wider workflow/admin/internationalization surface where evidence exists.
+- Level 2 automation implementation and proof.
 
-### Acceptance tiers
-- Pilot-ready: one paying pilot with controlled onboarding and daily human oversight.
-- Commercially usable: repeatable onboarding for multiple pilot customers with bounded ops overhead.
-- Production hardened: independent security/ops sign-off, stronger observability/SLO evidence, tested incident runbooks.
+### Dependency-ordered phases
+1. Shared secure core from Path A.
+2. Admin/auth consistency refactor and regression suite.
+3. Partner/legal/payout maturity and reconciliation-grade workflows.
+4. Observability/retention and runbook hardening.
+5. Level 2 automation implementation + bounded-retry proof.
+6. Scale/failure drills and production hardening.
 
-### Path A work breakdown (estimates are ranges)
+### Path B effort ranges
+- Engineering implementation: **130-360 hours**.
+- Staging/live validation effort: **45-130 hours**.
+- Operator approvals/coordination: **35-110 hours**.
+- Independent security/operational review: **20-70 hours**.
 
-| Workstream/story | Current evidence | Priority | Dependencies | Effort range | Human attention | Risk | Exit criteria |
-|---|---|---|---|---|---|---|---|
-| A1 Secure tenant routing on merged main | Main has fallback tenant/default cluster; PR #2 has draft hardening | Highest | Code merge path + migration readiness | 16-36 eng hrs | High (design/security review) | High | No default tenant fallback; deterministic verified routing tests pass |
-| A2 Webhook/callback signature + replay controls | Main shows permissive handlers; PR #2 claims stronger controls | Highest | Twilio config + env setup | 12-28 eng hrs + 4-10 staging hrs | High | High | Signed voice/status callbacks enforced; replay tests pass in staging |
-| A3 Secrets/privacy hygiene | `.env.example` contains secret-like data; log payloads broad | Highest | Security review | 8-20 eng hrs + 2-6 security hrs | Medium | High | No secret-like tracked config; redaction policy validated |
-| A4 End-to-end staging call validation | Not proven | Highest | A1-A3 complete + staging infra | 6-20 eng hrs + 6-18 staging hrs | High | High | Pass matrix for success/failure/retry call scenarios |
-| A5 Pilot billing/ops runbook | Billing routes/migrations exist but limited evidence | High | A4 + operator process docs | 8-24 eng hrs + 4-12 ops hrs | Medium | Medium | Pilot invoice/payment flow tested; rollback/runbook approved |
-| A6 CI reliability tightening | CI exists; some runs had 0 jobs | High | Workflow/ruleset admin access | 4-12 eng hrs + 2-6 admin hrs | Medium | Medium | Required checks consistently execute with actionable failures |
+### Path B unknowns
+- Complete original product backlog and promised capability set: `UNKNOWN`.
+- External system commitments/cost contracts not in this repo: `UNKNOWN`.
 
-## Path B — Complete widest substantiated capability plan
+## 11) Calendar-Range Scenarios (No fabricated precision)
 
-### Scope interpretation
-- This path is based on **substantiated repository evidence only** (existing routes, migrations, open issue #4, draft PR #2 content).
-- Any missing historical product intent is marked `UNKNOWN`.
+Assumptions:
+- Owner approval availability: **7:00 AM-10:00 PM America/Toronto**, occasionally to midnight.
+- Availability window is not equivalent to full-time continuous throughput.
+- Human approvals remain mandatory; no auto-merge/deploy.
 
-### Expanded target areas
-- Robust multi-tenant voice + chat platform hardening.
-- Broader administration/partner/billing/legal workflows.
-- Stronger automation orchestration (Level 2 proven).
-- Internationalization depth, observability maturity, and operational resilience.
-
-### Path B phased plan (ranges)
-
-| Workstream/story | Current evidence | Priority | Dependencies | Effort range | Human attention | Risk | Exit criteria |
-|---|---|---|---|---|---|---|---|
-| B1 Shared secure core (same as Path A A1-A4) | Partial on main, stronger draft in PR #2 | Highest | Same as Path A | 42-104 total hrs | High | High | Path A core exit criteria met |
-| B2 Full admin/auth consistency pass | Multiple auth patterns across routes | High | B1 | 20-60 hrs | Medium | Medium | Unified auth policy + regression tests |
-| B3 Advanced partner/billing/legal operationalization | Routes/migrations exist; readiness unknown | High | B1, finance/legal decisions | 30-90 hrs + non-eng review | High | Medium-High | End-to-end business workflows with audit evidence |
-| B4 Observability/SLO + retention program | Partial metrics placeholders and logs | High | B1 | 24-72 hrs + ops/security review | High | Medium | Alerting/SLOs/retention controls documented and tested |
-| B5 Level 2 automation implementation/proof | Not proven; issue #4 indicates need | Medium-High | B1+B4 | 40-120 hrs + approval policy design | High | Medium-High | Bounded retries/state tracking/manual gates validated |
-| B6 Internationalization + generalized workflows | Language and cluster schema artifacts exist | Medium | B1 | 20-80 hrs | Medium | Medium | Multi-industry configuration templates validated |
-| B7 Production hardening + scale/failure drills | Unknown from repo evidence | Medium | B1-B6 | 30-100 hrs + staged exercises | High | High | Load/failure drills pass with rollback evidence |
-
-### UNKNOWNs for Path B
-- Full original product backlog, revenue/feature commitments, and external integration roadmap are `UNKNOWN` from available evidence.
-
-## Quantitative comparison and throughput scenarios
-
-### Effort/cost framing
-- Engineering estimates are ranges, not commitments.
-- Separate effort buckets: engineering implementation, staging/live validation, business onboarding, independent security/ops review.
-
-### Throughput scenarios
-
-| Scenario | Assumptions | Relative throughput | Risks/constraints |
+| Scenario | Path A indicative calendar range | Path B indicative calendar range | Notes |
 |---|---|---|---|
-| 1. Current supervised Codex + GitHub pipeline | Existing CI + manual approvals + current process | Baseline | Human review bottlenecks, CI job anomalies, manual coordination overhead |
-| 2. Level 2 fully implemented and proven | Issue dispatch/state tracking/guarded retries/approval automation fully validated | Faster than baseline for repetitive tasks | **Not currently implemented/proven**; upfront investment and governance complexity |
-| 3. Blocked/failure-case | CI instability, missing staging access, unresolved security gaps | Slowest | High rework/idle waits; launch risk remains high |
+| Current supervised agent process | ~3-8 weeks | ~8-20+ weeks | Depends heavily on review cycles, staging access, and defect discovery |
+| Hypothetical proven Level 2 automation (not implemented today) | ~2-6 weeks | ~6-16+ weeks | Requires prior Level 2 build-out/validation; cannot be assumed immediately |
+| Blocked/failure-case (CI/policy/staging bottlenecks) | ~6-12+ weeks | ~14-30+ weeks | Represents realistic slips under unresolved blockers |
 
-### Owner review-window constraint
-- Planning assumes approval availability window of **7:00 AM-10:00 PM America/Toronto**, occasionally to midnight.
-- This is an availability window, not continuous work, and does not authorize automatic merges/deployments.
+## 12) Cost Visibility and Unknowns
 
-### Cost ranges (verifiable vs unknown)
-- Verifiable in-repo monthly costs: `UNKNOWN` (no authoritative cloud/provider invoices in accessible evidence).
-- High/low monthly operating and development-service costs therefore remain `UNKNOWN` from repository-only evidence.
-- Known cost inputs requiring operator data: Twilio voice minutes, STT/TTS token/audio usage, OpenAI usage, hosting, database, observability tooling, support/on-call labor.
+- Verifiable monthly cost totals from this repository alone: `UNKNOWN`.
+- Known cost drivers requiring operator-supplied evidence:
+  - Twilio telephony usage.
+  - OpenAI/STT/TTS provider usage.
+  - Hosting/database/monitoring services.
+  - Human operations/support/review time.
+- Recommendation: track high/low monthly ranges externally with actual billing exports before go/no-go.
 
-## Decision framework and recommended shared first phase
+## 13) Audit Completeness Checklist (Requested)
 
-### Decision framework
-Score both paths against:
-- Schedule risk
-- Cost uncertainty
-- Security/privacy risk
-- Completeness vs immediate commercial value
-- Operational readiness
+- [x] Voice/telephony and Twilio handlers audited.
+- [x] Dashboard pages audited feature-by-feature against backend wiring.
+- [x] Billing/Stripe paths reviewed.
+- [x] Partner/legal/payout paths reviewed.
+- [x] Provisioning/onboarding paths reviewed.
+- [x] Website external scope explicitly classified (`UNKNOWN` relevance unless evidenced).
+- [x] Original roadmap scope limitations explicitly marked (`UNKNOWN` where unsupported).
+- [x] Path A vs Path B plans include dependencies, gates, effort ranges, and calendar scenarios.
 
-### Recommended shared critical-path phase (do first regardless of A vs B)
-1. Merge-ready secure core: tenant routing correctness, signed webhook/callback controls, replay handling, secrets/logging hygiene.
-2. Staging proof pack: deterministic test matrix for Twilio call lifecycle and failure modes.
-3. CI reliability + required checks enforcement evidence.
-4. Pilot ops runbook and explicit human approval gates.
+## 14) Remaining Unverified Gaps Requiring Operator Proof
 
-This shared phase advances both Path A and Path B without prematurely locking into the full expansion scope.
+- Live ruleset/policy configuration details in GitHub admin UI (beyond owner statement).
+- Staging/prod environment parity and real Twilio callback/signature behavior.
+- Actual dashboard deployment route map and whether `/dashboard` router is mounted in deployed artifact.
+- Data-retention and privacy controls in production logging infrastructure.
+- Billing/finance/legal operational sign-offs and audit requirements.
 
-## Evidence appendix
+## 15) Evidence Appendix
 
-### Repository references
-- Entry/runtime: `package.json`, `index.js`.
-- Voice/Twilio: `src/routes/twilio.js`, `src/voice/*`.
-- Auth/admin/tenant: `src/routes/brain.js`, `src/routes/tenant.js`, `src/auth/partnerAuth.js`.
-- DB/migrations: `migrations/*.sql`.
-- CI/governance: `.github/workflows/ci.yml`, `.github/pull_request_template.md`, `AGENTS.md`.
+### Key files inspected
+- Runtime/composition: `index.js`, `package.json`.
+- Dashboard UI: `public/dashboard/*.html`, `public/dashboard/*.js`.
+- Backend routes: `src/routes/*.js` (billing, voice, chat, partner, legal, payout, tenant, demo, twilio, brain, dashboard).
+- Voice engine: `src/voice/*.js`.
+- Migrations: `migrations/*.sql`.
+- CI/governance: `.github/workflows/ci.yml`, `.github/pull_request_template.md`, `AGENTS.md`, `docs/development-automation.md`.
 
-### GitHub references
-- Issue inventory observed: #7 (open), #4 (open), #5 (closed).
-- PR states:
-  - #1 merged (`d26ed0b`) – Twilio debug admin auth hardening.
-  - #2 open draft (`aca-029-verified-call-routing`, head `f1eee70`) – unreleased hardening claims.
-  - #3 merged (`0f22eb1`) – CI/governance foundation.
-  - #6 merged (`122a426`) – automation pilot documentation.
-- CI runs include successful executions and runs with `0 jobs` (non-evidentiary for test execution).
+### GitHub Actions evidence used
+- `ACA CI` success on `main`: run `44831732013`.
+- PR run `action_required` with zero jobs: `44833911528`, `44834614188` (both `total_jobs: 0`).
 
-### Important boundary statements
-- Tests passing in this audit prove only local command outcomes, not production Twilio behavior.
-- Draft PR #2 content is unreleased until merged; it must not be treated as production complete.
-- Visible repository issues are not evidence of complete historical backlog.
+### Command evidence used in this audit revision
+- `node --test test/*.test.js` -> `9 pass, 0 fail`.
+- `git ls-files -z '*.js' | grep -zv '^node_modules/' | xargs -0 -r -n 1 node --check` -> exit `0`.
+
+### Final boundary statements
+- This document distinguishes repository code evidence from staging/production proof.
+- Draft PR #2 remains unmerged and is not treated as released functionality.
+- This PR remains open and requires independent human verification/authorization before merge.
