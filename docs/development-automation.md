@@ -100,9 +100,13 @@ These comments confirm review visibility in GitHub for this repository setup.
 
 ## Current Verified Limitations
 
-Not yet verified in this pilot:
-- Automatic issue-to-Codex dispatch without manual assignment/trigger.
-- Fully automated correction loops after CI/review failures.
+Not yet verified in this repository context:
+- Programmatic native coding-task dispatch to the GitHub/Codex coding agent through a documented API.
 
 Operational implication:
-- Continue using explicit human-controlled assignment, review requests, and merge/deploy approvals until these capabilities are separately validated.
+- Treat native coding-agent dispatch as a manual UI step (`Assign agent`) until a documented API is proven.
+- Safe fallback queue automation is now available for allowlisted docs/test issues in `.github/workflows/safe-codex-queue.yml`, with policy and tests in:
+  - `src/automation/safeQueuePolicy.js`
+  - `.github/scripts/safe-queue-runner.js`
+  - `test/safe-queue-policy.test.js`
+- This fallback queue provides eligibility gating, single-active lock, idempotent audit comments, and fail-closed behavior; it does not start native coding sessions.
