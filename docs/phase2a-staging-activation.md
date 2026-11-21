@@ -20,6 +20,9 @@ GitHub App signing, autonomous Codex, or production changes.
 - `ACA_PHASE2A_DATABASE_URL` — isolated staging Neon PostgreSQL URL for
   `aca_p2_reader_a`; never production.
 - `ACA_PHASE2A_LEDGER_ROLE=aca_p2_reader_a`.
+- `ACA_PHASE2A_EXPECTED_NEON_HOST` — exact isolated staging Neon DNS hostname, matching the database URL, not a suffix alone.
+- `ACA_PHASE2A_EXPECTED_DATABASE` — exact staging database name, matching the database URL.
+- The username embedded in `ACA_PHASE2A_DATABASE_URL` must exactly equal `ACA_PHASE2A_LEDGER_ROLE`.
 - `ACA_PHASE2A_WORKFLOW_ID=422174901`.
 - Existing `ACA_REVIEW_REPOSITORY=alphineaiinc/aca-realtime-gateway-clean` and
   `ACA_REVIEW_REPOSITORY_ID=1080201236`.
