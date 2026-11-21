@@ -18,7 +18,10 @@ async function handlePrivateOwnerHttp(req,res,{verifyTransport,dependencies}={})
  if(req?.url!==PATH||req?.method!=="POST"){
   respond(res,404,"blocked","unknown_route");return;
  }
- if(typeof verifyTransport!=="function"||verifyTransport(req)!==true){
+ let transportVerified=false;
+ try{transportVerified=typeof verifyTransport==="function"&&verifyTransport(req)===true;}
+ catch{transportVerified=false;}
+ if(!transportVerified){
   respond(res,403,"blocked","untrusted_transport");return;
  }
  if((req.headers?.["content-type"]||"").split(";")[0].trim().toLowerCase()!=="application/json"){
