@@ -46,3 +46,41 @@ test("corrupt history fails closed",async()=>{
  await assert.rejects(appendCorrection(client,claim),/corrupt_ledger/);
  assert.equal(calls.at(-1).sql,"ROLLBACK");
 });
+
+test("failed event insert rolls back and never advances ledger version",async()=>{
+ const {client,calls}=fake();
+ const original=client.query;
+ client.query=async(sql,args)=>{
+  if(sql.includes("INSERT INTO aca_automation.correction_events"))
+   throw new Error("simulated_insert_failure");
+  return original(sql,args);
+ };
+ await assert.rejects(appendCorrection(client,claim),/simulated_insert_failure/);
+ assert.equal(calls.at(-1).sql,"ROLLBACK");
+ assert.equal(calls.some(x=>x.sql.includes("UPDATE aca_automation.correction_ledgers")),false);
+ assert.equal(calls.some(x=>x.sql==="COMMIT"),false);
+});
+test("failed ledger version update rolls back instead of committing",async()=>{
+ const {client,calls}=fake();
+ const original=client.query;
+ client.query=async(sql,args)=>{
+  if(sql.includes("UPDATE aca_automation.correction_ledgers"))
+   throw new Error("simulated_version_update_failure");
+  return original(sql,args);
+ };
+ await assert.rejects(appendCorrection(client,claim),/simulated_version_update_failure/);
+ assert.equal(calls.at(-1).sql,"ROLLBACK");
+ assert.equal(calls.some(x=>x.sql==="COMMIT"),false);
+});
+test("rollback failure is reported as a distinct fail-closed error",async()=>{
+ const {client,calls}=fake();
+ const original=client.query;
+ client.query=async(sql,args)=>{
+  if(sql.includes("SELECT version"))throw new Error("simulated_select_failure");
+  if(sql==="ROLLBACK"){calls.push({sql,args});throw new Error("simulated_rollback_failure");}
+  return original(sql,args);
+ };
+ await assert.rejects(appendCorrection(client,claim),/correction_rollback_failed/);
+ assert.equal(calls.at(-1).sql,"ROLLBACK");
+ assert.equal(calls.some(x=>x.sql==="COMMIT"),false);
+});
