@@ -54,3 +54,8 @@ The supervisor is **advisory only**: it never authorizes merges, deployment or n
 ## Effective database-role guard (isolated)
 - Added `assertAutomationDbRole` to verify PostgreSQL `current_user` matches the exact expected reader/initializer/writer role, rejecting admin sessions and mismatches. The role guard is tested in unit tests and within isolated PostgreSQL role tests.
 - This guard is a reusable service integration boundary; it has NOT been wired to live database clients. `SET ROLE` by a privileged session is not proof of service authentication. Production service accounts, per-repository scope enforcement, secure connections, and authenticated caller identity remain outstanding.
+
+## Batch 2: scoped ledger service adapter
+- Added `automationLedgerService.js` as an opt-in boundary requiring a pinned PostgreSQL client, exact effective reader/initializer/writer role, matching repository/issue/PR scope, and a verified SHA; correction appends additionally bind the resulting SHA and actor ID to caller context. Negative unit tests cover mismatches.
+- IMPORTANT: `context.authenticated` is an assertion from the caller, NOT cryptographic authentication. No live identity provider, TLS-validated login, repository-specific row policy, or service account has been provisioned. Existing low-level adapters remain accessible and must not be exposed to untrusted callers. Do not treat these unit tests as an end-to-end authorization guarantee.
+- Phase 2 remains incomplete pending independently operated reviewer service/key custody, real authenticated DB service and repository isolation, trusted CI staging verification, and end-to-end adversarial tests. No merge/deploy authorization is implied.
