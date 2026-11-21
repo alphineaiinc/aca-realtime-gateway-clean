@@ -17,6 +17,7 @@ const {randomBytes,createHash,timingSafeEqual}=require("node:crypto");
 const {verifyGitHubOwner}=require("./phase2aOwnerIdentity");
 const SESSION_TTL=15*60*1000,LOGIN_TTL=5*60*1000;
 const COOKIE="__Host-aca_owner";
+const LOGIN_COOKIE="__Host-aca_login";
 const valid=x=>typeof x==="string"&&/^[A-Za-z0-9_-]{40,160}$/.test(x);
 const positive=x=>Number.isSafeInteger(x)&&x>0;
 const timestamp=x=>Number.isSafeInteger(x)&&x>=0;
@@ -35,17 +36,26 @@ function cookieHeader(sessionId){
  if(!valid(sessionId))return null;
  return COOKIE+"="+sessionId+"; Path=/; Secure; HttpOnly; SameSite=Strict";
 }
+function loginCookieHeader(loginId){
+ if(!valid(loginId))return null;
+ return LOGIN_COOKIE+"="+loginId+"; Path=/; Secure; HttpOnly; SameSite=Lax; Max-Age=300";
+}
+function clearLoginCookie(){
+ return LOGIN_COOKIE+"=; Path=/; Secure; HttpOnly; SameSite=Lax; Max-Age=0";
+}
 function clearCookie(){
  return COOKIE+"=; Path=/; Secure; HttpOnly; SameSite=Strict; Max-Age=0";
 }
-function parseCookie(value){
+function parseNamedCookie(value,name){
  if(typeof value!=="string"||value.length>4096)return null;
  const tokens=value.split(";").map(x=>x.trim());
- const matches=tokens.filter(x=>x.startsWith(COOKIE+"="));
+ const matches=tokens.filter(x=>x.startsWith(name+"="));
  if(matches.length!==1)return null;
- const id=matches[0].slice(COOKIE.length+1);
+ const id=matches[0].slice(name.length+1);
  return valid(id)?id:null;
 }
+function parseCookie(value){return parseNamedCookie(value,COOKIE);}
+function parseLoginCookie(value){return parseNamedCookie(value,LOGIN_COOKIE);}
 function originOk(origin,expected){
  if(typeof origin!=="string"||typeof expected!=="string")return false;
  try{
@@ -69,7 +79,7 @@ async function beginLogin({store,now=Date.now()}={}){
   createdAt:now,expiresAt:now+LOGIN_TTL};
  try{
   if(await store.putPending(record)!==true)return denied("unavailable");
-  return Object.freeze({verified:false,loginId,state,
+  return Object.freeze({verified:false,setLoginCookie:loginCookieHeader(loginId),state,
    codeChallenge:createHash("sha256").update(verifier).digest("base64url"),
    challengeMethod:"S256",expiresAt:record.expiresAt,...inert()});
  }catch{return denied("unavailable");}
@@ -79,10 +89,11 @@ async function beginLogin({store,now=Date.now()}={}){
  * perform an authenticated server-side GitHub token exchange with an exact
  * pre-registered redirect URI and the supplied PKCE verifier.
  */
-async function finishLogin({store,loginId,state,code,exchangeCode,
+async function finishLogin({store,loginCookie,state,code,exchangeCode,
  serviceReadToken,expectedOwnerId,expectedOwnerLogin,
  now=Date.now(),fetchImpl}={}){
- if(!store?.consumePending||!store?.putSession||!valid(loginId)||
+ const loginId=parseLoginCookie(loginCookie);
+ if(!store?.consumePending||!store?.putSession||!loginId||
     !valid(state)||typeof code!=="string"||code.length<8||
     code.length>1024||typeof exchangeCode!=="function"||
     !positive(expectedOwnerId)||!timestamp(now))
@@ -110,6 +121,7 @@ async function finishLogin({store,loginId,state,code,exchangeCode,
   // CSRF token must be inserted into an HTTPS form or returned to an
   // authenticated same-origin browser view; NEVER in a URL or log.
   return Object.freeze({verified:true,ownerId:identity.ownerId,
+   clearLoginCookie:clearLoginCookie(),
    setCookie:cookieHeader(sessionId),csrfToken,
    expiresAt:now+SESSION_TTL,...inert()});
  }catch{return denied("identity_or_session_unavailable");}
@@ -144,4 +156,5 @@ async function logout({store,cookie}={}){
  return Object.freeze({clearCookie:clearCookie(),...inert()});
 }
 module.exports={beginLogin,finishLogin,validateOwnerAction,logout,
- cookieHeader,parseCookie,originOk,COOKIE,SESSION_TTL,LOGIN_TTL};
+ cookieHeader,parseCookie,parseLoginCookie,loginCookieHeader,clearLoginCookie,
+ originOk,COOKIE,LOGIN_COOKIE,SESSION_TTL,LOGIN_TTL};
