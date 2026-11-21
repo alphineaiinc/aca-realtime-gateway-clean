@@ -2,6 +2,9 @@ name: ACA Isolated Compatible Dependency Remediation
 on:
   push:
     branches: [aca-sec-002-compatible-lockfile-fixes]
+concurrency:
+  group: aca-sec-002-compatible-lockfile-fixes
+  cancel-in-progress: false
 permissions:
   contents: write
 jobs:
