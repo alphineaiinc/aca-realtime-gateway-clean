@@ -24,7 +24,11 @@ function fixtures({role="aca_p2_reader_a",broadRead=false,ledgerVersion=0,canMut
   pageInfo:{hasNextPage:false},
   nodes:[{number:23,repository:{databaseId:repositoryId}}]
  }}}};
- const github={rest:{repos:{
+ const github={rest:{actions:{getWorkflowRun:async()=>({data:{
+  id:12,workflow_id:workflowId,name:"ACA CI",status:"completed",
+  conclusion:"failure",head_sha:sha,repository:{id:repositoryId},
+  head_repository:{id:repositoryId}
+ }})},repos:{
   get:async()=>({data:{id:repositoryId}}),
   listPullRequestsAssociatedWithCommit:async()=>({data:[{number:42}]})},
   pulls:{get:async()=>({data:{number:42,draft:false,state:"open",
