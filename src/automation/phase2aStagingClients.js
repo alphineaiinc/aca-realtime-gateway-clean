@@ -29,7 +29,7 @@ function createPhase2aClients(env=process.env,{fetchImpl=fetch,PoolClass=Pool}={
  const decodedUser=decodeURIComponent(db.username);
  const decodedDatabase=decodeURIComponent(db.pathname.slice(1));
  if(typeof expectedHost!=="string"||
-    !/^([a-z0-9-]+\\.)+[a-z0-9-]+\\.neon\\.tech$/.test(expectedHost)||
+    !/^([a-z0-9-]+\.)+[a-z0-9-]+\.neon\.tech$/.test(expectedHost)||
     typeof expectedDatabase!=="string"||
     !/^[a-zA-Z_][a-zA-Z0-9_]{0,62}$/.test(expectedDatabase)||
     db.hostname!==expectedHost||decodedDatabase!==expectedDatabase||
