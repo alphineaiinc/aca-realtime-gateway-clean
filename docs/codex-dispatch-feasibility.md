@@ -131,8 +131,9 @@ Operational cost note:
 
 ### Recovery when an issue event is dropped
 
-Every queue reconciliation now discovers **all open issues marked active**, not only
-allowlisted candidates. It fetches each holder's live issue state and clears or
+Every queue reconciliation now discovers **all open issues marked active** and
+issues bearing eligible, queued, or manual-dispatch labels, not only allowlisted
+candidates. It fetches each holder's live issue state and clears or
 reclassifies an invalid holder (revoked docs/test allowlist, removed Codex assignee,
 or closed issue) before attempting to advance another candidate. This handles a
 missed allowlist-removal event when a later unrelated issue event runs.
