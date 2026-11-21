@@ -71,3 +71,4 @@ jobs:
           node --test test/postgres-owner-oauth.integration.test.js
           node --test test/postgres-owner-edge-nonce.integration.test.js
           node --test test/postgres-owner-private-chain.integration.test.js
+          node --test test/postgres-owner-mtls-chain.integration.test.js
