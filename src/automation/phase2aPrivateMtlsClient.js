@@ -13,11 +13,13 @@ const {X509Certificate,timingSafeEqual}=require("node:crypto");
 const FP=/^(?:[A-F0-9]{2}:){31}[A-F0-9]{2}$/;
 const PRIVATE=/^[a-z0-9][a-z0-9-]{1,62}(?:\.render-internal\.com)?$/;
 const PATHS=new Set(["/phase2a/internal/owner-intent"]);
-const proofFields="audience,decision,expiresAt,issuedAt,issuer,nonce,ownerId,repositoryId,requestId,signature,version";
+const legacyFields="audience,decision,expiresAt,issuedAt,issuer,nonce,ownerId,repositoryId,requestId,signature,version";
+const rotatedFields="audience,decision,expiresAt,issuedAt,issuer,keyId,nonce,ownerId,repositoryId,requestId,signature,version";
 function wellFormedProof(p,body){
  return p&&typeof p==="object"&&!Array.isArray(p)&&
-  Object.keys(p).sort().join(",")===proofFields&&
-  p.version==="aca-owner-edge-proof-v1"&&p.requestId===body.requestId&&
+  ((p.version==="aca-owner-edge-proof-v1"&&Object.keys(p).sort().join(",")===legacyFields)||
+   (p.version==="aca-owner-edge-proof-v2"&&Object.keys(p).sort().join(",")===rotatedFields&&
+    /^[a-z][a-z0-9-]{2,63}$/.test(p.keyId||"")))&&p.requestId===body.requestId&&
   p.decision===body.decision&&Number.isSafeInteger(p.repositoryId)&&
   p.repositoryId>0&&Number.isSafeInteger(p.ownerId)&&p.ownerId>0&&
   typeof p.issuer==="string"&&typeof p.audience==="string"&&
