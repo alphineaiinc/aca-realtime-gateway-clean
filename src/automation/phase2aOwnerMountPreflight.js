@@ -10,7 +10,7 @@ const {timingSafeEqual}=require("node:crypto");
 const positive=n=>Number.isSafeInteger(n)&&n>0;
 const text=x=>typeof x==="string"&&x.length>0;
 const deny=reason=>Object.freeze({ready:false,reason,
- agentDispatchAuthorized:false,mergeAuthorized:false,deployAuthorized:false,
+ agentDispatchAuthorized:false,dispatched:false,mergeAuthorized:false,deployAuthorized:false,
  signingAuthorized:false,productionAuthorization:false});
 function constantEqual(a,b){
  if(!text(a)||!text(b))return false;
