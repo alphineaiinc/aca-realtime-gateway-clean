@@ -329,3 +329,58 @@ test("two-issue stale interleaving keeps a single live active holder", async () 
   assert.equal(hasLabel(b, LABELS.manualRequested), false);
   assert.equal(hasLabel(b, LABELS.blocked), true);
 });
+
+test("reconciliation repairs invalid active holders when allowlist-removal event was dropped", async () => {
+  const staleHolder = createIssue(91, {
+    labels: [LABELS.active, LABELS.manualRequested, LABELS.eligible],
+    assignees: ["Codex"],
+  });
+  const waiting = createIssue(92, {
+    labels: [ALLOWLIST_LABEL, LABELS.blocked],
+    assignees: ["Codex"],
+  });
+  // The unlabeled event for #91 never reaches the workflow. Only #92 triggers.
+  const mock = createMockGithub([staleHolder, waiting]);
+  await run({ github: mock.github, context: contextFor(waiting, "assigned"), core: coreLogger() });
+
+  assert.equal(hasLabel(staleHolder, LABELS.active), false);
+  assert.equal(hasLabel(staleHolder, LABELS.manualRequested), false);
+  assert.equal(hasLabel(staleHolder, LABELS.blocked), true);
+  assert.equal(hasLabel(waiting, LABELS.active), true);
+  assert.equal(hasLabel(waiting, LABELS.blocked), false);
+  assert.equal([staleHolder, waiting].filter((issue) => hasLabel(issue, LABELS.active)).length, 1);
+});
+
+test("reconciliation preserves a valid active holder while blocking the next task", async () => {
+  const holder = createIssue(93, {
+    labels: [ALLOWLIST_LABEL, LABELS.active, LABELS.manualRequested, LABELS.eligible],
+    assignees: ["Codex"],
+  });
+  const waiting = createIssue(94, {
+    labels: [ALLOWLIST_LABEL],
+    assignees: ["Codex"],
+  });
+  const mock = createMockGithub([holder, waiting]);
+  await run({ github: mock.github, context: contextFor(waiting), core: coreLogger() });
+
+  assert.equal(hasLabel(holder, LABELS.active), true);
+  assert.equal(hasLabel(waiting, LABELS.active), false);
+  assert.equal(hasLabel(waiting, LABELS.blocked), true);
+});
+
+test("reconciliation releases a lock when native Codex assignee was revoked without an event", async () => {
+  const holder = createIssue(95, {
+    labels: [ALLOWLIST_LABEL, LABELS.active, LABELS.manualRequested, LABELS.eligible],
+    assignees: [],
+  });
+  const waiting = createIssue(96, {
+    labels: [ALLOWLIST_LABEL, LABELS.blocked],
+    assignees: ["Codex"],
+  });
+  const mock = createMockGithub([holder, waiting]);
+  await run({ github: mock.github, context: contextFor(waiting), core: coreLogger() });
+
+  assert.equal(hasLabel(holder, LABELS.active), false);
+  assert.equal(hasLabel(holder, LABELS.queued), true);
+  assert.equal(hasLabel(waiting, LABELS.active), true);
+});
