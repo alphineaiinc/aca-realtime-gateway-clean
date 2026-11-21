@@ -15,6 +15,33 @@ const RULES=Object.freeze([
  {id:"security-override",re:/\b(?:mergeAuthorized\s*:\s*true|deployAuthorized\s*:\s*true|manualDispatchRequired\s*:\s*false|verify\s*:\s*false)\b/i,severity:"critical"}
 ]);
 const SENSITIVE=/(?:^|\/)(?:\.github\/workflows\/|src\/automation\/|migrations\/|config\/)/;
+// GitHub sometimes truncates patches while retaining a nonempty `patch` field.
+// Never scan only a prefix and report a normal advisory result.
+function completeUnifiedHunks(patch){
+ if(typeof patch!=="string"||!patch.startsWith("@@"))return false;
+ let oldRemaining=0,newRemaining=0,seen=false;
+ for(const line of patch.split("\\n")){
+   if(line.startsWith("@@")){
+     if(seen&&(oldRemaining!==0||newRemaining!==0))return false;
+     const match=/^@@ -(?:0|[1-9]\\d*)(?:,(\\d+))? \\+(?:0|[1-9]\\d*)(?:,(\\d+))? @@(?: |$)/.exec(line);
+     if(!match)return false;
+     oldRemaining=match[1]===undefined?1:Number(match[1]);
+     newRemaining=match[2]===undefined?1:Number(match[2]);
+     if(!Number.isSafeInteger(oldRemaining)||!Number.isSafeInteger(newRemaining))return false;
+     seen=true;
+   }else if(line.startsWith("\\\\ No newline at end of file")){
+     if(!seen)return false;
+   }else if(line.length===0){
+     // A single final newline delimiter is allowed; blank context must be ' '.
+     if(line!==patch.split("\\n").at(-1))return false;
+   }else if(line.startsWith("+")&&!line.startsWith("+++"))newRemaining--;
+   else if(line.startsWith("-")&&!line.startsWith("---"))oldRemaining--;
+   else if(line.startsWith(" ")){oldRemaining--;newRemaining--;}
+   else return false;
+   if(oldRemaining<0||newRemaining<0)return false;
+ }
+ return seen&&oldRemaining===0&&newRemaining===0;
+}
 function inspectPrPatches({repositoryId,prNumber,headSha,files}={}){
  if(!POS(repositoryId)||!POS(prNumber)||!SHA.test(headSha||"")||
     !Array.isArray(files)||files.length===0||files.length>100||
@@ -28,8 +55,12 @@ function inspectPrPatches({repositoryId,prNumber,headSha,files}={}){
  for(const file of sorted){
    const isSensitive=SENSITIVE.test(file.filename);
    // No patch is permitted to be silently omitted, including binary files.
-   if(!file.patch.startsWith("@@")&&!file.patch.startsWith("diff ")&&file.status!=="removed"){
-      return Object.freeze({status:"blocked",reason:"missing_unified_patch",findings:[],independent:false});
+   if(!file.patch&&file.status==="removed"){
+     findings.push({file:file.filename,rule:"deletion_without_patch_requires_review",severity:"review"});
+     continue;
+   }
+   if(!completeUnifiedHunks(file.patch)){
+      return Object.freeze({status:"blocked",reason:"incomplete_unified_patch",findings:[],independent:false});
    }
    const added=file.patch.split("\n").filter(l=>l.startsWith("+")&&!l.startsWith("+++")).map(l=>l.slice(1));
    for(const rule of RULES){
@@ -44,4 +75,4 @@ function inspectPrPatches({repositoryId,prNumber,headSha,files}={}){
    reason:"triage_only_no_independent_verdict",repositoryId,prNumber,headSha,
    patchDigest:digest,filesInspected:files.length,findings,independent:false});
 }
-module.exports={inspectPrPatches,RULES};
+module.exports={inspectPrPatches,completeUnifiedHunks,RULES};
