@@ -9,7 +9,7 @@ const {evaluatePrSupervision} = require("../../src/automation/prSupervisionPolic
 const {ALLOWLIST_LABEL, LABELS} = require("../../src/automation/safeQueuePolicy");
 const {verifyClosingIssueLink} = require("../../src/automation/verifiedPrLink");
 const {readCorrectionHistory} = require("../../src/automation/postgresCorrectionHistoryReader");
-const {verifyReviewEvidence} = require("../../src/automation/trustedReviewEvidence");
+const {verifySignedReview} = require("../../src/automation/signedReviewEvidence");
 const {verifiedRequiredChecks} = require("../../src/automation/verifiedCiEvidence");
 
 function validNumber(value) {
@@ -30,7 +30,7 @@ function normalizeCheck(run, sha) {
 }
 async function observe({github, owner, repo, prNumber, issueNumber,
   authenticatedLedgerClient, trustedReviewProvider, trustedReviewerId,
-  trustedCiAppId}) {
+  trustedCiAppId, trustedReviewerPublicKey}) {
   if (!github?.rest || !owner || !repo || !validNumber(prNumber) || !validNumber(issueNumber)) {
     throw new Error("invalid_observer_arguments");
   }
@@ -79,13 +79,13 @@ async function observe({github, owner, repo, prNumber, issueNumber,
   }
   let review = null;
   if (trustedHead && trustedLink && typeof trustedReviewProvider === "function" &&
-      validNumber(trustedReviewerId)) {
+      validNumber(trustedReviewerId) && trustedReviewerPublicKey) {
     try {
       const evidence = await trustedReviewProvider({repositoryId:repository.id,
         issueNumber,prNumber,headSha});
-      review = verifyReviewEvidence({record:evidence?.record,
-        authenticatedActorId:evidence?.authenticatedActorId,
-        trustedReviewerId,expectedPrNumber:prNumber,expectedHeadSha:headSha});
+      review = verifySignedReview({envelope:evidence,
+        publicKey:trustedReviewerPublicKey,repositoryId:repository.id,
+        reviewerId:trustedReviewerId,prNumber,headSha});
     } catch { review = null; }
   }
   return evaluatePrSupervision({
