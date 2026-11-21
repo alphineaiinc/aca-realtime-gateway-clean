@@ -69,7 +69,7 @@ if(!process.env.ACA_TEST_DATABASE_URL){
    const {privateKey,publicKey}=generateKeyPairSync("ed25519");
    const proof=issueOwnerEdgeProof({issuer:"aca-public-edge",audience:"aca-private-owner",
     repositoryId:R,ownerId:OWNER,requestId:pending.packet.id,decision:"approve",
-    privateKey,now:now+100});
+    privateKey,now:now-1000});
    const body={decision:"approve",requestId:pending.packet.id,proof};
    const nonceStore=createOwnerEdgeNonceStore({pool:nonceWriter});
    const deps={body,expectedIssuer:"aca-public-edge",expectedAudience:"aca-private-owner",
