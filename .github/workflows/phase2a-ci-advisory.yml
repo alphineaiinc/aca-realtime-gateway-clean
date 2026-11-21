@@ -5,6 +5,8 @@ on:
     types: [completed]
 permissions:
   contents: read
+  pull-requests: read
+  issues: read
 jobs:
   classify:
     runs-on: ubuntu-latest
@@ -42,3 +44,17 @@ jobs:
           console.log(JSON.stringify(handoff));
           if(decision.state==="blocked") process.exitCode=1;
           NODE
+      - name: Inspect live PR association without correction authority
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const {observeCorrectionHandoff}=require('./.github/scripts/phase2a-correction-observer.js');
+            const result=await observeCorrectionHandoff({
+              github,owner:context.repo.owner,repo:context.repo.repo,
+              event:context.payload,
+              expectedRepositoryId:1080201236,
+              expectedWorkflowId:422174901
+              // No authenticated ledger injected: this must remain verification_required.
+            });
+            core.info(JSON.stringify(result));
+            core.setOutput('state',result.state);
