@@ -98,3 +98,29 @@ distributed replay protection. Test actual TLS socket identity with
 legitimate and attacker-controlled client certificates, rotation,
 revocation and browser HTTPS routing. None of those live tests
 are represented by these unit fixtures.
+
+## Isolated HTTPS/mTLS listener and real handshake proof
+
+`src/automation/phase2aIsolatedMtlsListener.js` provides a separate,
+unmounted HTTPS server factory. It requires a server key/certificate,
+trusted client CA, pinned client SHA-256 fingerprint and explicit request
+handler. The listener insists on `requestCert:true` and
+`rejectUnauthorized:true`, and cannot listen on a public interface:
+only `127.0.0.1` or `::1` are permitted until separately reviewed.
+Importing or constructing the factory starts no server.
+
+`test/phase2a-isolated-mtls-listener.test.js` generates disposable local
+certificates with OpenSSL and tests real client/server TLS negotiation.
+Correct authenticated pinned proxy certificate succeeds; other
+CA-trusted but unpinned certificates receive 403; absent or untrusted
+client certificates fail the TLS handshake. Forged forwarding headers
+do not change the outcome. All temporary test keys stay inside the
+disposable CI runner and are not committed.
+
+This is an isolated, **loopback-only** integration component, not a
+production-ready proxy or an owner approval service. The real Render
+ingress still has no compatible authenticated proxy-to-Node mTLS channel.
+Do not deploy or mount this component on the current Render web service,
+expose the listener publicly, or bypass the mTLS check. Live activation
+still requires a secure network design, certificate issuance/rotation,
+staging-only deployment approval, and browser integration testing.
