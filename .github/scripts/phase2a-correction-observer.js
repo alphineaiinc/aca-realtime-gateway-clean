@@ -16,13 +16,27 @@ async function observeCorrectionHandoff({github,owner,repo,event,
  const ci=triageCompletedCi({event,expectedRepositoryId,expectedWorkflowId});
  const unverified=createCorrectionHandoff({event,expectedRepositoryId,expectedWorkflowId});
  if(ci.state!=="failed") return unverified;
- if(!github?.rest?.repos?.get||!github?.rest?.repos?.listPullRequestsAssociatedWithCommit||
+ if(!github?.rest?.repos?.get||!github?.rest?.actions?.getWorkflowRun||\n    !github?.rest?.repos?.listPullRequestsAssociatedWithCommit||
     !github?.rest?.pulls?.get||typeof github.graphql!=="function"||
     typeof owner!=="string"||!owner||typeof repo!=="string"||!repo)
    return unverified;
  try {
   const {data:repository}=await github.rest.repos.get({owner,repo});
   if(repository?.id!==expectedRepositoryId)return unverified;
+  // A payload or HTTP request is not proof of a GitHub Actions result.
+  // Resolve the run through GitHub's authenticated REST endpoint and require
+  // exact agreement with the event, including head SHA and conclusion.
+  const {data:actualRun}=await github.rest.actions.getWorkflowRun({
+   owner,repo,run_id:ci.runId
+  });
+  if(actualRun?.id!==ci.runId||actualRun?.workflow_id!==expectedWorkflowId||
+     actualRun?.name!=="ACA CI"||actualRun?.status!=="completed"||
+     !["failure","timed_out"].includes(actualRun?.conclusion)||
+     actualRun.conclusion!==event.workflow_run.conclusion||
+     actualRun?.head_sha!==ci.headSha||
+     actualRun?.repository?.id!==expectedRepositoryId||
+     actualRun?.head_repository?.id!==expectedRepositoryId)
+    return unverified;
   const {data:links}=await github.rest.repos.listPullRequestsAssociatedWithCommit({
    owner,repo,commit_sha:ci.headSha,per_page:2
   });
