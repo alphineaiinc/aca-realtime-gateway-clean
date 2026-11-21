@@ -111,7 +111,8 @@ function evaluatePrSupervision(input = {}) {
   for (const check of ci.requiredChecks) {
     if (!nonempty(check?.name) || names.has(check.name) ||
         !hasCurrentHeadEvidence(check, pr.headSha) ||
-        !nonempty(check.status) || !nonempty(check.conclusion)) {
+        !nonempty(check.status) ||
+        (normalizeStatus(check.status) === "completed" && !nonempty(check.conclusion))) {
       return report(STATES.BLOCKED, ["ambiguous_or_stale_ci_checks"], ctx);
     }
     names.add(check.name);
@@ -119,10 +120,11 @@ function evaluatePrSupervision(input = {}) {
   const pending = ci.requiredChecks.some((check) =>
     normalizeStatus(check.status) !== "completed" ||
     ["", "pending", "queued", "in_progress", "neutral", "skipped", "cancelled",
-      "timed_out", "action_required"].includes(normalizeStatus(check.conclusion)));
+      "timed_out", "action_required"].includes(normalizeStatus(check.conclusion))));
   const failed = ci.requiredChecks.some((check) =>
     ["failure", "startup_failure"].includes(normalizeStatus(check.conclusion)));
   const unknown = ci.requiredChecks.some((check) =>
+    (normalizeStatus(check.status) === "completed" &&
     !["success", "failure", "startup_failure", "cancelled", "skipped", "neutral",
       "timed_out", "action_required"].includes(normalizeStatus(check.conclusion)));
   if (unknown) return report(STATES.BLOCKED, ["unknown_ci_conclusion"], ctx);
