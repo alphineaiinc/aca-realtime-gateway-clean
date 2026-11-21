@@ -50,3 +50,7 @@ The supervisor is **advisory only**: it never authorizes merges, deployment or n
 - PostgreSQL integration jobs now execute sequentially because two concurrent test processes raced to create the same schema; previous failure was a CI fixture collision, not an authorization bypass.
 - Added an authenticated Actions REST workflow-run lookup in the observer. It binds check runs by check_suite_id to a pinned workflow ID, run ID and head SHA, and fails closed if evidence is missing or paginated beyond one complete page.
 - The workflow's default-branch observer still does not provision trusted app/workflow pins, database service credentials, or a signed reviewer provider. This adapter is not proof of operational readiness; real rerun/permission behavior requires staging validation.
+
+## Effective database-role guard (isolated)
+- Added `assertAutomationDbRole` to verify PostgreSQL `current_user` matches the exact expected reader/initializer/writer role, rejecting admin sessions and mismatches. The role guard is tested in unit tests and within isolated PostgreSQL role tests.
+- This guard is a reusable service integration boundary; it has NOT been wired to live database clients. `SET ROLE` by a privileged session is not proof of service authentication. Production service accounts, per-repository scope enforcement, secure connections, and authenticated caller identity remain outstanding.
