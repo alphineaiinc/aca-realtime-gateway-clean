@@ -1,0 +1,125 @@
+"use strict";
+const {test}=require("node:test");
+const assert=require("node:assert/strict");
+const {Readable}=require("node:stream");
+const {handleOwnerHttp}=require("../src/automation/phase2aOwnerHttp");
+const {makeOwnerDecisionPacket}=require("../src/automation/phase2aOwnerDecision");
+const NOW=Date.now(),OWNER=230486228,R=1080201236;
+const handoff={state:"request_owner_approval",dispatched:false,
+ agentDispatchAuthorized:false,mergeAuthorized:false,deployAuthorized:false,
+ request:{type:"manual_correction_approval_request",issueNumber:12,
+ prNumber:13,headSha:"a".repeat(40),runId:777,attempt:1,maxAttempts:2}};
+function store(){
+ const pending=new Map(),sessions=new Map();
+ return {pending,sessions,
+  async putPending(r){pending.set(r.digest,r);return true;},
+  async consumePending(d){const r=pending.get(d);pending.delete(d);return r||null;},
+  async putSession(r){sessions.set(r.digest,r);return true;},
+  async getSession(d){return sessions.get(d)||null;},
+  async revokeSession(d){sessions.delete(d);}
+ };
+}
+function call(opts,{method="GET",url="/phase2a/oauth/start",headers={},body=null}={}){
+ const request=Readable.from(body===null?[]:[JSON.stringify(body)]);
+ request.method=method;request.url=url;request.headers=headers;
+ let status,reply,meta;
+ const response={writeHead(s,h){status=s;meta=h;},end(s){reply=JSON.parse(s);}};
+ return handleOwnerHttp(request,response,opts).then(handled=>({
+  handled,status,body:reply,headers:meta}));
+}
+function setup(){
+ const sessionStore=store(),packet=makeOwnerDecisionPacket({
+  handoff,repositoryId:R,ownerId:OWNER,now:NOW});
+ let writes=0,lookups=0;
+ const opts={enabled:true,isolatedStaging:true,sessionStore,
+  repositoryId:R,ownerId:OWNER,ownerLogin:"alphineaiinc",
+  clientId:"Iv1_staging_test_4567890",
+  callbackUrl:"https://staging.example.test/phase2a/oauth/callback",
+  siteOrigin:"https://staging.example.test",
+  serviceReadToken:"separate-readonly-service-pat-example-1234",
+  exchangeCode:async()=>"separate-github-user-oauth-token-12345",
+  fetchIdentity:async()=>({ok:true,json:async()=>({id:OWNER,login:"alphineaiinc"})}),
+  decisionClient:{query:async(sql)=>{writes++;
+   return {rows:sql.includes("UPDATE")?[{request_id:packet.id}]:[]};}},
+  checkRateLimit:async()=>true,
+  loadPendingPacket:async({requestId})=>{lookups++;return requestId===packet.id?packet:null;},
+  loadFreshHandoff:async()=>handoff,
+ };
+ return {opts,packet,get writes(){return writes;},get lookups(){return lookups;}};
+}
+async function login(x){
+ const start=await call(x.opts);
+ assert.equal(start.status,200);
+ const authUrl=new URL(start.body.authorizationUrl);
+ assert.equal(authUrl.hostname,"github.com");
+ const state=authUrl.searchParams.get("state");
+ const loginCookie=start.headers["Set-Cookie"].split(";")[0];
+ const callback=await call(x.opts,{url:"/phase2a/oauth/callback?code=one-time-code&state="+state,
+  headers:{cookie:loginCookie}});
+ return {start,callback};
+}
+test("disabled adapter is fail-closed, not mounted, and has no external requests",async()=>{
+ const x=setup();x.opts.enabled=false;
+ const r=await call(x.opts);assert.equal(r.status,404);
+ assert.equal(r.body.state,"disabled");assert.equal(x.writes,0);
+ const normal=await call({...setup().opts},{url:"/unrecognized"});
+ assert.equal(normal.handled,false);
+});
+test("OAuth start/callback returns only user-session cookie and CSRF, no access token",async()=>{
+ const x=setup(),{start,callback}=await login(x);
+ assert.equal(start.body.agentDispatchAuthorized,false);
+ assert.equal(callback.status,200);
+ assert.equal(callback.body.state,"authenticated");
+ assert.match(callback.headers["Set-Cookie"][1],/^__Host-aca_owner=/);
+ assert.match(callback.headers["Set-Cookie"][0],/Max-Age=0/);
+ assert.equal(JSON.stringify(callback).includes("separate-github-user-oauth-token"),false);
+ assert.match(callback.body.csrfToken,/^[A-Za-z0-9_-]{43}$/);
+});
+test("callback cannot replay and tampered state fails before token exchange",async()=>{
+ const x=setup(),start=await call(x.opts);
+ const state=new URL(start.body.authorizationUrl).searchParams.get("state");
+ const cookie=start.headers["Set-Cookie"].split(";")[0];
+ const bad=await call(x.opts,{url:"/phase2a/oauth/callback?code=one-time-code&state="+
+  "x".repeat(43),headers:{cookie}});
+ assert.equal(bad.status,401);
+ const replay=await call(x.opts,{url:"/phase2a/oauth/callback?code=one-time-code&state="+state,
+  headers:{cookie}});
+ assert.equal(replay.status,401);
+});
+test("approval rejects missing CSRF, cross-origin, unknown ID and browser-owned packet",async()=>{
+ const x=setup(),{callback}=await login(x);
+ const cookie=callback.headers["Set-Cookie"][1].split(";")[0];
+ const base={method:"POST",url:"/phase2a/owner/decision",
+  headers:{cookie,origin:"https://staging.example.test",
+   "x-aca-csrf":callback.body.csrfToken,"content-type":"application/json"},
+  body:{decision:"approve",requestId:x.packet.id}};
+ const bad=[
+  {headers:{...base.headers,"x-aca-csrf":"z".repeat(43)}},
+  {headers:{...base.headers,origin:"https://evil.example.test"}},
+  {body:{decision:"approve",requestId:"b".repeat(64)}},
+  {body:{...base.body,actorId:OWNER}},
+  {body:{...base.body,packet:x.packet}},
+ ];
+ for(const override of bad){
+  const result=await call(x.opts,{...base,...override});
+  assert.notEqual(result.status,200);assert.equal(result.body.agentDispatchAuthorized,false);
+ }
+ assert.equal(x.writes,0);
+});
+test("authentic approval intent remains advisory and never triggers code execution",async()=>{
+ const x=setup(),{callback}=await login(x);
+ const cookie=callback.headers["Set-Cookie"][1].split(";")[0];
+ const r=await call(x.opts,{method:"POST",url:"/phase2a/owner/decision",
+  headers:{cookie,origin:"https://staging.example.test",
+   "x-aca-csrf":callback.body.csrfToken,"content-type":"application/json"},
+  body:{decision:"approve",requestId:x.packet.id}});
+ assert.equal(r.status,200);assert.equal(r.body.state,"owner_intent_to_review");
+ for(const key of ["agentDispatchAuthorized","mergeAuthorized","deployAuthorized",
+  "signingAuthorized","productionAuthorization"])assert.equal(r.body[key],false);
+ assert.ok(x.writes>0);
+});
+test("rate limiter dependency denies requests before touching OAuth storage",async()=>{
+ const x=setup();x.opts.checkRateLimit=()=>false;
+ const r=await call(x.opts);
+ assert.equal(r.status,429);assert.equal(x.opts.sessionStore.pending.size,0);
+});
