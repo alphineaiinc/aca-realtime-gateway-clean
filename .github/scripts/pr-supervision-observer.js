@@ -10,6 +10,7 @@ const {ALLOWLIST_LABEL, LABELS} = require("../../src/automation/safeQueuePolicy"
 const {verifyClosingIssueLink} = require("../../src/automation/verifiedPrLink");
 const {readCorrectionHistory} = require("../../src/automation/postgresCorrectionHistoryReader");
 const {verifyReviewEvidence} = require("../../src/automation/trustedReviewEvidence");
+const {verifiedRequiredChecks} = require("../../src/automation/verifiedCiEvidence");
 
 function validNumber(value) {
   return Number.isSafeInteger(value) && value > 0;
@@ -28,7 +29,8 @@ function normalizeCheck(run, sha) {
     conclusion: run.conclusion};
 }
 async function observe({github, owner, repo, prNumber, issueNumber,
-  authenticatedLedgerClient, trustedReviewProvider, trustedReviewerId}) {
+  authenticatedLedgerClient, trustedReviewProvider, trustedReviewerId,
+  trustedCiAppId}) {
   if (!github?.rest || !owner || !repo || !validNumber(prNumber) || !validNumber(issueNumber)) {
     throw new Error("invalid_observer_arguments");
   }
@@ -58,13 +60,10 @@ async function observe({github, owner, repo, prNumber, issueNumber,
   });
   // Strict: pagination or incomplete check evidence cannot yield readiness.
   const runs = checks.check_runs || [];
-  const requiredNames = ["Node tests", "PostgreSQL ledger integration"];
-  const required = runs.filter(run => requiredNames.includes(run.name));
-  const completeChecks = checks.total_count === runs.length &&
-    required.length === requiredNames.length &&
-    requiredNames.every(name => required.filter(run => run.name === name).length === 1);
-  const ci = {headSha, requiredChecks: completeChecks ?
-    required.map(run => normalizeCheck(run, headSha)) : []};
+  const requiredChecks = verifiedRequiredChecks({runs,totalCount:checks.total_count,
+    headSha,requiredNames:["Node tests","PostgreSQL ledger integration"],
+    trustedAppId:trustedCiAppId});
+  const ci = {headSha,requiredChecks:requiredChecks || []};
   // Optional authenticated providers. No provider means unknown, never success.
   // Provider identity is established by the calling service, not by PR content.
   let correction = null;
