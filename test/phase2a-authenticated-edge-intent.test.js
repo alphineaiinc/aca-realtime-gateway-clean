@@ -54,14 +54,19 @@ test("missing/cross-origin session, CSRF or wrong owner never loads evidence or 
  for(const change of [
   {cookie:""},{csrfHeader:"z".repeat(43)},
   {origin:"https://evil.example.test"},{method:"GET"},
-  {expectedOwnerId:OWNER+1},{now:NOW+900000},
-  {requestId:"b".repeat(64)}
+  {expectedOwnerId:OWNER+1},{now:NOW+900000}
  ]){
   const f=fixture(),r=await prepareAuthenticatedEdgeIntent({...f.options,...change});
   assert.equal(r.state,"blocked");safe(r);
   assert.equal(f.reads,0,JSON.stringify(change));
   assert.equal(r.body,undefined);
  }
+});
+test("unknown request ID is rejected after trusted packet lookup, before CI or signing",async()=>{
+ const f=fixture();
+ const r=await prepareAuthenticatedEdgeIntent({...f.options,requestId:"b".repeat(64)});
+ assert.equal(r.state,"blocked");safe(r);assert.equal(f.reads,1);
+ assert.equal(r.body,undefined);
 });
 test("stale PR, unavailable GitHub, mismatched owner packet cannot issue proof",async()=>{
  for(const change of [
