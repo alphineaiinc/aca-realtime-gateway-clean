@@ -3,12 +3,13 @@ const {test}=require("node:test");
 const assert=require("node:assert/strict");
 const {observeWithTrustedLedger}=require("../src/automation/phase2aTrustedLedgerBridge");
 const repositoryId=1080201236,workflowId=422174901,sha="a".repeat(40);
-function fixtures({role="aca_reviewer_ledger_read",broadRead=false,ledgerVersion=0}={}){
+function fixtures({role="aca_p2_reader_a",broadRead=false,ledgerVersion=0,canMutate=false}={}){
  let released=0;const sql=[];
  const client={async query(statement){
   sql.push(statement);
   if(statement.startsWith("SELECT current_user"))
    return {rows:[{db_role:role,broad_read:broadRead}]};
+  if(statement.includes("has_table_privilege"))return {rows:[{can_read_ledgers:true,can_mutate_ledgers:canMutate,can_read_events:true,can_mutate_events:false}]};
   if(statement.includes("SELECT version FROM aca_automation.correction_ledgers"))
    return {rows:[{version:ledgerVersion}]};
   if(statement.includes("FROM aca_automation.correction_events"))return {rows:[]};
@@ -31,7 +32,7 @@ function fixtures({role="aca_reviewer_ledger_read",broadRead=false,ledgerVersion
   issues:{get:async()=>({data:{number:23,state:"open",labels:[
    {name:"aca:auto/docs-test"},{name:"aca:auto/eligible"},{name:"aca:auto/active"}]}})}
  },graphql:async()=>link};
- const args={pool,expectedDbRole:"aca_reviewer_ledger_read",github,
+ const args={pool,expectedDbRole:"aca_p2_reader_a",github,
  owner:"alphineaiinc",repo:"aca-realtime-gateway-clean",event,
  expectedRepositoryId:repositoryId,expectedWorkflowId:workflowId};
  return {args,sql,get released(){return released;}};
@@ -73,4 +74,12 @@ test("corrupt or uninitialized ledger never allows a request",async()=>{
  assert.equal(result.request,null);
  assert.equal(x.released,1);
  assert.ok(x.sql.includes("ROLLBACK"));
+});
+
+test("unexpected write grants fail closed before any correction history query",async()=>{
+ const x=fixtures({canMutate:true});
+ await assert.rejects(observeWithTrustedLedger(x.args),/unsafe_ledger_database_grants/);
+ assert.equal(x.released,1);
+ assert.equal(x.sql.length,2);
+ assert.ok(!x.sql.some(q=>q.startsWith("BEGIN TRANSACTION")));
 });
