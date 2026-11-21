@@ -226,7 +226,34 @@ async function processIssue(github, owner, repo, issueNumber, core) {
   await applyDecision(github, owner, repo, issue, decision, core);
 }
 
+async function clearInvalidActiveHolders(github, owner, repo, core) {
+  // An issue's unlabeled/unassigned event may be dropped while a newer pending
+  // GitHub Actions run replaces it. Reconcile all active holders using live state.
+  const holders = await loadOpenIssuesWithLabel(github, owner, repo, LABELS.active);
+  for (const holder of holders) {
+    const current = await loadCurrentIssue(github, owner, repo, holder.number);
+    if (!current || String(current.state || "").toLowerCase() !== "open") {
+      await clearQueueLabelsForClosedIssue(github, owner, repo, holder.number);
+      core.info(`Removed stale active lock from missing/closed issue #${holder.number}.`);
+      continue;
+    }
+    const stillAllowlisted = current.labels.some(
+      (label) => String(label).toLowerCase() === ALLOWLIST_LABEL.toLowerCase()
+    );
+    const stillAssigned = current.assignees.some(
+      (login) => String(login).toLowerCase() === "codex"
+    );
+    if (!stillAllowlisted || !stillAssigned) {
+      // Re-evaluate instead of deleting every status: a valid but unassigned
+      // task returns to the queue, while a de-allowlisted task is blocked.
+      await processIssue(github, owner, repo, holder.number, core);
+      core.info(`Reconciled invalid active lock for issue #${holder.number}.`);
+    }
+  }
+}
+
 async function reconcileAllowlistedIssues(github, owner, repo, core) {
+  await clearInvalidActiveHolders(github, owner, repo, core);
   const allowlistedIssues = await loadOpenIssuesWithLabel(github, owner, repo, ALLOWLIST_LABEL);
   if (allowlistedIssues.length === 0) {
     core.info("Reconciliation: no open allowlisted issues.");
@@ -279,6 +306,7 @@ async function run({ github, context, core }) {
     return;
   }
 
+  await clearInvalidActiveHolders(github, owner, repo, core);
   await processIssue(github, owner, repo, issue.number, core);
 
   await reconcileAllowlistedIssues(github, owner, repo, core);
@@ -292,5 +320,6 @@ module.exports = {
     decisionSummaryLines,
     loadCurrentIssue,
     reconcileAllowlistedIssues,
+    clearInvalidActiveHolders,
   },
 };
