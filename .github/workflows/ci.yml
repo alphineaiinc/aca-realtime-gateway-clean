@@ -63,4 +63,6 @@ jobs:
       - name: Install dependencies
         run: npm ci --ignore-scripts --no-audit --no-fund
       - name: Run isolated PostgreSQL integration
-        run: node --test test/postgres-correction-ledger.integration.test.js test/postgres-role-isolation.integration.test.js
+        run: |
+          node --test test/postgres-correction-ledger.integration.test.js
+          node --test test/postgres-role-isolation.integration.test.js
