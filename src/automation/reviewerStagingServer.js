@@ -7,6 +7,7 @@
 const http=require("node:http");
 const {sign,createPrivateKey,timingSafeEqual}=require("node:crypto");
 const {installationReadToken}=require("./githubReviewerAppAuth");
+const {inspectWithGithubApp}=require("./githubAppPrTriage");
 const SHA=/^[a-f0-9]{40}$/;
 const positive=n=>Number.isSafeInteger(n)&&n>0;
 function matchingReview({pr,reviews,scope,reviewerId}){
@@ -60,7 +61,7 @@ function startServer(env=process.env,{githubTokenProvider=installationReadToken,
    const answer=(status,data)=>{res.writeHead(status,{"Content-Type":"application/json"});
      res.end(JSON.stringify(data));};
    if(req.method==="GET"&&req.url==="/health")return answer(200,{status:"up",mode:"fail_closed"});
-   if(req.method!=="POST"||req.url!=="/review")return answer(404,{error:"not_found"});
+   if(req.method!=="POST"||!["/review","/triage"].includes(req.url))return answer(404,{error:"not_found"});
    if(!equalBearer(req.headers.authorization,env.ACA_REVIEW_API_TOKEN))
      return answer(401,{error:"unauthorized"});
    let body="";
@@ -70,11 +71,30 @@ function startServer(env=process.env,{githubTokenProvider=installationReadToken,
      const scope=JSON.parse(body);
      if(!positive(scope?.repositoryId)||scope.repositoryId!==repositoryId||
         !positive(scope?.prNumber)||!positive(scope?.issueNumber)||
-        !SHA.test(scope?.headSha||"")||!positive(reviewerId)||
-        parts.length!==2||!parts.every(x=>/^[A-Za-z0-9_.-]+$/.test(x))||
-        !env.ACA_REVIEW_GITHUB_APP_ID||!env.ACA_REVIEW_GITHUB_INSTALLATION_ID||
-        !env.ACA_REVIEW_GITHUB_APP_PRIVATE_KEY||!env.ACA_REVIEW_PRIVATE_KEY)
+        !SHA.test(scope?.headSha||"")||
+        parts.length!==2||!parts.every(x=>/^[A-Za-z0-9_.-]+$/.test(x)))
        return answer(503,{error:"reviewer_not_configured"});
+     if(req.url==="/review"&&(!positive(reviewerId)||
+         !env.ACA_REVIEW_GITHUB_APP_ID||!env.ACA_REVIEW_GITHUB_INSTALLATION_ID||
+         !env.ACA_REVIEW_GITHUB_APP_PRIVATE_KEY||!env.ACA_REVIEW_PRIVATE_KEY))
+       return answer(503,{error:"reviewer_not_configured"});
+     if(req.url==="/triage"){
+       // Advisory only. A triage finding (including a clean patch) never
+       // generates a signed verdict or satisfies independent review.
+       if(!env.ACA_REVIEW_GITHUB_APP_PRIVATE_KEY||
+          !Number.isSafeInteger(Number(env.ACA_REVIEW_GITHUB_APP_ID))||
+          !Number.isSafeInteger(Number(env.ACA_REVIEW_GITHUB_INSTALLATION_ID)))
+         return answer(503,{status:"blocked",reason:"github_app_not_configured",independent:false});
+       const result=await inspectWithGithubApp({
+         appId:Number(env.ACA_REVIEW_GITHUB_APP_ID),
+         installationId:Number(env.ACA_REVIEW_GITHUB_INSTALLATION_ID),
+         privateKey:env.ACA_REVIEW_GITHUB_APP_PRIVATE_KEY,
+         repositoryId,owner:parts[0],repo:parts[1],
+         prNumber:scope.prNumber,headSha:scope.headSha,
+         installationTokenProvider:githubTokenProvider,fetchImpl:githubFetch
+       });
+       return answer(result.status==="blocked"?409:200,result);
+     }
      const pr=await github("/pulls/"+scope.prNumber);
      const reviews=await github("/pulls/"+scope.prNumber+"/reviews?per_page=100");
      if(!matchingReview({pr,reviews,scope,reviewerId}))
