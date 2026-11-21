@@ -34,3 +34,9 @@ The supervisor is **advisory only**: it never authorizes merges, deployment or n
 - The migration now defines an immutable-events trigger; integration tests attempt UPDATE and DELETE and require rejection.
 - This is a database-level guard, not a substitute for separately provisioned least-privilege roles, authenticated GitHub provenance, or a real independent reviewer.
 - No production database was migrated, and no secrets or service permissions were changed.
+
+## Signed independent review boundary
+- The observer now accepts review readiness only from an Ed25519-signed verdict checked against a caller-pinned public key, exact repository ID, PR number, reviewer ID, and current head SHA.
+- Unsigned callback metadata and caller-supplied actor IDs cannot establish trusted review. Malformed, tampered, stale, cross-repository, and wrong-key evidence fails closed.
+- Key provisioning, secure signing service, reviewer independence enforcement, key rotation/revocation, and replay/freshness policy remain external operational gates. A valid signature proves key possession, not reviewer independence by itself.
+- This does not connect a live reviewer, configure secrets, merge, or deploy.
