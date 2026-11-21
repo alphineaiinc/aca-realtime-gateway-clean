@@ -40,13 +40,13 @@ function action(x,overrides={}){
   method:"POST",now:NOW+200,...overrides});
 }
 function safe(x){
- for(const key of ["agentDispatchAuthorized","mergeAuthorized","deployAuthorized",
+ for(const key of ["agentDispatchAuthorized","dispatched","mergeAuthorized","deployAuthorized",
   "signingAuthorized","productionAuthorization"])assert.equal(x[key],false,key);
 }
 async function pipeline(x,overrides={}){
  const owner=await action(x,overrides);
  if(!owner.verified)return {verified:false,reason:"session_rejected",...Object.fromEntries(
-  ["agentDispatchAuthorized","mergeAuthorized","deployAuthorized",
+  ["agentDispatchAuthorized","dispatched","mergeAuthorized","deployAuthorized",
    "signingAuthorized","productionAuthorization"].map(k=>[k,false]))};
  const proof=issueOwnerEdgeProof({issuer:"aca-public-edge",audience:"aca-private-owner",
   repositoryId:REPO,ownerId:owner.ownerId,requestId:REQUEST,
@@ -76,4 +76,17 @@ test("invalid session, CSRF, origin and expired session cannot issue a proof",as
   assert.equal(r.verified,false);safe(r);
  }
  assert.equal(x.db.nonces.size,0);
+});
+
+test("cross-slice owner session and signed proof never confer execution authority",async()=>{
+ const x=await fixture();
+ const authenticated=await action(x);
+ assert.equal(authenticated.verified,true);safe(authenticated);
+ const result=await pipeline(x);
+ assert.equal(result.verified,true);safe(result.verification);
+ const wrongAudience=await verifyOwnerEdgeProof({proof:result.proof,keyring,nonceStore:x.db,
+  expectedIssuer:"aca-public-edge",expectedAudience:"untrusted-service",
+  expectedRepositoryId:REPO,expectedOwnerId:OWNER,expectedRequestId:REQUEST,
+  expectedDecision:"approve",now:NOW+500});
+ assert.equal(wrongAudience.verified,false);safe(wrongAudience);
 });
