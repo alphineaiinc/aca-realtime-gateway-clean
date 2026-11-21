@@ -41,7 +41,7 @@ async function serviceInitializeLedger(client,scope,context){
 }
 async function serviceAppendCorrection(client,claim,context){
  return withAuthorizedClient(client,"append",context,claim,()=>{
-   if(claim.priorHeadSha!==context.headSha)
+   if(claim.resultingHeadSha!==context.headSha)
      throw new Error("stale_correction_service_head");
    if(!Number.isSafeInteger(context.actorId)||context.actorId<=0||
       claim.actorId!==context.actorId)
