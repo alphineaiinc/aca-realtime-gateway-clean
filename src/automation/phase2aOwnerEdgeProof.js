@@ -18,7 +18,7 @@ const POS=n=>Number.isSafeInteger(n)&&n>0;
 const NOW=n=>Number.isSafeInteger(n)&&n>=0;
 const TTL=60000,VERSION="aca-owner-edge-proof-v1",ROTATED_VERSION="aca-owner-edge-proof-v2";
 const KEY_ID=/^[a-z][a-z0-9-]{2,63}$/;
-const flags=()=>({agentDispatchAuthorized:false,mergeAuthorized:false,
+const flags=()=>({agentDispatchAuthorized:false,dispatched:false,mergeAuthorized:false,
  deployAuthorized:false,signingAuthorized:false,productionAuthorization:false});
 const blocked=reason=>Object.freeze({verified:false,reason,...flags()});
 function fields(x){return [
