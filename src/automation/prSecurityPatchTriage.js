@@ -42,6 +42,14 @@ function completeUnifiedHunks(patch){
  }
  return seen&&oldRemaining===0&&newRemaining===0;
 }
+function changedLineTotals(patch){
+ let additions=0,deletions=0;
+ for(const line of patch.split("\\n")){
+  if(line.startsWith("+"))additions++;
+  else if(line.startsWith("-"))deletions++;
+ }
+ return {additions,deletions};
+}
 function inspectPrPatches({repositoryId,prNumber,headSha,files}={}){
  if(!POS(repositoryId)||!POS(prNumber)||!SHA.test(headSha||"")||
     !Array.isArray(files)||files.length===0||files.length>100||
@@ -62,6 +70,11 @@ function inspectPrPatches({repositoryId,prNumber,headSha,files}={}){
    if(!completeUnifiedHunks(file.patch)){
       return Object.freeze({status:"blocked",reason:"incomplete_unified_patch",findings:[],independent:false});
    }
+   const totals=changedLineTotals(file.patch);
+   if(totals.additions+totals.deletions!==file.changes||
+      (Number.isSafeInteger(file.additions)&&file.additions!==totals.additions)||
+      (Number.isSafeInteger(file.deletions)&&file.deletions!==totals.deletions))
+     return Object.freeze({status:"blocked",reason:"patch_change_count_mismatch",findings:[],independent:false});
    const added=file.patch.split("\n").filter(l=>l.startsWith("+")).map(l=>l.slice(1));
    for(const rule of RULES){
      if(added.some(line=>rule.re.test(line)))
@@ -75,4 +88,4 @@ function inspectPrPatches({repositoryId,prNumber,headSha,files}={}){
    reason:"triage_only_no_independent_verdict",repositoryId,prNumber,headSha,
    patchDigest:digest,filesInspected:files.length,findings,independent:false});
 }
-module.exports={inspectPrPatches,completeUnifiedHunks,RULES};
+module.exports={inspectPrPatches,completeUnifiedHunks,changedLineTotals,RULES};
