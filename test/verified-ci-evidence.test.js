@@ -31,3 +31,19 @@ test("rejects wrong workflow, stale workflow run, or missing provenance",()=>{
  assert.equal(verifiedRequiredChecks({...args,runs:[{...runs[0],check_suite:{workflow_run:{workflow_id:4321,id:9876,head_sha:"b".repeat(40)}}},runs[1]]}),null);
  assert.equal(verifiedRequiredChecks({...args,runs:[{...runs[0],check_suite:{}},runs[1]]}),null);
 });
+
+test("rejects invalid workflow run IDs, malformed app IDs and inconsistent check provenance",()=>{
+ const mutations=[
+  {check_suite:{workflow_run:{workflow_id:4321,id:0,head_sha:sha}}},
+  {check_suite:{workflow_run:{workflow_id:4321,id:"9876",head_sha:sha}}},
+  {check_suite:{workflow_run:{workflow_id:"4321",id:9876,head_sha:sha}}},
+  {app:{id:"1234"}},
+  {head_sha:sha.toUpperCase()},
+  {status:null},
+  {status:"completed",conclusion:null}
+ ];
+ for(const mutation of mutations){
+  const altered=[{...runs[0],...mutation},runs[1]];
+  assert.equal(verifiedRequiredChecks({...args,runs:altered}),null);
+ }
+});
