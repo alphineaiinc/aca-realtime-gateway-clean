@@ -53,6 +53,21 @@ if(!process.env.ACA_TEST_DATABASE_URL){
    await asLogin("aca_ci_initializer_a",async c=>{
     await assert.rejects(c.query("INSERT INTO aca_automation.correction_ledgers(repository_id,issue_number,pr_number) VALUES($1,25,25)",[repoB]),/row-level security policy/);
    });
+   // SET ROLE changes current_user but must never change repository scope:
+   // RLS authorizes the authenticated session_user, not the inherited group.
+   await asLogin("aca_ci_reader_a",async c=>{
+     await c.query("SET LOCAL ROLE aca_automation_reader");
+     const identity=await c.query("SELECT session_user,current_user");
+     assert.equal(identity.rows[0].session_user,"aca_ci_reader_a");
+     assert.equal(identity.rows[0].current_user,"aca_automation_reader");
+     const visible=await c.query("SELECT repository_id FROM aca_automation.correction_ledgers ORDER BY repository_id");
+     assert.deepEqual(visible.rows.map(r=>Number(r.repository_id)),[repoA]);
+   });
+   await asLogin("aca_ci_reader_b",async c=>{
+     await c.query("SET LOCAL ROLE aca_automation_reader");
+     const visible=await c.query("SELECT repository_id FROM aca_automation.correction_ledgers ORDER BY repository_id");
+     assert.deepEqual(visible.rows.map(r=>Number(r.repository_id)),[repoB]);
+   });
    // The RLS scope map is protected from the runtime identities.
    await asLogin("aca_ci_reader_a",async c=>{
      await assert.rejects(c.query("SELECT * FROM aca_automation.repository_role_scopes"),/permission denied/);
