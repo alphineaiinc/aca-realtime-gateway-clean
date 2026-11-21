@@ -381,6 +381,10 @@ test("reconciliation releases a lock when native Codex assignee was revoked with
   await run({ github: mock.github, context: contextFor(waiting), core: coreLogger() });
 
   assert.equal(hasLabel(holder, LABELS.active), false);
-  assert.equal(hasLabel(holder, LABELS.queued), true);
+  // Reconciliation first releases the revoked lock; after #96 becomes active,
+  // #95 is correctly blocked by the new holder rather than remaining queued.
+  assert.equal(hasLabel(holder, LABELS.blocked), true);
+  assert.equal(hasLabel(holder, LABELS.manualRequested), false);
   assert.equal(hasLabel(waiting, LABELS.active), true);
+  assert.equal([holder, waiting].filter((issue) => hasLabel(issue, LABELS.active)).length, 1);
 });
