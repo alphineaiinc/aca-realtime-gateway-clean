@@ -19,7 +19,7 @@ test("unconfigured write test remains blocked",()=>{
 test("every prerequisite is required independently",()=>{
  for(const key of Object.keys(good)){
   const r=check({...good,[key]:key==="loginRoles"?[]:false});
-  deny(r);assert.equal(r.status,"blocked");assert.ok(r.missing.includes(key));
+  deny(r);assert.equal(r.status,"blocked");assert.ok(r.missing.includes(key==="loginRoles"?"dedicatedLogins":key));
  }
 });
 test("even completed preflight cannot authorize writes",()=>{
