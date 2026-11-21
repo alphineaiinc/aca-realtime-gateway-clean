@@ -40,3 +40,8 @@ The supervisor is **advisory only**: it never authorizes merges, deployment or n
 - Unsigned callback metadata and caller-supplied actor IDs cannot establish trusted review. Malformed, tampered, stale, cross-repository, and wrong-key evidence fails closed.
 - Key provisioning, secure signing service, reviewer independence enforcement, key rotation/revocation, and replay/freshness policy remain external operational gates. A valid signature proves key possession, not reviewer independence by itself.
 - This does not connect a live reviewer, configure secrets, merge, or deploy.
+
+## Additional hardening: workflow provenance and database role policy
+- CI evidence verifier now requires a pinned GitHub App ID AND workflow ID with matching run head; missing nested workflow provenance is rejected. The current GitHub check-runs REST response may not expose this nested workflow-run metadata, so the observer remains fail-closed until a separately authenticated Actions run lookup is implemented and verified. This is NOT a live readiness signal.
+- Added an isolated SQL policy template for NOLOGIN reader, initializer, and writer roles, with no event UPDATE/DELETE grants. This is NOT applied to any database. Existing owner grants and database-level RLS/scope authorization must be assessed before service use; a role grant alone does not enforce per-repository tenancy.
+- Still outstanding: real service authentication, key lifecycle, authenticated CI run lookup/rerun semantics, database scope enforcement, adversarial end-to-end validation and explicit owner approval.
