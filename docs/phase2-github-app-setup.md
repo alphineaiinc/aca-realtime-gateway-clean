@@ -28,3 +28,11 @@ Staging reviewer currently uses a mutable draft PR branch as its source. **Do no
 - Confirm GitHub App JWT scope, read-only GitHub fetch, the actual independent review event and exact head binding.
 - Verify signed verdict with pinned key. Wrong signer, stale SHA, dismissed review, cross-repo scope and service outage fail closed.
 - Capture Render staging logs and Neon repository isolation evidence, CI results and manual owner sign-off.
+
+## Registered App identifiers (supplied by owner)
+- GitHub App ID: `5858755`.
+- GitHub Installation ID: `184252224`.
+- Target repository ID: `1080201236` (`alphineaiinc/aca-realtime-gateway-clean`).
+- These non-secret values were added to the **isolated** Render reviewer service only. Render environment changes cause a new staging-only deploy even with automatic deployment disabled. **No private keys or reviewer bearer token have been provisioned.**
+- App registration and installation were reported by the owner; current connected GitHub installation listing is scoped to the connector's own App and cannot independently attest to App `5858755`'s selected repositories or permissions. Verify after an isolated App token is securely configured.
+- Architectural hold point: this GitHub App has read-only Pull requests permission, so it can fetch approvals but cannot submit them. The current reviewer server's `matchingReview` expects an `APPROVED` review submitted by a separately authorized reviewer identity, not the same App ID or the PR author. Do not assign the App ID as `ACA_REVIEWER_ID` or manufacture an approval. Provision a truly independent review-producing identity/process and review immutable reviewer code before activating Ed25519 signing.
