@@ -7,6 +7,7 @@
 const {beginLogin,finishLogin,logout,validateOwnerAction}=require("./phase2aOwnerSession");
 const {authorizeUrl}=require("./phase2aGitHubOAuthExchange");
 const {submitOwnerIntent}=require("./phase2aOwnerApprovalFacade");
+const {validateStagingOwnerMount}=require("./phase2aOwnerMountPreflight");
 const SHA256=/^[a-f0-9]{64}$/;
 const failFlags=()=>({agentDispatchAuthorized:false,dispatched:false,
  mergeAuthorized:false,deployAuthorized:false,signingAuthorized:false,
@@ -20,20 +21,7 @@ function send(res,status,body,extra={}){
  res.end(JSON.stringify({...body,...failFlags()}));
 }
 function ready(x){
- return x?.enabled===true&&x?.isolatedStaging===true&&
- x.sessionStore?.putPending&&x.sessionStore?.consumePending&&
- x.sessionStore?.putSession&&x.sessionStore?.getSession&&
- x.sessionStore?.revokeSession&&
- x.decisionClient?.query&&
- typeof x.exchangeCode==="function"&&
- typeof x.loadPendingPacket==="function"&&
- typeof x.loadFreshHandoff==="function"&&
- typeof x.fetchIdentity==="function"&&
- typeof x.clientId==="string"&&
- typeof x.callbackUrl==="string"&&typeof x.siteOrigin==="string"&&
- typeof x.serviceReadToken==="string"&&
- Number.isSafeInteger(x.ownerId)&&x.ownerId>0&&
- typeof x.ownerLogin==="string";
+ return validateStagingOwnerMount(x).ready===true;
 }
 async function limitedJson(req,max=1024){
  const type=(req.headers?.["content-type"]||"").split(";")[0].trim().toLowerCase();
@@ -55,6 +43,13 @@ async function handleOwnerHttp(req,res,options={}){
   return false;
  if(!ready(options)){
   send(res,404,{state:"disabled"});return true;
+ }
+ // Do not trust raw X-Forwarded-Proto or Host client headers.
+ // The mounting server MUST validate the actual TLS/trusted proxy chain.
+ let secure=false;
+ try{secure=await options.verifyTrustedTransport(req)===true;}catch{secure=false;}
+ if(!secure){
+  send(res,403,{state:"blocked",reason:"untrusted_transport"});return true;
  }
  // Per-instance rate limiting must be implemented by the mounting server.
  // Fail closed if it has no trusted rate limiter; no token in browser JSON.
