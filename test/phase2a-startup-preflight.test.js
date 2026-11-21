@@ -19,7 +19,7 @@ function fixture({repoId=args.repositoryId,dbRole=args.dbRole,canWrite=false,
   return {repository:{pullRequest:{number:27}}};}};
  const pool={connect:async()=>({query:async(sql)=>{
   requests.push("db");
-  if(sql.includes("current_user"))return {rows:[{db_role:dbRole,broad_read:false}]};
+  if(sql.startsWith("SELECT current_user"))return {rows:[{db_role:dbRole,broad_read:false}]};
   return {rows:[{read_ledgers:true,read_events:true,
    write_ledgers:canWrite,write_events:false}]};
  },release:()=>{released++;}})};
