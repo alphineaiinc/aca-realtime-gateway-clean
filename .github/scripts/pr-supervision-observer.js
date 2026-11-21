@@ -11,6 +11,7 @@ const {verifyClosingIssueLink} = require("../../src/automation/verifiedPrLink");
 const {readCorrectionHistory} = require("../../src/automation/postgresCorrectionHistoryReader");
 const {verifySignedReview} = require("../../src/automation/signedReviewEvidence");
 const {verifiedRequiredChecks} = require("../../src/automation/verifiedCiEvidence");
+const {bindChecksToWorkflowRuns} = require("../../src/automation/ciWorkflowRunBinding");
 
 function validNumber(value) {
   return Number.isSafeInteger(value) && value > 0;
@@ -59,7 +60,21 @@ async function observe({github, owner, repo, prNumber, issueNumber,
     owner, repo, ref: headSha, per_page: 100, filter: "latest"
   });
   // Strict: pagination or incomplete check evidence cannot yield readiness.
-  const runs = checks.check_runs || [];
+  let runs = null;
+  if (validNumber(trustedCiWorkflowId) && checks.total_count <= 100 &&
+      typeof github.rest.actions?.listWorkflowRuns === "function") {
+    try {
+      const {data: workflowData} = await github.rest.actions.listWorkflowRuns({
+        owner,repo,workflow_id:trustedCiWorkflowId,head_sha:headSha,per_page:100
+      });
+      if (Array.isArray(workflowData.workflow_runs) &&
+          workflowData.total_count === workflowData.workflow_runs.length) {
+        runs = bindChecksToWorkflowRuns({checks:checks.check_runs,
+          workflowRuns:workflowData.workflow_runs,headSha,
+          trustedWorkflowId:trustedCiWorkflowId});
+      }
+    } catch { runs = null; }
+  }
   const requiredChecks = verifiedRequiredChecks({runs,totalCount:checks.total_count,
     headSha,requiredNames:["Node tests","PostgreSQL ledger integration"],
     trustedAppId:trustedCiAppId,trustedWorkflowId:trustedCiWorkflowId});
