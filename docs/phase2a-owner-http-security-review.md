@@ -68,3 +68,33 @@ NOT treat request-supplied `Host`, `X-Forwarded-Host` or
 `true` is not a deployable security implementation. There is still
 **no mounted route, secure proxy implementation, OAuth secret, Neon
 migration, or live owner approval service**.
+
+## Pinned proxy mutual TLS verifier — development only
+
+`src/automation/phase2aMtlsTransport.js` now provides a pure
+`createMtlsTransportVerifier({clientFingerprint256})` function. It
+requires `TLSSocket.encrypted === true`, `TLSSocket.authorized === true`,
+no TLS authorization error, a nonempty authenticated peer certificate
+and a precisely matching, pinned SHA-256 certificate fingerprint.
+It reads the peer certificate directly from the TLS socket, not
+`X-Forwarded-Proto`, `Host`, `req.secure`, or
+`X-Forwarded-Client-Cert`. The match is constant-time and
+misconfiguration fails closed.
+
+**Important infrastructure constraint:** This verifier only works if the
+proxy establishes **mutually authenticated TLS all the way to the Node
+approval listener**. The Node HTTPS listener must be configured with
+`requestCert:true`, `rejectUnauthorized:true`, and a separate trusted
+client CA and pinned proxy certificate. A standard HTTPS-facing proxy
+that forwards plaintext HTTP cannot satisfy this contract. In
+particular, the normal Render HTTPS-to-HTTP pattern has NOT been
+verified as compatible. Do not bypass the gate by setting
+`verifyTrustedTransport:()=>true` in staging. This module is unmounted,
+does not create listeners, and has no production exposure.
+
+Before activation, deploy an **isolated** mTLS-capable edge or choose
+a separately reviewed authenticated proxy assertion design with
+distributed replay protection. Test actual TLS socket identity with
+legitimate and attacker-controlled client certificates, rotation,
+revocation and browser HTTPS routing. None of those live tests
+are represented by these unit fixtures.
