@@ -4,7 +4,7 @@
  * A caller must explicitly mount it AND inject audited staging-only services.
  * No Codex dispatch, GitHub repository writes, reviewer signing or deployments.
  */
-const {beginLogin,finishLogin,logout}=require("./phase2aOwnerSession");
+const {beginLogin,finishLogin,logout,validateOwnerAction,originOk}=require("./phase2aOwnerSession");
 const {authorizeUrl}=require("./phase2aGitHubOAuthExchange");
 const {submitOwnerIntent}=require("./phase2aOwnerApprovalFacade");
 const SHA256=/^[a-f0-9]{64}$/;
@@ -114,12 +114,22 @@ async function handleOwnerHttp(req,res,options={}){
   if(req.method!=="POST"||url!==route){
    send(res,405,{state:"blocked"});return true;
   }
+  if(!originOk(req.headers.origin,options.siteOrigin)){
+   send(res,403,{state:"blocked"});return true;
+  }
   // Logging out should not create an authenticated approval.
   const r=await logout({store:options.sessionStore,cookie:req.headers.cookie});
   send(res,200,{state:"signed_out"},{"Set-Cookie":r.clearCookie});return true;
  }
  if(req.method!=="POST"||url!==route){
   send(res,405,{state:"blocked"});return true;
+ }
+ const verifiedSession=await validateOwnerAction({store:options.sessionStore,
+  cookie:req.headers.cookie,origin:req.headers.origin,
+  expectedOrigin:options.siteOrigin,csrfHeader:req.headers["x-aca-csrf"],
+  method:req.method});
+ if(verifiedSession.verified!==true){
+  send(res,401,{state:"blocked"});return true;
  }
  let body;
  try{
