@@ -73,7 +73,7 @@ function startServer(env=process.env){
      if(!matchingReview({pr,reviews,scope,reviewerId}))
        return answer(409,{error:"independent_review_not_verified"});
      return answer(200,signVerdict(scope,reviewerId,
-       env.ACA_REVIEW_PRIVATE_KEY.replace(/\\n/g,"\n")));
+       env.ACA_REVIEW_PRIVATE_KEY.replace(/\\n/g,String.fromCharCode(10))));
    }catch{return answer(503,{error:"review_evidence_unavailable"});}
  });
  server.listen(port,"0.0.0.0");
