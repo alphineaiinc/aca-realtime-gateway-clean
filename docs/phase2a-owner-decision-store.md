@@ -171,3 +171,27 @@ code exchange, securely provisioned Neon session/journal roles and policies,
 rate limiting, monitoring, and security review of both the login route and
 the handoff freshness mechanism. No native Codex work may be started on
 the basis of the owner-intent record alone.
+
+## HTTP owner adapter (unmounted, development only)
+
+`src/automation/phase2aOwnerHttp.js` defines an opt-in, **not mounted**
+request handler for the four paths `/phase2a/oauth/start`,
+`/phase2a/oauth/callback`, `/phase2a/owner/decision`, and
+`/phase2a/owner/logout`. It requires an explicit isolated-staging
+flag, an independently configured rate limiter, and injected
+login/session storage, OAuth exchange, identity verifier, trusted
+approval-packet loader, fresh GitHub/ledger handoff, and decision store.
+Absent configuration fails closed with HTTP 404. The callback must carry
+the short-lived browser-bound login cookie; the decision body accepts
+only an exact request ID and an approve/reject choice. Real owner
+identity and handoff evidence never come from browser JSON.
+
+**Do not mount or enable this handler yet.** No GitHub OAuth application,
+live client secrets, registered callback, external owner interface,
+persistent session role, or approval-writing database connection is
+provisioned. The unit tests use fake dependencies and disposable
+in-process request/response streams. Prior to any live activation,
+perform an independent security audit of exact routes, login CSRF,
+callback exchange, rate limiting, abuse controls, authorization and
+owner authentication, and verify that production cannot reach this
+staging-only component.
