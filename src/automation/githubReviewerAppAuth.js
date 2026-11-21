@@ -31,11 +31,19 @@ async function installationReadToken({appId,installationId,privateKey,repository
  if(response?.status!==201||!response.ok)
    throw new Error("github_app_token_unavailable");
  const data=await response.json();
+ const permissionEntries=Object.entries(data?.permissions||{});
+ const expiresAt=Date.parse(data?.expires_at);
+ const nowMs=Date.now();
  if(typeof data.token!=="string"||data.token.length<20||
     !Array.isArray(data.repositories)||data.repositories.length!==1||
     data.repositories[0]?.id!==repositoryId||
-    data.permissions?.contents!=="read"||data.permissions?.pull_requests!=="read"||
-    !Number.isFinite(Date.parse(data.expires_at)))
+    !data.permissions||data.permissions.contents!=="read"||
+    data.permissions.pull_requests!=="read"||
+    data.permissions.metadata!=="read"||
+    permissionEntries.some(([name,level])=>
+      !["contents","pull_requests","metadata"].includes(name)||level!=="read")||
+    !Number.isFinite(expiresAt)||expiresAt<=nowMs||
+    expiresAt>nowMs+65*60*1000)
    throw new Error("invalid_github_app_token_scope");
  return data.token;
 }
