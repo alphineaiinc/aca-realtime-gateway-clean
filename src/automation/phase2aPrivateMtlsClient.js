@@ -84,12 +84,13 @@ function createPrivateMtlsClient({hostname,port=8443,
       try{
        const json=JSON.parse(response);
        if(!["owner_intent_to_review","owner_rejected"].includes(json.state)||
-          json.agentDispatchAuthorized!==false||
-          json.mergeAuthorized!==false||json.deployAuthorized!==false)
+          json.agentDispatchAuthorized!==false||json.dispatched!==false||
+          json.mergeAuthorized!==false||json.deployAuthorized!==false||
+          json.signingAuthorized!==false||json.productionAuthorization!==false)
         throw Error("untrusted_private_response");
        resolve(Object.freeze({state:json.state,
-        agentDispatchAuthorized:false,mergeAuthorized:false,
-        deployAuthorized:false}));
+        agentDispatchAuthorized:false,dispatched:false,mergeAuthorized:false,
+        deployAuthorized:false,signingAuthorized:false,productionAuthorization:false}));
       }catch{reject(Error("untrusted_private_response"));}
      });
     });
