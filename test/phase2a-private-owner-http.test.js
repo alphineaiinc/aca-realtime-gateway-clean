@@ -42,3 +42,18 @@ test("missing transport verifier cannot be bypassed by request flags",async()=>{
  await handlePrivateOwnerHttp(x.req,x.res,{});
  assert.equal(x.result().status,403);safe(x.result());
 });
+
+test("transport verifier exception fails closed without reading untrusted body",async()=>{
+ const x=fake({body:"not json"});
+ await handlePrivateOwnerHttp(x.req,x.res,{verifyTransport:()=>{throw Error("certificate verifier unavailable");}});
+ assert.equal(x.result().status,403);safe(x.result());
+ assert.equal(JSON.stringify(x.result()).includes("certificate verifier unavailable"),false);
+});
+test("private HTTP refuses forged forwarded identity and authority fields",async()=>{
+ const x=fake({trusted:false,body:JSON.stringify({decision:"approve",
+  requestId:"a".repeat(64),proof:{},dispatched:true})});
+ x.req.headers["x-forwarded-client-cert"]="trusted";
+ x.req.headers["x-forwarded-proto"]="https";
+ await handlePrivateOwnerHttp(x.req,x.res,{verifyTransport});
+ assert.equal(x.result().status,403);safe(x.result());
+});
