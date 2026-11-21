@@ -231,3 +231,27 @@ failures, wrong owner, changed PR SHA, unavailable dependencies and
 missing key. **This adapter is NOT mounted or deployed.** Production-grade
 key custody/rotation, actual OAuth session wiring, private transport,
 server-side audit and browser consent are still mandatory before activation.
+
+## Ed25519 key rotation (development only)
+
+`phase2aOwnerProofKeyring.js` defines an injected, immutable keyring.
+The public edge has exactly one active Ed25519 signing key ID. The private
+processor may recognize up to five explicitly pinned verification keys
+during a bounded handoff, with strict not-before/not-after windows.
+The signer uses `aca-owner-edge-proof-v2`, which cryptographically
+includes the key ID in the signed payload. The verifier resolves the exact
+key ID and rejects unknown, swapped, expired or retired IDs; when a keyring
+is configured, legacy v1 proofs are **not accepted as fallback**.
+
+`phase2aAuthenticatedEdgeIntent.js`,
+`phase2aPrivateOwnerIntent.js` and `phase2aPrivateMtlsClient.js`
+now support this versioned proof format. Tests cover overlap, rotation,
+tampering, mismatched signing/verification keys, expired active keys and
+absence of legacy fallback.
+
+**No real keys or rotation schedule have been provisioned.** Before
+staging activation, store the edge private key in an appropriate secret
+manager, distribute only authorized public verification keys to the
+private service, document issuance/rotation/revocation, handle
+multi-instance rollout and rollback, and audit signing access. The
+owner-proof keys MUST be separate from GitHub reviewer-signing keys.
