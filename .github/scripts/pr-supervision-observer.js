@@ -7,6 +7,7 @@
  */
 const {evaluatePrSupervision} = require("../../src/automation/prSupervisionPolicy");
 const {ALLOWLIST_LABEL, LABELS} = require("../../src/automation/safeQueuePolicy");
+const {verifyClosingIssueLink} = require("../../src/automation/verifiedPrLink");
 
 function validNumber(value) {
   return Number.isSafeInteger(value) && value > 0;
@@ -32,6 +33,22 @@ async function observe({github, owner, repo, prNumber, issueNumber}) {
   const {data: pr} = await github.rest.pulls.get({owner, repo, pull_number: prNumber});
   const {data: issue} = await github.rest.issues.get({owner, repo, issue_number: issueNumber});
   const headSha = pr?.head?.sha;
+  let trustedLink = false;
+  if (typeof github.graphql === "function") {
+    const linkData = await github.graphql(`query($owner:String!,$repo:String!,$pr:Int!) {
+      repository(owner:$owner,name:$repo) {
+        pullRequest(number:$pr) {
+          number
+          closingIssuesReferences(first:2) {
+            pageInfo { hasNextPage }
+            nodes { number repository { databaseId } }
+          }
+        }
+      }
+    }`, {owner, repo, pr:prNumber});
+    trustedLink = verifyClosingIssueLink({prNumber, issueNumber,
+      repositoryId:String(repository.id), data:linkData});
+  }
   const trustedHead = Boolean(headSha && sameRepo(pr, repository.id));
   const {data: checks} = await github.rest.checks.listForRef({
     owner, repo, ref: headSha, per_page: 100, filter: "latest"
@@ -47,7 +64,7 @@ async function observe({github, owner, repo, prNumber, issueNumber}) {
   return evaluatePrSupervision({
     issue: {number: issue.number, state: issue.state, eligible: eligibleIssue(issue)},
     pr: {number: pr.number, state: pr.state, headSha, issueNumber, draft: pr.draft},
-    trustedHead, trustedLink: false, ci,
+    trustedHead, trustedLink, ci,
     review: null, correction: {attempts: 0, unchangedFailureCount: 0}
   });
 }
