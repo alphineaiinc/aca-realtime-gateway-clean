@@ -16,7 +16,8 @@ async function observeCorrectionHandoff({github,owner,repo,event,
  const ci=triageCompletedCi({event,expectedRepositoryId,expectedWorkflowId});
  const unverified=createCorrectionHandoff({event,expectedRepositoryId,expectedWorkflowId});
  if(ci.state!=="failed") return unverified;
- if(!github?.rest?.repos?.get||!github?.rest?.actions?.getWorkflowRun||\n    !github?.rest?.repos?.listPullRequestsAssociatedWithCommit||
+ if(!github?.rest?.repos?.get||!github?.rest?.actions?.getWorkflowRun||
+    !github?.rest?.repos?.listPullRequestsAssociatedWithCommit||
     !github?.rest?.pulls?.get||typeof github.graphql!=="function"||
     typeof owner!=="string"||!owner||typeof repo!=="string"||!repo)
    return unverified;
