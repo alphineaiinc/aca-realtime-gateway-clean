@@ -26,6 +26,17 @@ CREATE TABLE IF NOT EXISTS aca_automation.correction_events (
     REFERENCES aca_automation.correction_ledgers(repository_id, issue_number, pr_number)
     ON DELETE RESTRICT
 );
+-- Enforce append-only correction events even if a runtime role is misconfigured.
+CREATE OR REPLACE FUNCTION aca_automation.reject_correction_event_mutation()
+RETURNS trigger LANGUAGE plpgsql AS $
+BEGIN
+  RAISE EXCEPTION 'correction_events_are_immutable';
+END;
+$;
+DROP TRIGGER IF EXISTS correction_events_immutable ON aca_automation.correction_events;
+CREATE TRIGGER correction_events_immutable
+BEFORE UPDATE OR DELETE ON aca_automation.correction_events
+FOR EACH ROW EXECUTE FUNCTION aca_automation.reject_correction_event_mutation();
 -- Runtime role must not have UPDATE/DELETE on these tables.
 -- Provision separate migration and runtime roles outside this migration.
 COMMIT;
