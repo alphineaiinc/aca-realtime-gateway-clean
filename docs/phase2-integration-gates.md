@@ -23,3 +23,8 @@
 5. Obtain explicit owner approval before merging or deploying. Never infer merge or deployment authorization from policy readiness.
 
 The supervisor is **advisory only**: it never authorizes merges, deployment or native Codex dispatch.
+
+## Security hardening update
+- Append now rejects missing ledgers. An explicit non-resetting initializer exists, but its caller-supplied authentication flag and SHA are NOT independent authentication or proof of GitHub provenance. Operational service-role enforcement remains outstanding.
+- CI check evidence now requires a pinned trusted GitHub App ID; the observer fails closed without it. Trusted workflow/run identity and app pin provisioning still need operational verification.
+- No external trusted-review service or production database service has been connected. No Phase 2 production readiness is claimed.
