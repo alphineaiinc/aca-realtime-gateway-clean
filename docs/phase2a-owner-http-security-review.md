@@ -49,3 +49,22 @@ certification**.
 
 **Decision:** Keep handler unmounted and all live approval activation
 disabled until the remaining gates are separately verified.
+
+## Staging mount preflight — new fail-closed gate
+
+`src/automation/phase2aOwnerMountPreflight.js` and the unmounted HTTP
+handler now require a pinned HTTPS staging origin and identical expected
+origin, a trusted GitHub owner/repository scope, distinct OAuth client
+secret, GitHub read token and reviewer signing secret, a real server-side
+OAuth/approval dependency set, and an injected trusted transport verifier.
+If any required condition is absent, Phase 2A routes respond as disabled.
+Even when configured, every request is denied until the transport
+verifier positively confirms the trusted TLS/reverse-proxy chain.
+
+The verifier must be implemented by the **mounting service** using a
+verified private proxy identity or direct TLS socket. The handler MUST
+NOT treat request-supplied `Host`, `X-Forwarded-Host` or
+`X-Forwarded-Proto` as proof of HTTPS. A CI fixture verifier returning
+`true` is not a deployable security implementation. There is still
+**no mounted route, secure proxy implementation, OAuth secret, Neon
+migration, or live owner approval service**.
