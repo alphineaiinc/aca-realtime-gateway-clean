@@ -71,3 +71,42 @@ lifecycle, secure cookie/session storage, and validation that the API request
 came from that session are **not built**. Do not accept owner IDs, approval
 comments, or the proof-only packet as authentication. Do not configure a
 live approval endpoint before those features are independently reviewed.
+
+## Owner browser session boundary — development only
+
+`src/automation/phase2aOwnerSession.js` is an **unwired** backend session
+protocol. The login flow generates a 256-bit random state, opaque browser
+binding handle and PKCE S256 challenge. Only a short-lived atomic server-side
+store holds the code verifier and pending state. The callback consumes its
+pending state **once**, checks a five-minute expiry, then relies on the
+server-side GitHub code exchange and authenticated `/user` identity check.
+After success, the backend issues a fresh independent session cookie
+(`__Host-aca_owner`, `Secure`, `HttpOnly`, `SameSite=Strict`, path
+`/`), a distinct CSRF token, and a maximum 15-minute session.
+
+Every approval POST must pass exact HTTPS Origin, the HttpOnly session
+cookie, independent CSRF header, server-side current session, and expiry
+checks before its validated owner ID is forwarded to the owner decision
+store. Logout revokes that session. The module has no routes, listeners,
+GitHub client registration, token exchange implementation, or dispatch code.
+Its tests use an injected in-memory **fixture** store only.
+
+**Before enabling live OAuth:**
+- Register and verify an exact GitHub callback URL on a separate user-login
+  integration; the existing reviewer app signing flow is not required
+- Implement a trusted login-binding browser cookie/flow that cannot be
+  supplied or replaced by a cross-site attacker. The opaque login handle
+  must never be trusted merely because it appears in a callback query
+- Supply a persistent atomic consume-once store shared by every instance;
+  encrypt sensitive data at rest, expire records and rotate sessions
+- Use a server-only code-to-token exchange pinned to exact callback URL,
+  client identity and PKCE verifier; never send access tokens to the browser
+- Keep owner login tokens separate from the GitHub read-only service token
+- Add rate limits, request size limits, audit/monitoring and secure headers
+- Retest against the actual configured redirect/origin, multi-instance
+  behavior, failed token exchange and concurrent login replay
+- Independently revalidate live ACA CI, current PR head, issue eligibility,
+  and ledger before persisting any owner intent
+
+An authenticated **session** is still only an identity proof; it never
+authorizes code execution, PR merge, signing or production deployment.
