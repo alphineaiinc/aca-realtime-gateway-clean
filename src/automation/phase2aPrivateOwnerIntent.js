@@ -13,7 +13,7 @@ const flags=()=>({agentDispatchAuthorized:false,dispatched:false,
  productionAuthorization:false});
 const blocked=reason=>Object.freeze({state:"blocked",reason,...flags()});
 async function handlePrivateOwnerIntent({body,expectedIssuer,expectedAudience,
- repositoryId,ownerId,publicKey,nonceStore,decisionClient,
+ repositoryId,ownerId,publicKey,keyring,nonceStore,decisionClient,
  loadPendingPacket,loadFreshHandoff,now=Date.now()}={}){
  if(!body||Object.keys(body).sort().join(",")!=="decision,proof,requestId"||
    !["approve","reject"].includes(body.decision)||
@@ -22,7 +22,7 @@ async function handlePrivateOwnerIntent({body,expectedIssuer,expectedAudience,
    typeof loadPendingPacket!=="function"||
    typeof loadFreshHandoff!=="function")
   return blocked("invalid_private_request");
- const verified=await verifyOwnerEdgeProof({proof:body.proof,publicKey,
+ const verified=await verifyOwnerEdgeProof({proof:body.proof,publicKey,keyring,
   expectedIssuer,expectedAudience,expectedRepositoryId:repositoryId,
   expectedOwnerId:ownerId,expectedRequestId:body.requestId,
   expectedDecision:body.decision,nonceStore,now});
