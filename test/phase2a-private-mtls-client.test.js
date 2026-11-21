@@ -83,6 +83,6 @@ test("private response cannot grant merge, deployment or execution",async()=>{
  }
  const denied=fakeRequest(403,{state:"blocked"});
  await assert.rejects(createPrivateMtlsClient({...options,requestImpl:denied.requestImpl})
-  .sendAdvisory({body:{decision:"reject",requestId:"b".repeat(64)}}),
+  .sendAdvisory({body:{decision:"reject",requestId:"b".repeat(64),proof:proof("b".repeat(64),"reject")}}),
  /private_request_blocked/);
 });
