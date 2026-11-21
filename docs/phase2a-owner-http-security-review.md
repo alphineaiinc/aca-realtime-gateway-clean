@@ -170,3 +170,39 @@ Render references:
 - https://render.com/docs/private-services
 - https://render.com/docs/private-network
 - https://render.com/articles/how-render-handles-private-networking
+
+## Edge-to-private owner intent proof — development only
+
+The public OAuth edge and private owner-decision service now have **unwired**
+proof and verification adapters. `phase2aOwnerEdgeProof.js` signs exactly
+one owner ID, repository ID, request ID, approve/reject choice, issuer and
+private-service audience with Ed25519. Proofs expire within **60 seconds**,
+include a 256-bit random nonce, reject extra authority fields and are
+never treated as Codex dispatch, signing, merge, deploy or production permission.
+The edge's signing key must only be used **after** it has verified the
+real owner's session, CSRF and exact review request.
+
+The private side (`phase2aPrivateOwnerIntent.js`) checks the signature,
+issuer, audience, repository, owner and chosen decision; consumes the
+nonce atomically; then reloads the **trusted** pending packet and fresh
+GitHub/CI/ledger correction handoff before applying the existing
+transactional advisory decision store. Replays, expired/tampered proofs,
+stale CI and wrong owner all fail closed. The private mTLS client now
+requires this proof in each request: a bare approve/reject is insufficient.
+**mTLS authenticates the edge service; the proof conveys the separately
+authenticated owner identity; neither authorizes agent execution.**
+
+`migrations/aca_phase2a_owner_edge_nonce_staging.sql` and
+`phase2aOwnerEdgeNonceStore.js` provide an insert-only, shared PostgreSQL
+nonce ledger. A unique hashed nonce makes simultaneous claims across
+instances single-use. The role is NOLOGIN with INSERT only; no actual
+staging login is provisioned. The migration is **not applied** to Neon.
+
+**Still not activated:** no key issuance, edge session-to-proof integration,
+private handler HTTP routing, authenticated private network deployment,
+certificate lifecycle, real owner consent screen, or live database role.
+Proof issuing is a low-level signing primitive and MUST NOT be exposed to
+a browser or called without server-side session and intent validation.
+Before any activation, independently review key storage/rotation, nonce
+cleanup/retention, issuer and audience pinning, current-CI verification,
+cross-instance concurrency and real Render private-service routing.
