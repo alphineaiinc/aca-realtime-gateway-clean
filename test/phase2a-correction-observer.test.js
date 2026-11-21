@@ -3,7 +3,7 @@ const {test}=require("node:test");
 const assert=require("node:assert/strict");
 const {observeCorrectionHandoff}=require("../.github/scripts/phase2a-correction-observer");
 const repositoryId=1080201236,workflowId=422174901,sha="a".repeat(40);
-const allow=["aca-auto-eligible","aca-auto-active","aca-auto-allowlisted"];
+const allow=["aca:auto/docs-test","aca:auto/eligible","aca:auto/active"];
 function fixtures(){
  const event={action:"completed",repository:{id:repositoryId},
   workflow_run:{id:77,name:"ACA CI",workflow_id:workflowId,head_sha:sha,
