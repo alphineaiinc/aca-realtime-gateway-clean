@@ -11,6 +11,7 @@ const {inspectWithGithubApp}=require("./githubAppPrTriage");
 const {evaluateStagingCorrection}=require("./phase2aStagingCorrectionEndpoint");
 const {createPhase2aClients}=require("./phase2aStagingClients");
 const {phase2aStartupPreflight}=require("./phase2aStartupPreflight");
+const {verifyStagingProof}=require("./phase2aStagingPositiveProof");
 const SHA=/^[a-f0-9]{40}$/;
 const positive=n=>Number.isSafeInteger(n)&&n>0;
 function matchingReview({pr,reviews,scope,reviewerId}){
@@ -187,6 +188,53 @@ function startServer(env=process.env,{githubTokenProvider=installationReadToken,
          console.warn("ACA_PHASE2A_SMOKE unexpected_decision");
        }
      }).catch(()=>console.warn("ACA_PHASE2A_SMOKE blocked unexpected_error"));
+   });
+ }
+ // One-shot read-only staging proof: isolated from correction authorization.
+ // Explicit numeric targets must be supplied in staging env; proof expires
+ // within five minutes. It logs no secrets, DB rows or untrusted CI content.
+ if(createdClients&&env.ACA_PHASE2A_ENABLED==="true"&&
+    env.ACA_PHASE2A_POSITIVE_PROOF_ONCE==="true"){
+   server.once("listening",()=>{
+     const runId=Number(env.ACA_PHASE2A_PROOF_RUN_ID);
+     const prNumber=Number(env.ACA_PHASE2A_PROOF_PR_NUMBER);
+     const issueNumber=Number(env.ACA_PHASE2A_PROOF_ISSUE_NUMBER);
+     const expectedHeadSha=env.ACA_PHASE2A_PROOF_HEAD_SHA;
+     if(!positive(runId)||!positive(prNumber)||!positive(issueNumber)||
+        !SHA.test(expectedHeadSha||""))
+       return console.warn("ACA_PHASE2A_POSITIVE_PROOF blocked configuration");
+     void (async()=>{
+       let client;
+       try{
+         client=await createdClients.pool.connect();
+         const identity=await client.query("SELECT current_user AS db_role, pg_has_role(current_user, 'pg_read_all_data', 'member') AS broad_read");
+         if(identity?.rows?.length!==1||
+            identity.rows[0].db_role!==env.ACA_PHASE2A_LEDGER_ROLE||
+            identity.rows[0].broad_read!==false)
+           throw Error("untrusted_db_role");
+         const grants=await client.query(`SELECT
+          has_table_privilege(current_user,'aca_automation.correction_ledgers','SELECT') AS rl,
+          has_table_privilege(current_user,'aca_automation.correction_events','SELECT') AS re,
+          has_table_privilege(current_user,'aca_automation.correction_ledgers','INSERT,UPDATE,DELETE') AS wl,
+          has_table_privilege(current_user,'aca_automation.correction_events','INSERT,UPDATE,DELETE') AS we`);
+         const g=grants?.rows?.[0];
+         if(grants?.rows?.length!==1||g.rl!==true||g.re!==true||
+            g.wl!==false||g.we!==false)throw Error("unsafe_db_grants");
+         const result=await verifyStagingProof({
+           github:createdClients.github,ledgerClient:client,
+           owner:parts[0],repo:parts[1],repositoryId,
+           workflowId:Number(env.ACA_PHASE2A_WORKFLOW_ID),
+           runId,prNumber,issueNumber,expectedHeadSha,
+           expiresAt:Date.now()+5*60*1000
+         });
+         console.info("ACA_PHASE2A_POSITIVE_PROOF "+result.state+" "+result.stage+
+           " authorization="+result.productionAuthorization+
+           " dispatch="+result.agentDispatchAuthorized+
+           " merge="+result.mergeAuthorized+
+           " deploy="+result.deployAuthorized);
+       }catch{console.warn("ACA_PHASE2A_POSITIVE_PROOF blocked evidence_unavailable");}
+       finally{try{client?.release();}catch{}}
+     })();
    });
  }
  server.listen(port,"0.0.0.0");
