@@ -135,3 +135,44 @@ test("unauthenticated approval cannot probe the pending request lookup",async()=
  assert.equal(x.lookups,0);
  assert.equal(x.writes,0);
 });
+
+test("disabled adapter never consumes unrelated routes",async()=>{
+ const x=setup();x.opts.enabled=false;
+ const r=await call(x.opts,{url:"/health"});
+ assert.equal(r.handled,false);
+});
+test("rate limiter exceptions deny requests without consuming login state",async()=>{
+ const x=setup();x.opts.checkRateLimit=async()=>{throw Error("rate limit store down");};
+ const r=await call(x.opts);
+ assert.equal(r.status,429);assert.equal(x.opts.sessionStore.pending.size,0);
+ assert.equal(JSON.stringify(r.body).includes("rate limit store down"),false);
+});
+test("logout requires same-origin POST with authenticated CSRF",async()=>{
+ const x=setup(),{callback}=await login(x);
+ const cookie=callback.headers["Set-Cookie"][1].split(";")[0];
+ const csrf=callback.body.csrfToken;
+ const wrong=await call(x.opts,{method:"POST",url:"/phase2a/owner/logout",
+  headers:{cookie,origin:"https://staging.example.test"}});
+ assert.equal(wrong.status,401);
+ assert.equal(x.opts.sessionStore.sessions.size,1);
+ const evil=await call(x.opts,{method:"POST",url:"/phase2a/owner/logout",
+  headers:{cookie,origin:"https://evil.example.test","x-aca-csrf":csrf}});
+ assert.equal(evil.status,401);
+ assert.equal(x.opts.sessionStore.sessions.size,1);
+ const valid=await call(x.opts,{method:"POST",url:"/phase2a/owner/logout",
+  headers:{cookie,origin:"https://staging.example.test","x-aca-csrf":csrf}});
+ assert.equal(valid.status,200);assert.equal(valid.body.state,"signed_out");
+ assert.equal(x.opts.sessionStore.sessions.size,0);
+});
+test("callback accepts only origin-relative path and rejects absolute URLs",async()=>{
+ const x=setup();
+ const r=await call(x.opts,{url:"https://staging.example.test/phase2a/oauth/callback?code=a&state=b"});
+ assert.equal(r.handled,false);
+ const start=await call(x.opts);
+ const state=new URL(start.body.authorizationUrl).searchParams.get("state");
+ const cookie=start.headers["Set-Cookie"].split(";")[0];
+ const tampered=await call(x.opts,{url:"/phase2a/oauth/callback?code=one-time-code&state="+state+"#fragment",
+ headers:{cookie}});
+ assert.equal(tampered.status,400);
+ assert.equal(x.opts.sessionStore.pending.size,1);
+});
