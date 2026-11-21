@@ -119,7 +119,7 @@ test("authentic approval intent remains advisory and never triggers code executi
    "x-aca-csrf":callback.body.csrfToken,"content-type":"application/json"},
   body:{decision:"approve",requestId:x.packet.id}});
  assert.equal(r.status,200);assert.equal(r.body.state,"owner_intent_to_review");
- for(const key of ["agentDispatchAuthorized","mergeAuthorized","deployAuthorized",
+ for(const key of ["agentDispatchAuthorized","dispatched","mergeAuthorized","deployAuthorized",
   "signingAuthorized","productionAuthorization"])assert.equal(r.body[key],false);
  assert.ok(x.writes>0);
 });
@@ -207,5 +207,22 @@ test("staging mount denies origin mismatch and shared service credentials",async
   const r=await call(x.opts);
   assert.equal(r.status,404,JSON.stringify(overrides));
   assert.equal(x.opts.sessionStore.pending.size,0);
+ }
+});
+
+test("staging preflight and disabled HTTP routes deny every execution permission",async()=>{
+ const {validateStagingOwnerMount}=require("../src/automation/phase2aOwnerMountPreflight");
+ const x=setup();
+ const disabled=validateStagingOwnerMount({...x.opts,enabled:false});
+ const configured=validateStagingOwnerMount(x.opts);
+ assert.equal(disabled.ready,false);
+ assert.equal(configured.ready,true);
+ const response=await call({...x.opts,enabled:false});
+ assert.equal(response.status,404);
+ for(const result of [disabled,configured,response.body]){
+  for(const flag of ["agentDispatchAuthorized","dispatched","mergeAuthorized",
+   "deployAuthorized","signingAuthorized","productionAuthorization"]){
+   assert.equal(result[flag],false,flag);
+  }
  }
 });
