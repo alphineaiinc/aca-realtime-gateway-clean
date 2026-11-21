@@ -64,3 +64,11 @@ test("complete multi-hunk patch remains advisory and never signs",()=>{
  assert.equal(result.status,"manual_review_required");
  assert.equal(result.independent,false);
 });
+
+test("leading --- removed lines and +++ added lines are real hunk content",()=>{
+ const patch="@@ -1 +1 @@\n------BEGIN PRIVATE KEY-----\n++++-----BEGIN PRIVATE KEY-----";
+ const result=inspectPrPatches({...base,files:[file("README.md",patch)]});
+ assert.equal(result.status,"findings");
+ assert.equal(result.independent,false);
+ assert.ok(result.findings.some(f=>f.rule==="secret-material"));
+});
