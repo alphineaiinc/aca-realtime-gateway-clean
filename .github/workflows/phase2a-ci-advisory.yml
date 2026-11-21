@@ -1,0 +1,37 @@
+name: ACA Phase 2A CI Advisory
+on:
+  workflow_run:
+    workflows: ["ACA CI"]
+    types: [completed]
+permissions:
+  contents: read
+jobs:
+  classify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout trusted default branch only
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          persist-credentials: false
+      - name: Classify completed CI (read-only; no agent dispatch)
+        env:
+          GITHUB_EVENT_PATH: ${{ github.event_path }}
+        run: |
+          node <<'NODE'
+          const fs=require("node:fs");
+          const path=require("node:path");
+          const file=path.resolve("src/automation/phase2aCiTriage.js");
+          if(!fs.existsSync(file)){
+            console.log("Phase 2A advisory not yet merged on trusted default branch; deferred.");
+            process.exit(0);
+          }
+          const event=JSON.parse(fs.readFileSync(process.env.GITHUB_EVENT_PATH,"utf8"));
+          const {triageCompletedCi}=require(file);
+          const decision=triageCompletedCi({
+            event,expectedRepositoryId:1080201236,expectedWorkflowId:422174901
+          });
+          console.log(JSON.stringify(decision));
+          if(decision.state==="blocked") process.exitCode=1;
+          NODE
