@@ -6,9 +6,9 @@
  */
 const positive=x=>Number.isSafeInteger(x)&&x>0;
 async function phase2aStartupPreflight({github,pool,owner,repo,
- repositoryId,workflowId,runId,dbRole}={}){
+ repositoryId,workflowId,runId,prNumber,dbRole}={}){
  const failed=(stage)=>Object.freeze({status:"blocked",stage});
- if(!positive(repositoryId)||!positive(workflowId)||!positive(runId)||
+ if(!positive(repositoryId)||!positive(workflowId)||!positive(runId)||!positive(prNumber)||
     typeof owner!=="string"||typeof repo!=="string"||
     !/^[A-Za-z0-9_.-]+$/.test(owner)||!/^[A-Za-z0-9_.-]+$/.test(repo)||
     typeof dbRole!=="string"||!/^[a-z_][a-z0-9_]{0,62}$/.test(dbRole)||
@@ -26,8 +26,8 @@ async function phase2aStartupPreflight({github,pool,owner,repo,
       run?.head_repository?.id!==repositoryId||
       run?.workflow_id!==workflowId||run?.name!=="ACA CI"||
       run?.status!=="completed")return failed("github_actions");
-   const {data:pr}=await github.rest.pulls.get({owner,repo,pull_number:27});
-   if(pr?.number!==27||pr?.head?.repo?.id!==repositoryId||
+   const {data:pr}=await github.rest.pulls.get({owner,repo,pull_number:prNumber});
+   if(pr?.number!==prNumber||pr?.head?.repo?.id!==repositoryId||
       pr?.base?.repo?.id!==repositoryId)return failed("github_pull_request");
    const response=await github.graphql(`query($owner:String!,$repo:String!,$pr:Int!) {
     repository(owner:$owner,name:$repo) { pullRequest(number:$pr) {
@@ -36,8 +36,8 @@ async function phase2aStartupPreflight({github,pool,owner,repo,
       nodes {number repository {databaseId}}
      }
     }}
-   }`,{owner,repo,pr:27});
-   if(response?.repository?.pullRequest?.number!==27)
+   }`,{owner,repo,pr:prNumber});
+   if(response?.repository?.pullRequest?.number!==prNumber)
      return failed("github_graphql");
  }catch{return failed("github_api");}
  let client;
