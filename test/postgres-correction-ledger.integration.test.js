@@ -6,6 +6,8 @@ const path=require("node:path");
 const {randomUUID}=require("node:crypto");
 const {Pool}=require("pg");
 const {appendCorrection}=require("../src/automation/postgresCorrectionLedger");
+const {initializeCorrectionLedger}=require("../src/automation/postgresCorrectionLedgerInitializer");
+const {readCorrectionHistory}=require("../src/automation/postgresCorrectionHistoryReader");
 
 if (!process.env.ACA_TEST_DATABASE_URL) {
   test("PostgreSQL integration requires isolated ACA_TEST_DATABASE_URL", {skip:true},()=>{});
@@ -24,9 +26,16 @@ if (!process.env.ACA_TEST_DATABASE_URL) {
       try {
         await assert.rejects(appendCorrection(missingClient,base),/missing_ledger/);
       } finally { missingClient.release(); }
-      await pool.query(`INSERT INTO aca_automation.correction_ledgers
-        (repository_id,issue_number,pr_number) VALUES ($1,$2,$3)`,
-        [base.repositoryId,base.issueNumber,base.prNumber]);
+      const initClient=await pool.connect();
+      try {
+        assert.equal((await initializeCorrectionLedger(initClient,base,{
+          verifiedHeadSha:base.priorHeadSha,authenticatedInitializer:true
+        })).initialized,true);
+        await assert.rejects(initializeCorrectionLedger(initClient,base,{
+          verifiedHeadSha:base.priorHeadSha,authenticatedInitializer:true
+        }),/ledger_already_initialized/);
+        assert.equal((await readCorrectionHistory(initClient,base)).attempts,0);
+      } finally {initClient.release();}
       // Use distinct clients so simultaneous transactions actually contend on row locks.
       const [c1,c2]=await Promise.all([pool.connect(),pool.connect()]);
       let outcomes;
@@ -42,6 +51,12 @@ if (!process.env.ACA_TEST_DATABASE_URL) {
         aca_automation.correction_events WHERE repository_id=$1 AND issue_number=$2
         AND pr_number=$3`,[base.repositoryId,base.issueNumber,base.prNumber]);
       assert.equal(rows.rowCount,1);
+      const readClient=await pool.connect();
+      try {
+        const history=await readCorrectionHistory(readClient,base);
+        assert.equal(history.attempts,1);
+        assert.equal(history.lastResultingHeadSha,rows.rows[0].resulting_head_sha);
+      } finally {readClient.release();}
       const first=rows.rows[0];
       const c3=await pool.connect();
       try{
@@ -66,6 +81,12 @@ if (!process.env.ACA_TEST_DATABASE_URL) {
         aca_automation.correction_events WHERE repository_id=$1 AND issue_number=$2
         AND pr_number=$3`,[base.repositoryId,base.issueNumber,base.prNumber]);
       assert.equal(final.rows[0].n,2);
+      const lastClient=await pool.connect();
+      try {
+        const history=await readCorrectionHistory(lastClient,base);
+        assert.equal(history.attempts,2);
+        assert.equal(history.lastResultingHeadSha,sha("d"));
+      } finally {lastClient.release();}
     }finally{await pool.end();}
   });
 }
