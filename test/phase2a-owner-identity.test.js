@@ -6,8 +6,8 @@ const o=230486228,token="owner-oauth-local-fixture-012345678901",
  serviceReadToken="read-only-service-local-fixture-012345678901";
 const base={userOAuthToken:token,serviceReadToken,
  expectedOwnerId:o,expectedOwnerLogin:"alphineaiinc"};
-function safe(x){for(const field of ["agentDispatchAuthorized","mergeAuthorized",
- "deployAuthorized"])assert.equal(x[field],false);}
+function safe(x){for(const field of ["agentDispatchAuthorized","dispatched","mergeAuthorized",
+ "deployAuthorized","signingAuthorized","productionAuthorization"])assert.equal(x[field],false);}
 test("GitHub authenticated user ID and login validate owner but never authorize actions",async()=>{
  const requests=[];
  const r=await verifyGitHubOwner({...base,fetchImpl:async(url,options)=>{
