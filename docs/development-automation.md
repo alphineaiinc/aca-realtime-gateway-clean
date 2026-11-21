@@ -109,4 +109,5 @@ Operational implication:
   - `src/automation/safeQueuePolicy.js`
   - `.github/scripts/safe-queue-runner.js`
   - `test/safe-queue-policy.test.js`
-- This fallback queue provides eligibility gating, single-active lock, idempotent audit comments, and fail-closed behavior; it does not start native coding sessions.
+  - `test/safe-queue-runner.test.js`
+- This fallback queue provides eligibility gating, repository-wide serialized workflow execution, single-active lock reconciliation on release events, trusted-bot audit-comment idempotency, and fail-closed behavior; it does not start native coding sessions.

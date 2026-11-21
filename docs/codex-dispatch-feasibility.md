@@ -22,7 +22,9 @@ No fake completion claims are made for native programmatic dispatch.
 - Safe queue workflow: `.github/workflows/safe-codex-queue.yml`
 - Queue policy code: `src/automation/safeQueuePolicy.js`
 - Queue workflow runner: `.github/scripts/safe-queue-runner.js`
-- Queue tests: `test/safe-queue-policy.test.js`
+- Queue tests:
+  - `test/safe-queue-policy.test.js`
+  - `test/safe-queue-runner.test.js`
 
 ### GitHub interfaces and results captured during this issue
 
@@ -66,14 +68,16 @@ Security boundaries:
 
 ### Single active task lock
 
-- Uses open issue label `aca:auto/active` as lock signal.
+- Workflow concurrency is repository-wide (`aca-safe-codex-queue-${{ github.repository }}`), so only one queue run executes at a time in this repository.
+- Uses open issue label `aca:auto/active` as lock state inside the serialized run.
 - If another open issue already has this label, new candidates fail closed with reason `active_issue_lock`.
+- Reconciliation re-evaluates open allowlisted issues after each run and after lock-holder release events so queued/blocked candidates can progress without manual edits to each issue.
 
 ### Idempotency and audit trail
 
 - Decision comments include deterministic marker:
   - `<!-- aca-auto-queue:v1:<issue_number>:<decision_code> -->`
-- Existing marker prevents duplicate comments for the same decision.
+- Existing marker only counts for idempotency when authored by trusted bot identity `github-actions[bot]` and when expected decision heading content is present.
 - Decision labels and comment history provide an auditable trail.
 
 ### Manual step (remains manual by design)
@@ -86,6 +90,7 @@ Security boundaries:
 
 - Closed issues have automation labels removed.
 - Missing allowlist, non-open state, PR payloads, or active-lock conflicts block progression.
+- Automation-generated label events from `github-actions[bot]` are ignored to avoid self-trigger loops.
 
 ## Costs and Usage Control
 
@@ -112,4 +117,14 @@ Operational cost note:
   - single-active lock behavior
   - manual dispatch request state
   - fail-closed closed-issue handling
+- Runner unit tests validate:
+  - spoofed non-bot marker does not suppress trusted audit comment creation
+  - trusted bot marker prevents duplicate comments
+  - release reconciliation promotes task B after task A closes
+  - serialized two-issue assignment leaves one active and blocks the peer
 - Workflow behavior is constrained to labels/comments/locking and does not perform code execution dispatch.
+
+## Remaining Limitations
+
+- Repository-wide workflow serialization reduces race risk but still depends on GitHub Actions scheduler guarantees; delayed or stuck runs can postpone reconciliation.
+- Queue state is label/comment based rather than transactional storage, so eventual consistency is expected across event bursts.

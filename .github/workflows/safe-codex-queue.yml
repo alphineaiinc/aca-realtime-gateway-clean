@@ -7,8 +7,8 @@ permissions:
   issues: write
   pull-requests: read
 concurrency:
-  group: aca-safe-codex-queue-${{ github.event.issue.number }}
-  cancel-in-progress: true
+  group: aca-safe-codex-queue-${{ github.repository }}
+  cancel-in-progress: false
 jobs:
   evaluate:
     name: Evaluate safe queue policy
