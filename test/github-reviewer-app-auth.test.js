@@ -26,7 +26,7 @@ test("installation token requests exact repository and read-only permissions",as
     permissions:{contents:"read",pull_requests:"read",metadata:"read"}});
   return {status:201,ok:true,json:async()=>({token:"z".repeat(40),
    repositories:[{id:98765}],permissions:{contents:"read",pull_requests:"read",metadata:"read"},
-   expires_at:"2026-11-22T00:00:00Z"})};
+   expires_at:new Date(Date.now()+30*60000).toISOString()})};
  }});
  assert.equal(token,"z".repeat(40));
 });
@@ -34,10 +34,23 @@ test("installation token rejects cross-repository and write-scope responses",asy
  for(const result of [
   {repositories:[{id:999}],permissions:{contents:"read",pull_requests:"read"}},
   {repositories:[{id:98765}],permissions:{contents:"write",pull_requests:"read"}},
-  {repositories:[{id:98765},{id:999}],permissions:{contents:"read",pull_requests:"read"}}
+  {repositories:[{id:98765},{id:999}],permissions:{contents:"read",pull_requests:"read",metadata:"read"}},
+  {repositories:[{id:98765}],permissions:{contents:"read",pull_requests:"read",metadata:"read",issues:"write"}},
+  {repositories:[{id:98765}],permissions:{contents:"read",pull_requests:"read",metadata:"write"}}
  ]){
   await assert.rejects(installationReadToken({appId:2345,installationId:5432,repositoryId:98765,
    privateKey,fetchImpl:async()=>({status:201,ok:true,json:async()=>({...result,
-     token:"z".repeat(40),expires_at:"2026-11-22T00:00:00Z"})})}),/invalid_github_app_token_scope/);
+     token:"z".repeat(40),expires_at:new Date(Date.now()+30*60000).toISOString()})})}),/invalid_github_app_token_scope/);
+ }
+});
+
+test("GitHub App rejects expired and excessively long-lived installation tokens",async()=>{
+ for(const expires_at of [new Date(Date.now()-60000).toISOString(),
+   new Date(Date.now()+3*60*60*1000).toISOString(),"nonsense"]){
+   await assert.rejects(installationReadToken({appId:2345,installationId:5432,
+      repositoryId:98765,privateKey,fetchImpl:async()=>({status:201,ok:true,
+        json:async()=>({token:"z".repeat(40),repositories:[{id:98765}],
+          permissions:{contents:"read",pull_requests:"read",metadata:"read"},expires_at})})}),
+     /invalid_github_app_token_scope/);
  }
 });
