@@ -41,7 +41,7 @@ function issueOwnerEdgeProof({issuer,audience,repositoryId,ownerId,requestId,
   nonce:randomBytes(32).toString("base64url")};
  if(!valid(proof)||!privateKey)return null;
  try{
-  const key=createPrivateKey(privateKey);
+  const key=privateKey?.type==="private"?privateKey:createPrivateKey(privateKey);
   if(key.asymmetricKeyType!=="ed25519")return null;
   const signature=sign(null,payload(proof),key).toString("base64url");
   return Object.freeze({...proof,signature});
@@ -62,7 +62,7 @@ async function verifyOwnerEdgeProof({proof,publicKey,expectedIssuer,
   typeof nonceStore?.claimOnce!=="function")
   return blocked("invalid_or_expired_proof");
  try{
-  const pub=createPublicKey(publicKey);
+  const pub=publicKey?.type==="public"?publicKey:createPublicKey(publicKey);
   if(pub.asymmetricKeyType!=="ed25519"||
    !verify(null,payload(proof),pub,Buffer.from(proof.signature,"base64url")))
    return blocked("invalid_signature");
