@@ -24,7 +24,13 @@ jobs:
           ACA_PR_NUMBER: ${{ github.event.pull_request.number }}
         with:
           script: |
-            const {observe} = require('./.github/scripts/pr-supervision-observer.js');
+            const fs = require('node:fs');
+            const observerPath = './.github/scripts/pr-supervision-observer.js';
+            if (!fs.existsSync(observerPath)) {
+              core.notice('Trusted default branch has no supervisor yet; observation deferred until approved merge.');
+              return;
+            }
+            const {observe} = require(observerPath);
             const prNumber = Number(process.env.ACA_PR_NUMBER);
             if (!Number.isSafeInteger(prNumber) || prNumber < 1) throw new Error('invalid_pr_number');
             const owner = context.repo.owner, repo = context.repo.repo;
