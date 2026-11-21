@@ -27,7 +27,7 @@ async function loggedIn(){
   expectedOwnerLogin:"alphineaiinc",now:NOW+100,fetchImpl:github});
  return {db,start,result,exchange};
 }
-function guard(x){for(const k of ["agentDispatchAuthorized","mergeAuthorized",
+function guard(x){for(const k of ["agentDispatchAuthorized","dispatched","mergeAuthorized",
  "deployAuthorized","signingAuthorized","productionAuthorization"])
   assert.equal(x[k],false,k);}
 test("OAuth start stores one-time state and PKCE verifier only in server store",async()=>{
