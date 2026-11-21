@@ -26,7 +26,8 @@ async function collectPages(fetchPage,{maxPages=20,maxItems=2000}={}){
  }
  throw Error("pagination_limit");
 }
-async function collectGithubProvenance({api,repositoryId,prNumber,headSha,workflowId,appId,requiredNames}={}){
+async function collectGithubProvenance(input={}){
+ const {api,repositoryId,prNumber,headSha,workflowId,appId,requiredNames}=(input&&typeof input==='object'&&!Array.isArray(input))?input:{};
  if(!api||!positive(repositoryId)||!positive(prNumber)||!sha(headSha)||
  !positive(workflowId)||!positive(appId)||!Array.isArray(requiredNames)||
  !requiredNames.length||requiredNames.some(n=>typeof n!=="string"||!n.trim())||
