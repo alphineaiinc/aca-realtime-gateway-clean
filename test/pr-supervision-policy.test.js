@@ -99,3 +99,19 @@ test("duplicate CI check names cause fail-closed evidence conflict", () => {
   const input=base();input.ci.requiredChecks.push({...input.ci.requiredChecks[0]});
   assert.equal(evaluatePrSupervision(input).state, STATES.BLOCKED);
 });
+
+test("queued and in-progress checks with null conclusions remain pending", () => {
+  for (const status of ["queued", "in_progress"]) {
+    const input=base();
+    input.ci.requiredChecks[0].status=status;
+    input.ci.requiredChecks[0].conclusion=null;
+    const result=evaluatePrSupervision(input);
+    assert.equal(result.state, STATES.CI_PENDING);
+    assert.equal(result.mergeAuthorized, false);
+  }
+});
+test("completed check without a conclusion fails closed", () => {
+  const input=base();
+  input.ci.requiredChecks[0].conclusion=null;
+  assert.equal(evaluatePrSupervision(input).state, STATES.BLOCKED);
+});
