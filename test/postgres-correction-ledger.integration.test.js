@@ -20,6 +20,10 @@ if (!process.env.ACA_TEST_DATABASE_URL) {
     try{
       const migration=fs.readFileSync(path.join(__dirname,"../migrations/aca_automation_correction_ledger.sql"),"utf8");
       await pool.query(migration);
+      const missingClient=await pool.connect();
+      try {
+        await assert.rejects(appendCorrection(missingClient,base),/missing_ledger/);
+      } finally { missingClient.release(); }
       await pool.query(`INSERT INTO aca_automation.correction_ledgers
         (repository_id,issue_number,pr_number) VALUES ($1,$2,$3)`,
         [base.repositoryId,base.issueNumber,base.prNumber]);
