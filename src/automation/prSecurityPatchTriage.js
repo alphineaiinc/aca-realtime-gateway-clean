@@ -62,7 +62,7 @@ function inspectPrPatches({repositoryId,prNumber,headSha,files}={}){
    if(!completeUnifiedHunks(file.patch)){
       return Object.freeze({status:"blocked",reason:"incomplete_unified_patch",findings:[],independent:false});
    }
-   const added=file.patch.split("\n").filter(l=>l.startsWith("+")&&!l.startsWith("+++")).map(l=>l.slice(1));
+   const added=file.patch.split("\n").filter(l=>l.startsWith("+")).map(l=>l.slice(1));
    for(const rule of RULES){
      if(added.some(line=>rule.re.test(line)))
        findings.push({file:file.filename,rule:rule.id,severity:rule.severity});
