@@ -58,8 +58,11 @@ async function observe({github, owner, repo, prNumber, issueNumber,
   });
   // Strict: pagination or incomplete check evidence cannot yield readiness.
   const runs = checks.check_runs || [];
-  const required = runs.filter(run => run.name === "Node tests");
-  const completeChecks = checks.total_count === runs.length && required.length === 1;
+  const requiredNames = ["Node tests", "PostgreSQL ledger integration"];
+  const required = runs.filter(run => requiredNames.includes(run.name));
+  const completeChecks = checks.total_count === runs.length &&
+    required.length === requiredNames.length &&
+    requiredNames.every(name => required.filter(run => run.name === name).length === 1);
   const ci = {headSha, requiredChecks: completeChecks ?
     required.map(run => normalizeCheck(run, headSha)) : []};
   // Optional authenticated providers. No provider means unknown, never success.
