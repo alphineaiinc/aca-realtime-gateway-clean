@@ -388,3 +388,39 @@ test("reconciliation releases a lock when native Codex assignee was revoked with
   assert.equal(hasLabel(waiting, LABELS.active), true);
   assert.equal([holder, waiting].filter((issue) => hasLabel(issue, LABELS.active)).length, 1);
 });
+
+test("clears revoked queued eligibility even when unlabeled event never runs", async () => {
+  const revoked = createIssue(97, {
+    labels: [LABELS.eligible, LABELS.queued],
+    assignees: [],
+  });
+  const unrelated = createIssue(98, {
+    labels: [ALLOWLIST_LABEL],
+    assignees: [],
+  });
+  const mock = createMockGithub([revoked, unrelated]);
+
+  // No unlabeled event for #97 is delivered; #98 triggers reconciliation.
+  await run({ github: mock.github, context: contextFor(unrelated, "assigned"), core: coreLogger() });
+  assert.equal(hasLabel(revoked, LABELS.eligible), false);
+  assert.equal(hasLabel(revoked, LABELS.queued), false);
+  assert.equal(hasLabel(revoked, LABELS.manualRequested), false);
+  assert.equal(hasLabel(revoked, LABELS.blocked), true);
+  assert.equal(hasLabel(revoked, LABELS.active), false);
+});
+
+test("clears revoked eligibility from multiple tracked task states, not just active holders", async () => {
+  const eligibleOnly = createIssue(99, { labels: [LABELS.eligible] });
+  const queuedOnly = createIssue(100, { labels: [LABELS.queued] });
+  const manualOnly = createIssue(101, { labels: [LABELS.manualRequested] });
+  const unrelated = createIssue(102, { labels: [ALLOWLIST_LABEL] });
+  const mock = createMockGithub([eligibleOnly, queuedOnly, manualOnly, unrelated]);
+
+  await run({ github: mock.github, context: contextFor(unrelated, "assigned"), core: coreLogger() });
+  for (const revoked of [eligibleOnly, queuedOnly, manualOnly]) {
+    assert.equal(hasLabel(revoked, LABELS.eligible), false);
+    assert.equal(hasLabel(revoked, LABELS.queued), false);
+    assert.equal(hasLabel(revoked, LABELS.manualRequested), false);
+    assert.equal(hasLabel(revoked, LABELS.blocked), true);
+  }
+});
