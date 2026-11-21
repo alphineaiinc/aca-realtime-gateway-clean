@@ -2,8 +2,6 @@ name: ACA PR Supervision Event Observer
 on:
   pull_request:
     types: [opened, reopened, synchronize, ready_for_review, converted_to_draft, closed]
-  check_suite:
-    types: [completed]
 permissions:
   contents: read
   pull-requests: read
