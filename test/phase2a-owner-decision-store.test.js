@@ -34,7 +34,7 @@ function fake(){
    row.state=args[1];return {rows:[{request_id:args[0]}]};
   }
   if(sql.includes("INSERT INTO aca_automation.owner_decision_events")){
-   events.push({id:args[0],type:args[1]||"created"});
+   events.push({id:args[0],type:sql.includes("'created'")?"created":args[1]});
    return {rows:[]};
   }
   throw Error("unexpected_sql");
