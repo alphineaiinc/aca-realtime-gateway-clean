@@ -79,6 +79,11 @@ function startServer(env=process.env){
      const reviews=await github("/pulls/"+scope.prNumber+"/reviews?per_page=100");
      if(!matchingReview({pr,reviews,scope,reviewerId}))
        return answer(409,{error:"independent_review_not_verified"});
+     // Re-read the PR immediately before signing. Reject a head changed
+     // while GitHub review pages were being fetched (TOCTOU defense).
+     const confirmed=await github("/pulls/"+scope.prNumber);
+     if(!matchingReview({pr:confirmed,reviews,scope,reviewerId}))
+       return answer(409,{error:"review_head_changed"});
      return answer(200,signVerdict(scope,reviewerId,
        env.ACA_REVIEW_PRIVATE_KEY.replace(/\\n/g,String.fromCharCode(10))));
    }catch{return answer(503,{error:"review_evidence_unavailable"});}
