@@ -10,6 +10,7 @@ const FLAGS=Object.freeze({agentDispatchAuthorized:false,dispatched:false,
 const deny=reason=>Object.freeze({ready:false,reason,
  privateBindAuthorized:false,networkIsolationVerified:false,...FLAGS});
 function evaluatePrivateStagingBindProposal(input={}){
+ if(!input||typeof input!=="object"||Array.isArray(input))return deny("invalid_input");
  if(input.enabled!==true||input.isolatedStaging!==true)
   return deny("disabled");
  if(input.renderServiceType!=="private_service"||
