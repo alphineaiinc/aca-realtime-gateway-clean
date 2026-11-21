@@ -23,7 +23,7 @@ const positive=x=>Number.isSafeInteger(x)&&x>0;
 const timestamp=x=>Number.isSafeInteger(x)&&x>=0;
 const digest=x=>createHash("sha256").update(x).digest("hex");
 const nonce=()=>randomBytes(32).toString("base64url");
-const inert=()=>Object.freeze({agentDispatchAuthorized:false,
+const inert=()=>Object.freeze({agentDispatchAuthorized:false,dispatched:false,
  mergeAuthorized:false,deployAuthorized:false,signingAuthorized:false,
  productionAuthorization:false});
 const denied=reason=>Object.freeze({verified:false,reason,...inert()});
