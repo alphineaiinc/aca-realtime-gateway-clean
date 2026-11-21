@@ -1,0 +1,61 @@
+# Phase 2A positive owner-approval handoff — remaining gates
+
+**Status:** development-only; positive result is validated in mocked tests, **not**
+against an authorized live GitHub issue and persisted ledger record.
+
+## Verified earlier
+
+- Read-only GitHub and Neon runtime authentication passed on the isolated Render staging service.
+- A real failed ACA CI run on temporary PR #44 produced the expected
+  `verification_required` denial (HTTP decision 409).
+- Test PR #44 and its issue #43 are now closed; deliberately failing code
+  has never been merged. There is no eligible live test issue.
+
+## Why a positive live test cannot be obtained merely by adding labels
+
+The protected GitHub queue workflow maintains `aca:auto/active` only when
+an allowlisted issue has been **manually assigned to Codex**. Any
+unassigned test issue with that label will be reconciled and the active
+label removed by the safe-queue runner.
+
+The correction observer correctly requires all three labels:
+`aca:auto/docs-test`, `aca:auto/eligible`, `aca:auto/active`.
+Applying a temporary fake `active` label, changing label policy, or
+impersonating a Codex assignment would defeat the authorization boundary.
+
+**Do not** assign Codex solely to satisfy a test. Native Codex tasks require
+separate owner approval and must not run automatically.
+
+## Responsible next implementation
+
+Create an *explicitly isolated, staging-only proof contract* whose
+authorization is not inferred from `aca:auto/active` or an assignment to
+Codex. It should independently bind:
+
+1. Repository ID, non-draft same-repository PR number and exact head SHA.
+2. One GitHub-resolved closing issue link with a limited, purpose-built
+   staging test label distinct from any real dispatch eligibility label.
+3. An authenticated, current failed ACA CI run and its head SHA.
+4. A single initializer-scoped staging ledger row bound to that evidence,
+   created via a dedicated write role only after an owner-approved test
+   initialization (never through the read-only runtime role).
+5. An advisory-only output with explicit
+   `agentDispatchAuthorized:false`, `mergeAuthorized:false`, and
+   `deployAuthorized:false`. No native Codex, signing, or production access.
+
+The staging-only proof must not be accepted as real correction
+authorization in the production policy and must have explicit expiry
+and cleanup.
+
+Until this proof contract is reviewed, *the live positive owner-approval
+state remains unverified*.
+
+## Repeat failure limitation
+
+The ledger stores the previous failure fingerprint, but no verified
+current failure fingerprint is available from the ACA CI run. After any
+recorded correction, read-only history conservatively reports an
+unknown/repeated failure as an escalation rather than presenting
+`unchangedFailureCount:0`. A future enhancement may enable a second
+correction only after an independently authenticated CI failure
+fingerprint comparison. Until then, manual escalation is required.
