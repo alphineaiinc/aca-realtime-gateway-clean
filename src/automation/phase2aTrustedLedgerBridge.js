@@ -25,6 +25,18 @@ async function observeWithTrustedLedger({pool,expectedDbRole,github,owner,repo,e
      identity.rows[0].db_role!==expectedDbRole||
      identity.rows[0].broad_read!==false)
     throw new Error("unexpected_ledger_database_role");
+  // The expected name alone cannot prove that a role has not been granted
+  // mutation privileges. Check both ledger tables explicitly.
+  const privileges=await client.query(`SELECT
+    has_table_privilege(current_user,'aca_automation.correction_ledgers','SELECT') AS can_read_ledgers,
+    has_table_privilege(current_user,'aca_automation.correction_ledgers','INSERT,UPDATE,DELETE') AS can_mutate_ledgers,
+    has_table_privilege(current_user,'aca_automation.correction_events','SELECT') AS can_read_events,
+    has_table_privilege(current_user,'aca_automation.correction_events','INSERT,UPDATE,DELETE') AS can_mutate_events`);
+  const grants=privileges?.rows?.[0];
+  if(privileges?.rows?.length!==1||grants.can_read_ledgers!==true||
+     grants.can_read_events!==true||grants.can_mutate_ledgers!==false||
+     grants.can_mutate_events!==false)
+    throw new Error("unsafe_ledger_database_grants");
   const result=await observeCorrectionHandoff({
    github,owner,repo,event,expectedRepositoryId,expectedWorkflowId,
    authenticatedLedgerClient:client
