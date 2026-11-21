@@ -13,7 +13,7 @@ function matchingReview({pr,reviews,scope,reviewerId}){
  if(!positive(reviewerId)||!Array.isArray(reviews)||reviews.length>=100||
     !pr||pr.number!==scope.prNumber||pr.head?.sha!==scope.headSha||
     pr.base?.repo?.id!==scope.repositoryId||pr.head?.repo?.id!==scope.repositoryId||
-    pr.user?.id===reviewerId||pr.state!=="open")return false;
+    pr.user?.id===reviewerId||pr.state!=="open"||pr.draft===true)return false;
  const mine=reviews.filter(r=>r?.user?.id===reviewerId&&
     ["APPROVED","CHANGES_REQUESTED","DISMISSED"].includes(r.state)&&
     typeof r.submitted_at==="string"&&Number.isFinite(Date.parse(r.submitted_at)));
@@ -36,19 +36,19 @@ function equalBearer(header,token){
  const received=Buffer.from(header.slice(7)),expected=Buffer.from(token);
  return received.length===expected.length&&timingSafeEqual(received,expected);
 }
-function startServer(env=process.env){
+function startServer(env=process.env,{githubTokenProvider=installationReadToken,githubFetch=fetch}={}){
  const port=Number(env.PORT||10000);
  const repoName=env.ACA_REVIEW_REPOSITORY||"";
  const parts=repoName.split("/");
  const reviewerId=Number(env.ACA_REVIEWER_ID);
  const repositoryId=Number(env.ACA_REVIEW_REPOSITORY_ID);
  async function github(path){
-   const token=await installationReadToken({
+   const token=await githubTokenProvider({
      appId:Number(env.ACA_REVIEW_GITHUB_APP_ID),
      installationId:Number(env.ACA_REVIEW_GITHUB_INSTALLATION_ID),
      repositoryId,privateKey:env.ACA_REVIEW_GITHUB_APP_PRIVATE_KEY||""
    });
-   const response=await fetch("https://api.github.com/repos/"+repoName+path,{
+   const response=await githubFetch("https://api.github.com/repos/"+repoName+path,{
      headers:{Authorization:"Bearer "+token,
        Accept:"application/vnd.github+json","X-GitHub-Api-Version":"2022-11-28"},
      signal:AbortSignal.timeout(7000),redirect:"error"});
