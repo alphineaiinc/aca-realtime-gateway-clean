@@ -9,7 +9,7 @@ const {timingSafeEqual}=require("node:crypto");
 const positive=x=>Number.isSafeInteger(x)&&x>0;
 const login=x=>typeof x==="string"&&/^[A-Za-z0-9-]{1,39}$/.test(x);
 const deny=reason=>Object.freeze({verified:false,reason,ownerId:null,
- agentDispatchAuthorized:false,mergeAuthorized:false,deployAuthorized:false});
+ agentDispatchAuthorized:false,dispatched:false,mergeAuthorized:false,deployAuthorized:false,signingAuthorized:false,productionAuthorization:false});
 function sameSecret(a,b){
  if(typeof a!=="string"||typeof b!=="string")return false;
  const x=Buffer.from(a),y=Buffer.from(b);
@@ -38,7 +38,7 @@ async function verifyGitHubOwner({userOAuthToken,serviceReadToken,
    return deny("owner_identity_mismatch");
   return Object.freeze({verified:true,ownerId:expectedOwnerId,
    authenticatedBy:"github_authenticated_user_api",
-   agentDispatchAuthorized:false,mergeAuthorized:false,deployAuthorized:false});
+   agentDispatchAuthorized:false,dispatched:false,mergeAuthorized:false,deployAuthorized:false,signingAuthorized:false,productionAuthorization:false});
  }catch{return deny("github_identity_unavailable");}
 }
 module.exports={verifyGitHubOwner};
