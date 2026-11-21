@@ -32,3 +32,8 @@ The repository contains a reviewer-provider interface, Ed25519 verification, dat
 - NOLOGIN reader, initializer and writer group roles created; least-privilege grants on ledger tables applied; read-only catalog check verified two tables and three roles.
 - No production Neon project/schema or data changed. No authenticated login accounts or row-level security policies provisioned yet. Group roles alone do not establish repository isolation.
 - Render has not been connected; no independent reviewer is deployed. Do not report Phase 2 operational readiness.
+
+## Repository RLS staging update
+- Applied `migrations/aca_automation_repository_rls.sql` to the isolated staging database only. Both correction tables have `ENABLE ROW LEVEL SECURITY` and `FORCE ROW LEVEL SECURITY` set; verified 3 ledger policies and 2 event policies via read-only catalog queries.
+- A protected repository-to-login mapping table exists and is **empty**. Policies consult PostgreSQL `session_user`, not a caller-controlled application variable. Therefore no runtime repository grants have been issued.
+- Real limited LOGIN identities, their role grants, trusted mapping provisioner, and cross-repository adversarial login tests are still required. Do not assert complete isolation without those tests.
