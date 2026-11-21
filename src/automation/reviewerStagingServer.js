@@ -82,7 +82,8 @@ function startServer(env=process.env,{githubTokenProvider=installationReadToken,
      // Re-read the PR immediately before signing. Reject a head changed
      // while GitHub review pages were being fetched (TOCTOU defense).
      const confirmed=await github("/pulls/"+scope.prNumber);
-     if(!matchingReview({pr:confirmed,reviews,scope,reviewerId}))
+     const latestReviews=await github("/pulls/"+scope.prNumber+"/reviews?per_page=100");
+     if(!matchingReview({pr:confirmed,reviews:latestReviews,scope,reviewerId}))
        return answer(409,{error:"review_head_changed"});
      return answer(200,signVerdict(scope,reviewerId,
        env.ACA_REVIEW_PRIVATE_KEY.replace(/\\n/g,String.fromCharCode(10))));
