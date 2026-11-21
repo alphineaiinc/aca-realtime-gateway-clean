@@ -30,7 +30,7 @@ function normalizeCheck(run, sha) {
 }
 async function observe({github, owner, repo, prNumber, issueNumber,
   authenticatedLedgerClient, trustedReviewProvider, trustedReviewerId,
-  trustedCiAppId, trustedReviewerPublicKey}) {
+  trustedCiAppId, trustedCiWorkflowId, trustedReviewerPublicKey}) {
   if (!github?.rest || !owner || !repo || !validNumber(prNumber) || !validNumber(issueNumber)) {
     throw new Error("invalid_observer_arguments");
   }
@@ -62,7 +62,7 @@ async function observe({github, owner, repo, prNumber, issueNumber,
   const runs = checks.check_runs || [];
   const requiredChecks = verifiedRequiredChecks({runs,totalCount:checks.total_count,
     headSha,requiredNames:["Node tests","PostgreSQL ledger integration"],
-    trustedAppId:trustedCiAppId});
+    trustedAppId:trustedCiAppId,trustedWorkflowId:trustedCiWorkflowId});
   const ci = {headSha,requiredChecks:requiredChecks || []};
   // Optional authenticated providers. No provider means unknown, never success.
   // Provider identity is established by the calling service, not by PR content.
