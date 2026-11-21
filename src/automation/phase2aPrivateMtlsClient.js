@@ -3,7 +3,9 @@
  * Unwired Render private-network mTLS client, for a future dedicated edge.
  * Uses fixed private service DNS, certificate validation, and explicit client
  * certificate. Never sends browser cookies, OAuth tokens or forwarding headers.
- * HTTPS request body is restricted to non-secret, advisory envelope data.
+ * HTTPS request body is restricted to signed owner-proof advisory data.
+ * The private service MUST independently verify signature, audience, owner,
+ * nonce replay, and current CI evidence before writing any owner intent.
  * No side effects on import, no request or server starts automatically.
  */
 const https=require("node:https");
@@ -11,6 +13,19 @@ const {X509Certificate,timingSafeEqual}=require("node:crypto");
 const FP=/^(?:[A-F0-9]{2}:){31}[A-F0-9]{2}$/;
 const PRIVATE=/^[a-z0-9][a-z0-9-]{1,62}(?:\.render-internal\.com)?$/;
 const PATHS=new Set(["/phase2a/internal/owner-intent"]);
+const proofFields="audience,decision,expiresAt,issuedAt,issuer,nonce,ownerId,repositoryId,requestId,signature,version";
+function wellFormedProof(p,body){
+ return p&&typeof p==="object"&&!Array.isArray(p)&&
+  Object.keys(p).sort().join(",")===proofFields&&
+  p.version==="aca-owner-edge-proof-v1"&&p.requestId===body.requestId&&
+  p.decision===body.decision&&Number.isSafeInteger(p.repositoryId)&&
+  p.repositoryId>0&&Number.isSafeInteger(p.ownerId)&&p.ownerId>0&&
+  typeof p.issuer==="string"&&typeof p.audience==="string"&&
+  Number.isSafeInteger(p.issuedAt)&&Number.isSafeInteger(p.expiresAt)&&
+  p.expiresAt>p.issuedAt&&p.expiresAt-p.issuedAt<=60000&&
+  /^[A-Za-z0-9_-]{43}$/.test(p.nonce||"")&&
+  /^[A-Za-z0-9_-]{86}$/.test(p.signature||"");
+}
 function equalHex(a,b){
  if(!FP.test(a||"")||!FP.test(b||""))return false;
  const x=Buffer.from(a.replaceAll(":",""),"hex");
@@ -31,9 +46,10 @@ function createPrivateMtlsClient({hostname,port=8443,
  return Object.freeze({
   async sendAdvisory({path="/phase2a/internal/owner-intent",body}={}){
    if(!PATHS.has(path)||!body||typeof body!=="object"||
-      Array.isArray(body)||Object.keys(body).sort().join(",")!=="decision,requestId"||
+      Array.isArray(body)||Object.keys(body).sort().join(",")!=="decision,proof,requestId"||
       !["approve","reject"].includes(body.decision)||
-      !/^[a-f0-9]{64}$/.test(body.requestId||""))
+      !/^[a-f0-9]{64}$/.test(body.requestId||"")||
+      !wellFormedProof(body.proof,body))
     throw Error("invalid_private_request");
    const payload=JSON.stringify(body);
    return new Promise((resolve,reject)=>{
