@@ -123,3 +123,15 @@ test("rate limiter dependency denies requests before touching OAuth storage",asy
  const r=await call(x.opts);
  assert.equal(r.status,429);assert.equal(x.opts.sessionStore.pending.size,0);
 });
+
+test("unauthenticated approval cannot probe the pending request lookup",async()=>{
+ const x=setup(),{callback}=await login(x);
+ const cookie=callback.headers["Set-Cookie"][1].split(";")[0];
+ const result=await call(x.opts,{method:"POST",url:"/phase2a/owner/decision",
+  headers:{cookie,origin:"https://evil.example.test",
+   "x-aca-csrf":callback.body.csrfToken,"content-type":"application/json"},
+  body:{decision:"approve",requestId:x.packet.id}});
+ assert.equal(result.status,401);
+ assert.equal(x.lookups,0);
+ assert.equal(x.writes,0);
+});
