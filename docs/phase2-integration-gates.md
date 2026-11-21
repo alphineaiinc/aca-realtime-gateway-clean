@@ -45,3 +45,8 @@ The supervisor is **advisory only**: it never authorizes merges, deployment or n
 - CI evidence verifier now requires a pinned GitHub App ID AND workflow ID with matching run head; missing nested workflow provenance is rejected. The current GitHub check-runs REST response may not expose this nested workflow-run metadata, so the observer remains fail-closed until a separately authenticated Actions run lookup is implemented and verified. This is NOT a live readiness signal.
 - Added an isolated SQL policy template for NOLOGIN reader, initializer, and writer roles, with no event UPDATE/DELETE grants. This is NOT applied to any database. Existing owner grants and database-level RLS/scope authorization must be assessed before service use; a role grant alone does not enforce per-repository tenancy.
 - Still outstanding: real service authentication, key lifecycle, authenticated CI run lookup/rerun semantics, database scope enforcement, adversarial end-to-end validation and explicit owner approval.
+
+## Latest isolated CI hardening
+- PostgreSQL integration jobs now execute sequentially because two concurrent test processes raced to create the same schema; previous failure was a CI fixture collision, not an authorization bypass.
+- Added an authenticated Actions REST workflow-run lookup in the observer. It binds check runs by check_suite_id to a pinned workflow ID, run ID and head SHA, and fails closed if evidence is missing or paginated beyond one complete page.
+- The workflow's default-branch observer still does not provision trusted app/workflow pins, database service credentials, or a signed reviewer provider. This adapter is not proof of operational readiness; real rerun/permission behavior requires staging validation.
