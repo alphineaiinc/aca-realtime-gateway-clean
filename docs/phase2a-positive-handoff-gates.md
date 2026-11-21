@@ -1,7 +1,6 @@
 # Phase 2A positive owner-approval handoff — remaining gates
 
-**Status:** development-only; positive result is validated in mocked tests, **not**
-against an authorized live GitHub issue and persisted ledger record.
+**Status:** isolated **proof-only** validator implemented and tested with injected fixtures; **not** a real live positive owner-approval handoff, and not authorized for production.
 
 ## Verified earlier
 
@@ -26,7 +25,13 @@ impersonating a Codex assignment would defeat the authorization boundary.
 **Do not** assign Codex solely to satisfy a test. Native Codex tasks require
 separate owner approval and must not run automatically.
 
-## Responsible next implementation
+## Implemented proof-only validator (not deployed as an active route)
+
+`src/automation/phase2aStagingPositiveProof.js` enforces a distinct staging proof label (`aca:phase2a/staging-proof-only`), an expiry of no more than 30 minutes, authenticated GitHub CI and exact head/issue-link checks, read-only initialized zero-attempt ledger history, and current-head revalidation. It rejects any issue carrying actual `aca:auto/active` or `aca:auto/manual-dispatch-requested` labels. Even the successful state is `staging_proof_only_ready`, with `productionAuthorization:false`, `ownerApprovalRequested:false`, `agentDispatchAuthorized:false`, and all merge/deploy/signing/dispatch flags false. It has no HTTP route or startup execution and cannot grant actual correction approval.
+
+The successful path and adversarial cases are covered in `test/phase2a-staging-positive-proof.test.js`; only mocked/injected GitHub and database clients are used. Do not mistake those unit-test results for a live persisted-ledger demonstration.
+
+## Future authorized live proof
 
 Create an *explicitly isolated, staging-only proof contract* whose
 authorization is not inferred from `aca:auto/active` or an assignment to
