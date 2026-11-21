@@ -48,3 +48,19 @@ test("patch digest is independent of file order and does not include removed-lin
  assert.equal(first.patchDigest,second.patchDigest);
  assert.equal(first.status,"manual_review_required");
 });
+
+test("truncated hunk and malformed hunk header fail closed",()=>{
+ const truncated=file("README.md","@@ -1,3 +1,3 @@\n-old\n+new");
+ const bogus=file("README.md","@@ bad header @@\n-old\n+new");
+ for(const changed of [truncated,bogus]){
+  const result=inspectPrPatches({...base,files:[changed]});
+  assert.equal(result.status,"blocked");
+  assert.equal(result.independent,false);
+ }
+});
+test("complete multi-hunk patch remains advisory and never signs",()=>{
+ const patch="@@ -1 +1 @@\n-old\n+new\n@@ -9,2 +9,2 @@\n context\n-wrong\n+right";
+ const result=inspectPrPatches({...base,files:[file("README.md",patch)]});
+ assert.equal(result.status,"manual_review_required");
+ assert.equal(result.independent,false);
+});
