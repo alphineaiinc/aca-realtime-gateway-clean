@@ -33,5 +33,12 @@ jobs:
             event,expectedRepositoryId:1080201236,expectedWorkflowId:422174901
           });
           console.log(JSON.stringify(decision));
+          // CI alone never proves an eligible PR or authenticated correction history.
+          // This advisory MUST request verification, not claim authorization.
+          const {createCorrectionHandoff}=require("./src/automation/phase2aCorrectionHandoff");
+          const handoff=createCorrectionHandoff({
+            event,expectedRepositoryId:1080201236,expectedWorkflowId:422174901
+          });
+          console.log(JSON.stringify(handoff));
           if(decision.state==="blocked") process.exitCode=1;
           NODE
