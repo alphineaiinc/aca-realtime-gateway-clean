@@ -29,7 +29,7 @@ function createIsolatedMtlsListener({serverKey,serverCert,clientCa,
     res.writeHead(403,{"Cache-Control":"no-store",
      "Content-Type":"application/json","Connection":"close"});
     res.end(JSON.stringify({state:"blocked",reason:"untrusted_transport",
-     agentDispatchAuthorized:false,mergeAuthorized:false,deployAuthorized:false}));
+     agentDispatchAuthorized:false,dispatched:false,mergeAuthorized:false,deployAuthorized:false,signingAuthorized:false,productionAuthorization:false}));
     return;
    }
    try{
