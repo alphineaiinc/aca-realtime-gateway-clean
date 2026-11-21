@@ -16,7 +16,8 @@ function proof(requestId="a".repeat(64),decision="approve"){
  nonce:"n".repeat(43),signature:"s".repeat(86)};
 }
 function fakeRequest(status=200,response={state:"owner_intent_to_review",
- agentDispatchAuthorized:false,mergeAuthorized:false,deployAuthorized:false}){
+ agentDispatchAuthorized:false,dispatched:false,mergeAuthorized:false,
+ deployAuthorized:false,signingAuthorized:false,productionAuthorization:false}){
  const seen=[];
  const requestImpl=(opts,handler)=>{
   seen.push(opts);
@@ -38,6 +39,8 @@ test("private-client request never carries cookies, OAuth tokens, forwarded head
  const result=await client.sendAdvisory({body:{decision:"approve",requestId:"a".repeat(64),proof:proof()}});
  assert.equal(result.state,"owner_intent_to_review");
  assert.equal(result.agentDispatchAuthorized,false);
+ for(const flag of ["dispatched","mergeAuthorized","deployAuthorized","signingAuthorized","productionAuthorization"])
+  assert.equal(result[flag],false);
  const req=f.seen[0];
  assert.equal(req.hostname,options.hostname);
  assert.equal(req.method,"POST");
@@ -74,7 +77,9 @@ test("private response cannot grant merge, deployment or execution",async()=>{
   {state:"dispatched",agentDispatchAuthorized:false,
     mergeAuthorized:false,deployAuthorized:false},
   {state:"owner_intent_to_review",agentDispatchAuthorized:false,
-    mergeAuthorized:true,deployAuthorized:false}
+    mergeAuthorized:true,deployAuthorized:false},
+  ...["agentDispatchAuthorized","dispatched","mergeAuthorized","deployAuthorized","signingAuthorized","productionAuthorization"].map(flag=>({state:"owner_intent_to_review",agentDispatchAuthorized:false,dispatched:false,mergeAuthorized:false,deployAuthorized:false,signingAuthorized:false,productionAuthorization:false,[flag]:true})),
+  ...["dispatched","signingAuthorized","productionAuthorization"].map(flag=>{const x={state:"owner_intent_to_review",agentDispatchAuthorized:false,dispatched:false,mergeAuthorized:false,deployAuthorized:false,signingAuthorized:false,productionAuthorization:false};delete x[flag];return x;})
  ]){
   const f=fakeRequest(200,response);
   const client=createPrivateMtlsClient({...options,requestImpl:f.requestImpl});
