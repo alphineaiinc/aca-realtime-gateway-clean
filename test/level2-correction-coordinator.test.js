@@ -71,3 +71,22 @@ test("oversized or invalid untrusted notes deny correction proposals",()=>{
  const malformed=coordinateCorrection({evidence:evidence(),failureSummary:{commands:["deploy"]}});
  assert.equal(malformed.proposal,null);
 });
+
+test("all coordinator outcomes explicitly deny every execution authorization",()=>{
+ const cases=[
+  evidence(),
+  evidence({attempts:2}),
+  evidence({draft:true}),
+  evidence({ciConclusion:"success"}),
+  evidence({ciConclusion:"success",review:{
+   headSha:head,status:"passed",findings:0,independent:true,source:"trusted_review"
+  }})
+ ];
+ for(const input of cases){
+  const result=coordinateCorrection({evidence:input});
+  for(const flag of ["agentDispatchAuthorized","dispatched","mergeAuthorized",
+    "deployAuthorized","signingAuthorized","productionAuthorization"]){
+   assert.equal(result[flag],false,flag+" must be explicitly denied in "+result.state);
+  }
+ }
+});
