@@ -19,7 +19,7 @@ const input=(proof,store,overrides={})=>({proof,publicKey:keys.publicKey,
  expectedRepositoryId:base.repositoryId,expectedOwnerId:base.ownerId,
  expectedRequestId:base.requestId,expectedDecision:base.decision,
  nonceStore:store,now:base.now+1000,...overrides});
-function safe(x){for(const key of ["agentDispatchAuthorized","mergeAuthorized",
+function safe(x){for(const key of ["agentDispatchAuthorized","dispatched","mergeAuthorized",
  "deployAuthorized","signingAuthorized","productionAuthorization"])
  assert.equal(x[key],false,key);}
 test("signed owner intent proof verifies exact audience and is consumed once",async()=>{
