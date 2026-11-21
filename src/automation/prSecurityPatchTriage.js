@@ -15,25 +15,25 @@ const RULES=Object.freeze([
  {id:"security-override",re:/\b(?:mergeAuthorized\s*:\s*true|deployAuthorized\s*:\s*true|manualDispatchRequired\s*:\s*false|verify\s*:\s*false)\b/i,severity:"critical"}
 ]);
 const SENSITIVE=/(?:^|\/)(?:\.github\/workflows\/|src\/automation\/|migrations\/|config\/)/;
-// GitHub sometimes truncates patches while retaining a nonempty `patch` field.
-// Never scan only a prefix and report a normal advisory result.
+// GitHub can truncate a nonempty patch. Require every hunk's line counts.
 function completeUnifiedHunks(patch){
  if(typeof patch!=="string"||!patch.startsWith("@@"))return false;
+ const lines=patch.split("\n");
  let oldRemaining=0,newRemaining=0,seen=false;
- for(const line of patch.split("\\n")){
+ for(let i=0;i<lines.length;i++){
+   const line=lines[i];
    if(line.startsWith("@@")){
      if(seen&&(oldRemaining!==0||newRemaining!==0))return false;
-     const match=/^@@ -(?:0|[1-9]\\d*)(?:,(\\d+))? \\+(?:0|[1-9]\\d*)(?:,(\\d+))? @@(?: |$)/.exec(line);
+     const match=/^@@ -(?:0|[1-9]\d*)(?:,(\d+))? \+(?:0|[1-9]\d*)(?:,(\d+))? @@(?: |$)/.exec(line);
      if(!match)return false;
      oldRemaining=match[1]===undefined?1:Number(match[1]);
      newRemaining=match[2]===undefined?1:Number(match[2]);
      if(!Number.isSafeInteger(oldRemaining)||!Number.isSafeInteger(newRemaining))return false;
      seen=true;
-   }else if(line.startsWith("\\\\ No newline at end of file")){
+   }else if(line.startsWith("\\ No newline at end of file")){
      if(!seen)return false;
    }else if(line.length===0){
-     // A single final newline delimiter is allowed; blank context must be ' '.
-     if(line!==patch.split("\\n").at(-1))return false;
+     if(i!==lines.length-1)return false;
    }else if(line.startsWith("+")&&!line.startsWith("+++"))newRemaining--;
    else if(line.startsWith("-")&&!line.startsWith("---"))oldRemaining--;
    else if(line.startsWith(" ")){oldRemaining--;newRemaining--;}
