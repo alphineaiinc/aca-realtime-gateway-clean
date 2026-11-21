@@ -27,3 +27,27 @@ test("rejects checks from mismatched check suites and forged app IDs",()=>{
  const spoof=[checks[0],{...checks[1],app:{id:999}}];
  assert.equal(verify(bindChecksToWorkflowRuns({...args,checks:spoof})),null);
 });
+
+test("rejects malformed run identifiers, absent suite metadata and stale run head",()=>{
+ for(const workflowRuns of [
+  [{...workflowRunsFixture(),id:0}],
+  [{...workflowRunsFixture(),id:"55"}],
+  [{...workflowRunsFixture(),check_suite_id:0}],
+  [{...workflowRunsFixture(),check_suite_id:"88"}],
+  [{...workflowRunsFixture(),head_sha:"b".repeat(40)}]
+ ])assert.equal(verify(bindChecksToWorkflowRuns({...args,workflowRuns})),null);
+ for(const checkSet of [
+  [checks[0],{...checks[1],check_suite:null}],
+  [checks[0],{...checks[1],check_suite:{}}],
+  [checks[0],{...checks[1],check_suite:{id:"88"}}]
+ ])assert.equal(verify(bindChecksToWorkflowRuns({...args,checks:checkSet})),null);
+});
+function workflowRunsFixture(){return {...workflowRuns[0]};}
+test("rejects conflicting workflow-suite association even when one matching run exists",()=>{
+ const conflicting=[workflowRuns[0],{...workflowRuns[0],id:999,workflow_id:111}];
+ // A non-pinned workflow must not supply authority to the pinned run.
+ const bound=bindChecksToWorkflowRuns({...args,workflowRuns:conflicting});
+ assert.equal(verify(bound).length,2);
+ const duplicatePinned=[workflowRuns[0],{...workflowRuns[0],id:999}];
+ assert.equal(bindChecksToWorkflowRuns({...args,workflowRuns:duplicatePinned}),null);
+});
