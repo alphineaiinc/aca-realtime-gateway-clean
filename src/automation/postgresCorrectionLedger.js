@@ -21,9 +21,6 @@ async function appendCorrection(client,claim){
  const args=[claim.repositoryId,claim.issueNumber,claim.prNumber];
  await client.query("BEGIN");
  try {
-   await client.query(`INSERT INTO aca_automation.correction_ledgers
-     (repository_id,issue_number,pr_number) VALUES ($1,$2,$3)
-     ON CONFLICT DO NOTHING`,args);
    const locked=await client.query(`SELECT version FROM aca_automation.correction_ledgers
      WHERE repository_id=$1 AND issue_number=$2 AND pr_number=$3 FOR UPDATE`,args);
    if(locked.rows.length!==1) throw new Error("missing_ledger");
