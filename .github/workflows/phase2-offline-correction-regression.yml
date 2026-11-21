@@ -1,0 +1,31 @@
+name: ACA Phase 2 Offline Correction Regression
+on:
+  push:
+    branches:
+      - aca-auto-005-offline-correction-simulation
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  offline-tests:
+    name: Phase 2 offline correction tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out exact test branch commit
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Set up Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Syntax check simulation and policy
+        run: |
+          node --check test/phase2-offline-correction-cycle.test.js
+          node --check src/automation/prSupervisionPolicy.js
+          node --check src/automation/level2CorrectionCoordinator.js
+      - name: Run offline correction-loop regression
+        run: node --test test/phase2-offline-correction-cycle.test.js
+      - name: Run existing Phase 2 policy regressions
+        run: node --test test/pr-supervision-policy.test.js test/level2-correction-coordinator.test.js
