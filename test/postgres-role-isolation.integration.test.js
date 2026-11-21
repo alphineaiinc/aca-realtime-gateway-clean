@@ -4,6 +4,7 @@ const assert=require("node:assert/strict");
 const fs=require("node:fs");
 const path=require("node:path");
 const {Pool}=require("pg");
+const {assertAutomationDbRole}=require("../src/automation/automationDbRoleGuard");
 if(!process.env.ACA_TEST_DATABASE_URL){
  test("role isolation requires isolated ACA_TEST_DATABASE_URL",{skip:true},()=>{});
 }else{
@@ -19,6 +20,8 @@ if(!process.env.ACA_TEST_DATABASE_URL){
     try{
      await c.query("BEGIN");
      await c.query("SET LOCAL ROLE "+role);
+     const operation={aca_automation_reader:"read",aca_automation_initializer:"initialize",aca_automation_writer:"append"}[role];
+     assert.equal(await assertAutomationDbRole(c,operation),true);
      if(allowed) await c.query(sql,params);
      else await assert.rejects(c.query(sql,params),/permission denied/);
     }finally{await c.query("ROLLBACK");c.release();}
