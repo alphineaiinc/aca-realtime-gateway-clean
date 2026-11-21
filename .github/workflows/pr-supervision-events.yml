@@ -37,6 +37,7 @@ jobs:
             const result = await github.graphql(`query($owner:String!,$repo:String!,$pr:Int!) {
               repository(owner:$owner,name:$repo) {
                 pullRequest(number:$pr) {
+                  number
                   closingIssuesReferences(first:2) {
                     pageInfo { hasNextPage }
                     nodes { number repository { databaseId } }
