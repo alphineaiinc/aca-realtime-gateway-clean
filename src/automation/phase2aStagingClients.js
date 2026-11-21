@@ -22,6 +22,19 @@ function createPhase2aClients(env=process.env,{fetchImpl=fetch,PoolClass=Pool}={
  if(db.protocol!=="postgresql:"||!db.hostname.endsWith(".neon.tech")||
     !db.username||!db.password||!db.pathname.slice(1)||
     (db.port&&db.port!=="5432"))return null;
+ // Pin the actual isolated staging target: a Neon domain suffix alone would
+ // also accept a mistakenly supplied production project connection string.
+ const expectedHost=env.ACA_PHASE2A_EXPECTED_NEON_HOST;
+ const expectedDatabase=env.ACA_PHASE2A_EXPECTED_DATABASE;
+ const decodedUser=decodeURIComponent(db.username);
+ const decodedDatabase=decodeURIComponent(db.pathname.slice(1));
+ if(typeof expectedHost!=="string"||
+    !/^([a-z0-9-]+\\.)+[a-z0-9-]+\\.neon\\.tech$/.test(expectedHost)||
+    typeof expectedDatabase!=="string"||
+    !/^[a-zA-Z_][a-zA-Z0-9_]{0,62}$/.test(expectedDatabase)||
+    db.hostname!==expectedHost||decodedDatabase!==expectedDatabase||
+    decodedUser!==env.ACA_PHASE2A_LEDGER_ROLE)
+   return null;
  const segments=repoName.split("/");
  const pathPart=encodeURIComponent;
  async function api(resource,{graphqlQuery,variables}={}){
@@ -76,9 +89,9 @@ function createPhase2aClients(env=process.env,{fetchImpl=fetch,PoolClass=Pool}={
  }};
  const pool=new PoolClass({
   host:db.hostname,port:Number(db.port||5432),
-  user:decodeURIComponent(db.username),
+  user:decodedUser,
   password:decodeURIComponent(db.password),
-  database:decodeURIComponent(db.pathname.slice(1)),
+  database:decodedDatabase,
   ssl:{rejectUnauthorized:true},max:2,
   connectionTimeoutMillis:5000,idleTimeoutMillis:5000,
   application_name:"aca_phase2a_staging_readonly"
