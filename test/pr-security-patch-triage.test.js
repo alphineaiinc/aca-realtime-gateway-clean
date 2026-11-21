@@ -3,7 +3,7 @@ const {test}=require("node:test");
 const assert=require("node:assert/strict");
 const {inspectPrPatches}=require("../src/automation/prSecurityPatchTriage");
 const base={repositoryId:1080201236,prNumber:21,headSha:"a".repeat(40)};
-const file=(filename,patch,status="modified")=>({filename,status,changes:2,patch});
+const file=(filename,patch,status="modified")=>({filename,status,changes:patch.split("\n").filter(l=>l.startsWith("+")||l.startsWith("-")).length,patch});
 test("benign patch can only request manual review, never produce independent approval",()=>{
  const result=inspectPrPatches({...base,files:[file("README.md","@@ -1 +1 @@\n-old\n+new")]});
  assert.equal(result.status,"manual_review_required");
@@ -71,4 +71,19 @@ test("leading --- removed lines and +++ added lines are real hunk content",()=>{
  assert.equal(result.status,"findings");
  assert.equal(result.independent,false);
  assert.ok(result.findings.some(f=>f.rule==="secret-material"));
+});
+
+test("missing complete hunk despite internally valid first hunk fails GitHub count validation",()=>{
+ const partial=file("README.md","@@ -1 +1 @@\n-old\n+new");
+ const inflated={...partial,changes:4,additions:2,deletions:2};
+ const result=inspectPrPatches({...base,files:[inflated]});
+ assert.equal(result.status,"blocked");
+ assert.equal(result.reason,"patch_change_count_mismatch");
+ assert.equal(result.independent,false);
+});
+test("mismatched GitHub additions or deletions fail even when total matches",()=>{
+ const p=file("README.md","@@ -1 +1 @@\n-old\n+new");
+ for(const changed of [{...p,additions:0,deletions:2},{...p,additions:2,deletions:0}]){
+  assert.equal(inspectPrPatches({...base,files:[changed]}).status,"blocked");
+ }
 });
