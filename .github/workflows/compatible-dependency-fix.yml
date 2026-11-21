@@ -22,7 +22,16 @@ jobs:
       - name: Check baseline lockfile
         run: npm ci --ignore-scripts --no-audit --no-fund
       - name: Apply compatible lockfile-only advisory updates
-        run: npm audit fix --package-lock-only --ignore-scripts --no-fund
+        run: |
+          set +e
+          npm audit fix --package-lock-only --ignore-scripts --no-fund
+          audit_fix_status=$?
+          set -e
+          if [ "$audit_fix_status" -ne 0 ] && git diff --quiet -- package-lock.json; then
+            echo 'npm audit fix failed without creating a compatible lockfile update'
+            exit "$audit_fix_status"
+          fi
+          echo 'Proceeding to test the resulting lockfile; remaining advisories are evaluated separately.'
       - name: Require unchanged declared application dependencies
         run: git diff --exit-code -- package.json
       - name: Install proposed dependency tree
