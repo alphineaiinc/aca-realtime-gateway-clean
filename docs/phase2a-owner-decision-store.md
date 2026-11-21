@@ -110,3 +110,37 @@ Its tests use an injected in-memory **fixture** store only.
 
 An authenticated **session** is still only an identity proof; it never
 authorizes code execution, PR merge, signing or production deployment.
+
+## Durable OAuth state and browser binding (development, not activated)
+
+`src/automation/phase2aOwnerSession.js` no longer accepts a callback-supplied
+`loginId`. On login start it returns a short-lived, secure, HttpOnly,
+SameSite=Lax `__Host-aca_login` cookie. Callback handling reads that cookie
+and consumes a server-side state record exactly once; the cookie is cleared
+after successful login. The real approval session remains a separate
+SameSite=Strict, Secure, HttpOnly `__Host-aca_owner` cookie with CSRF.
+
+`migrations/aca_phase2a_owner_oauth_store_staging.sql` and
+`src/automation/phase2aPostgresOAuthStore.js` provide an unwired,
+persistent PostgreSQL backing store. A dedicated NOLOGIN group has forced
+RLS and only SELECT/INSERT/DELETE; no live login membership or credentials
+are provisioned. OAuth login states use an atomic `DELETE RETURNING`
+to make concurrent callback attempts single-use. Stored PKCE verifiers
+use AES-256-GCM with a separately provided 32-byte key and digest-bound
+associated data. Sessions store only SHA-256 hashes of opaque random
+session/CSRF tokens; logout deletes the session row. Both tables enforce
+maximum login/session TTLs.
+
+The new `test/postgres-owner-oauth.integration.test.js` exercises a
+disposable PostgreSQL instance with two independent connections to test
+concurrent login consumption, encrypted verifier storage, wrong encryption
+key rejection, duplicate session creation, logout, and role isolation.
+No live Neon migration, approval route or OAuth App has been enabled.
+
+**Remaining before activation:** independently verify the actual GitHub
+OAuth product's PKCE support and code exchange semantics; build the
+registered exact redirect/callback, server-side OAuth exchange, persistent
+owner session broker and authenticated approval endpoint; validate CSRF,
+origin/referrer rules, rate limits, credential handling, failover and
+key rotation. A development-only store and isolated fixture tests are
+not proof of a live authenticated approval flow.
