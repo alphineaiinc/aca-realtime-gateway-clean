@@ -9,6 +9,12 @@ const options={hostname:"aca-owner-internal",port:8443,
  clientCert:"-----BEGIN CERTIFICATE-----\nfixture\n-----END CERTIFICATE-----",
  clientKey:"-----BEGIN PRIVATE KEY-----\nfixture\n-----END PRIVATE KEY-----",
  serverFingerprint256:FP};
+function proof(requestId="a".repeat(64),decision="approve"){
+ return {version:"aca-owner-edge-proof-v1",issuer:"aca-public-edge",
+ audience:"aca-private-owner",repositoryId:1080201236,ownerId:230486228,
+ requestId,decision,issuedAt:1700000000000,expiresAt:1700000060000,
+ nonce:"n".repeat(43),signature:"s".repeat(86)};
+}
 function fakeRequest(status=200,response={state:"owner_intent_to_review",
  agentDispatchAuthorized:false,mergeAuthorized:false,deployAuthorized:false}){
  const seen=[];
@@ -29,7 +35,7 @@ function fakeRequest(status=200,response={state:"owner_intent_to_review",
 }
 test("private-client request never carries cookies, OAuth tokens, forwarded headers or operational authority",async()=>{
  const f=fakeRequest(),client=createPrivateMtlsClient({...options,requestImpl:f.requestImpl});
- const result=await client.sendAdvisory({body:{decision:"approve",requestId:"a".repeat(64)}});
+ const result=await client.sendAdvisory({body:{decision:"approve",requestId:"a".repeat(64),proof:proof()}});
  assert.equal(result.state,"owner_intent_to_review");
  assert.equal(result.agentDispatchAuthorized,false);
  const req=f.seen[0];
@@ -42,7 +48,7 @@ test("private-client request never carries cookies, OAuth tokens, forwarded head
  assert.equal(req.headers.Cookie,undefined);
  assert.equal(req.headers.Authorization,undefined);
  assert.equal(req.headers["X-Forwarded-Proto"],undefined);
- assert.deepEqual(JSON.parse(f.seen[1]),{decision:"approve",requestId:"a".repeat(64)});
+ assert.deepEqual(JSON.parse(f.seen[1]),{decision:"approve",requestId:"a".repeat(64),proof:proof()});
 });
 test("reject external hostnames, unsafe payloads and URLs before network call",async()=>{
  for(const hostname of ["github.com","staging.example.test",
@@ -54,7 +60,9 @@ test("reject external hostnames, unsafe payloads and URLs before network call",a
   {decision:"approve",requestId:"a".repeat(64),ownerId:22},
   {decision:"approve",requestId:"a".repeat(64),agentDispatchAuthorized:true},
   {decision:"execute",requestId:"a".repeat(64)},
-  {decision:"approve",requestId:"short"}]){
+  {decision:"approve",requestId:"short"},
+  {decision:"approve",requestId:"a".repeat(64),proof:proof("b".repeat(64))},
+  {decision:"approve",requestId:"a".repeat(64)}]){
   await assert.rejects(client.sendAdvisory({body}),/invalid_private_request/);
  }
  assert.equal(f.seen.length,0);
@@ -70,7 +78,7 @@ test("private response cannot grant merge, deployment or execution",async()=>{
  ]){
   const f=fakeRequest(200,response);
   const client=createPrivateMtlsClient({...options,requestImpl:f.requestImpl});
-  await assert.rejects(client.sendAdvisory({body:{decision:"reject",requestId:"b".repeat(64)}}),
+  await assert.rejects(client.sendAdvisory({body:{decision:"reject",requestId:"b".repeat(64),proof:proof("b".repeat(64),"reject")}}),
    /untrusted_private_response/);
  }
  const denied=fakeRequest(403,{state:"blocked"});
