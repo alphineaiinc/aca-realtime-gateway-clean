@@ -15,8 +15,8 @@ function ring(activeKeyId="edge-2026b",retired=false){
   signingKeys:[{id:activeKeyId,key:keys[ids.indexOf(activeKeyId)].privateKey,
    notBefore:activeKeyId===ids[0]?now-10000:now,
    notAfter:activeKeyId===ids[0]?now+30000:now+100000}],
-  verificationKeys:[{id:ids[0],key:old.publicKey,
-   notBefore:now-10000,notAfter:retired?now-100000:now+30000},
+  verificationKeys:[...(!retired?[{id:ids[0],key:old.publicKey,
+   notBefore:now-10000,notAfter:now+30000}]:[]),
    {id:ids[1],key:next.publicKey,notBefore:now,
     notAfter:now+100000}]
  });
