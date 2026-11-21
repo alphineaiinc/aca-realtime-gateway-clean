@@ -20,7 +20,7 @@ const github=async(_url)=>({ok:true,json:async()=>({
 async function loggedIn(){
  const db=store(),start=await beginLogin({store:db,now:NOW});
  const exchange=[];
- const result=await finishLogin({store:db,loginId:start.loginId,
+ const result=await finishLogin({store:db,loginCookie:start.setLoginCookie.split(';')[0],
   state:start.state,code:"one-time-oauth-code",exchangeCode:async p=>{
    exchange.push(p);return ACCESS;
   },serviceReadToken:READ,expectedOwnerId:OWNER,
@@ -37,11 +37,14 @@ test("OAuth start stores one-time state and PKCE verifier only in server store",
  assert.match(r.codeChallenge,/^[\w-]{43}$/);
  assert.equal(r.challengeMethod,"S256");
  assert.equal(db.pending.size,1);
+ assert.match(r.setLoginCookie,/^__Host-aca_login=/);
+ assert.match(r.setLoginCookie,/; Secure; HttpOnly; SameSite=Lax/);
  assert.equal(JSON.stringify(r).includes("verifier"),false);
 });
 test("validated GitHub owner creates rotated secure HttpOnly session and CSRF",async()=>{
  const x=await loggedIn();assert.equal(x.result.verified,true);guard(x.result);
- assert.equal(x.db.pending.size,0);assert.equal(x.db.sessions.size,1);
+ assert.equal(x.db.pending.size,0);
+ assert.match(x.result.clearLoginCookie,/Max-Age=0/);assert.equal(x.db.sessions.size,1);
  assert.equal(x.exchange.length,1);
  assert.match(x.result.setCookie,/^__Host-aca_owner=/);
  assert.match(x.result.setCookie,/; Secure; HttpOnly; SameSite=Strict/);
@@ -54,7 +57,7 @@ test("validated GitHub owner creates rotated secure HttpOnly session and CSRF",a
 test("mismatched state consumes pending request and rejects callback replay",async()=>{
  const db=store(),r=await beginLogin({store:db,now:NOW});
  let calls=0;
- const f=args=>finishLogin({store:db,loginId:r.loginId,state:r.state,
+ const f=args=>finishLogin({store:db,loginCookie:r.setLoginCookie.split(';')[0],state:r.state,
   code:"one-time-code",exchangeCode:async()=>{calls++;return ACCESS;},
   serviceReadToken:READ,expectedOwnerId:OWNER,expectedOwnerLogin:"alphineaiinc",
   fetchImpl:github,now:NOW+100,...args});
@@ -67,7 +70,7 @@ test("mismatched state consumes pending request and rejects callback replay",asy
 });
 test("expired login and mismatched GitHub identity do not create sessions",async()=>{
  const db=store(),r=await beginLogin({store:db,now:NOW});
- const expired=await finishLogin({store:db,loginId:r.loginId,state:r.state,
+ const expired=await finishLogin({store:db,loginCookie:r.setLoginCookie.split(';')[0],state:r.state,
   code:"one-time-code",exchangeCode:async()=>ACCESS,serviceReadToken:READ,
   expectedOwnerId:OWNER,expectedOwnerLogin:"alphineaiinc",
   now:r.expiresAt,fetchImpl:github});
@@ -103,4 +106,19 @@ test("logout revokes session and clears strict host cookie",async()=>{
   origin:"https://staging.example.test",expectedOrigin:"https://staging.example.test",
   method:"POST",csrfHeader:x.result.csrfToken,now:NOW+200});
  assert.equal(check.verified,false);
+});
+
+test("OAuth callback rejects unbound login, duplicate cookie, and attacker injected handle",async()=>{
+ const db=store(),r=await beginLogin({store:db,now:NOW});
+ const base={store:db,state:r.state,code:"single-use-auth-code",
+ exchangeCode:async()=>ACCESS,serviceReadToken:READ,expectedOwnerId:OWNER,
+ expectedOwnerLogin:"alphineaiinc",now:NOW+100,fetchImpl:github};
+ for(const loginCookie of [undefined,"",r.setLoginCookie.split(";")[0]+"; "+r.setLoginCookie.split(";")[0],
+  "__Host-aca_login="+"x".repeat(43)]){
+  const outcome=await finishLogin({...base,loginCookie});
+  assert.equal(outcome.verified,false);
+ }
+ assert.equal(db.pending.size,1);
+ const good=await finishLogin({...base,loginCookie:r.setLoginCookie.split(";")[0]});
+ assert.equal(good.verified,true);
 });
