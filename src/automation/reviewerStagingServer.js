@@ -6,6 +6,7 @@
  */
 const http=require("node:http");
 const {sign,createPrivateKey,timingSafeEqual}=require("node:crypto");
+const {installationReadToken}=require("./githubReviewerAppAuth");
 const SHA=/^[a-f0-9]{40}$/;
 const positive=n=>Number.isSafeInteger(n)&&n>0;
 function matchingReview({pr,reviews,scope,reviewerId}){
@@ -42,8 +43,13 @@ function startServer(env=process.env){
  const reviewerId=Number(env.ACA_REVIEWER_ID);
  const repositoryId=Number(env.ACA_REVIEW_REPOSITORY_ID);
  async function github(path){
+   const token=await installationReadToken({
+     appId:Number(env.ACA_REVIEW_GITHUB_APP_ID),
+     installationId:Number(env.ACA_REVIEW_GITHUB_INSTALLATION_ID),
+     repositoryId,privateKey:env.ACA_REVIEW_GITHUB_APP_PRIVATE_KEY||""
+   });
    const response=await fetch("https://api.github.com/repos/"+repoName+path,{
-     headers:{Authorization:"Bearer "+env.ACA_REVIEW_GITHUB_TOKEN,
+     headers:{Authorization:"Bearer "+token,
        Accept:"application/vnd.github+json","X-GitHub-Api-Version":"2022-11-28"},
      signal:AbortSignal.timeout(7000),redirect:"error"});
    if(!response.ok)throw new Error("github_review_unavailable");
@@ -66,7 +72,8 @@ function startServer(env=process.env){
         !positive(scope?.prNumber)||!positive(scope?.issueNumber)||
         !SHA.test(scope?.headSha||"")||!positive(reviewerId)||
         parts.length!==2||!parts.every(x=>/^[A-Za-z0-9_.-]+$/.test(x))||
-        !env.ACA_REVIEW_GITHUB_TOKEN||!env.ACA_REVIEW_PRIVATE_KEY)
+        !env.ACA_REVIEW_GITHUB_APP_ID||!env.ACA_REVIEW_GITHUB_INSTALLATION_ID||
+        !env.ACA_REVIEW_GITHUB_APP_PRIVATE_KEY||!env.ACA_REVIEW_PRIVATE_KEY)
        return answer(503,{error:"reviewer_not_configured"});
      const pr=await github("/pulls/"+scope.prNumber);
      const reviews=await github("/pulls/"+scope.prNumber+"/reviews?per_page=100");
