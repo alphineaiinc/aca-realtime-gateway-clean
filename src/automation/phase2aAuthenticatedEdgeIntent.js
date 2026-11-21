@@ -18,7 +18,7 @@ const blocked=reason=>Object.freeze({state:"blocked",reason,...flags()});
 async function prepareAuthenticatedEdgeIntent({
  sessionStore,cookie,origin,expectedOrigin,csrfHeader,method,
  requestId,decision,repositoryId,expectedOwnerId,
- issuer,audience,signingKey,loadPendingPacket,loadFreshHandoff,
+ issuer,audience,signingKey,keyring,loadPendingPacket,loadFreshHandoff,
  now=Date.now()
 }={}){
  if(method!=="POST"||!HASH.test(requestId||"")||
@@ -47,7 +47,7 @@ async function prepareAuthenticatedEdgeIntent({
   return blocked("stale_or_ineligible");
  const proof=issueOwnerEdgeProof({
   issuer,audience,repositoryId,ownerId:session.ownerId,
-  requestId,decision,privateKey:signingKey,now
+  requestId,decision,privateKey:signingKey,keyring,now
  });
  if(!proof)return blocked("signing_unavailable");
  return Object.freeze({state:"ready_for_private_review",
