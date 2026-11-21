@@ -124,3 +124,49 @@ Do not deploy or mount this component on the current Render web service,
 expose the listener publicly, or bypass the mTLS check. Live activation
 still requires a secure network design, certificate issuance/rotation,
 staging-only deployment approval, and browser integration testing.
+
+## Render deployment decision — public edge + dedicated private service
+
+Render documentation confirms that public web services can contact private
+services on the same-region private network. A private service has no
+internet-facing `onrender.com` URL and can use custom application protocols.
+Render's public web-service ingress terminates client TLS and forwards HTTP
+to the service, so the current owner-mTLS verifier cannot authenticate
+Render's public edge via `req.socket` alone.
+
+**Recommended staging-only topology, NOT DEPLOYED:**
+
+1. Dedicated public OAuth edge web service: serve browser OAuth callback
+   and session/CSRF, no Neon owner-decision writer credentials, no CodeX.
+2. Dedicated Render *private* owner-decision service: HTTPS listener with
+   `requestCert:true`, `rejectUnauthorized:true`, restricted client CA,
+   and a pinned public-edge client certificate. No public ingress.
+3. Public edge calls only the fixed internal decision endpoint over mTLS.
+   Browser request ID and advisory approve/reject are re-authorized by
+   the public edge. The private service must independently verify owner
+   identity/authorization and fresh GitHub/CI/ledger evidence before writes.
+   **Client mTLS identifies the edge service, NOT the human owner.**
+4. Database owner decision journal roles remain separated from the public
+   OAuth/reader credentials; no merge, signing, Codex or deploy authority.
+
+`src/automation/phase2aPrivateMtlsClient.js` is an unmounted,
+strictly scoped outbound client. It accepts a fixed private DNS name,
+trusted server CA, pinned server certificate SHA-256 fingerprint and a
+separate client certificate. It sends only a bounded advisory envelope
+and requires explicit safe response flags. Tests reject external hosts,
+unexpected JSON privileges and forwarding/credential leakage.
+
+**Required before enabling anything:** verify Render plan, workspace,
+same-region and private-network availability, exact private hostnames,
+server certificate SAN/hostname validation, trust-anchor/key rotation,
+and secure owner authentication continuity between edge and private
+service (e.g. server-side short-lived authenticated session proof).
+The existing loopback-only mTLS listener cannot simply be deployed
+as a Render private service until a separately reviewed private bind
+configuration is implemented and tested. No Render service, OAuth
+app, runtime variable or Neon schema is changed by these files.
+
+Render references:
+- https://render.com/docs/private-services
+- https://render.com/docs/private-network
+- https://render.com/articles/how-render-handles-private-networking
