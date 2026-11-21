@@ -34,8 +34,8 @@ function completeUnifiedHunks(patch){
      if(!seen)return false;
    }else if(line.length===0){
      if(i!==lines.length-1)return false;
-   }else if(line.startsWith("+")&&!line.startsWith("+++"))newRemaining--;
-   else if(line.startsWith("-")&&!line.startsWith("---"))oldRemaining--;
+   }else if(line.startsWith("+"))newRemaining--;
+   else if(line.startsWith("-"))oldRemaining--;
    else if(line.startsWith(" ")){oldRemaining--;newRemaining--;}
    else return false;
    if(oldRemaining<0||newRemaining<0)return false;
