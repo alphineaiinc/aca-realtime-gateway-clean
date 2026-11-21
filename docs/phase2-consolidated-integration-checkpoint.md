@@ -8,6 +8,7 @@ This is a development-branch acceptance inventory, **not** permission to merge, 
 |---|---|---|---|---|---|
 | Owner identity, OAuth session denial and origin spoofing | #81 | 44951676145 | passed | passed | closed unmerged |
 | Signed owner proof, decision binding, replay and injected authority | #82 | 44952495980 | passed | passed | closed unmerged |
+| Cross-slice session-to-proof integration and readiness inventory | #83 | 44952689678 | passed | passed | closed unmerged |
 
 Earlier offline integration evidence is tracked in `docs/phase2-readiness-gate-2026-11-21.md`, `docs/phase2-integration-dependency-map.md` and the PR #27 progress log. Passing CI proves only the tested development fixtures, **not** operational security.
 
@@ -34,3 +35,16 @@ Every advisory/denied result crossing the automation, owner, signed-proof and pr
 
 ## Next gate
 Run consolidated CI for this documentation checkpoint; then perform a targeted cross-slice dependency audit and produce a final go/no-go checklist. Do not label Phase 2 production-ready until operational blockers have independent evidence and explicit approval.
+
+## Final offline go/no-go assessment
+- **Offline test gate: GO for continued development.** Three consolidated CI runs passed both Node and disposable PostgreSQL jobs, and temporary PRs #81–#83 were closed unmerged.
+- **Live staging activation: NO-GO.** Independently provisioned staging identities, GitHub OAuth configuration, reviewer independence/key custody, authenticated proxy-to-private mTLS topology, and end-to-end staging tests have not been evidenced.
+- **Production deployment, merge, signing, native agent dispatch: NO-GO without separate explicit authorization.**
+- **Protected PR #27:** remains a large accumulated integration branch, not an independently approved release. Split/review and rollback planning are required before any merge proposal.
+
+### Proposed staged acceptance sequence (future, subject to authorization)
+1. Independently review and partition the integration diff; verify dependency order and reversible migrations.
+2. Provision separate isolated staging-only credentials and database roles through approved secret custody, then test repository isolation.
+3. Prove GitHub App/Actions provenance, independent reviewer identity and key rotation against staged events.
+4. Validate actual browser OAuth/CSRF/rate limiting and edge-to-private mTLS with real certificates and verified network ingress.
+5. Execute adversarial end-to-end rollback drills; record owner acceptance. Keep all six execution flags false until separately authorized.
