@@ -1,19 +1,31 @@
 "use strict";
 const {test}=require("node:test");
 const assert=require("node:assert/strict");
-const {assertAutomationDbRole}=require("../src/automation/automationDbRoleGuard");
-test("requires exact dedicated role per operation",async()=>{
- for(const [op,role] of [["read","aca_automation_reader"],["initialize","aca_automation_initializer"],["append","aca_automation_writer"]]){
-  assert.equal(await assertAutomationDbRole({query:async sql=>{
-   assert.equal(sql,"SELECT current_user AS role_name");
-   return {rows:[{role_name:role}]};
-  }},op),true);
-  await assert.rejects(assertAutomationDbRole({query:async()=>({rows:[{role_name:"postgres"}]})},op),/unauthorized_automation_db_role/);
+const {assertAutomationDbRole,QUERY}=require("../src/automation/automationDbRoleGuard");
+function client(role_name,login_role=role_name,permitted=true){
+ return {query:async(sql,args)=>{
+  assert.equal(sql,QUERY);
+  assert.equal(args.length,1);
+  return {rows:[{role_name,login_role,permitted}]};
+ }};
+}
+test("accepts authenticated inherited service role per operation",async()=>{
+ for(const op of ["read","initialize","append"]){
+  assert.equal(await assertAutomationDbRole(client("aca_p2_"+op+"_a"),op),true);
  }
 });
-test("rejects unknown operation, missing role, ambiguous result and absent client",async()=>{
+test("rejects SET ROLE impersonation, DB owner, missing inherited membership and ambiguous results",async()=>{
+ for(const c of [
+  client("aca_automation_reader","aca_staging_owner",true),
+  client("postgres","postgres",true),
+  client("aca_staging_owner","aca_staging_owner",true),
+  client("aca_p2_reader_a","aca_p2_reader_a",false),
+  client("aca_automation_reader","aca_automation_reader",true),
+  {query:async()=>({rows:[]})},
+  {query:async()=>({rows:[{},{}]})}
+ ]){
+  await assert.rejects(assertAutomationDbRole(c,"read"),/unauthorized_automation_db_role/);
+ }
  await assert.rejects(assertAutomationDbRole(null,"read"),/invalid_automation_db_role_check/);
- await assert.rejects(assertAutomationDbRole({query:async()=>({rows:[]})},"read"),/unauthorized_automation_db_role/);
- await assert.rejects(assertAutomationDbRole({query:async()=>({rows:[{role_name:"aca_automation_reader"},{role_name:"aca_automation_reader"}]})},"read"),/unauthorized_automation_db_role/);
- await assert.rejects(assertAutomationDbRole({query:async()=>({rows:[{role_name:"aca_automation_reader"}]})},"delete"),/invalid_automation_db_role_check/);
+ await assert.rejects(assertAutomationDbRole(client("aca_p2_reader_a"),"delete"),/invalid_automation_db_role_check/);
 });
