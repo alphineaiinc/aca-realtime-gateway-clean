@@ -44,7 +44,7 @@ function completeUnifiedHunks(patch){
 }
 function changedLineTotals(patch){
  let additions=0,deletions=0;
- for(const line of patch.split("\\n")){
+ for(const line of patch.split("\n")){
   if(line.startsWith("+"))additions++;
   else if(line.startsWith("-"))deletions++;
  }
