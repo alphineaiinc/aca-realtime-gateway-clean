@@ -65,7 +65,7 @@ async function observe({github, owner, repo, prNumber, issueNumber}) {
     issue: {number: issue.number, state: issue.state, eligible: eligibleIssue(issue)},
     pr: {number: pr.number, state: pr.state, headSha, issueNumber, draft: pr.draft},
     trustedHead, trustedLink, ci,
-    review: null, correction: {attempts: 0, unchangedFailureCount: 0}
+    review: null, correction: null
   });
 }
 module.exports = {observe, sameRepo, normalizeCheck, eligibleIssue};
