@@ -69,3 +69,25 @@ test("only valid Ed25519 signing key and bounded inputs accepted",()=>{
  assert.equal(issueOwnerEdgeProof({...base,requestId:"short"}),null);
  assert.equal(issueOwnerEdgeProof({...base,ownerId:0}),null);
 });
+
+test("signed proof cannot be repurposed across independent owner-intent decisions",async()=>{
+ const p=issueOwnerEdgeProof(base);
+ const store=fakeStore();
+ const wrong=await verifyOwnerEdgeProof(input(p,store,{expectedDecision:"reject"}));
+ assert.equal(wrong.verified,false);safe(wrong);
+ assert.equal(store.size,0);
+ const valid=await verifyOwnerEdgeProof(input(p,store));
+ assert.equal(valid.verified,true);safe(valid);
+ const replay=await verifyOwnerEdgeProof(input(p,store));
+ assert.equal(replay.verified,false);safe(replay);
+ assert.equal(store.size,1);
+});
+test("injected dispatched and signing authority fields fail before nonce claim",async()=>{
+ const p=issueOwnerEdgeProof(base),store=fakeStore();
+ for(const field of ["dispatched","mergeAuthorized","deployAuthorized",
+   "signingAuthorized","productionAuthorization"]){
+  const result=await verifyOwnerEdgeProof(input({...p,[field]:true},store));
+  assert.equal(result.verified,false,field);safe(result);
+ }
+ assert.equal(store.size,0);
+});
