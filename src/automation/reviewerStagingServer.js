@@ -163,6 +163,32 @@ function startServer(env=process.env,{githubTokenProvider=installationReadToken,
      });
    });
  }
+ // One-shot internal fail-closed smoke test. Uses the same authenticated
+ // evaluator as HTTP but makes no external inbound request and never dispatches.
+ // Enabled only for a separately configured, explicit staging CI run.
+ if(createdClients&&env.ACA_PHASE2A_ENABLED==="true"&&
+    env.ACA_PHASE2A_SMOKE_ENABLED==="true"){
+   server.once("listening",()=>{
+     const runId=Number(env.ACA_PHASE2A_SMOKE_RUN_ID);
+     if(!positive(runId))return console.warn("ACA_PHASE2A_SMOKE blocked configuration");
+     void evaluateStagingCorrection({
+       authorization:"Bearer "+env.ACA_PHASE2A_API_TOKEN,
+       request:{runId},
+       config:{enabled:true,bearerToken:env.ACA_PHASE2A_API_TOKEN,
+         repositoryId,workflowId:Number(env.ACA_PHASE2A_WORKFLOW_ID),
+         owner:parts[0],repo:parts[1],ledgerRole:env.ACA_PHASE2A_LEDGER_ROLE},
+       github:createdClients.github,pool:createdClients.pool
+     }).then(decision=>{
+       const b=decision?.body;
+       if(b?.agentDispatchAuthorized===false&&b?.mergeAuthorized===false&&
+          b?.deployAuthorized===false&&decision.status!==200){
+         console.info("ACA_PHASE2A_SMOKE blocked "+String(b.state||"unknown")+" "+String(decision.status));
+       }else{
+         console.warn("ACA_PHASE2A_SMOKE unexpected_decision");
+       }
+     }).catch(()=>console.warn("ACA_PHASE2A_SMOKE blocked unexpected_error"));
+   });
+ }
  server.listen(port,"0.0.0.0");
  return server;
 }
