@@ -7,6 +7,8 @@ const url="postgresql://aca_p2_reader_a:staging-fixture@ep-demo-pooler.us-east-1
 function fixture(){
  const env={ACA_PHASE2A_ENABLED:"true",ACA_PHASE2A_GITHUB_READ_TOKEN:token,
  ACA_PHASE2A_DATABASE_URL:url,ACA_PHASE2A_LEDGER_ROLE:"aca_p2_reader_a",
+ ACA_PHASE2A_EXPECTED_NEON_HOST:"ep-demo-pooler.us-east-1.aws.neon.tech",
+ ACA_PHASE2A_EXPECTED_DATABASE:"staging",
  ACA_REVIEW_REPOSITORY:"alphineaiinc/aca-realtime-gateway-clean",
  ACA_REVIEW_REPOSITORY_ID:"1080201236"};
  const requests=[];const configurations=[];
@@ -28,6 +30,10 @@ test("disabled or missing credentials create no GitHub or DB clients",()=>{
  assert.equal(createPhase2aClients({...x.env,ACA_PHASE2A_DATABASE_URL:""}),null);
  assert.equal(createPhase2aClients({...x.env,ACA_PHASE2A_DATABASE_URL:"postgresql://u:p@evil.example/db"}),null);
  assert.equal(createPhase2aClients({...x.env,ACA_REVIEW_REPOSITORY:"someone/else/third"}),null);
+ assert.equal(createPhase2aClients({...x.env,ACA_PHASE2A_EXPECTED_NEON_HOST:""}),null);
+ assert.equal(createPhase2aClients({...x.env,ACA_PHASE2A_EXPECTED_DATABASE:"production"}),null);
+ assert.equal(createPhase2aClients({...x.env,ACA_PHASE2A_LEDGER_ROLE:"aca_p2_reader_b"}),null);
+ assert.equal(createPhase2aClients({...x.env,ACA_PHASE2A_DATABASE_URL:"postgresql://aca_p2_reader_a:staging-fixture@ep-prod-pooler.us-east-1.aws.neon.tech/staging"}),null);
 });
 test("staging pg client uses TLS verification and narrow resource limits",()=>{
  const x=fixture(),settings=x.configurations[0];
