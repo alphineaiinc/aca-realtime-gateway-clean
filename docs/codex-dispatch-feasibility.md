@@ -129,6 +129,18 @@ Operational cost note:
   - stale two-issue interleaving does not produce multiple active holders
 - Workflow behavior is constrained to labels/comments/locking and does not perform code execution dispatch.
 
+### Recovery when an issue event is dropped
+
+Every queue reconciliation now discovers **all open issues marked active**, not only
+allowlisted candidates. It fetches each holder's live issue state and clears or
+reclassifies an invalid holder (revoked docs/test allowlist, removed Codex assignee,
+or closed issue) before attempting to advance another candidate. This handles a
+missed allowlist-removal event when a later unrelated issue event runs.
+
+This is event-driven recovery, not an always-on lease: if no later workflow run
+occurs, the stale lock can remain until a run is triggered. Native Codex task
+dispatch still requires a human through GitHub's UI.
+
 ## Remaining Limitations
 
 - Repository-wide workflow serialization reduces race risk but still depends on GitHub Actions scheduler guarantees; delayed or stuck runs can postpone reconciliation.
