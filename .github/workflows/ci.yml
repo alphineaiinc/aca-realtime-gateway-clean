@@ -67,3 +67,4 @@ jobs:
           node --test test/postgres-correction-ledger.integration.test.js
           node --test test/postgres-role-isolation.integration.test.js
           node --test test/postgres-repository-rls.integration.test.js
+          node --test test/postgres-owner-decision.integration.test.js
