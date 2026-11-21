@@ -26,7 +26,7 @@ test("pinned REST paths, read-only method and no-redirect contract",async()=>{
 test("rejects untrusted configuration and invalid paths",async()=>{
  for(const x of [{owner:"evil/path",repo:"r",request:async()=>{}},{owner:"valid",repo:"../other",request:async()=>{}},{owner:"valid",repo:"r"}])assert.throws(()=>create(x));
  const api=create({owner:"alphineaiinc",repo:"aca-realtime-gateway-clean",request:async()=>({status:200,data:{}})});
- assert.throws(()=>api.getPullRequest(-1));await assert.rejects(api.listCheckRuns("bad",1,100));await assert.rejects(api.listWorkflowRuns(1,0,100));
+ assert.throws(()=>api.getPullRequest(-1));assert.throws(()=>api.listCheckRuns("bad",1,100));await assert.rejects(api.listWorkflowRuns(1,0,100));
 });
 test("redirect and non-200 responses fail closed",async()=>{
  for(const options of [{badStatus:true},{redirect:true}]){
