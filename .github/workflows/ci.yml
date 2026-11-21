@@ -71,4 +71,4 @@ jobs:
           node --test test/postgres-owner-oauth.integration.test.js
           node --test test/postgres-owner-edge-nonce.integration.test.js
           node --test test/postgres-owner-private-chain.integration.test.js
-          node --test test/postgres-owner-mtls-chain.integration.test.js
+          # Node 22 test runner can retain HTTPS/pg handles after TAP completion.\n          # All assertions and explicit fixture cleanup run before forced test-runner exit.\n          node --test --test-force-exit test/postgres-owner-mtls-chain.integration.test.js
