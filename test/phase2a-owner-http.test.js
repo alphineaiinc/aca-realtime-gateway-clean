@@ -36,6 +36,11 @@ function setup(){
   clientId:"Iv1_staging_test_4567890",
   callbackUrl:"https://staging.example.test/phase2a/oauth/callback",
   siteOrigin:"https://staging.example.test",
+  expectedSiteOrigin:"https://staging.example.test",
+  repository:"alphineaiinc/aca-realtime-gateway-clean",
+  ownerOAuthClientSecret:"dedicated-user-oauth-secret-example-12345",
+  reviewerSigningSecret:"separate-reviewer-signing-secret-value",
+  verifyTrustedTransport:async()=>true,
   serviceReadToken:"separate-readonly-service-pat-example-1234",
   exchangeCode:async()=>"separate-github-user-oauth-token-12345",
   fetchIdentity:async()=>({ok:true,json:async()=>({id:OWNER,login:"alphineaiinc"})}),
@@ -175,4 +180,32 @@ test("callback accepts only origin-relative path and rejects absolute URLs",asyn
  headers:{cookie}});
  assert.equal(tampered.status,400);
  assert.equal(x.opts.sessionStore.pending.size,1);
+});
+
+test("untrusted transport blocks OAuth and intent before any storage access",async()=>{
+ const x=setup();
+ x.opts.verifyTrustedTransport=async()=>false;
+ const r=await call(x.opts);
+ assert.equal(r.status,403);
+ assert.equal(x.opts.sessionStore.pending.size,0);
+ assert.equal(x.writes,0);
+ x.opts.verifyTrustedTransport=async()=>{throw Error("spoofed proxy header");};
+ const bad=await call(x.opts);
+ assert.equal(bad.status,403);
+ assert.equal(x.opts.sessionStore.pending.size,0);
+});
+test("staging mount denies origin mismatch and shared service credentials",async()=>{
+ for(const overrides of [
+  {expectedSiteOrigin:"https://other.example.test"},
+  {siteOrigin:"https://alphineai.com"},
+  {ownerOAuthClientSecret:"separate-readonly-service-pat-example-1234"},
+  {verifyTrustedTransport:null},
+  {repositoryId:0}
+ ]){
+  const x=setup();
+  Object.assign(x.opts,overrides);
+  const r=await call(x.opts);
+  assert.equal(r.status,404,JSON.stringify(overrides));
+  assert.equal(x.opts.sessionStore.pending.size,0);
+ }
 });
