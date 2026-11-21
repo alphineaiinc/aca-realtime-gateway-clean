@@ -1,5 +1,5 @@
 "use strict";
-const {verify,createPublicKey}=require("node:crypto");
+const {verify,createPublicKey,KeyObject}=require("node:crypto");
 const SHA=/^[a-f0-9]{40}$/;
 const positive=n=>Number.isSafeInteger(n)&&n>0;
 /**
@@ -22,7 +22,8 @@ function verifySignedReview({envelope,publicKey,repositoryId,prNumber,headSha,re
     (record.status==="passed"&&record.findings!==0)||
     (record.status==="findings"&&record.findings===0))return null;
  try{
-   const key=createPublicKey(publicKey);
+   const key=publicKey instanceof KeyObject && publicKey.type==="public"
+     ? publicKey : createPublicKey(publicKey);
    if(key.asymmetricKeyType!=="ed25519")return null;
    const payload=Buffer.from(JSON.stringify([
      "aca-review-v1",record.repositoryId,record.prNumber,record.headSha,
