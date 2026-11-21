@@ -9,6 +9,7 @@ const {sign,createPrivateKey,timingSafeEqual}=require("node:crypto");
 const {installationReadToken}=require("./githubReviewerAppAuth");
 const {inspectWithGithubApp}=require("./githubAppPrTriage");
 const {evaluateStagingCorrection}=require("./phase2aStagingCorrectionEndpoint");
+const {createPhase2aClients}=require("./phase2aStagingClients");
 const SHA=/^[a-f0-9]{40}$/;
 const positive=n=>Number.isSafeInteger(n)&&n>0;
 function matchingReview({pr,reviews,scope,reviewerId}){
@@ -44,6 +45,13 @@ function startServer(env=process.env,{githubTokenProvider=installationReadToken,
  const parts=repoName.split("/");
  const reviewerId=Number(env.ACA_REVIEWER_ID);
  const repositoryId=Number(env.ACA_REVIEW_REPOSITORY_ID);
+ // Create clients only with explicit staging credentials. Missing configuration
+ // never falls back to review-signing credentials or a production database.
+ let createdClients=null;
+ if(!phase2aDependencies&&env.ACA_PHASE2A_ENABLED==="true"){
+   try{createdClients=createPhase2aClients(env);}catch{createdClients=null;}
+ }
+ const correctionClients=phase2aDependencies||createdClients;
  async function github(path){
    const token=await githubTokenProvider({
      appId:Number(env.ACA_REVIEW_GITHUB_APP_ID),
@@ -81,7 +89,7 @@ function startServer(env=process.env,{githubTokenProvider=installationReadToken,
            repositoryId:Number(env.ACA_REVIEW_REPOSITORY_ID),
            workflowId:Number(env.ACA_PHASE2A_WORKFLOW_ID),
            owner:parts[0],repo:parts[1],ledgerRole:env.ACA_PHASE2A_LEDGER_ROLE},
-         github:phase2aDependencies?.github,pool:phase2aDependencies?.pool
+         github:correctionClients?.github,pool:correctionClients?.pool
        });
        return answer(decision.status,decision.body);
      }catch{return answer(400,{error:"invalid_request"});}
@@ -134,6 +142,7 @@ function startServer(env=process.env,{githubTokenProvider=installationReadToken,
        env.ACA_REVIEW_PRIVATE_KEY.replace(/\\n/g,String.fromCharCode(10))));
    }catch{return answer(503,{error:"review_evidence_unavailable"});}
  });
+ if(createdClients?.pool)server.on("close",()=>{void createdClients.pool.end().catch(()=>{});});
  server.listen(port,"0.0.0.0");
  return server;
 }
