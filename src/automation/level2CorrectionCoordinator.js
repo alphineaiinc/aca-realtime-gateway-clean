@@ -49,9 +49,12 @@ function coordinateCorrection({evidence,reviewNotes=[],failureSummary=null}={}){
   // Signed independent review and owner authorization never originate here.
   independentReviewGranted:false,
   manualDispatchRequired:true,
+  agentDispatchAuthorized:false,
   dispatched:false,
   mergeAuthorized:false,
-  deployAuthorized:false
+  deployAuthorized:false,
+  signingAuthorized:false,
+  productionAuthorization:false
  });
 }
 module.exports={coordinateCorrection};
