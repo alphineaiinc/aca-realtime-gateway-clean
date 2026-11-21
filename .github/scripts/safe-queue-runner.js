@@ -19,14 +19,23 @@ function normalizeIssue(issue) {
   };
 }
 
-function hasLabel(issue, name) {
-  const expected = String(name).toLowerCase();
-  return (issue.labels || []).some((label) => String(label).toLowerCase() === expected);
-}
-
-function hasAssignee(issue, login) {
-  const expected = String(login).toLowerCase();
-  return (issue.assignees || []).some((assignee) => String(assignee).toLowerCase() === expected);
+async function loadCurrentIssue(github, owner, repo, issueNumber) {
+  try {
+    const response = await github.rest.issues.get({
+      owner,
+      repo,
+      issue_number: issueNumber,
+    });
+    if (response?.data?.pull_request) {
+      return null;
+    }
+    return normalizeIssue(response.data);
+  } catch (error) {
+    if (error.status === 404) {
+      return null;
+    }
+    throw error;
+  }
 }
 
 function isAutomationMutatedEvent(payload) {
@@ -201,7 +210,13 @@ async function applyDecision(github, owner, repo, issue, decision, core) {
   }
 }
 
-async function processIssue(github, owner, repo, issue, activeIssueNumbers, core) {
+async function processIssue(github, owner, repo, issueNumber, core) {
+  const issue = await loadCurrentIssue(github, owner, repo, issueNumber);
+  if (!issue || String(issue.state || "").toLowerCase() !== "open") {
+    return;
+  }
+
+  const activeIssueNumbers = (await loadActiveIssueNumbers(github, owner, repo)).filter((number) => number !== issue.number);
   const decision = evaluateSafeQueueDecision({
     issue,
     activeIssueNumbers,
@@ -211,16 +226,6 @@ async function processIssue(github, owner, repo, issue, activeIssueNumbers, core
   await applyDecision(github, owner, repo, issue, decision, core);
 }
 
-function selectPinnedActiveIssue(allowlistedIssues) {
-  const currentlyActive = allowlistedIssues.filter((issue) => hasLabel(issue, LABELS.active) && hasAssignee(issue, "Codex"));
-  if (currentlyActive.length > 0) {
-    return currentlyActive[0].number;
-  }
-
-  const firstManualRequested = allowlistedIssues.find((issue) => hasAssignee(issue, "Codex"));
-  return firstManualRequested ? firstManualRequested.number : null;
-}
-
 async function reconcileAllowlistedIssues(github, owner, repo, core) {
   const allowlistedIssues = await loadOpenIssuesWithLabel(github, owner, repo, ALLOWLIST_LABEL);
   if (allowlistedIssues.length === 0) {
@@ -228,11 +233,8 @@ async function reconcileAllowlistedIssues(github, owner, repo, core) {
     return;
   }
 
-  const pinnedActive = selectPinnedActiveIssue(allowlistedIssues);
-
   for (const issue of allowlistedIssues) {
-    const activeIssueNumbers = pinnedActive && pinnedActive !== issue.number ? [pinnedActive] : [];
-    await processIssue(github, owner, repo, issue, activeIssueNumbers, core);
+    await processIssue(github, owner, repo, issue.number, core);
   }
 }
 
@@ -264,7 +266,11 @@ async function run({ github, context, core }) {
     await ensureLabel(github, owner, repo, name, color, description);
   }
 
-  const issue = normalizeIssue(payloadIssue);
+  const issue = await loadCurrentIssue(github, owner, repo, Number(payloadIssue.number));
+  if (!issue) {
+    core.info(`Skipping: issue #${payloadIssue.number} no longer exists or is no longer a standard issue.`);
+    return;
+  }
 
   if (String(issue.state || "").toLowerCase() !== "open") {
     await clearQueueLabelsForClosedIssue(github, owner, repo, issue.number);
@@ -273,8 +279,7 @@ async function run({ github, context, core }) {
     return;
   }
 
-  const activeIssueNumbers = (await loadActiveIssueNumbers(github, owner, repo)).filter((number) => number !== issue.number);
-  await processIssue(github, owner, repo, issue, activeIssueNumbers, core);
+  await processIssue(github, owner, repo, issue.number, core);
 
   await reconcileAllowlistedIssues(github, owner, repo, core);
 }
@@ -285,6 +290,7 @@ module.exports = {
     isTrustedDecisionComment,
     isAutomationMutatedEvent,
     decisionSummaryLines,
+    loadCurrentIssue,
     reconcileAllowlistedIssues,
   },
 };

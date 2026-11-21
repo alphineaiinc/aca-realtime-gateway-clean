@@ -69,6 +69,7 @@ Security boundaries:
 ### Single active task lock
 
 - Workflow concurrency is repository-wide (`aca-safe-codex-queue-${{ github.repository }}`), so only one queue run executes at a time in this repository.
+- Each run reloads the current issue state from GitHub before queue decisions and label mutations, instead of trusting trigger payload snapshots that may be stale.
 - Uses open issue label `aca:auto/active` as lock state inside the serialized run.
 - If another open issue already has this label, new candidates fail closed with reason `active_issue_lock`.
 - Reconciliation re-evaluates open allowlisted issues after each run and after lock-holder release events so queued/blocked candidates can progress without manual edits to each issue.
@@ -122,9 +123,14 @@ Operational cost note:
   - trusted bot marker prevents duplicate comments
   - release reconciliation promotes task B after task A closes
   - serialized two-issue assignment leaves one active and blocks the peer
+  - stale payload allowlist state cannot re-enable eligibility after label removal
+  - stale payload assignee state cannot keep manual dispatch requested after assignee removal
+  - stale payload open state cannot bypass close handling
+  - stale two-issue interleaving does not produce multiple active holders
 - Workflow behavior is constrained to labels/comments/locking and does not perform code execution dispatch.
 
 ## Remaining Limitations
 
 - Repository-wide workflow serialization reduces race risk but still depends on GitHub Actions scheduler guarantees; delayed or stuck runs can postpone reconciliation.
 - Queue state is label/comment based rather than transactional storage, so eventual consistency is expected across event bursts.
+- Reconciliation is event-driven (issue lifecycle events in this phase) and is not yet backed by an independent periodic sweep.

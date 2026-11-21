@@ -82,6 +82,15 @@ function createMockGithub(initialIssues) {
         }).map((issue) => asApiIssue(issue));
         return { data: list };
       },
+      async get({ issue_number }) {
+        const issue = issues.get(issue_number);
+        if (!issue) {
+          const error = new Error("not found");
+          error.status = 404;
+          throw error;
+        }
+        return { data: asApiIssue(issue) };
+      },
       async listComments({ issue_number }) {
         const issue = issues.get(issue_number);
         return { data: issue.comments.map((comment) => ({ ...comment })) };
@@ -106,12 +115,12 @@ function createMockGithub(initialIssues) {
   return { github: { rest, paginate }, issues, calls };
 }
 
-function contextFor(issue, action = "assigned") {
+function contextFor(issue, action = "assigned", payloadIssueOverride) {
   return {
     repo: { owner: "alphineaiinc", repo: "aca-realtime-gateway-clean" },
     payload: {
       action,
-      issue: asApiIssue(issue),
+      issue: payloadIssueOverride || asApiIssue(issue),
       sender: { login: "alphineaiinc" },
     },
   };
@@ -216,4 +225,107 @@ test("serialized two-issue assignment results in single active holder and blocke
   assert.equal(hasLabel(a, LABELS.manualRequested), true);
   assert.equal(hasLabel(b, LABELS.blocked), true);
   assert.equal(hasLabel(b, LABELS.active), false);
+});
+
+test("uses live issue state when allowlist was removed while queued", async () => {
+  const issue = createIssue(71, {
+    labels: [LABELS.queued, LABELS.eligible],
+    assignees: ["Codex"],
+  });
+  const stalePayloadIssue = asApiIssue({
+    ...issue,
+    labels: [ALLOWLIST_LABEL, LABELS.queued, LABELS.eligible],
+  });
+
+  const mock = createMockGithub([issue]);
+  await run({
+    github: mock.github,
+    context: contextFor(issue, "assigned", stalePayloadIssue),
+    core: coreLogger(),
+  });
+
+  const updated = mock.issues.get(71);
+  assert.equal(hasLabel(updated, ALLOWLIST_LABEL), false);
+  assert.equal(hasLabel(updated, LABELS.blocked), true);
+  assert.equal(hasLabel(updated, LABELS.queued), false);
+  assert.equal(hasLabel(updated, LABELS.active), false);
+});
+
+test("uses live issue state when codex assignee was removed before execution", async () => {
+  const issue = createIssue(72, {
+    labels: [ALLOWLIST_LABEL, LABELS.active, LABELS.manualRequested, LABELS.eligible],
+    assignees: [],
+  });
+  const stalePayloadIssue = asApiIssue({
+    ...issue,
+    assignees: ["Codex"],
+  });
+
+  const mock = createMockGithub([issue]);
+  await run({
+    github: mock.github,
+    context: contextFor(issue, "assigned", stalePayloadIssue),
+    core: coreLogger(),
+  });
+
+  const updated = mock.issues.get(72);
+  assert.equal(hasLabel(updated, LABELS.active), false);
+  assert.equal(hasLabel(updated, LABELS.manualRequested), false);
+  assert.equal(hasLabel(updated, LABELS.queued), true);
+});
+
+test("uses live issue state when issue closed while event waited", async () => {
+  const issue = createIssue(73, {
+    state: "closed",
+    labels: [ALLOWLIST_LABEL, LABELS.active, LABELS.manualRequested, LABELS.eligible, LABELS.queued],
+    assignees: ["Codex"],
+  });
+  const stalePayloadIssue = asApiIssue({
+    ...issue,
+    state: "open",
+  });
+
+  const mock = createMockGithub([issue]);
+  await run({
+    github: mock.github,
+    context: contextFor(issue, "assigned", stalePayloadIssue),
+    core: coreLogger(),
+  });
+
+  const updated = mock.issues.get(73);
+  assert.equal(hasLabel(updated, LABELS.active), false);
+  assert.equal(hasLabel(updated, LABELS.manualRequested), false);
+  assert.equal(hasLabel(updated, LABELS.eligible), false);
+  assert.equal(hasLabel(updated, LABELS.queued), false);
+  assert.equal(hasLabel(updated, LABELS.blocked), false);
+});
+
+test("two-issue stale interleaving keeps a single live active holder", async () => {
+  const issueA = createIssue(81, {
+    labels: [ALLOWLIST_LABEL, LABELS.active, LABELS.manualRequested, LABELS.eligible],
+    assignees: ["Codex"],
+  });
+  const issueB = createIssue(82, {
+    labels: [LABELS.queued, LABELS.eligible],
+    assignees: [],
+  });
+  const stalePayloadIssueB = asApiIssue({
+    ...issueB,
+    labels: [ALLOWLIST_LABEL, LABELS.queued, LABELS.eligible],
+    assignees: ["Codex"],
+  });
+
+  const mock = createMockGithub([issueA, issueB]);
+  await run({
+    github: mock.github,
+    context: contextFor(issueB, "assigned", stalePayloadIssueB),
+    core: coreLogger(),
+  });
+
+  const a = mock.issues.get(81);
+  const b = mock.issues.get(82);
+  assert.equal(hasLabel(a, LABELS.active), true);
+  assert.equal(hasLabel(b, LABELS.active), false);
+  assert.equal(hasLabel(b, LABELS.manualRequested), false);
+  assert.equal(hasLabel(b, LABELS.blocked), true);
 });

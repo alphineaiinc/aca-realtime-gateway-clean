@@ -111,3 +111,4 @@ Operational implication:
   - `test/safe-queue-policy.test.js`
   - `test/safe-queue-runner.test.js`
 - This fallback queue provides eligibility gating, repository-wide serialized workflow execution, single-active lock reconciliation on release events, trusted-bot audit-comment idempotency, and fail-closed behavior; it does not start native coding sessions.
+- Queue decisions are based on freshly fetched issue state at execution time (labels, assignees, open/closed status), not solely on the original trigger payload snapshot.
