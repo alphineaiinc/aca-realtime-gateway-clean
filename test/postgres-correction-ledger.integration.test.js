@@ -58,6 +58,11 @@ if (!process.env.ACA_TEST_DATABASE_URL) {
         assert.equal(history.lastResultingHeadSha,rows.rows[0].resulting_head_sha);
       } finally {readClient.release();}
       const first=rows.rows[0];
+      await assert.rejects(pool.query(`UPDATE aca_automation.correction_events
+        SET failure_fingerprint='tampered:failure' WHERE event_id=$1`,
+        [first.event_id]),/correction_events_are_immutable/);
+      await assert.rejects(pool.query(`DELETE FROM aca_automation.correction_events
+        WHERE event_id=$1`,[first.event_id]),/correction_events_are_immutable/);
       const c3=await pool.connect();
       try{
         await assert.rejects(appendCorrection(c3,{...base,
