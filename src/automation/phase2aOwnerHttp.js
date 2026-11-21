@@ -4,7 +4,7 @@
  * A caller must explicitly mount it AND inject audited staging-only services.
  * No Codex dispatch, GitHub repository writes, reviewer signing or deployments.
  */
-const {beginLogin,finishLogin,logout,validateOwnerAction,originOk}=require("./phase2aOwnerSession");
+const {beginLogin,finishLogin,logout,validateOwnerAction}=require("./phase2aOwnerSession");
 const {authorizeUrl}=require("./phase2aGitHubOAuthExchange");
 const {submitOwnerIntent}=require("./phase2aOwnerApprovalFacade");
 const SHA256=/^[a-f0-9]{64}$/;
@@ -49,17 +49,21 @@ async function limitedJson(req,max=1024){
 }
 async function handleOwnerHttp(req,res,options={}){
  const url=req?.url;
- if(!ready(options)){
-  send(res,404,{state:"disabled"});return true;
- }
  const route=typeof url==="string"?url.split("?")[0]:"";
  if(!["/phase2a/oauth/start","/phase2a/oauth/callback",
        "/phase2a/owner/decision","/phase2a/owner/logout"].includes(route))
   return false;
+ if(!ready(options)){
+  send(res,404,{state:"disabled"});return true;
+ }
  // Per-instance rate limiting must be implemented by the mounting server.
  // Fail closed if it has no trusted rate limiter; no token in browser JSON.
- if(typeof options.checkRateLimit!=="function"||
-    await Promise.resolve(options.checkRateLimit(req))!==true){
+ let permitted=false;
+ try{
+  permitted=typeof options.checkRateLimit==="function"&&
+   await Promise.resolve(options.checkRateLimit(req))===true;
+ }catch{permitted=false;}
+ if(!permitted){
   send(res,429,{state:"blocked",reason:"rate_limited"});return true;
  }
  if(route==="/phase2a/oauth/start"){
@@ -84,8 +88,10 @@ async function handleOwnerHttp(req,res,options={}){
   }
   let query;
   try{
+   if(!url.startsWith(route+"?")||url.startsWith("//")||
+      url.includes("#"))throw Error("invalid_callback");
    const u=new URL(url,options.siteOrigin);
-   if(u.pathname!==route||u.searchParams.getAll("code").length!==1||
+   if(u.origin!==options.siteOrigin||u.pathname!==route||u.searchParams.getAll("code").length!==1||
       u.searchParams.getAll("state").length!==1||
       [...u.searchParams.keys()].some(k=>!["code","state"].includes(k)))
     throw Error("invalid_callback");
@@ -114,8 +120,13 @@ async function handleOwnerHttp(req,res,options={}){
   if(req.method!=="POST"||url!==route){
    send(res,405,{state:"blocked"});return true;
   }
-  if(!originOk(req.headers.origin,options.siteOrigin)){
-   send(res,403,{state:"blocked"});return true;
+  const verifiedLogout=await validateOwnerAction({
+   store:options.sessionStore,cookie:req.headers.cookie,
+   origin:req.headers.origin,expectedOrigin:options.siteOrigin,
+   csrfHeader:req.headers["x-aca-csrf"],method:req.method
+  });
+  if(verifiedLogout.verified!==true){
+   send(res,401,{state:"blocked"});return true;
   }
   // Logging out should not create an authenticated approval.
   const r=await logout({store:options.sessionStore,cookie:req.headers.cookie});
