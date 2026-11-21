@@ -10,9 +10,9 @@
 ## Not established by these tests
 - **No live authenticated reviewer provider is configured.** The callback is an interface; its caller must prove the transport and actor identity out of band. Caller-supplied authenticatedActorId is not proof by itself.
 - **No live database authentication or scoped service role is provisioned.** The supplied pg client is assumed authenticated; read and append adapters are not wired to an operational service.
-- The append adapter currently implicitly initializes absent ledgers. This conflicts with the reader's fail-closed treatment of absent history. A controlled, durable initialization protocol and authorization boundary must be designed and tested before operational use.
+- The append adapter no longer initializes absent ledgers. Explicit initialization and read fail-closed behavior are tested in isolated PostgreSQL; live authorization remains unproven.
 - The GitHub event observer runs from trusted default branch and may safely defer until its script is present there; a green workflow does not establish a live review pipeline.
-- CI check identity/provenance beyond names and current SHA must be pinned to trusted workflows/apps before accepting real readiness.
+- CI verification includes pinned GitHub App and workflow/run checks, but the authenticated staging wiring and rerun behavior remain unverified.
 - Current observer has no production integration or deployment approval.
 
 ## Mandatory remaining security gates
@@ -26,7 +26,7 @@ The supervisor is **advisory only**: it never authorizes merges, deployment or n
 
 ## Security hardening update
 - Append now rejects missing ledgers. An explicit non-resetting initializer exists, but its caller-supplied authentication flag and SHA are NOT independent authentication or proof of GitHub provenance. Operational service-role enforcement remains outstanding.
-- CI check evidence now requires a pinned trusted GitHub App ID; the observer fails closed without it. Trusted workflow/run identity and app pin provisioning still need operational verification.
+- CI check evidence requires pinned trusted GitHub App and workflow ID; live pin provisioning and run identity must still be validated in staging.
 - No external trusted-review service or production database service has been connected. No Phase 2 production readiness is claimed.
 
 ## Isolated security validation additions
@@ -59,3 +59,8 @@ The supervisor is **advisory only**: it never authorizes merges, deployment or n
 - Added `automationLedgerService.js` as an opt-in boundary requiring a pinned PostgreSQL client, exact effective reader/initializer/writer role, matching repository/issue/PR scope, and a verified SHA; correction appends additionally bind the resulting SHA and actor ID to caller context. Negative unit tests cover mismatches.
 - IMPORTANT: `context.authenticated` is an assertion from the caller, NOT cryptographic authentication. No live identity provider, TLS-validated login, repository-specific row policy, or service account has been provisioned. Existing low-level adapters remain accessible and must not be exposed to untrusted callers. Do not treat these unit tests as an end-to-end authorization guarantee.
 - Phase 2 remains incomplete pending independently operated reviewer service/key custody, real authenticated DB service and repository isolation, trusted CI staging verification, and end-to-end adversarial tests. No merge/deploy authorization is implied.
+
+## Final code-only security batch (not operational completion)
+- Added a pinned HTTPS reviewer-provider boundary and negative tests for untrusted hosts, URL credentials, query strings, fragments, non-HTTPS endpoints and malformed scopes. The caller must provide independently authenticated, redirect-denying, bounded transport; this module does not implement TLS identity, credentials or a deployed reviewer.
+- Added adversarial policy integration tests linking an Ed25519-signed reviewer verdict to the advisory supervisor. Wrong keys, stale heads, missing CI, and unknown correction history fail closed; even an accepted review cannot authorize merge/deploy.
+- Outstanding external gates requiring separate authorized setup: actual independent reviewer deployment and key custody/rotation, dedicated authenticated database identities and per-repository isolation, end-to-end testing against real services, and owner sign-off. These cannot be represented as completed by code-only tests.
