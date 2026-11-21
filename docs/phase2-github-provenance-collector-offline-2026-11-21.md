@@ -1,0 +1,7 @@
+# Phase 2 authenticated GitHub evidence collector — offline batch
+
+Added `src/automation/phase2GithubProvenanceCollector.js`, with injected authenticated GitHub REST client and exhaustive page-count checks for check runs and workflow runs. The collector binds PR repository ID, PR number and head SHA to workflow ID, workflow-run check-suite ID, pinned check App ID, required check names and successful conclusions. It rejects duplicate check names, missing/partial pagination, ambiguous workflow runs/reruns, changed PR heads, missing fields and API failures.
+
+**Scope limitation:** The collector's injected `api` is not a deployed authenticated GitHub REST adapter. Tests use fixtures. GitHub App ID in tests is a placeholder; production pins must be configured from independently trusted settings. Workflow-run list enumeration can include historic runs and must be scoped to the intended PR/current head by the authenticated adapter. A successful evidence shape remains advisory only: every action authorization flag is hard-coded false. Independent reviewer key custody and signature verification are separate mandatory gates.
+
+**Next external validation:** Implement/read-only authenticate the REST adapter with bounded, exhaustive pagination and verify live repository/head/check-suite/App identity. Never derive App pins from PR payload, commit code, or user-supplied evidence. No merge, deploy, reviewer signing or agent dispatch.
