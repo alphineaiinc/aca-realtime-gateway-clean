@@ -39,9 +39,6 @@ function createOwnerProofKeyring({activeKeyId,signingKeys=[],verificationKeys=[]
  if(!sign.has(activeKeyId)||!verify.has(activeKeyId))
   throw Error("invalid_owner_keyring");
  const active=sign.get(activeKeyId),publicActive=verify.get(activeKeyId);
- if(!active.key.asymmetricKeyType||!publicActive.key.asymmetricKeyType||
-    !active.key.equals(require("node:crypto").createPrivateKey(active.key)))
-  { /* key type validated above; equality of private/public is tested below */ }
  const {createPublicKey:pub}=require("node:crypto");
  if(!pub(active.key).equals(publicActive.key)||
     active.notBefore!==publicActive.notBefore||
