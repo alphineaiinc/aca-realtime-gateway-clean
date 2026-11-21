@@ -13,7 +13,11 @@ function fixtures(){
   base:{repo:{id:repositoryId}}};
  const link={repository:{pullRequest:{number:42,closingIssuesReferences:{
   pageInfo:{hasNextPage:false},nodes:[{number:23,repository:{databaseId:repositoryId}}]}}}};
- const github={rest:{repos:{
+ const github={rest:{actions:{getWorkflowRun:async()=>({data:{
+  id:77,workflow_id:workflowId,name:"ACA CI",status:"completed",
+  conclusion:"failure",head_sha:sha,repository:{id:repositoryId},
+  head_repository:{id:repositoryId}
+ }})},repos:{
   get:async()=>({data:{id:repositoryId}}),
   listPullRequestsAssociatedWithCommit:async()=>({data:[{number:42}]})},
   pulls:{get:async()=>({data:pr})},
@@ -57,4 +61,15 @@ test("successful CI does not query PR associations",async()=>{
  const x=fixtures();x.event.workflow_run.conclusion="success";
  x.github.rest.repos.get=async()=>{throw new Error("should not call");};
  const d=await check(x);assert.equal(d.state,"not_applicable");
+});
+
+test("forged, stale or missing GitHub workflow-run evidence fails closed",async()=>{
+ for(const change of [
+   x=>x.github.rest.actions.getWorkflowRun=async()=>({data:{id:77,workflow_id:workflowId,name:"ACA CI",status:"completed",conclusion:"success",head_sha:sha,repository:{id:repositoryId},head_repository:{id:repositoryId}}}),
+   x=>x.github.rest.actions.getWorkflowRun=async()=>{throw new Error("unavailable");},
+   x=>delete x.github.rest.actions.getWorkflowRun
+ ]){
+  const x=fixtures();change(x);const d=await check(x);
+  assert.equal(d.state,"verification_required");assert.equal(d.request,null);
+ }
 });
