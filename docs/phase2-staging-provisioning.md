@@ -1,6 +1,6 @@
 # Phase 2 isolated staging provisioning plan
 
-Status: **not provisioned**. This document is an operator checklist, not permission to deploy.
+Status: **isolated staging partially provisioned**. This is not production authorization.
 
 ## Environment boundary
 - Create a new Neon staging project/database with **no production data**. Never reuse the production connection string.
@@ -31,9 +31,18 @@ The repository contains a reviewer-provider interface, Ed25519 verification, dat
 - Ledger schema and immutable event trigger applied to this independent staging database, with empty correction-ledger and event tables.
 - NOLOGIN reader, initializer and writer group roles created; least-privilege grants on ledger tables applied; read-only catalog check verified two tables and three roles.
 - No production Neon project/schema or data changed. No authenticated login accounts or row-level security policies provisioned yet. Group roles alone do not establish repository isolation.
-- Render has not been connected; no independent reviewer is deployed. Do not report Phase 2 operational readiness.
+- Render staging was subsequently connected and a separate reviewer service was created. It is not yet credentialed or ready to attest; do not report Phase 2 operational readiness.
 
 ## Repository RLS staging update
 - Applied `migrations/aca_automation_repository_rls.sql` to the isolated staging database only. Both correction tables have `ENABLE ROW LEVEL SECURITY` and `FORCE ROW LEVEL SECURITY` set; verified 3 ledger policies and 2 event policies via read-only catalog queries.
 - A protected repository-to-login mapping table exists and is **empty**. Policies consult PostgreSQL `session_user`, not a caller-controlled application variable. Therefore no runtime repository grants have been issued.
 - Real limited LOGIN identities, their role grants, trusted mapping provisioner, and cross-repository adversarial login tests are still required. Do not assert complete isolation without those tests.
+
+## Render staging reviewer — 2026-11-21
+- Confirmed workspace `tea-d3rfdemr433s73e3nnfg` (user explicitly selected this workspace).
+- Created isolated free-plan Render web service `alphine-aca-phase2-reviewer-staging` (ID `srv-dc0ibfuc6qcc73ef4m70`) in Virginia, using the PR #21 branch with **automatic deployments disabled**.
+- The staging start command is `node src/automation/reviewerStagingServer.js`; no edits or deployments were made to the existing ACA voice gateway.
+- Service checks a separate GitHub reviewer's most recent verdict against the exact current PR head and verifies repository and author separation before signing. Its signing endpoint requires a bearer token; it fails closed without GitHub reviewer identity, GitHub read credentials, signing key and endpoint token.
+- The initial Render build started from commit `1feeababece6a81bcded10d268a20467a1e029ad`; successful deployment and authenticated end-to-end verification have **not yet been established**.
+- Required setup remains: isolated GitHub review identity (not PR author/development agent); minimal read access credential; independently generated/protected Ed25519 signing key; separate endpoint bearer secret; pin the public key only in trusted supervisor config; verify live signed approvals, stale-head rejection and key rotation. Reviewer application code itself lives on PR branch and MUST NOT be treated as an independent review of that branch.
+- Existing production ACA service ID `srv-d3rfh8umcj7s73cj28c0` must remain unchanged.
