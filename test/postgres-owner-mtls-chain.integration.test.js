@@ -1,6 +1,6 @@
 "use strict";
 // Disposable PostgreSQL: real nonce INSERT + advisory decision persistence
-// through the private owner intent handler. No network listener or deployment.
+// through a loopback-only private mTLS listener. No deployment.
 const {test}=require("node:test");
 const assert=require("node:assert/strict");
 const fs=require("node:fs");
@@ -133,6 +133,8 @@ if(!process.env.ACA_TEST_DATABASE_URL){
    assert.ok(nonceCount.rows[0].n>=1);
    await assert.rejects(nonceWriter.query("SELECT * FROM aca_automation.owner_edge_proof_nonces"),/permission denied/);
   }finally{
+   if(server?.listening)await new Promise(resolve=>server.close(resolve));
+   if(dir)fs.rmSync(dir,{recursive:true,force:true});
    await Promise.allSettled([writer?.end(),nonceWriter?.end()]);
    await admin.end();
   }
