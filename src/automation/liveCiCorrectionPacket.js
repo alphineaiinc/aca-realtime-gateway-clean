@@ -7,8 +7,9 @@
 const {verifiedRequiredChecks}=require("./verifiedCiEvidence");
 const {coordinateCorrection}=require("./level2CorrectionCoordinator");
 const denied=reason=>Object.freeze({
- status:"blocked",reason,proposal:null,dispatched:false,
- manualDispatchRequired:true,mergeAuthorized:false,deployAuthorized:false
+ status:"blocked",reason,proposal:null,agentDispatchAuthorized:false,dispatched:false,
+ manualDispatchRequired:true,mergeAuthorized:false,deployAuthorized:false,
+ signingAuthorized:false,productionAuthorization:false
 });
 const pos=n=>Number.isSafeInteger(n)&&n>0;
 const SHA=/^[a-f0-9]{40}$/;
