@@ -8,6 +8,7 @@ const http=require("node:http");
 const {sign,createPrivateKey,timingSafeEqual}=require("node:crypto");
 const {installationReadToken}=require("./githubReviewerAppAuth");
 const {inspectWithGithubApp}=require("./githubAppPrTriage");
+const {evaluateStagingCorrection}=require("./phase2aStagingCorrectionEndpoint");
 const SHA=/^[a-f0-9]{40}$/;
 const positive=n=>Number.isSafeInteger(n)&&n>0;
 function matchingReview({pr,reviews,scope,reviewerId}){
@@ -37,8 +38,8 @@ function equalBearer(header,token){
  const received=Buffer.from(header.slice(7)),expected=Buffer.from(token);
  return received.length===expected.length&&timingSafeEqual(received,expected);
 }
-function startServer(env=process.env,{githubTokenProvider=installationReadToken,githubFetch=fetch}={}){
- const port=Number(env.PORT||10000);
+function startServer(env=process.env,{githubTokenProvider=installationReadToken,githubFetch=fetch,phase2aDependencies=null}={}){
+ const port=Number(env.PORT??10000);
  const repoName=env.ACA_REVIEW_REPOSITORY||"";
  const parts=repoName.split("/");
  const reviewerId=Number(env.ACA_REVIEWER_ID);
@@ -61,6 +62,30 @@ function startServer(env=process.env,{githubTokenProvider=installationReadToken,
    const answer=(status,data)=>{res.writeHead(status,{"Content-Type":"application/json"});
      res.end(JSON.stringify(data));};
    if(req.method==="GET"&&req.url==="/health")return answer(200,{status:"up",mode:"fail_closed"});
+   if(req.method==="POST"&&req.url==="/phase2a/correction-request"){
+     // Isolated staging-only endpoint, with a separate token and explicit
+     // injected clients. Absence of either dependency disables the endpoint.
+     if(env.ACA_PHASE2A_ENABLED!=="true"||
+        !equalBearer(req.headers.authorization,env.ACA_PHASE2A_API_TOKEN))
+       return answer(401,{error:"unauthorized"});
+     let input="";
+     try{
+       for await(const chunk of req){
+         input+=chunk.toString("utf8");
+         if(Buffer.byteLength(input)>1024)throw new Error("request_too_large");
+       }
+       const request=JSON.parse(input);
+       const decision=await evaluateStagingCorrection({
+         authorization:req.headers.authorization,request,
+         config:{enabled:true,bearerToken:env.ACA_PHASE2A_API_TOKEN,
+           repositoryId:Number(env.ACA_REVIEW_REPOSITORY_ID),
+           workflowId:Number(env.ACA_PHASE2A_WORKFLOW_ID),
+           owner:parts[0],repo:parts[1],ledgerRole:env.ACA_PHASE2A_LEDGER_ROLE},
+         github:phase2aDependencies?.github,pool:phase2aDependencies?.pool
+       });
+       return answer(decision.status,decision.body);
+     }catch{return answer(400,{error:"invalid_request"});}
+   }
    if(req.method!=="POST"||!["/review","/triage"].includes(req.url))return answer(404,{error:"not_found"});
    if(!equalBearer(req.headers.authorization,env.ACA_REVIEW_API_TOKEN))
      return answer(401,{error:"unauthorized"});
