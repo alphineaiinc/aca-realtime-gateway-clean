@@ -144,3 +144,30 @@ owner session broker and authenticated approval endpoint; validate CSRF,
 origin/referrer rules, rate limits, credential handling, failover and
 key rotation. A development-only store and isolated fixture tests are
 not proof of a live authenticated approval flow.
+
+## GitHub OAuth exchange and owner-intent facade (development only)
+
+GitHub's current documentation confirms the authorization-code flow with PKCE
+`S256` and `state`. `src/automation/phase2aGitHubOAuthExchange.js` builds
+an authorization URL pinned to the trusted HTTPS staging callback and
+implements a server-side POST token exchange. The confidential client secret
+is never returned to the browser. The code is completely **unwired**: no OAuth
+App is registered, no client credentials are configured, and no HTTP route
+uses these functions. References:
+- https://docs.github.com/en/apps/oauth-apps/building-oauth-apps/authorizing-oauth-apps
+- https://docs.github.com/en/apps/creating-github-apps/authenticating-with-a-github-app/generating-a-user-access-token-for-a-github-app
+
+`src/automation/phase2aOwnerApprovalFacade.js` combines authenticated
+session/CSRF validation with a freshly injected trusted handoff and the
+existing transactional owner-intent journal. The owner identity comes from
+the server-side session, not submitted JSON. Even an approved intent has
+every Codex/merge/signing/deploy/production authorization set to false.
+Tests use injected fake GitHub and database clients and **do not prove a
+live owner-facing approval endpoint**.
+
+The remaining activation gates are a registered dedicated OAuth application
+with exact callback and server-side secrets, real browser lifecycle and
+code exchange, securely provisioned Neon session/journal roles and policies,
+rate limiting, monitoring, and security review of both the login route and
+the handoff freshness mechanism. No native Codex work may be started on
+the basis of the owner-intent record alone.
