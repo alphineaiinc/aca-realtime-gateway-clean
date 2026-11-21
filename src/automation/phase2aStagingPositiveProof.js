@@ -44,9 +44,11 @@ async function verifyStagingProof({github,ledgerClient,owner,repo,
     !ledgerClient||typeof ledgerClient.query!=="function")
   return report("configuration");
  const scope={runId,prNumber,issueNumber,headSha:expectedHeadSha};
+ let checkpoint="repository";
  try{
   const {data:repository}=await github.rest.repos.get({owner,repo});
   if(repository?.id!==repositoryId)return report("repository",scope);
+  checkpoint="ci_run";
   const {data:run}=await github.rest.actions.getWorkflowRun({owner,repo,run_id:runId});
   const ci=triageCompletedCi({event:{action:"completed",
     repository:{id:repositoryId},workflow_run:run},
@@ -54,16 +56,19 @@ async function verifyStagingProof({github,ledgerClient,owner,repo,
   if(ci.state!=="failed"||run?.id!==runId||ci.headSha!==expectedHeadSha||
      !["failure","timed_out"].includes(run.conclusion))
    return report("failed_ci",scope);
+  checkpoint="commit_association";
   const {data:associations}=await github.rest.repos.listPullRequestsAssociatedWithCommit({
    owner,repo,commit_sha:expectedHeadSha,per_page:2
   });
   if(!Array.isArray(associations)||associations.length!==1||
      associations[0]?.number!==prNumber)return report("pr_association",scope);
+  checkpoint="pull_request";
   const {data:pr}=await github.rest.pulls.get({owner,repo,pull_number:prNumber});
   if(pr?.number!==prNumber||pr.state!=="open"||pr.draft!==false||
      pr.head?.sha!==expectedHeadSha||
      pr.head?.repo?.id!==repositoryId||pr.base?.repo?.id!==repositoryId)
    return report("current_pr_head",scope);
+  checkpoint="graphql_issue_link";
   const data=await github.graphql(`query($owner:String!,$repo:String!,$pr:Int!) {
    repository(owner:$owner,name:$repo) {pullRequest(number:$pr) {
     number closingIssuesReferences(first:2) {
@@ -74,6 +79,7 @@ async function verifyStagingProof({github,ledgerClient,owner,repo,
   if(!verifyClosingIssueLink({prNumber,issueNumber,
       repositoryId:String(repositoryId),data}))
    return report("issue_association",scope);
+  checkpoint="issue";
   const {data:issue}=await github.rest.issues.get({owner,repo,issue_number:issueNumber});
   const labels=Array.isArray(issue?.labels)?
    issue.labels.map(x=>String(typeof x==="string"?x:x?.name||"").toLowerCase()):[];
@@ -83,12 +89,14 @@ async function verifyStagingProof({github,ledgerClient,owner,repo,
    return report("test_issue",scope);
   // Only the existing scoped, read-only ledger reader may access this.
   // An absent ledger is UNKNOWN, never treated as a fresh row.
+  checkpoint="ledger";
   const history=await readCorrectionHistory(ledgerClient,{
    repositoryId,issueNumber,prNumber
   });
   if(history.attempts!==0||history.unchangedFailureCount!==0)
    return report("ledger_not_fresh",scope);
   // Reverify the PR head after the ledger read; prevents a stale proof.
+  checkpoint="head_recheck";
   const {data:confirmed}=await github.rest.pulls.get({owner,repo,pull_number:prNumber});
   if(confirmed?.number!==prNumber||confirmed.state!=="open"||
      confirmed.draft!==false||confirmed.head?.sha!==expectedHeadSha||
@@ -97,6 +105,6 @@ async function verifyStagingProof({github,ledgerClient,owner,repo,
    return report("head_changed",scope);
   if(Date.now()>=expiresAt)return report("expired",scope);
   return report("complete",scope);
- }catch{return report("evidence_unavailable",scope);}
+ }catch{return report("evidence_unavailable_"+checkpoint,scope);}
 }
 module.exports={verifyStagingProof,TEST_LABEL};
