@@ -6,12 +6,19 @@
  * Caller provides an authenticated Octokit client.
  */
 const {evaluatePrSupervision} = require("../../src/automation/prSupervisionPolicy");
+const {ALLOWLIST_LABEL, LABELS} = require("../../src/automation/safeQueuePolicy");
 
 function validNumber(value) {
   return Number.isSafeInteger(value) && value > 0;
 }
 function sameRepo(pr, repoId) {
   return pr?.head?.repo?.id === repoId && pr?.base?.repo?.id === repoId;
+}
+function eligibleIssue(issue) {
+  if (!issue || issue.pull_request || issue.state !== "open" || !Array.isArray(issue.labels)) return false;
+  const labels = new Set(issue.labels.map(x => String(typeof x === "string" ? x : x?.name || "").toLowerCase()));
+  return labels.has(ALLOWLIST_LABEL) && labels.has(LABELS.eligible) &&
+    labels.has(LABELS.active) && !labels.has(LABELS.blocked);
 }
 function normalizeCheck(run, sha) {
   return {name: run.name, headSha: run.head_sha, status: run.status,
@@ -38,10 +45,10 @@ async function observe({github, owner, repo, prNumber, issueNumber}) {
   // Independent Codex review provenance is NOT established by GitHub approvals.
   // Fail closed until a separate authenticated review adapter exists.
   return evaluatePrSupervision({
-    issue: {number: issue.number, state: issue.state, eligible: false},
+    issue: {number: issue.number, state: issue.state, eligible: eligibleIssue(issue)},
     pr: {number: pr.number, state: pr.state, headSha, issueNumber, draft: pr.draft},
     trustedHead, trustedLink: false, ci,
     review: null, correction: {attempts: 0, unchangedFailureCount: 0}
   });
 }
-module.exports = {observe, sameRepo, normalizeCheck};
+module.exports = {observe, sameRepo, normalizeCheck, eligibleIssue};
