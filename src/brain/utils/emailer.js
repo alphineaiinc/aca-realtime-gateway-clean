@@ -24,7 +24,7 @@ try {
       pass: process.env.SMTP_PASS
     },
     tls: {
-      rejectUnauthorized: false
+      rejectUnauthorized: true
     }
   });
 } catch (err) {
