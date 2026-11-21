@@ -2,7 +2,8 @@
 /** Reject partial GitHub workflow records. No action authorization is ever issued. */
 const SHA=/^[a-f0-9]{40}$/;
 const positive=x=>Number.isSafeInteger(x)&&x>0;
-function verifyLiveGithubRunBinding({pr,run,jobs,expectedRepositoryId,expectedHeadSha,expectedWorkflowId,expectedAppId}={}){
+function verifyLiveGithubRunBinding(input={}){
+ const {pr,run,jobs,expectedRepositoryId,expectedHeadSha,expectedWorkflowId,expectedAppId}=(input&&typeof input==='object'&&!Array.isArray(input))?input:{};
  const missing=[];
  if(!positive(expectedRepositoryId)||!SHA.test(expectedHeadSha||"")||
  !positive(expectedWorkflowId)||!positive(expectedAppId))missing.push("trusted_configuration");
