@@ -44,7 +44,9 @@ if(!process.env.ACA_TEST_DATABASE_URL){
    const decisionPolicies=await admin.query("SELECT count(*)::int AS n FROM pg_policies WHERE schemaname='aca_automation' AND policyname='aca_owner_decision_read'");
    if(decisionPolicies.rows[0].n===0)
     await admin.query(migration("aca_phase2a_owner_decisions_role_policy.sql"));
-   await admin.query(migration("aca_phase2a_owner_edge_nonce_staging.sql"));
+   const noncePolicies=await admin.query("SELECT count(*)::int AS n FROM pg_policies WHERE schemaname='aca_automation' AND policyname='aca_owner_edge_nonce_create'");
+   if(noncePolicies.rows[0].n===0)
+    await admin.query(migration("aca_phase2a_owner_edge_nonce_staging.sql"));
    await admin.query(`DO $body$ BEGIN
     IF NOT EXISTS(SELECT 1 FROM pg_roles WHERE rolname='aca_ci_combined_decision') THEN
      CREATE ROLE aca_ci_combined_decision LOGIN PASSWORD 'aca_ci_fixture_only'
