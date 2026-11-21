@@ -82,5 +82,5 @@ test("missing ledger and already-used ledger cannot become positive proof",async
  f.ledgerClient.query=async(sql)=>sql.includes("SELECT version FROM")?
    {rows:[]}:{rows:[]};
  const r=await evaluate(f,{expiresAt:Date.now()+120000});
- assert.equal(r.stage,"evidence_unavailable");
+ assert.equal(r.stage,"evidence_unavailable_ledger");
 });
