@@ -1,0 +1,26 @@
+name: ACA Safe Codex Queue
+on:
+  issues:
+    types: [opened, reopened, labeled, unlabeled, assigned, unassigned, closed]
+permissions:
+  contents: read
+  issues: write
+  pull-requests: read
+concurrency:
+  group: aca-safe-codex-queue-${{ github.repository }}
+  cancel-in-progress: false
+jobs:
+  evaluate:
+    name: Evaluate safe queue policy
+    if: ${{ github.event.issue && !github.event.issue.pull_request }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      - name: Evaluate issue for guarded queue
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const { run } = require('./.github/scripts/safe-queue-runner.js');
+            await run({ github, context, core });
