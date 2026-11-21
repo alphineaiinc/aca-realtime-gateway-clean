@@ -52,7 +52,7 @@ function validateStagingOwnerMount(config={}){
     typeof config.fetchIdentity!=="function")
   return deny("unverified_dependencies");
  return Object.freeze({ready:true,reason:"staging_configuration_checked",
-  agentDispatchAuthorized:false,mergeAuthorized:false,deployAuthorized:false,
+  agentDispatchAuthorized:false,dispatched:false,mergeAuthorized:false,deployAuthorized:false,
   signingAuthorized:false,productionAuthorization:false});
 }
 module.exports={validateStagingOwnerMount};
