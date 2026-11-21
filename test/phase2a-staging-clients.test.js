@@ -27,7 +27,7 @@ test("disabled or missing credentials create no GitHub or DB clients",()=>{
  assert.equal(createPhase2aClients({...x.env,ACA_PHASE2A_GITHUB_READ_TOKEN:""}),null);
  assert.equal(createPhase2aClients({...x.env,ACA_PHASE2A_DATABASE_URL:""}),null);
  assert.equal(createPhase2aClients({...x.env,ACA_PHASE2A_DATABASE_URL:"postgresql://u:p@evil.example/db"}),null);
- assert.equal(createPhase2aClients({...x.env,ACA_REVIEW_REPOSITORY:"someone/else"}),x.clients===null?null:null);
+ assert.equal(createPhase2aClients({...x.env,ACA_REVIEW_REPOSITORY:"someone/else/third"}),null);
 });
 test("staging pg client uses TLS verification and narrow resource limits",()=>{
  const x=fixture(),settings=x.configurations[0];
