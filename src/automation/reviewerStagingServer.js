@@ -10,6 +10,7 @@ const {installationReadToken}=require("./githubReviewerAppAuth");
 const {inspectWithGithubApp}=require("./githubAppPrTriage");
 const {evaluateStagingCorrection}=require("./phase2aStagingCorrectionEndpoint");
 const {createPhase2aClients}=require("./phase2aStagingClients");
+const {phase2aStartupPreflight}=require("./phase2aStartupPreflight");
 const SHA=/^[a-f0-9]{40}$/;
 const positive=n=>Number.isSafeInteger(n)&&n>0;
 function matchingReview({pr,reviews,scope,reviewerId}){
@@ -143,6 +144,25 @@ function startServer(env=process.env,{githubTokenProvider=installationReadToken,
    }catch{return answer(503,{error:"review_evidence_unavailable"});}
  });
  if(createdClients?.pool)server.on("close",()=>{void createdClients.pool.end().catch(()=>{});});
+ // Run only in an expressly enabled isolated staging service with real
+ // server-created clients. Injected test clients never cause live requests.
+ if(createdClients&&env.ACA_PHASE2A_ENABLED==="true"&&
+    env.ACA_PHASE2A_PREFLIGHT==="true"){
+   server.once("listening",()=>{
+     void phase2aStartupPreflight({
+       github:createdClients.github,pool:createdClients.pool,
+       owner:parts[0],repo:parts[1],repositoryId,
+       workflowId:Number(env.ACA_PHASE2A_WORKFLOW_ID),
+       runId:Number(env.ACA_PHASE2A_PREFLIGHT_RUN_ID),
+       prNumber:Number(env.ACA_PHASE2A_PREFLIGHT_PR_NUMBER),
+       dbRole:env.ACA_PHASE2A_LEDGER_ROLE
+     }).then(result=>{
+       console.info("ACA_PHASE2A_PREFLIGHT "+result.status+" "+result.stage);
+     }).catch(()=>{
+       console.warn("ACA_PHASE2A_PREFLIGHT blocked unexpected_error");
+     });
+   });
+ }
  server.listen(port,"0.0.0.0");
  return server;
 }
