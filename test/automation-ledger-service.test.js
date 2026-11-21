@@ -8,7 +8,7 @@ function client(role){
  const calls=[];
  return {calls,release(){},async query(sql){
    calls.push(sql);
-   if(sql==="SELECT current_user AS role_name")return {rows:[{role_name:role}]};
+   if(sql.startsWith("SELECT current_user AS role_name, session_user AS login_role"))return {rows:[{role_name:role==="postgres"?"postgres":"aca_p2_"+role.split("_").at(-1)+"_a",login_role:role==="postgres"?"postgres":"aca_p2_"+role.split("_").at(-1)+"_a",permitted:role!=="postgres"}]};
    if(sql.startsWith("SELECT version"))return {rows:[{version:0}]};
    if(sql.includes("FROM aca_automation.correction_events"))return {rows:[]};
    if(sql.includes("ON CONFLICT DO NOTHING RETURNING version"))return {rows:[{version:0}]};
