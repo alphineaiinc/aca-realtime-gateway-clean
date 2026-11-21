@@ -2,7 +2,8 @@
 /** Advisory-only gate. A valid signature cannot attest separation of duties. */
 const FLAGS=Object.freeze({agentDispatchAuthorized:false,dispatched:false,mergeAuthorized:false,
  deployAuthorized:false,signingAuthorized:false,productionAuthorization:false});
-function assessReviewerProvenance({signedReview,githubEvidence,independentAttestation}={}){
+function assessReviewerProvenance(input={}){
+ const {signedReview,githubEvidence,independentAttestation}=(input&&typeof input==='object'&&!Array.isArray(input))?input:{};
  const checks={
   signatureVerified:!!signedReview&&signedReview.source==="trusted_review"&&
    ["passed","findings","blocked","pending"].includes(signedReview.status)&&
