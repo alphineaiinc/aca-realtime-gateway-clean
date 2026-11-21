@@ -8,6 +8,8 @@
 const {evaluatePrSupervision} = require("../../src/automation/prSupervisionPolicy");
 const {ALLOWLIST_LABEL, LABELS} = require("../../src/automation/safeQueuePolicy");
 const {verifyClosingIssueLink} = require("../../src/automation/verifiedPrLink");
+const {readCorrectionHistory} = require("../../src/automation/postgresCorrectionHistoryReader");
+const {verifyReviewEvidence} = require("../../src/automation/trustedReviewEvidence");
 
 function validNumber(value) {
   return Number.isSafeInteger(value) && value > 0;
@@ -25,7 +27,8 @@ function normalizeCheck(run, sha) {
   return {name: run.name, headSha: run.head_sha, status: run.status,
     conclusion: run.conclusion};
 }
-async function observe({github, owner, repo, prNumber, issueNumber}) {
+async function observe({github, owner, repo, prNumber, issueNumber,
+  authenticatedLedgerClient, trustedReviewProvider, trustedReviewerId}) {
   if (!github?.rest || !owner || !repo || !validNumber(prNumber) || !validNumber(issueNumber)) {
     throw new Error("invalid_observer_arguments");
   }
@@ -59,13 +62,35 @@ async function observe({github, owner, repo, prNumber, issueNumber}) {
   const completeChecks = checks.total_count === runs.length && required.length === 1;
   const ci = {headSha, requiredChecks: completeChecks ?
     required.map(run => normalizeCheck(run, headSha)) : []};
-  // Independent Codex review provenance is NOT established by GitHub approvals.
-  // Fail closed until a separate authenticated review adapter exists.
+  // Optional authenticated providers. No provider means unknown, never success.
+  // Provider identity is established by the calling service, not by PR content.
+  let correction = null;
+  if (trustedHead && trustedLink && authenticatedLedgerClient) {
+    try {
+      correction = await readCorrectionHistory(authenticatedLedgerClient, {
+        repositoryId: repository.id, issueNumber, prNumber
+      });
+      // Ledger history must be bound to this head after any correction.
+      if (correction.attempts > 0 && correction.lastResultingHeadSha !== headSha)
+        correction = null;
+    } catch { correction = null; }
+  }
+  let review = null;
+  if (trustedHead && trustedLink && typeof trustedReviewProvider === "function" &&
+      validNumber(trustedReviewerId)) {
+    try {
+      const evidence = await trustedReviewProvider({repositoryId:repository.id,
+        issueNumber,prNumber,headSha});
+      review = verifyReviewEvidence({record:evidence?.record,
+        authenticatedActorId:evidence?.authenticatedActorId,
+        trustedReviewerId,expectedPrNumber:prNumber,expectedHeadSha:headSha});
+    } catch { review = null; }
+  }
   return evaluatePrSupervision({
     issue: {number: issue.number, state: issue.state, eligible: eligibleIssue(issue)},
     pr: {number: pr.number, state: pr.state, headSha, issueNumber, draft: pr.draft},
     trustedHead, trustedLink, ci,
-    review: null, correction: null
+    review, correction
   });
 }
 module.exports = {observe, sameRepo, normalizeCheck, eligibleIssue};
