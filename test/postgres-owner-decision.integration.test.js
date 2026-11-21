@@ -35,7 +35,9 @@ if(!process.env.ACA_TEST_DATABASE_URL){
    // CI database is disposable, never a connected Neon or production DB.
    await admin.query(migration("aca_automation_correction_ledger.sql"));
    await admin.query(migration("aca_automation_role_policy.sql"));
-   await admin.query(migration("aca_automation_repository_rls.sql"));
+   const existingRls=await admin.query("SELECT count(*)::int AS n FROM pg_policies WHERE schemaname='aca_automation' AND policyname='aca_ledger_read'");
+   if(existingRls.rows[0].n===0)
+    await admin.query(migration("aca_automation_repository_rls.sql"));
    await admin.query(migration("aca_phase2a_owner_decisions_staging.sql"));
    await admin.query(migration("aca_phase2a_owner_decisions_role_policy.sql"));
    await admin.query(`DO $body$ BEGIN
