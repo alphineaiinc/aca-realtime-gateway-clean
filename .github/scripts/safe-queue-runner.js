@@ -252,8 +252,34 @@ async function clearInvalidActiveHolders(github, owner, repo, core) {
   }
 }
 
+async function clearRevokedQueuedCandidates(github, owner, repo, core) {
+  // A pending issue event can be replaced by a newer workflow run. Recover
+  // revoked queued/eligible tasks even if their unlabeled event never executes.
+  const candidates = new Set();
+  for (const label of [LABELS.eligible, LABELS.queued, LABELS.manualRequested]) {
+    for (const issue of await loadOpenIssuesWithLabel(github, owner, repo, label)) {
+      candidates.add(issue.number);
+    }
+  }
+
+  for (const number of candidates) {
+    const current = await loadCurrentIssue(github, owner, repo, number);
+    if (!current || String(current.state || "").toLowerCase() !== "open") {
+      await clearQueueLabelsForClosedIssue(github, owner, repo, number);
+      core.info(`Cleared stale queue labels from missing/closed issue #${number}.`);
+      continue;
+    }
+
+    if (!current.labels.some((label) => String(label).toLowerCase() === ALLOWLIST_LABEL.toLowerCase())) {
+      await processIssue(github, owner, repo, number, core);
+      core.info(`Revoked queued eligibility on issue #${number}.`);
+    }
+  }
+}
+
 async function reconcileAllowlistedIssues(github, owner, repo, core) {
   await clearInvalidActiveHolders(github, owner, repo, core);
+  await clearRevokedQueuedCandidates(github, owner, repo, core);
   const allowlistedIssues = await loadOpenIssuesWithLabel(github, owner, repo, ALLOWLIST_LABEL);
   if (allowlistedIssues.length === 0) {
     core.info("Reconciliation: no open allowlisted issues.");
@@ -321,5 +347,6 @@ module.exports = {
     loadCurrentIssue,
     reconcileAllowlistedIssues,
     clearInvalidActiveHolders,
+    clearRevokedQueuedCandidates,
   },
 };
