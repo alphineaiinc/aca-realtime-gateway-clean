@@ -206,3 +206,28 @@ a browser or called without server-side session and intent validation.
 Before any activation, independently review key storage/rotation, nonce
 cleanup/retention, issuer and audience pinning, current-CI verification,
 cross-instance concurrency and real Render private-service routing.
+
+## Session-bound proof issuance (development, unmounted)
+
+`src/automation/phase2aAuthenticatedEdgeIntent.js` now supplies a
+development-only **server-side** entrypoint for signed edge proof issuance.
+It first verifies the actual stored owner session, exact HTTPS Origin,
+POST method and independent CSRF token. The authenticated owner must equal
+the pinned owner ID. It then reads the pending approval packet from a
+trusted server-side store and reloads the current GitHub/CI/ledger handoff.
+The pure owner-decision policy rejects stale commits, wrong attempts and
+expired requests before the Ed25519 proof signer is invoked.
+
+Only after these checks pass does the function produce a 60-second
+advisory envelope addressed to the private processor. All Codex dispatch,
+merge, reviewer signing and deployment permissions remain false. No signing
+key is generated or stored by this module; the caller must supply a
+separately provisioned staging-only Ed25519 key. No browser request can
+provide owner identity, the trusted packet, the handoff or the key.
+
+`test/phase2a-authenticated-edge-intent.test.js` covers positive signing,
+exact scope, rejection, missing/stale session, CSRF and cross-origin
+failures, wrong owner, changed PR SHA, unavailable dependencies and
+missing key. **This adapter is NOT mounted or deployed.** Production-grade
+key custody/rotation, actual OAuth session wiring, private transport,
+server-side audit and browser consent are still mandatory before activation.
