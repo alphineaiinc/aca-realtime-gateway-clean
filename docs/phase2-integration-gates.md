@@ -28,3 +28,9 @@ The supervisor is **advisory only**: it never authorizes merges, deployment or n
 - Append now rejects missing ledgers. An explicit non-resetting initializer exists, but its caller-supplied authentication flag and SHA are NOT independent authentication or proof of GitHub provenance. Operational service-role enforcement remains outstanding.
 - CI check evidence now requires a pinned trusted GitHub App ID; the observer fails closed without it. Trusted workflow/run identity and app pin provisioning still need operational verification.
 - No external trusted-review service or production database service has been connected. No Phase 2 production readiness is claimed.
+
+## Isolated security validation additions
+- CI-only PostgreSQL test now covers explicit initialization, refusal to reinitialize, transactionally serialized corrections, authenticated-client-interface readback, replay, and exhausted budget.
+- The migration now defines an immutable-events trigger; integration tests attempt UPDATE and DELETE and require rejection.
+- This is a database-level guard, not a substitute for separately provisioned least-privilege roles, authenticated GitHub provenance, or a real independent reviewer.
+- No production database was migrated, and no secrets or service permissions were changed.
