@@ -14,8 +14,8 @@ const goodPr={number:21,state:"open",draft:false,user:{id:230486228},
  head:{sha,repo:{id:repositoryId}},base:{repo:{id:repositoryId}}};
 const approved={id:42,user:{id:reviewerId},state:"APPROVED",
  commit_id:sha,submitted_at:"2026-11-21T05:00:00Z"};
-function makeServer({pr=goodPr,reviews=[approved],latePr=pr,failed=false}={}){
- let prReads=0;const paths=[];
+function makeServer({pr=goodPr,reviews=[approved],latePr=pr,lateReviews=reviews,failed=false}={}){
+ let prReads=0,reviewReads=0;const paths=[];
  const server=startServer({PORT:"0",ACA_REVIEW_REPOSITORY:"alphineaiinc/aca-realtime-gateway-clean",
  ACA_REVIEW_GITHUB_APP_ID:"5858755",ACA_REVIEW_GITHUB_INSTALLATION_ID:"184252224",
  ACA_REVIEW_REPOSITORY_ID:String(repositoryId),ACA_REVIEWER_ID:String(reviewerId),
@@ -26,7 +26,7 @@ function makeServer({pr=goodPr,reviews=[approved],latePr=pr,failed=false}={}){
     paths.push(url);
     assert.equal(options.headers.Authorization,"Bearer mock-read-token");
     if(failed)throw new Error("github_unavailable");
-    const data=url.includes("/reviews?")?reviews:(++prReads===1?pr:latePr);
+    const data=url.includes("/reviews?")?(++reviewReads===1?reviews:lateReviews):(++prReads===1?pr:latePr);
     return {ok:true,json:async()=>data};
   }});
  return {server,paths};
@@ -48,7 +48,7 @@ test("full authenticated HTTP review signs only independently approved exact com
   const response=await callReviewer(server);
   assert.equal(response.status,200);
   const envelope=await response.json();
-  assert.equal(paths.length,3,"fetch PR, approved reviews, then current PR again");
+  assert.equal(paths.length,4,"fetch PR, reviews, then revalidate PR and reviews");
   const review=verifySignedReview({envelope,publicKey:keys.publicKey,repositoryId,
     prNumber:21,headSha:sha,reviewerId});
   assert.equal(review.status,"passed");
@@ -83,5 +83,13 @@ test("wrong repository and wrong bearer cannot sign",async()=>{
  await withServer({},async({server})=>{
   assert.equal((await callReviewer(server,{...scope,repositoryId:123})).status,503);
   assert.equal((await callReviewer(server,scope,"not-the-token")).status,401);
+ });
+});
+
+test("approval dismissed between evidence fetches fails closed",async()=>{
+ await withServer({lateReviews:[{...approved,state:"DISMISSED"}]},async({server})=>{
+  const response=await callReviewer(server);
+  assert.equal(response.status,409);
+  assert.equal((await response.json()).error,"review_head_changed");
  });
 });
