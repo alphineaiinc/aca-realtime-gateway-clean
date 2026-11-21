@@ -32,7 +32,7 @@ test("version mismatch fails closed",async()=>{
  await assert.rejects(readCorrectionHistory(client,id),/corrupt_ledger_history/);
 });
 test("invalid event chain fails closed",async()=>{
- const {client}=fake([{version:1}],[{...event,prior_head_sha:b}]);
+ const {client}=fake([{version:1}],[{...event,prior_head_sha:b,resulting_head_sha:b}]);
  await assert.rejects(readCorrectionHistory(client,id),/corrupt_ledger_history/);
 });
 test("fresh initialized ledger is distinguishable from missing",async()=>{
