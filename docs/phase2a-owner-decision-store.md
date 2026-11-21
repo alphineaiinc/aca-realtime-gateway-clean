@@ -41,3 +41,33 @@ The new unit tests cover creation, duplicate prevention, rejection, replay,
 wrong owner, expired/stale head, and missing storage. They use a fake
 transaction client; they **do not** prove PostgreSQL race safety by themselves.
 Full GitHub CI must pass before the PR can advance toward review.
+
+## Verified in isolated GitHub Actions PostgreSQL
+
+`migrations/aca_phase2a_owner_decisions_role_policy.sql` provisions an
+inert NOLOGIN writer group with repository-scoped forced RLS policies.
+Membership is NOT assigned to any live account by the migration.
+The existing staging runtime reader is never granted owner-decision writes.
+
+`test/postgres-owner-decision.integration.test.js` uses disposable CI login
+roles to test actual PostgreSQL row-level security and transactions, including
+two simultaneous conflicting owner choices, replay blocking, append-only event
+audit enforcement, cross-repository denial, and inability of the ordinary
+reader to access the approval journal. It runs only when
+`ACA_TEST_DATABASE_URL` exists; the CI workflow injects a local disposable
+PostgreSQL 16 service, never Neon.
+
+## Owner identity (not activated)
+
+`src/automation/phase2aOwnerIdentity.js` defines an *unwired* read-only
+GitHub identity check using `GET https://api.github.com/user` with a
+separate per-user OAuth credential, verified against the pinned numeric owner
+ID and login. It rejects a shared read-only service PAT and all unverified
+responses. Its returned `verified:true` is only an identity finding; it
+does not grant execution permission.
+
+A live authenticated OAuth login/session broker, CSRF protection, token
+lifecycle, secure cookie/session storage, and validation that the API request
+came from that session are **not built**. Do not accept owner IDs, approval
+comments, or the proof-only packet as authentication. Do not configure a
+live approval endpoint before those features are independently reviewed.
