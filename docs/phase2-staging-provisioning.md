@@ -24,3 +24,11 @@ Provisioning external accounts, creating credentials, setting secrets, deploying
 
 ## Current limitations
 The repository contains a reviewer-provider interface, Ed25519 verification, database-role guard, scoped ledger service adapter, and isolated tests. None establishes a live independently authenticated reviewer, per-repository DB isolation, or complete staging validation. A passing CI run is not production authorization.
+
+## Verified Neon staging resources — 2026-11-20
+- Independent project: `alphine-aca-phase2-staging` (project ID `still-cell-80928176`), region `aws-us-east-1`, PostgreSQL 17.
+- Default branch `staging` (ID `br-lucky-surf-bcn2xj6u`) and empty `aca_phase2_staging` database.
+- Ledger schema and immutable event trigger applied to this independent staging database, with empty correction-ledger and event tables.
+- NOLOGIN reader, initializer and writer group roles created; least-privilege grants on ledger tables applied; read-only catalog check verified two tables and three roles.
+- No production Neon project/schema or data changed. No authenticated login accounts or row-level security policies provisioned yet. Group roles alone do not establish repository isolation.
+- Render has not been connected; no independent reviewer is deployed. Do not report Phase 2 operational readiness.
