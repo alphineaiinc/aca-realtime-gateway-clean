@@ -1,0 +1,49 @@
+name: ACA PR Supervision Dry Run
+on:
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: 'PR number to inspect (read-only)'
+        required: true
+        type: string
+      issue_number:
+        description: 'Expected linked issue number (not trusted until verified)'
+        required: true
+        type: string
+permissions:
+  contents: read
+  pull-requests: read
+  issues: read
+  checks: read
+jobs:
+  observe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout trusted default branch
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Inspect current GitHub state without mutations
+        uses: actions/github-script@v7
+        env:
+          ACA_PR_NUMBER: ${{ inputs.pr_number }}
+          ACA_ISSUE_NUMBER: ${{ inputs.issue_number }}
+        with:
+          script: |
+            const {observe} = require('./.github/scripts/pr-supervision-observer.js');
+            const parse = (v) => {
+              if (!/^[1-9][0-9]*$/.test(v)) throw new Error('invalid_number');
+              const n = Number(v);
+              if (!Number.isSafeInteger(n)) throw new Error('invalid_number');
+              return n;
+            };
+            const result = await observe({
+              github,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              prNumber: parse(process.env.ACA_PR_NUMBER),
+              issueNumber: parse(process.env.ACA_ISSUE_NUMBER)
+            });
+            core.info(JSON.stringify(result));
+            core.setOutput('decision', result.state);
