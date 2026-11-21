@@ -28,11 +28,11 @@ CREATE TABLE IF NOT EXISTS aca_automation.correction_events (
 );
 -- Enforce append-only correction events even if a runtime role is misconfigured.
 CREATE OR REPLACE FUNCTION aca_automation.reject_correction_event_mutation()
-RETURNS trigger LANGUAGE plpgsql AS $
+RETURNS trigger LANGUAGE plpgsql AS $function$
 BEGIN
   RAISE EXCEPTION 'correction_events_are_immutable';
 END;
-$;
+$function$;
 DROP TRIGGER IF EXISTS correction_events_immutable ON aca_automation.correction_events;
 CREATE TRIGGER correction_events_immutable
 BEFORE UPDATE OR DELETE ON aca_automation.correction_events
