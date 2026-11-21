@@ -122,3 +122,21 @@ test("OAuth callback rejects unbound login, duplicate cookie, and attacker injec
  const good=await finishLogin({...base,loginCookie:r.setLoginCookie.split(";")[0]});
  assert.equal(good.verified,true);
 });
+
+test("untrusted origin variations cannot bypass owner session CSRF boundary",async()=>{
+ const x=await loggedIn(),cookie=x.result.setCookie.split(";")[0];
+ const base={store:x.db,cookie,csrfHeader:x.result.csrfToken,
+  expectedOrigin:"https://staging.example.test",method:"POST",now:NOW+200};
+ for(const origin of [
+  "https://staging.example.test.evil.test",
+  "https://staging.example.test@evil.test",
+  "https://staging.example.test:444",
+  "https://staging.example.test/path",
+  "https://staging.example.test?next=/",
+  "null"
+ ]){
+  const result=await validateOwnerAction({...base,origin});
+  assert.equal(result.verified,false,origin);
+  guard(result);
+ }
+});
