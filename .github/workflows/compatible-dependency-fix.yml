@@ -1,0 +1,50 @@
+name: ACA Isolated Compatible Dependency Remediation
+on:
+  push:
+    branches: [aca-sec-002-compatible-lockfile-fixes]
+permissions:
+  contents: write
+jobs:
+  compatible-lockfile-fix:
+    if: github.repository == 'alphineaiinc/aca-realtime-gateway-clean' && github.ref == 'refs/heads/aca-sec-002-compatible-lockfile-fixes'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Check out isolated remediation branch
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: true
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Check baseline lockfile
+        run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Apply compatible lockfile-only advisory updates
+        run: npm audit fix --package-lock-only --ignore-scripts --no-fund
+      - name: Require unchanged declared application dependencies
+        run: git diff --exit-code -- package.json
+      - name: Install proposed dependency tree
+        run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: JavaScript syntax check
+        run: |
+          git ls-files -z '*.js' | grep -zv '^node_modules/' | xargs -0 -r -n 1 node --check
+      - name: Existing ACA Node test suite
+        run: |
+          if node -e "process.exit(require('./package.json').scripts?.test ? 0 : 1)"; then
+            npm test
+          else
+            node --test test/*.test.js
+          fi
+      - name: Commit only tested lockfile changes to this branch
+        run: |
+          if ! git diff --quiet -- package-lock.json; then
+            git config user.name 'github-actions[bot]'
+            git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+            git add -- package-lock.json
+            git commit -m 'security: apply compatible lockfile advisory updates'
+            git push origin HEAD:aca-sec-002-compatible-lockfile-fixes
+          fi
+      - name: Report remaining production advisories without suppressing them
+        run: npm audit --omit=dev --audit-level=high
