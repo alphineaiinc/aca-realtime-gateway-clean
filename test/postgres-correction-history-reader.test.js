@@ -17,7 +17,7 @@ function fake(header,events){
 test("authenticated adapter reads consistent single-event ledger",async()=>{
  const {client,queries}=fake([{version:1}],[event]);
  assert.deepEqual(await readCorrectionHistory(client,id),{
- attempts:1,unchangedFailureCount:0,lastResultingHeadSha:b,
+ attempts:1,unchangedFailureCount:1,lastResultingHeadSha:b,
  lastFailureFingerprint:"ci:failure:first"});
  assert.match(queries[0],/REPEATABLE READ READ ONLY/);
  assert.equal(queries.at(-1),"COMMIT");
@@ -45,4 +45,12 @@ test("invalid identity cannot start a transaction",async()=>{
  const {client,queries}=fake([{version:0}],[]);
  await assert.rejects(readCorrectionHistory(client,{...id,repositoryId:0}),/invalid_ledger_read_arguments/);
  assert.equal(queries.length,0);
+});
+
+test("all nonzero correction history escalates until current failure fingerprint can be independently authenticated",async()=>{
+ const {client}=fake([{version:1}],[event]);
+ const h=await readCorrectionHistory(client,id);
+ assert.equal(h.attempts,1);
+ assert.equal(h.unchangedFailureCount,1);
+ assert.equal(h.lastFailureFingerprint,"ci:failure:first");
 });
