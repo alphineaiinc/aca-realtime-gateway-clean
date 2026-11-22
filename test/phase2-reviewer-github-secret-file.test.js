@@ -2,7 +2,7 @@
 const {test}=require("node:test"),assert=require("node:assert/strict");
 const {generateKeyPairSync}=require("node:crypto");
 const {readReviewerGithubAppKey:read,REVIEWER_GITHUB_APP_SECRET_PATH:PATH}=require("../src/automation/reviewerGithubAppSecretFile");
-const key="-----BEGIN PRIVATE KEY-----\n"+("A".repeat(128))+"\n-----END PRIVATE KEY-----\n";
+const key=generateKeyPairSync("rsa",{modulusLength:2048}).privateKey.export({type:"pkcs8",format:"pem"});
 test("reads only pinned Render secret file",()=>{
  let seen;
  const actual=read({ACA_REVIEW_GITHUB_APP_PRIVATE_KEY_PATH:PATH},{
