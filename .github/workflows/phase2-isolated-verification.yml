@@ -68,3 +68,16 @@ jobs:
       - name: Exact staging origin and fail-closed DB readiness tests
         run: |
           node --test test/phase2a-staging-origin-security.test.js test/phase2aDbReadiness.test.js
+  dependency-audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Audit production dependency vulnerabilities
+        run: npm audit --omit=dev --audit-level=high
