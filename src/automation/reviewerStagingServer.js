@@ -7,6 +7,7 @@
 const http=require("node:http");
 const {sign,createPrivateKey,timingSafeEqual}=require("node:crypto");
 const {installationReadToken}=require("./githubReviewerAppAuth");
+const {readReviewerGithubAppKey}=require("./reviewerGithubAppSecretFile");
 const {inspectWithGithubApp}=require("./githubAppPrTriage");
 const {evaluateStagingCorrection}=require("./phase2aStagingCorrectionEndpoint");
 const {createPhase2aClients}=require("./phase2aStagingClients");
@@ -41,7 +42,7 @@ function equalBearer(header,token){
  const received=Buffer.from(header.slice(7)),expected=Buffer.from(token);
  return received.length===expected.length&&timingSafeEqual(received,expected);
 }
-function startServer(env=process.env,{githubTokenProvider=installationReadToken,githubFetch=fetch,phase2aDependencies=null}={}){
+function startServer(env=process.env,{githubTokenProvider=installationReadToken,githubFetch=fetch,phase2aDependencies=null,githubAppKeyReader=readReviewerGithubAppKey}={}){
  const port=Number(env.PORT??10000);
  const repoName=env.ACA_REVIEW_REPOSITORY||"";
  const parts=repoName.split("/");
@@ -58,7 +59,7 @@ function startServer(env=process.env,{githubTokenProvider=installationReadToken,
    const token=await githubTokenProvider({
      appId:Number(env.ACA_REVIEW_GITHUB_APP_ID),
      installationId:Number(env.ACA_REVIEW_GITHUB_INSTALLATION_ID),
-     repositoryId,privateKey:env.ACA_REVIEW_GITHUB_APP_PRIVATE_KEY||""
+     repositoryId,privateKey:githubAppKeyReader(env)
    });
    const response=await githubFetch("https://api.github.com/repos/"+repoName+path,{
      headers:{Authorization:"Bearer "+token,
@@ -111,19 +112,19 @@ function startServer(env=process.env,{githubTokenProvider=installationReadToken,
        return answer(503,{error:"reviewer_not_configured"});
      if(req.url==="/review"&&(!positive(reviewerId)||
          !env.ACA_REVIEW_GITHUB_APP_ID||!env.ACA_REVIEW_GITHUB_INSTALLATION_ID||
-         !env.ACA_REVIEW_GITHUB_APP_PRIVATE_KEY||!env.ACA_REVIEW_PRIVATE_KEY))
+         !env.ACA_REVIEW_GITHUB_APP_PRIVATE_KEY_PATH||!env.ACA_REVIEW_PRIVATE_KEY))
        return answer(503,{error:"reviewer_not_configured"});
      if(req.url==="/triage"){
        // Advisory only. A triage finding (including a clean patch) never
        // generates a signed verdict or satisfies independent review.
-       if(!env.ACA_REVIEW_GITHUB_APP_PRIVATE_KEY||
+       if(!env.ACA_REVIEW_GITHUB_APP_PRIVATE_KEY_PATH||
           !Number.isSafeInteger(Number(env.ACA_REVIEW_GITHUB_APP_ID))||
           !Number.isSafeInteger(Number(env.ACA_REVIEW_GITHUB_INSTALLATION_ID)))
          return answer(503,{status:"blocked",reason:"github_app_not_configured",independent:false});
        const result=await inspectWithGithubApp({
          appId:Number(env.ACA_REVIEW_GITHUB_APP_ID),
          installationId:Number(env.ACA_REVIEW_GITHUB_INSTALLATION_ID),
-         privateKey:env.ACA_REVIEW_GITHUB_APP_PRIVATE_KEY,
+         privateKey:githubAppKeyReader(env),
          repositoryId,owner:parts[0],repo:parts[1],
          prNumber:scope.prNumber,headSha:scope.headSha,
          installationTokenProvider:githubTokenProvider,fetchImpl:githubFetch
