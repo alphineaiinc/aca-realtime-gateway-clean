@@ -152,7 +152,11 @@ function startServer(env=process.env,{githubTokenProvider=installationReadToken,
        prNumber:27,headSha:pr.head.sha,
        installationTokenProvider:githubTokenProvider,fetchImpl:githubFetch
      });
-     if(result.status==="blocked")throw Error("triage_blocked");
+     if(result.status==="blocked"){
+       const allowed=["stale_or_unsupported_pr","incomplete_or_duplicate_file_evidence","repository_identity_mismatch","invalid_authenticated_triage_scope","authenticated_github_evidence_unavailable","github_app_triage_unavailable"];
+       console.info("reviewer_github_app_triage_reason="+(allowed.includes(result.reason)?result.reason:"other_blocked"));
+       throw Error("triage_blocked");
+     }
      console.info("reviewer_github_app_triage_smoke=passed status="+
        (result.status==="manual_review_required"?"manual_review_required":"other_nonblocked"));
    }).catch(()=>console.error("reviewer_github_app_triage_smoke=blocked"));
