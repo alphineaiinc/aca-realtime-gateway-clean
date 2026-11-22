@@ -36,7 +36,7 @@ test("Nodemailer rejects an untrusted SMTP TLS certificate", { timeout: 15000 },
     });
 
     transport = nodemailer.createTransport({
-      host: "localhost",
+      host: "127.0.0.1",
       port: server.address().port,
       secure: true,
       connectionTimeout: 3000,
