@@ -81,3 +81,8 @@ All acceptance checks remain advisory. No merge, deployment, production database
 - Connected independently as actual `aca_p2_reader_a`: `session_user=current_user=aca_p2_reader_a`; counts: 1 ledger, 0 events. No writes or role switching.
 - Runtime reader has direct SELECT over *all 5* repository-role mapping rows; no RLS on mapping table. **Least-privilege decision needed**: remove direct SELECT after verifying no runtime dependency; rely on SECURITY DEFINER `is_authorized_repository` for ledger/event RLS. Do not revoke without scoped authorization and regression tests.
 - These counts alone do **not** prove cross-repository denial, no app-connection identity, or secure Render deployment. Disposable migration rehearsal remains unexecuted. HOLD broad staging deployment.
+
+## Mapping-table grant dependency assessment (2026-11-22, source review)
+- `src/automation/phase2aStagingClients.js` creates a pinned-host Postgres pool and GitHub read client; its source contains **no direct SELECT of** `aca_automation.repository_role_scopes` and no requirement for the direct mapping-table grant. The ledger RLS authorization function is SECURITY DEFINER and consults the table on behalf of scoped callers.
+- This is a **bounded source-path review**, not an exhaustive repository-wide reference search or runtime dependency proof. Recommend staging-only regression using actual `aca_phase2a_runtime_reader` login on a disposable branch with direct SELECT revoked, validating scoped ledger reads and cross-repo denial before any permanent grant change.
+- Do not revoke staging grants yet; do not create disposable branches or apply owner migrations without separate scope approval. No production access or deployment.
