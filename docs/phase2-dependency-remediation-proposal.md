@@ -45,3 +45,24 @@ git pull --ff-only origin aca-phase2-dependency-remediation-proposal
 & (Get-Command npm.cmd -CommandType Application).Source audit fix --dry-run --ignore-scripts --json > phase2-audit-dry-run.json
 ```
 Audit output files contain dependency metadata; inspect before sharing. The `--dry-run` command should not modify the lockfile, but confirm with `git status --short` and `git diff -- package.json package-lock.json` afterward. Do not use `--force`. This is **not** CodeQL or an actual production patch.
+
+## Batch 11 — operator dry-run evidence (10 tasks)
+1. Confirmed clean tracked worktree before dry-run.
+2. Confirmed isolated remediation branch checkout.
+3. Confirmed branch pull was already up to date.
+4. Confirmed `npm.cmd audit fix --dry-run --ignore-scripts --json` returned control to PowerShell (exit code was not captured).
+5. Confirmed npm changed local `node_modules/.package-lock.json`; dry-run was not completely filesystem read-only.
+6. Confirmed `phase2-audit-dry-run.json` was generated as an untracked local report.
+7. Confirmed `git diff -- package.json package-lock.json` produced no changes.
+8. Confirmed no dependency patch was committed or deployed.
+9. Added `scripts/inspect-phase2-audit-dry-run.ps1` to summarize local JSON without printing full advisory contents.
+10. Preserved security hold pending JSON inspection, controlled upgrades, test execution and independent scan.
+
+The local `node_modules/.package-lock.json` change is **not** a tracked manifest change, but must be handled carefully. Do not use `git clean -fdx`, `git reset --hard`, or `npm audit fix --force`. Keep the JSON report local and out of commits. The summary script only reads the report and git state.
+
+Operator follow-up:
+```powershell
+git pull --ff-only origin aca-phase2-dependency-remediation-proposal
+.\scripts\inspect-phase2-audit-dry-run.ps1
+```
+Send the printed summary (not secrets or full report). Before changing dependencies, decide which nonbreaking upgrades are feasible and whether breaking archiver/nodemailer changes need separate testing.
