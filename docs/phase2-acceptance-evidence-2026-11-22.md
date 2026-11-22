@@ -17,8 +17,9 @@ Status: **NOT APPROVED FOR MERGE, DEPLOYMENT, SIGNING OR AGENT DISPATCH**.
 ## Unmet acceptance gates
 - [ ] Obtain a fresh, current-head CodeQL scan or equivalent independent static-analysis evidence. Original PR #27 CodeQL review threads for alerts [81](https://github.com/alphineaiinc/aca-realtime-gateway-clean/security/code-scanning/81) and [82](https://github.com/alphineaiinc/aca-realtime-gateway-clean/security/code-scanning/82) are **outdated but unresolved**. Successful ACA CI is not a CodeQL clearance.
 - [ ] Confirm the exact allowed staging hostname against the deployed staging service configuration and its GitHub OAuth callback. Current test fixture alone is not deployment evidence.
-- [ ] Review 8 skipped tests; classify intentional vs missing coverage.
+- [x] Classify 8 skipped Node-suite tests: all eight explicitly require a disposable isolated `ACA_TEST_DATABASE_URL` and are skipped in the generic Node test job when that variable is absent. The dedicated PostgreSQL ledger integration job passed, but **does not prove these eight exact tests ran**. Keep database-specific coverage verification open until the eight are executed in an appropriately isolated database job.
 - [ ] Reconcile the #21 -> #27 stacked dependency and isolate a small reviewable change before any mainline merge proposal.
+- [ ] Execute all eight database-dependent tests using a dedicated disposable PostgreSQL fixture and isolated `ACA_TEST_DATABASE_URL`; do not point tests at production or shared staging data.
 - [ ] Run controlled end-to-end staging owner OAuth/approval flow, including deny/rollback and non-dispatch checks, with no production access.
 - [ ] Obtain explicit owner approval for any future merge, signing, agent dispatch or deployment; each action requires separate authorization.
 
