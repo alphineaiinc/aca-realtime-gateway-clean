@@ -24,6 +24,9 @@ Write-Host 'Running non-integration regression suite' -ForegroundColor Cyan
 & node --test --test-concurrency=1 @files
 if ($LASTEXITCODE -ne 0) { throw 'Unit regression suite failed.' }
 Write-Host 'Running read-only production dependency audit' -ForegroundColor Cyan
-& npm audit --omit=dev --audit-level=high
+# Windows PowerShell: invoke npm.cmd explicitly to avoid ambiguous npm shell shims.
+$npmCmd = Get-Command npm.cmd -CommandType Application -ErrorAction SilentlyContinue
+if (-not $npmCmd) { throw 'npm.cmd was not found. Check Node.js/npm installation and PATH.' }
+& $npmCmd.Source audit --omit=dev --audit-level=high
 if ($LASTEXITCODE -ne 0) { throw 'Dependency audit failed or could not complete.' }
 Write-Host 'PASS: local security, unit, and dependency verification; PostgreSQL integration and CodeQL remain separate gates.' -ForegroundColor Green
