@@ -1,0 +1,7 @@
+# Phase 2 reviewer GitHub App secret-file support — 2026-11-21
+
+The staging reviewer now reads GitHub App authentication private key from a fixed Render Secret File at `/etc/secrets/github-reviewer-app.pem` when `ACA_REVIEW_GITHUB_APP_PRIVATE_KEY_PATH` is exactly that value. The old plaintext `ACA_REVIEW_GITHUB_APP_PRIVATE_KEY` environment value is no longer read by the staging reviewer. File reads are performed only during authenticated review/triage requests, not on health requests. Missing, wrong-path, unreadable, malformed and oversized file contents fail closed with generic errors. The existing reviewer **verdict signing** credential `ACA_REVIEW_PRIVATE_KEY` remains separate and is not configured by this change.
+
+The target Render service `alphine-aca-phase2-reviewer-staging` currently runs branch `aca-auto-004-phase2-pr-supervision-policy`, with auto-deploy off. These changes are only on `aca-auto-005-offline-correction-simulation` and therefore are **not deployed**. Do not place credentials into the service until a reviewed branch rollout is authorized. No key was accessed or transmitted in this development batch.
+
+A Render Secret File uses filename `github-reviewer-app.pem` and its own Contents field. The separate environment variable `ACA_REVIEW_GITHUB_APP_PRIVATE_KEY_PATH=/etc/secrets/github-reviewer-app.pem` is required. Do not paste private key material into chat, git, or application logs. Validate GitHub installation token permissions and independent reviewer custody in controlled staging before any signing/dispatch.
