@@ -165,3 +165,9 @@ All acceptance checks remain advisory. No merge, deployment, production database
 - Operator ran `git fetch origin`, switched to `aca-auto-005-offline-correction-simulation`, confirmed `git pull --ff-only` was already up to date, then executed `node --test test/phase2aDbReadiness.test.js` from `C:\\Alphine\\Projects\\aca-realtime-gateway-clean` on Windows PowerShell.
 - User-provided Node TAP result: 10 tests, 10 passed, 0 failed, 0 cancelled, 0 skipped, 0 todo; duration 798.7887ms. Covered authentication, missing pool, GET rejection, disabled gate, correct restricted role/release, broad-read rejection, role mismatch, write grant rejection, missing SELECT rejection, and connection failure.
 - Evidence is operator-provided terminal output, not independently retrieved CI logs. The test uses mocked database clients; this is **not** a live Render-to-Neon authentication proof. No deployment or production changes.
+
+## Operator-executed full Node regression (2026-11-22)
+- Operator ran `node --test test/*.test.js` on the local checkout of `aca-auto-005-offline-correction-simulation` at `C:\\Alphine\\Projects\\aca-realtime-gateway-clean`.
+- User-supplied TAP summary: 386 tests, 378 pass, 0 fail, 0 cancelled, 8 skipped, 0 todo, duration 5430.4456ms. All ten `phase2aDbReadiness` cases passed in the full suite.
+- Eight skips explicitly require an isolated/disposable `ACA_TEST_DATABASE_URL` for PostgreSQL integration (ledger, owner intent, nonce, OAuth storage, combined advisory SQL, repository/role isolation). They are not counted as passed and require a separately isolated integration run.
+- This is operator-provided local output, not CI attestation or deployed Render-to-Neon proof. No deployment, merge, signing, dispatch, staging or production mutation authorized by this result.
