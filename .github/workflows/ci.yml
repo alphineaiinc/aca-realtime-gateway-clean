@@ -3,7 +3,7 @@ on:
   pull_request:
     branches: [main]
   push:
-    branches: [main]
+    branches: [main, aca-phase2-reviewer-staging-secret-rollout]
 permissions:
   contents: read
 concurrency:
