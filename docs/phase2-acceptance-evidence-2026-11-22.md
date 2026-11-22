@@ -176,3 +176,9 @@ All acceptance checks remain advisory. No merge, deployment, production database
 - Security review identified that deploying the initial authenticated readiness route while `ACA_PHASE2A_ENABLED=true` would make it immediately reachable with the existing Phase2A API token. Added a second independent opt-in condition `ACA_PHASE2A_DB_READINESS_ENABLED=true` in `src/automation/reviewerStagingServer.js` (commit `0891f951e0c527f7cb74ee02cd036fc2c9272c62`), absent/false defaults to 401 fail-closed.
 - Updated `test/phase2aDbReadiness.test.js` fixture to enable the readiness gate for existing cases and added a test that independently disabled readiness returns 401, commit `2d8739d4bdf517245c8d4f3c0927fe19a6db1542`. **11 readiness tests now defined, not yet executed after this code change.** Previous 378/0/8 full-suite result applies to the prior code only.
 - New flag is NOT configured on Render, NOT enabled, and no staging deployment occurred. Prior approval boundaries remain in force. Operator should rerun `node --test test/phase2aDbReadiness.test.js` and `node --test test/*.test.js` after pulling branch before requesting a separate explicit deploy approval.
+
+## Operator retest after independent readiness gate (2026-11-22)
+- User-provided PowerShell output confirms fast-forward from `53d4c745` to `4f76add8` on `aca-auto-005-offline-correction-simulation`.
+- `node --test test/phase2aDbReadiness.test.js`: 11 tests, 11 pass, 0 fail, 0 skipped, duration 302.6238ms. New independent disabled-by-default readiness test passed.
+- `node --test test/*.test.js`: 387 tests, 379 pass, 0 fail, 8 skipped, duration 3804.7425ms. Eight skips explicitly require isolated/disposable `ACA_TEST_DATABASE_URL` for PostgreSQL integration; no live DB evidence established.
+- This is operator-provided local execution evidence, not independent CI or deployed runtime verification. No Render configuration/deployment, Neon mutation, merge, signing, or agent dispatch performed.
