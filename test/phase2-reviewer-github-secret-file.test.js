@@ -1,5 +1,6 @@
 "use strict";
 const {test}=require("node:test"),assert=require("node:assert/strict");
+const {generateKeyPairSync}=require("node:crypto");
 const {readReviewerGithubAppKey:read,REVIEWER_GITHUB_APP_SECRET_PATH:PATH}=require("../src/automation/reviewerGithubAppSecretFile");
 const key="-----BEGIN PRIVATE KEY-----\n"+("A".repeat(128))+"\n-----END PRIVATE KEY-----\n";
 test("reads only pinned Render secret file",()=>{
