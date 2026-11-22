@@ -8,7 +8,7 @@ const bearer="triage-test-bearer-"+("X".repeat(40));
 const base={ACA_REVIEW_REPOSITORY:"alphineaiinc/aca-realtime-gateway-clean",
   ACA_REVIEW_REPOSITORY_ID:String(repoId),ACA_REVIEW_GITHUB_APP_ID:"5858755",
   ACA_REVIEW_GITHUB_INSTALLATION_ID:"184252224",
-  ACA_REVIEW_GITHUB_APP_PRIVATE_KEY:"mock-only-not-a-private-key",
+  ACA_REVIEW_GITHUB_APP_PRIVATE_KEY_PATH:"/etc/secrets/github-reviewer-app.pem",
   ACA_REVIEW_API_TOKEN:bearer,PORT:"0"};
 const scope={repositoryId:repoId,issueNumber:42,prNumber:21,headSha:head};
 const pr={number:21,state:"open",changed_files:1,draft:true,
@@ -24,6 +24,7 @@ function response(data){
 async function withServer({env=base,changed=false}={},callback){
  let prReads=0,tokenCalls=0;
  const server=startServer(env,{
+  githubAppKeyReader:env=>{if(!env.ACA_REVIEW_GITHUB_APP_PRIVATE_KEY_PATH)throw Error("missing");return "mock-only-not-a-private-key";},
   githubTokenProvider:async args=>{
    tokenCalls++;
    assert.equal(args.repositoryId,repoId);
@@ -74,7 +75,7 @@ test("stale PR and unknown bearer cannot produce advisory success",async()=>{
  });
 });
 test("missing App key fails closed before token creation",async()=>{
- await withServer({env:{...base,ACA_REVIEW_GITHUB_APP_PRIVATE_KEY:""}},async({post,getTokenCalls})=>{
+ await withServer({env:{...base,ACA_REVIEW_GITHUB_APP_PRIVATE_KEY_PATH:""}},async({post,getTokenCalls})=>{
   const res=await post();
   assert.equal(res.status,503);
   const body=await res.json();
