@@ -54,3 +54,11 @@ All acceptance checks remain advisory. No merge, deployment, production database
 - `aca_phase2a_owner_oauth_store_staging.sql` defines a separate NOLOGIN OAuth store role with SELECT/INSERT/DELETE only, FORCE RLS and no UPDATE grant. No role credentials or memberships are provisioned by these migrations.
 - Source review is **not** proof of actual staging Neon role separation, migration application, TLS/mTLS ingress, or rollback. These remain release blockers.
 - Release recommendation: **HOLD** broad branch deployment (201 commits / 113 files since live SHA); isolate reviewable release slices, verify staging-only Neon identity and migration prerequisites using read-only evidence, and obtain specific approval before any deploy or migration.
+
+## Live isolated Neon staging inventory (2026-11-22, SELECT-only)
+- Verified Neon project `still-cell-80928176` (`alphine-aca-phase2-staging`), branch `br-lucky-surf-bcn2xj6u` (`staging`), database `aca_phase2_staging`. **Not** production project `blue-night-09261872` (`aca_main`).
+- `session_user=current_user=aca_staging_owner` for inspection; this does **not** verify app login identity.
+- `aca_automation_reader` and `aca_automation_writer` exist as NOLOGIN roles without BYPASSRLS. `aca_automation.is_authorized_repository(bigint)` exists.
+- Existing `aca_automation.correction_events` and `correction_ledgers` have RLS enabled and FORCE; `repository_role_scopes` does not have RLS (authorization mapping table, inspect grants before operational approval).
+- Owner tables (`owner_decision_requests`, `owner_decision_events`, `owner_oauth_pending`, `owner_oauth_sessions`) and owner roles (`aca_owner_decision_writer`, `aca_owner_oauth_store`) **are absent**. Owner migration dependency not satisfied in live staging; no migration applied.
+- **HOLD** broad staging deployment and owner endpoints. Next: inspect existing role grants/function security and design disposable-branch migration rehearsal before any staging write authorization.
