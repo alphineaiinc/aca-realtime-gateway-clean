@@ -21,7 +21,7 @@ test("rejects missing, malformed, empty and oversized keys without echoing secre
  for(const candidate of ["", "bad-secret","-----BEGIN PUBLIC KEY-----\n"+("A".repeat(128))+"\n-----END PUBLIC KEY-----",
   key+"A".repeat(17000)]){
  assert.throws(()=>read({ACA_REVIEW_GITHUB_APP_PRIVATE_KEY_PATH:PATH},
-  {readFileSync:()=>candidate}),e=>!e.message.includes(candidate)&&/invalid/.test(e.message));
+  {readFileSync:()=>candidate}),e=>(candidate.length===0||!e.message.includes(candidate))&&/invalid/.test(e.message));
  }
  assert.throws(()=>read({ACA_REVIEW_GITHUB_APP_PRIVATE_KEY_PATH:PATH},
   {readFileSync:()=>{throw Error("secret-in-exception");}}),e=>!e.message.includes("secret-in-exception"));
