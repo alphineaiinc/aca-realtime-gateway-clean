@@ -69,7 +69,7 @@ test("emailer uses nodemailer transport config and sends expected payload", asyn
         pass: "smtp-pass",
       },
       tls: {
-        rejectUnauthorized: false,
+        rejectUnauthorized: true,
       },
     });
     assert.equal(sendMailCalls.length, 1);
