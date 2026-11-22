@@ -1,9 +1,9 @@
 name: ACA CI
 on:
   pull_request:
-    branches: [main, aca-auto-005-offline-correction-simulation]
+    branches: [main]
   push:
-    branches: [main, aca-auto-005-offline-correction-simulation]
+    branches: [main]
 permissions:
   contents: read
 concurrency:
