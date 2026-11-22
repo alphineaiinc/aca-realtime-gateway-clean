@@ -160,3 +160,8 @@ All acceptance checks remain advisory. No merge, deployment, production database
 - **Tests not executed yet**: no GitHub PR-triggered workflow run returned for the latest test commit and external container cannot resolve github.com. Do not claim passing status from static inspection.
 - Operator validation on a checkout of branch `aca-auto-005-offline-correction-simulation` (Node 22): `node --test test/phase2aDbReadiness.test.js`; then `node --test test/*.test.js` if appropriate for the repository. Capture process exit code, TAP pass/fail totals and commit SHA; do not supply any secrets or deploy.
 - Remaining gate: review actual output, fix failures, add integration evidence, then separately request explicit staging deployment authorization. No production or staging mutation authorized by this note.
+
+## Operator-executed local readiness regression results (2026-11-22)
+- Operator ran `git fetch origin`, switched to `aca-auto-005-offline-correction-simulation`, confirmed `git pull --ff-only` was already up to date, then executed `node --test test/phase2aDbReadiness.test.js` from `C:\\Alphine\\Projects\\aca-realtime-gateway-clean` on Windows PowerShell.
+- User-provided Node TAP result: 10 tests, 10 passed, 0 failed, 0 cancelled, 0 skipped, 0 todo; duration 798.7887ms. Covered authentication, missing pool, GET rejection, disabled gate, correct restricted role/release, broad-read rejection, role mismatch, write grant rejection, missing SELECT rejection, and connection failure.
+- Evidence is operator-provided terminal output, not independently retrieved CI logs. The test uses mocked database clients; this is **not** a live Render-to-Neon authentication proof. No deployment or production changes.
