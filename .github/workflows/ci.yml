@@ -51,6 +51,7 @@ jobs:
           --health-cmd "pg_isready -U aca_test -d aca_automation_test"
           --health-interval 5s --health-timeout 5s --health-retries 10
     env:
+      CI: 'true'
       ACA_TEST_DATABASE_URL: postgresql://aca_test:aca_test_only@localhost:5432/aca_automation_test
     steps:
       - name: Checkout
@@ -63,12 +64,4 @@ jobs:
       - name: Install dependencies
         run: npm ci --ignore-scripts --no-audit --no-fund
       - name: Run isolated PostgreSQL integration
-        run: |
-          node --test test/postgres-correction-ledger.integration.test.js
-          node --test test/postgres-role-isolation.integration.test.js
-          node --test test/postgres-repository-rls.integration.test.js
-          node --test test/postgres-owner-decision.integration.test.js
-          node --test test/postgres-owner-oauth.integration.test.js
-          node --test test/postgres-owner-edge-nonce.integration.test.js
-          node --test test/postgres-owner-private-chain.integration.test.js
-          node --test test/postgres-owner-mtls-chain.integration.test.js
+        run: node scripts/run-postgres-isolated-ci.cjs
