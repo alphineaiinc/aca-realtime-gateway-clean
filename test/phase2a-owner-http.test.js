@@ -34,9 +34,9 @@ function setup(){
  const opts={enabled:true,isolatedStaging:true,sessionStore,
   repositoryId:R,ownerId:OWNER,ownerLogin:"alphineaiinc",
   clientId:"Iv1_staging_test_4567890",
-  callbackUrl:"https://staging.example.test/phase2a/oauth/callback",
-  siteOrigin:"https://staging.example.test",
-  expectedSiteOrigin:"https://staging.example.test",
+  callbackUrl:"https://alphine-aca-phase2a-correction-staging.onrender.com/phase2a/oauth/callback",
+  siteOrigin:"https://alphine-aca-phase2a-correction-staging.onrender.com",
+  expectedSiteOrigin:"https://alphine-aca-phase2a-correction-staging.onrender.com",
   repository:"alphineaiinc/aca-realtime-gateway-clean",
   ownerOAuthClientSecret:"dedicated-user-oauth-secret-example-12345",
   reviewerSigningSecret:"separate-reviewer-signing-secret-value",
@@ -95,7 +95,7 @@ test("approval rejects missing CSRF, cross-origin, unknown ID and browser-owned 
  const x=setup(),{callback}=await login(x);
  const cookie=callback.headers["Set-Cookie"][1].split(";")[0];
  const base={method:"POST",url:"/phase2a/owner/decision",
-  headers:{cookie,origin:"https://staging.example.test",
+  headers:{cookie,origin:"https://alphine-aca-phase2a-correction-staging.onrender.com",
    "x-aca-csrf":callback.body.csrfToken,"content-type":"application/json"},
   body:{decision:"approve",requestId:x.packet.id}};
  const bad=[
@@ -115,7 +115,7 @@ test("authentic approval intent remains advisory and never triggers code executi
  const x=setup(),{callback}=await login(x);
  const cookie=callback.headers["Set-Cookie"][1].split(";")[0];
  const r=await call(x.opts,{method:"POST",url:"/phase2a/owner/decision",
-  headers:{cookie,origin:"https://staging.example.test",
+  headers:{cookie,origin:"https://alphine-aca-phase2a-correction-staging.onrender.com",
    "x-aca-csrf":callback.body.csrfToken,"content-type":"application/json"},
   body:{decision:"approve",requestId:x.packet.id}});
  assert.equal(r.status,200);assert.equal(r.body.state,"owner_intent_to_review");
@@ -157,7 +157,7 @@ test("logout requires same-origin POST with authenticated CSRF",async()=>{
  const cookie=callback.headers["Set-Cookie"][1].split(";")[0];
  const csrf=callback.body.csrfToken;
  const wrong=await call(x.opts,{method:"POST",url:"/phase2a/owner/logout",
-  headers:{cookie,origin:"https://staging.example.test"}});
+  headers:{cookie,origin:"https://alphine-aca-phase2a-correction-staging.onrender.com"}});
  assert.equal(wrong.status,401);
  assert.equal(x.opts.sessionStore.sessions.size,1);
  const evil=await call(x.opts,{method:"POST",url:"/phase2a/owner/logout",
@@ -165,13 +165,13 @@ test("logout requires same-origin POST with authenticated CSRF",async()=>{
  assert.equal(evil.status,401);
  assert.equal(x.opts.sessionStore.sessions.size,1);
  const valid=await call(x.opts,{method:"POST",url:"/phase2a/owner/logout",
-  headers:{cookie,origin:"https://staging.example.test","x-aca-csrf":csrf}});
+  headers:{cookie,origin:"https://alphine-aca-phase2a-correction-staging.onrender.com","x-aca-csrf":csrf}});
  assert.equal(valid.status,200);assert.equal(valid.body.state,"signed_out");
  assert.equal(x.opts.sessionStore.sessions.size,0);
 });
 test("callback accepts only origin-relative path and rejects absolute URLs",async()=>{
  const x=setup();
- const r=await call(x.opts,{url:"https://staging.example.test/phase2a/oauth/callback?code=a&state=b"});
+ const r=await call(x.opts,{url:"https://alphine-aca-phase2a-correction-staging.onrender.com/phase2a/oauth/callback?code=a&state=b"});
  assert.equal(r.handled,false);
  const start=await call(x.opts);
  const state=new URL(start.body.authorizationUrl).searchParams.get("state");
