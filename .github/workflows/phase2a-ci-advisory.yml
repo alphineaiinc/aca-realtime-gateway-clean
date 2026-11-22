@@ -1,0 +1,60 @@
+name: ACA Phase 2A CI Advisory
+on:
+  workflow_run:
+    workflows: ["ACA CI"]
+    types: [completed]
+permissions:
+  contents: read
+  pull-requests: read
+  issues: read
+jobs:
+  classify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout trusted default branch only
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          persist-credentials: false
+      - name: Classify completed CI (read-only; no agent dispatch)
+        env:
+          GITHUB_EVENT_PATH: ${{ github.event_path }}
+        run: |
+          node <<'NODE'
+          const fs=require("node:fs");
+          const path=require("node:path");
+          const file=path.resolve("src/automation/phase2aCiTriage.js");
+          if(!fs.existsSync(file)){
+            console.log("Phase 2A advisory not yet merged on trusted default branch; deferred.");
+            process.exit(0);
+          }
+          const event=JSON.parse(fs.readFileSync(process.env.GITHUB_EVENT_PATH,"utf8"));
+          const {triageCompletedCi}=require(file);
+          const decision=triageCompletedCi({
+            event,expectedRepositoryId:1080201236,expectedWorkflowId:422174901
+          });
+          console.log(JSON.stringify(decision));
+          // CI alone never proves an eligible PR or authenticated correction history.
+          // This advisory MUST request verification, not claim authorization.
+          const {createCorrectionHandoff}=require("./src/automation/phase2aCorrectionHandoff");
+          const handoff=createCorrectionHandoff({
+            event,expectedRepositoryId:1080201236,expectedWorkflowId:422174901
+          });
+          console.log(JSON.stringify(handoff));
+          if(decision.state==="blocked") process.exitCode=1;
+          NODE
+      - name: Inspect live PR association without correction authority
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const {observeCorrectionHandoff}=require('./.github/scripts/phase2a-correction-observer.js');
+            const result=await observeCorrectionHandoff({
+              github,owner:context.repo.owner,repo:context.repo.repo,
+              event:context.payload,
+              expectedRepositoryId:1080201236,
+              expectedWorkflowId:422174901
+              // No authenticated ledger injected: this must remain verification_required.
+            });
+            core.info(JSON.stringify(result));
+            core.setOutput('state',result.state);

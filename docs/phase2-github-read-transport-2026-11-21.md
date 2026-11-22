@@ -1,0 +1,7 @@
+# Phase 2 GitHub read-only authenticated transport — 2026-11-21
+
+Added `phase2GithubReadTransport.js`, a Node HTTPS-only transport for the existing GitHub REST adapter. Requires a trusted server-provided token; validates `api.github.com` hostname and `/repos/` path, forbids URL userinfo, alternate ports, fragments, redirects and non-GET methods. Node HTTPS performs default TLS certificate verification. Rejects non-200 status, redirect Location, invalid JSON, oversized response, request timeout and transport errors. Includes offline adversarial tests using injected mock HTTPS module.
+
+**Security boundaries:** No credentials were generated or stored. Token injection must come from a protected secret manager, with read-only GitHub App installation permissions and rotation. Do not log Authorization headers. Caller must avoid sending user-controlled URL/repo paths. Node HTTPS request timeout and byte limits are implemented; additional deployment network egress restrictions and independent TLS/service identity testing are still necessary. This transport has **not** been exercised against live GitHub with a real installation token.
+
+The collector and adapter remain non-authorizing. A real integration requires independently pinned check issuer App IDs (GitHub Actions checks and Alphine reviewer are distinct), authenticated full-field REST responses, and independently verified reviewer custody. No merge, deploy, signing, or agent dispatch.

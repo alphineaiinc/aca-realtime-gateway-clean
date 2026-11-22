@@ -20,8 +20,9 @@ function makeServer({pr=goodPr,reviews=[approved],latePr=pr,lateReviews=reviews,
  ACA_REVIEW_GITHUB_APP_ID:"5858755",ACA_REVIEW_GITHUB_INSTALLATION_ID:"184252224",
  ACA_REVIEW_REPOSITORY_ID:String(repositoryId),ACA_REVIEWER_ID:String(reviewerId),
  ACA_REVIEW_API_TOKEN:token,ACA_REVIEW_PRIVATE_KEY:pem,
- ACA_REVIEW_GITHUB_APP_PRIVATE_KEY:"test-only-mock"},
- {githubTokenProvider:async({repositoryId:id})=>{assert.equal(id,repositoryId);return "mock-read-token";},
+ ACA_REVIEW_GITHUB_APP_PRIVATE_KEY_PATH:"/etc/secrets/github-reviewer-app.pem"},
+ {githubAppKeyReader:()=> "test-only-mock",
+  githubTokenProvider:async({repositoryId:id})=>{assert.equal(id,repositoryId);return "mock-read-token";},
   githubFetch:async(url,options)=>{
     paths.push(url);
     assert.equal(options.headers.Authorization,"Bearer mock-read-token");

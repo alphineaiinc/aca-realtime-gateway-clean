@@ -42,7 +42,11 @@ async function readCorrectionHistory(client,{repositoryId,issueNumber,prNumber}=
      seenEvents.add(e.event_id);lastSha=e.resulting_head_sha;
    }
    await client.query("COMMIT");
-   return Object.freeze({attempts:version,unchangedFailureCount:0,
+   // A prior correction means unchanged-failure status cannot be determined
+   // from ledger history alone: the *current* failing CI fingerprint must be
+   // independently verified before permitting another correction. Conservatively
+   // escalate instead of silently treating unknown as changed.
+   return Object.freeze({attempts:version,unchangedFailureCount:version===0?0:1,
      lastResultingHeadSha:lastSha,
      lastFailureFingerprint:events.rows.at(-1)?.failure_fingerprint??null});
  }catch(error){

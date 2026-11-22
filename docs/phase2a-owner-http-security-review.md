@@ -1,0 +1,257 @@
+# Phase 2A owner login-to-approval security review — 2026-11-21
+
+**Scope:** Development-only code on PR #27, including OAuth exchange, browser
+binding, the PostgreSQL session/decision stores, the unmounted HTTP handler,
+and owner decision facade. This review was a targeted code inspection and
+adversarial test pass, **not a full penetration test or production security
+certification**.
+
+## Fixed and verified
+
+1. **HTTP route shadowing:** disabled/unconfigured handler no longer consumes
+   unrelated routes. The route is identified before the feature gate.
+2. **Rate-limit dependency exceptions:** unavailable/throwing limiter now
+   rejects requests, rather than escaping the handler's security boundary.
+   Test verifies no OAuth state is created after the limiter throws.
+3. **Logout CSRF:** logout now requires a valid server-side session and a
+   matching independent CSRF token plus the exact HTTPS Origin, as required
+   by the approval POST path.
+4. **OAuth callback URL canonicalization:** callback must use the exact
+   relative route and query, rejects fragments and absolute URLs before
+   any pending OAuth state is consumed. The pre-existing one-time
+   browser-bound login cookie + state checks remain mandatory.
+
+## Validated
+
+- Final ACA CI run: 44933031746 (Node and PostgreSQL integration SUCCESS).
+- Disposable-only tests, no live OAuth token or privileged database connection.
+- No native Codex, reviewer signing, merge or deployment path was enabled.
+
+## Outstanding before any live staging activation
+
+- **Independent security review** of the complete live HTTP mounting and
+  deployment configuration, using real HTTPS reverse-proxy and cookie behavior.
+- Dedicated GitHub OAuth application registration, exact callback,
+  secret handling, scopes, token expiry/revocation and GitHub's provider
+  requirements; do not reuse the GitHub reviewer app.
+- Atomic authenticated persistent sessions and owner decision DB clients
+  under independently provisioned limited roles; no current Neon migration.
+- Server-verified fresh GitHub/CI/issue and ledger handoff each decision,
+  no read/write role confusion, no stale approvals.
+- Distributed rate limiter; per-client/IP controls and normalized proxy
+  headers; handle all unexpected dependency errors fail closed.
+- CSRF and browser origin tests in a real browser, response size and
+  input-body timeouts, secure callback lifecycle, no tokens in URLs/logs.
+- Threat model for stolen owner sessions, compromised OAuth callback,
+  invalidation on changed PR head, stale status and replay attempts.
+- Explicit owner approval for any deployment and a separate authorization
+  before any Codex dispatch; approval intent never means agent permission.
+
+**Decision:** Keep handler unmounted and all live approval activation
+disabled until the remaining gates are separately verified.
+
+## Staging mount preflight — new fail-closed gate
+
+`src/automation/phase2aOwnerMountPreflight.js` and the unmounted HTTP
+handler now require a pinned HTTPS staging origin and identical expected
+origin, a trusted GitHub owner/repository scope, distinct OAuth client
+secret, GitHub read token and reviewer signing secret, a real server-side
+OAuth/approval dependency set, and an injected trusted transport verifier.
+If any required condition is absent, Phase 2A routes respond as disabled.
+Even when configured, every request is denied until the transport
+verifier positively confirms the trusted TLS/reverse-proxy chain.
+
+The verifier must be implemented by the **mounting service** using a
+verified private proxy identity or direct TLS socket. The handler MUST
+NOT treat request-supplied `Host`, `X-Forwarded-Host` or
+`X-Forwarded-Proto` as proof of HTTPS. A CI fixture verifier returning
+`true` is not a deployable security implementation. There is still
+**no mounted route, secure proxy implementation, OAuth secret, Neon
+migration, or live owner approval service**.
+
+## Pinned proxy mutual TLS verifier — development only
+
+`src/automation/phase2aMtlsTransport.js` now provides a pure
+`createMtlsTransportVerifier({clientFingerprint256})` function. It
+requires `TLSSocket.encrypted === true`, `TLSSocket.authorized === true`,
+no TLS authorization error, a nonempty authenticated peer certificate
+and a precisely matching, pinned SHA-256 certificate fingerprint.
+It reads the peer certificate directly from the TLS socket, not
+`X-Forwarded-Proto`, `Host`, `req.secure`, or
+`X-Forwarded-Client-Cert`. The match is constant-time and
+misconfiguration fails closed.
+
+**Important infrastructure constraint:** This verifier only works if the
+proxy establishes **mutually authenticated TLS all the way to the Node
+approval listener**. The Node HTTPS listener must be configured with
+`requestCert:true`, `rejectUnauthorized:true`, and a separate trusted
+client CA and pinned proxy certificate. A standard HTTPS-facing proxy
+that forwards plaintext HTTP cannot satisfy this contract. In
+particular, the normal Render HTTPS-to-HTTP pattern has NOT been
+verified as compatible. Do not bypass the gate by setting
+`verifyTrustedTransport:()=>true` in staging. This module is unmounted,
+does not create listeners, and has no production exposure.
+
+Before activation, deploy an **isolated** mTLS-capable edge or choose
+a separately reviewed authenticated proxy assertion design with
+distributed replay protection. Test actual TLS socket identity with
+legitimate and attacker-controlled client certificates, rotation,
+revocation and browser HTTPS routing. None of those live tests
+are represented by these unit fixtures.
+
+## Isolated HTTPS/mTLS listener and real handshake proof
+
+`src/automation/phase2aIsolatedMtlsListener.js` provides a separate,
+unmounted HTTPS server factory. It requires a server key/certificate,
+trusted client CA, pinned client SHA-256 fingerprint and explicit request
+handler. The listener insists on `requestCert:true` and
+`rejectUnauthorized:true`, and cannot listen on a public interface:
+only `127.0.0.1` or `::1` are permitted until separately reviewed.
+Importing or constructing the factory starts no server.
+
+`test/phase2a-isolated-mtls-listener.test.js` generates disposable local
+certificates with OpenSSL and tests real client/server TLS negotiation.
+Correct authenticated pinned proxy certificate succeeds; other
+CA-trusted but unpinned certificates receive 403; absent or untrusted
+client certificates fail the TLS handshake. Forged forwarding headers
+do not change the outcome. All temporary test keys stay inside the
+disposable CI runner and are not committed.
+
+This is an isolated, **loopback-only** integration component, not a
+production-ready proxy or an owner approval service. The real Render
+ingress still has no compatible authenticated proxy-to-Node mTLS channel.
+Do not deploy or mount this component on the current Render web service,
+expose the listener publicly, or bypass the mTLS check. Live activation
+still requires a secure network design, certificate issuance/rotation,
+staging-only deployment approval, and browser integration testing.
+
+## Render deployment decision — public edge + dedicated private service
+
+Render documentation confirms that public web services can contact private
+services on the same-region private network. A private service has no
+internet-facing `onrender.com` URL and can use custom application protocols.
+Render's public web-service ingress terminates client TLS and forwards HTTP
+to the service, so the current owner-mTLS verifier cannot authenticate
+Render's public edge via `req.socket` alone.
+
+**Recommended staging-only topology, NOT DEPLOYED:**
+
+1. Dedicated public OAuth edge web service: serve browser OAuth callback
+   and session/CSRF, no Neon owner-decision writer credentials, no CodeX.
+2. Dedicated Render *private* owner-decision service: HTTPS listener with
+   `requestCert:true`, `rejectUnauthorized:true`, restricted client CA,
+   and a pinned public-edge client certificate. No public ingress.
+3. Public edge calls only the fixed internal decision endpoint over mTLS.
+   Browser request ID and advisory approve/reject are re-authorized by
+   the public edge. The private service must independently verify owner
+   identity/authorization and fresh GitHub/CI/ledger evidence before writes.
+   **Client mTLS identifies the edge service, NOT the human owner.**
+4. Database owner decision journal roles remain separated from the public
+   OAuth/reader credentials; no merge, signing, Codex or deploy authority.
+
+`src/automation/phase2aPrivateMtlsClient.js` is an unmounted,
+strictly scoped outbound client. It accepts a fixed private DNS name,
+trusted server CA, pinned server certificate SHA-256 fingerprint and a
+separate client certificate. It sends only a bounded advisory envelope
+and requires explicit safe response flags. Tests reject external hosts,
+unexpected JSON privileges and forwarding/credential leakage.
+
+**Required before enabling anything:** verify Render plan, workspace,
+same-region and private-network availability, exact private hostnames,
+server certificate SAN/hostname validation, trust-anchor/key rotation,
+and secure owner authentication continuity between edge and private
+service (e.g. server-side short-lived authenticated session proof).
+The existing loopback-only mTLS listener cannot simply be deployed
+as a Render private service until a separately reviewed private bind
+configuration is implemented and tested. No Render service, OAuth
+app, runtime variable or Neon schema is changed by these files.
+
+Render references:
+- https://render.com/docs/private-services
+- https://render.com/docs/private-network
+- https://render.com/articles/how-render-handles-private-networking
+
+## Edge-to-private owner intent proof — development only
+
+The public OAuth edge and private owner-decision service now have **unwired**
+proof and verification adapters. `phase2aOwnerEdgeProof.js` signs exactly
+one owner ID, repository ID, request ID, approve/reject choice, issuer and
+private-service audience with Ed25519. Proofs expire within **60 seconds**,
+include a 256-bit random nonce, reject extra authority fields and are
+never treated as Codex dispatch, signing, merge, deploy or production permission.
+The edge's signing key must only be used **after** it has verified the
+real owner's session, CSRF and exact review request.
+
+The private side (`phase2aPrivateOwnerIntent.js`) checks the signature,
+issuer, audience, repository, owner and chosen decision; consumes the
+nonce atomically; then reloads the **trusted** pending packet and fresh
+GitHub/CI/ledger correction handoff before applying the existing
+transactional advisory decision store. Replays, expired/tampered proofs,
+stale CI and wrong owner all fail closed. The private mTLS client now
+requires this proof in each request: a bare approve/reject is insufficient.
+**mTLS authenticates the edge service; the proof conveys the separately
+authenticated owner identity; neither authorizes agent execution.**
+
+`migrations/aca_phase2a_owner_edge_nonce_staging.sql` and
+`phase2aOwnerEdgeNonceStore.js` provide an insert-only, shared PostgreSQL
+nonce ledger. A unique hashed nonce makes simultaneous claims across
+instances single-use. The role is NOLOGIN with INSERT only; no actual
+staging login is provisioned. The migration is **not applied** to Neon.
+
+**Still not activated:** no key issuance, edge session-to-proof integration,
+private handler HTTP routing, authenticated private network deployment,
+certificate lifecycle, real owner consent screen, or live database role.
+Proof issuing is a low-level signing primitive and MUST NOT be exposed to
+a browser or called without server-side session and intent validation.
+Before any activation, independently review key storage/rotation, nonce
+cleanup/retention, issuer and audience pinning, current-CI verification,
+cross-instance concurrency and real Render private-service routing.
+
+## Session-bound proof issuance (development, unmounted)
+
+`src/automation/phase2aAuthenticatedEdgeIntent.js` now supplies a
+development-only **server-side** entrypoint for signed edge proof issuance.
+It first verifies the actual stored owner session, exact HTTPS Origin,
+POST method and independent CSRF token. The authenticated owner must equal
+the pinned owner ID. It then reads the pending approval packet from a
+trusted server-side store and reloads the current GitHub/CI/ledger handoff.
+The pure owner-decision policy rejects stale commits, wrong attempts and
+expired requests before the Ed25519 proof signer is invoked.
+
+Only after these checks pass does the function produce a 60-second
+advisory envelope addressed to the private processor. All Codex dispatch,
+merge, reviewer signing and deployment permissions remain false. No signing
+key is generated or stored by this module; the caller must supply a
+separately provisioned staging-only Ed25519 key. No browser request can
+provide owner identity, the trusted packet, the handoff or the key.
+
+`test/phase2a-authenticated-edge-intent.test.js` covers positive signing,
+exact scope, rejection, missing/stale session, CSRF and cross-origin
+failures, wrong owner, changed PR SHA, unavailable dependencies and
+missing key. **This adapter is NOT mounted or deployed.** Production-grade
+key custody/rotation, actual OAuth session wiring, private transport,
+server-side audit and browser consent are still mandatory before activation.
+
+## Ed25519 key rotation (development only)
+
+`phase2aOwnerProofKeyring.js` defines an injected, immutable keyring.
+The public edge has exactly one active Ed25519 signing key ID. The private
+processor may recognize up to five explicitly pinned verification keys
+during a bounded handoff, with strict not-before/not-after windows.
+The signer uses `aca-owner-edge-proof-v2`, which cryptographically
+includes the key ID in the signed payload. The verifier resolves the exact
+key ID and rejects unknown, swapped, expired or retired IDs; when a keyring
+is configured, legacy v1 proofs are **not accepted as fallback**.
+
+`phase2aAuthenticatedEdgeIntent.js`,
+`phase2aPrivateOwnerIntent.js` and `phase2aPrivateMtlsClient.js`
+now support this versioned proof format. Tests cover overlap, rotation,
+tampering, mismatched signing/verification keys, expired active keys and
+absence of legacy fallback.
+
+**No real keys or rotation schedule have been provisioned.** Before
+staging activation, store the edge private key in an appropriate secret
+manager, distribute only authorized public verification keys to the
+private service, document issuance/rotation/revocation, handle
+multi-instance rollout and rollback, and audit signing access. The
+owner-proof keys MUST be separate from GitHub reviewer-signing keys.
