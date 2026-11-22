@@ -41,3 +41,9 @@ All acceptance checks remain advisory. No merge, deployment, production database
 - [ ] Confirm **names and presence only** of the Render staging secret file and environment variable; do not retrieve or display secret contents.
 - [ ] Confirm `ACA_PHASE2A_ENABLED`, `ACA_PHASE2A_PREFLIGHT`, `ACA_PHASE2A_SMOKE_ENABLED`, and `ACA_PHASE2A_POSITIVE_PROOF_ONCE` are in the intended safe disabled state before any deployment; review staging database role and isolation separately.
 - [ ] Confirm rollback to known live deployment `dep-dc0ssd97lnhs739ln0dg` and require explicit staging-only deploy approval. Do not deploy by default.
+
+## Deployment delta gate (2026-11-22)
+- Read-only GitHub compare of deployed `a2ff24350221f6e611c4602f831d3e77d29e8b6a` to development branch: **201 commits ahead, zero behind, 113 changed files**. This is a broad feature/migration/workflow delta, not a narrow security patch.
+- Render events show the previous staging build and deploy succeeded; automatic deployment remains off. The latest branch was **not deployed**.
+- **Decision: HOLD staging deployment** pending focused release-scope review, database-role/migration dependency verification, staging secret-file/path confirmation without exposing secrets, and explicit authorization for a specific deployment SHA.
+- No merge, signing, agent dispatch, production access, or Render configuration changes authorized by this review.
