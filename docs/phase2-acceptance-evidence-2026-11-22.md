@@ -62,3 +62,10 @@ All acceptance checks remain advisory. No merge, deployment, production database
 - Existing `aca_automation.correction_events` and `correction_ledgers` have RLS enabled and FORCE; `repository_role_scopes` does not have RLS (authorization mapping table, inspect grants before operational approval).
 - Owner tables (`owner_decision_requests`, `owner_decision_events`, `owner_oauth_pending`, `owner_oauth_sessions`) and owner roles (`aca_owner_decision_writer`, `aca_owner_oauth_store`) **are absent**. Owner migration dependency not satisfied in live staging; no migration applied.
 - **HOLD** broad staging deployment and owner endpoints. Next: inspect existing role grants/function security and design disposable-branch migration rehearsal before any staging write authorization.
+
+## Live Neon grants and security-definer audit (2026-11-22, SELECT-only)
+- `aca_automation.is_authorized_repository(bigint)` is STABLE SECURITY DEFINER owned by `aca_staging_owner`, with fixed `search_path=pg_catalog, aca_automation`; checks `repository_role_scopes.login_role=session_user` and exact repository ID.
+- `correction_events` and `correction_ledgers` have FORCE RLS; PUBLIC lacks SELECT. `aca_automation_reader` has SELECT; `aca_automation_writer` has SELECT and events INSERT, but no ledger INSERT.
+- `repository_role_scopes` has no RLS; PUBLIC, `aca_automation_reader`, `aca_automation_writer`, and test logins have no SELECT/INSERT. **`aca_phase2a_runtime_reader` has SELECT on this mapping table** and no INSERT: review whether this is intentional least-privilege before release.
+- `aca_staging_owner` can LOGIN and has BYPASSRLS; never use this privileged owner as the application runtime identity. `aca_phase2a_runtime_reader` can LOGIN and does not have BYPASSRLS. Runtime connection identity remains unverified from Render configuration.
+- No SQL writes or role changes made. Next: inspect runtime reader's effective grants and role memberships, and plan disposable branch migration rehearsal; HOLD activation.
