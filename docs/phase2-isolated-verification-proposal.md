@@ -23,3 +23,17 @@ Status: **proposal only**. Do not merge, deploy, sign, dispatch agents, or chang
 - Success criteria: actual GitHub Actions run IDs and logs, zero failed tests, all eight disposable DB integrations passing, security findings independently resolved, then explicit staging deployment approval.
 
 No CI run, PR, merge, deploy, Render environment update, database mutation, signing, or agent dispatch performed in this batch.
+
+## Batch 7 — ten-task static acceptance pass
+1. Reconfirmed proposal branch is isolated from Phase 2 development.
+2. Reconfirmed no application source changes in proposal branch.
+3. Reconfirmed default ACA CI is main-only; do not change it to enable this proposal.
+4. Reconfirmed proposal workflow is manual-only; GitHub Actions dispatch is not yet available from the branch alone.
+5. Reconfirmed least-privilege workflow permissions and non-persistent checkout credentials.
+6. Reconfirmed all referenced Node/security/integration test paths exist.
+7. Reconfirmed integration runner's CI-only, localhost-only, disposable database guard.
+8. Added a separate `dependency-audit` job: `npm audit --omit=dev --audit-level=high`; this is a dependency advisory check, **not CodeQL**.
+9. Rechecked PR #27 CodeQL review threads: two unresolved/outdated findings; current-head independent scan is still pending.
+10. Reconfirmed no current-head status checks or completed verification runs. No PR, workflow run, merge, deploy, signing, dispatch, or database mutation was performed.
+
+**Next execution gate:** GitHub Actions workflow dispatch generally requires the workflow to be present on the default branch. Do not merge just to unlock it. The alternative is a separately approved PR-based verification plan with a tightly scoped, reviewed workflow trigger, or a separately approved local/isolated CI run. Security alerts must be independently scanned and adjudicated.
