@@ -125,7 +125,7 @@ function startServer(env=process.env,{githubTokenProvider=installationReadToken,
    }).catch(()=>console.error("reviewer_github_app_auth_smoke=blocked"));
  }
  // Optional one-shot read-only integration probe, disabled by default.
- // Only fixed PR #27; no signature, bearer token, source or findings in logs.
+ // Only fixed PR #107; no signature, bearer token, source or findings in logs.
  if(env.ACA_REVIEW_GITHUB_APP_TRIAGE_SMOKE==="1"){
    Promise.resolve().then(async()=>{
      if(repoName!=="alphineaiinc/aca-realtime-gateway-clean"||repositoryId!==1080201236)
@@ -136,7 +136,7 @@ function startServer(env=process.env,{githubTokenProvider=installationReadToken,
        installationId:Number(env.ACA_REVIEW_GITHUB_INSTALLATION_ID),
        repositoryId,privateKey:key
      });
-     const response=await githubFetch("https://api.github.com/repos/"+repoName+"/pulls/27",{
+     const response=await githubFetch("https://api.github.com/repos/"+repoName+"/pulls/107",{
        method:"GET",redirect:"error",
        headers:{Authorization:"Bearer "+token,Accept:"application/vnd.github+json",
          "X-GitHub-Api-Version":"2022-11-28"},
@@ -144,12 +144,12 @@ function startServer(env=process.env,{githubTokenProvider=installationReadToken,
      });
      if(!response.ok||response.status!==200)throw Error("pr_unavailable");
      const pr=await response.json();
-     if(pr.number!==27||!SHA.test(pr.head?.sha))throw Error("pr_invalid");
+     if(pr.number!==107||!SHA.test(pr.head?.sha))throw Error("pr_invalid");
      const result=await inspectWithGithubApp({
        appId:Number(env.ACA_REVIEW_GITHUB_APP_ID),
        installationId:Number(env.ACA_REVIEW_GITHUB_INSTALLATION_ID),
        privateKey:key,repositoryId,owner:parts[0],repo:parts[1],
-       prNumber:27,headSha:pr.head.sha,
+       prNumber:107,headSha:pr.head.sha,
        installationTokenProvider:githubTokenProvider,fetchImpl:githubFetch
      });
      if(result.status==="blocked"){
