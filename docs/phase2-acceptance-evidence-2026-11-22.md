@@ -1,0 +1,26 @@
+# Phase 2 acceptance evidence and outstanding gates (2026-11-22)
+
+Status: **NOT APPROVED FOR MERGE, DEPLOYMENT, SIGNING OR AGENT DISPATCH**.
+
+## Verified evidence
+- Head `8b663b6b26a719c3ea9c49ef02fb9c256197dd95` on `aca-auto-005-offline-correction-simulation`.
+- ACA CI run [45031588009](https://github.com/alphineaiinc/aca-realtime-gateway-clean/actions/runs/45031588009): completed successfully. Node suite: 376 total, 368 passed, 0 failed, 8 skipped. PostgreSQL ledger integration passed. Syntax checks passed.
+- PR supervision observer run [45031588008](https://github.com/alphineaiinc/aca-realtime-gateway-clean/actions/runs/45031588008): success.
+- Exact staging-origin comparison replaced unsafe substring checks in `src/automation/phase2aOwnerMountPreflight.js`. Adversarial URL regression coverage added in `test/phase2a-staging-origin-security.test.js`; existing owner HTTP test fixtures aligned to designated staging hostname.
+- Temporary CI-only PR [#112](https://github.com/alphineaiinc/aca-realtime-gateway-clean/pull/112) closed unmerged; its oversized stacked branch must not be treated as a small mainline security fix.
+
+## Dependency map (do not merge out of order)
+- [#21](https://github.com/alphineaiinc/aca-realtime-gateway-clean/pull/21): read-only PR supervision foundation (draft).
+- [#27](https://github.com/alphineaiinc/aca-realtime-gateway-clean/pull/27): bounded offline correction simulation, stacked on #21 (draft). The security and test changes above reside on this development branch.
+- [#25](https://github.com/alphineaiinc/aca-realtime-gateway-clean/pull/25), [#29](https://github.com/alphineaiinc/aca-realtime-gateway-clean/pull/29), [#31](https://github.com/alphineaiinc/aca-realtime-gateway-clean/pull/31): separate security workstreams; no implied approval or dependency on #27.
+
+## Unmet acceptance gates
+- [ ] Obtain a fresh, current-head CodeQL scan or equivalent independent static-analysis evidence. Original PR #27 CodeQL review threads for alerts [81](https://github.com/alphineaiinc/aca-realtime-gateway-clean/security/code-scanning/81) and [82](https://github.com/alphineaiinc/aca-realtime-gateway-clean/security/code-scanning/82) are **outdated but unresolved**. Successful ACA CI is not a CodeQL clearance.
+- [ ] Confirm the exact allowed staging hostname against the deployed staging service configuration and its GitHub OAuth callback. Current test fixture alone is not deployment evidence.
+- [ ] Review 8 skipped tests; classify intentional vs missing coverage.
+- [ ] Reconcile the #21 -> #27 stacked dependency and isolate a small reviewable change before any mainline merge proposal.
+- [ ] Run controlled end-to-end staging owner OAuth/approval flow, including deny/rollback and non-dispatch checks, with no production access.
+- [ ] Obtain explicit owner approval for any future merge, signing, agent dispatch or deployment; each action requires separate authorization.
+
+## Safety boundaries
+All acceptance checks remain advisory. No merge, deployment, production database write, credential exposure, signing or agent dispatch is authorized by passing tests.
