@@ -42,7 +42,7 @@ function equalBearer(header,token){
  const received=Buffer.from(header.slice(7)),expected=Buffer.from(token);
  return received.length===expected.length&&timingSafeEqual(received,expected);
 }
-function startServer(env=process.env,{githubTokenProvider=installationReadToken,githubFetch=fetch,phase2aDependencies=null,githubAppKeyReader=readReviewerGithubAppKey}={}){
+function startServer(env=process.env,{githubTokenProvider=installationReadToken,githubFetch=fetch,phase2aDependencies=null,readinessPool=null,githubAppKeyReader=readReviewerGithubAppKey}={}){
  const port=Number(env.PORT??10000);
  const repoName=env.ACA_REVIEW_REPOSITORY||"";
  const parts=repoName.split("/");
@@ -78,10 +78,11 @@ function startServer(env=process.env,{githubTokenProvider=installationReadToken,
      if(env.ACA_PHASE2A_ENABLED!=="true"||
         !equalBearer(req.headers.authorization,env.ACA_PHASE2A_API_TOKEN))
        return answer(401,{error:"unauthorized"});
-     if(!createdClients?.pool)return answer(503,{status:"blocked",reason:"database_not_configured"});
+     const pool=readinessPool||createdClients?.pool;
+     if(!pool)return answer(503,{status:"blocked",reason:"database_not_configured"});
      let client;
      try{
-       client=await createdClients.pool.connect();
+       client=await pool.connect();
        const identity=await client.query("SELECT current_user AS db_role, pg_has_role(current_user, 'pg_read_all_data', 'member') AS broad_read");
        const grants=await client.query(`SELECT
          has_table_privilege(current_user,'aca_automation.correction_ledgers','SELECT') AS rl,
