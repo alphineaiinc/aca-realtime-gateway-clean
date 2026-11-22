@@ -75,7 +75,8 @@ function startServer(env=process.env,{githubTokenProvider=installationReadToken,
    if(req.method==="GET"&&req.url==="/health")return answer(200,{status:"up",mode:"fail_closed"});
    // Authenticated, read-only staging DB readiness. No corrections or GitHub actions.
    if(req.method==="POST"&&req.url==="/phase2a/db-readiness"){
-     if(env.ACA_PHASE2A_ENABLED!=="true"||
+     if(env.ACA_PHASE2A_DB_READINESS_ENABLED!=="true"||
+        env.ACA_PHASE2A_ENABLED!=="true"||
         !equalBearer(req.headers.authorization,env.ACA_PHASE2A_API_TOKEN))
        return answer(401,{error:"unauthorized"});
      const pool=readinessPool||createdClients?.pool;
