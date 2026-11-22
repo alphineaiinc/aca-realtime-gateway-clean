@@ -11,7 +11,7 @@ const sha=/^[a-f0-9]{40}$/;
 const pos=n=>Number.isSafeInteger(n)&&n>0;
 const denied=reason=>Object.freeze({status:"blocked",reason,findings:[],independent:false});
 function exactPr(pr,repositoryId,prNumber,headSha){
- return pr?.number===prNumber&&pr?.state==="open"&&pr?.draft===false&&
+ return pr?.number===prNumber&&pr?.state==="open"&&
    pr?.head?.sha===headSha&&pr?.head?.repo?.id===repositoryId&&
    pr?.base?.repo?.id===repositoryId&&
    Number.isSafeInteger(pr?.changed_files)&&pr.changed_files>0&&pr.changed_files<=100;
