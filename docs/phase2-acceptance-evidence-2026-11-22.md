@@ -47,3 +47,10 @@ All acceptance checks remain advisory. No merge, deployment, production database
 - Render events show the previous staging build and deploy succeeded; automatic deployment remains off. The latest branch was **not deployed**.
 - **Decision: HOLD staging deployment** pending focused release-scope review, database-role/migration dependency verification, staging secret-file/path confirmation without exposing secrets, and explicit authorization for a specific deployment SHA.
 - No merge, signing, agent dispatch, production access, or Render configuration changes authorized by this review.
+
+## Staging release dependency review (2026-11-22, code-only)
+- `phase2aStagingClients.js` requires `ACA_PHASE2A_DATABASE_URL`, `ACA_PHASE2A_EXPECTED_NEON_HOST`, `ACA_PHASE2A_EXPECTED_DATABASE`, and `ACA_PHASE2A_LEDGER_ROLE` to agree exactly on host, database and authenticated username. It also requires a separate `ACA_PHASE2A_GITHUB_READ_TOKEN`; absent/mismatched dependencies return no clients. **Live values/role identity not inspected.**
+- `aca_phase2a_owner_decisions_staging.sql` creates an immutable owner event journal with FORCE RLS and revoked PUBLIC access. `aca_phase2a_owner_decisions_role_policy.sql` must be applied afterward and requires existing `aca_automation.is_authorized_repository(BIGINT)` and repository-scoped authorization infrastructure. Do not apply migrations out of order.
+- `aca_phase2a_owner_oauth_store_staging.sql` defines a separate NOLOGIN OAuth store role with SELECT/INSERT/DELETE only, FORCE RLS and no UPDATE grant. No role credentials or memberships are provisioned by these migrations.
+- Source review is **not** proof of actual staging Neon role separation, migration application, TLS/mTLS ingress, or rollback. These remain release blockers.
+- Release recommendation: **HOLD** broad branch deployment (201 commits / 113 files since live SHA); isolate reviewable release slices, verify staging-only Neon identity and migration prerequisites using read-only evidence, and obtain specific approval before any deploy or migration.
