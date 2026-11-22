@@ -34,3 +34,10 @@ All acceptance checks remain advisory. No merge, deployment, production database
 - Production service `aca-realtime-gateway-clean` is distinct and remains untouched. No Render changes were made.
 - [ ] Review staging deployment delta and dependencies, including service entrypoint, secrets references (names only), database role separation, and rollback plan. Deployment requires explicit owner authorization.
 - [ ] After an authorized staging-only deployment, validate health, fail-closed denial, origin/callback checks, and no merge/sign/dispatch permissions.
+
+## Staging credential and deployment prerequisites (read-only code review)
+- New `reviewerGithubAppSecretFile.js` requires the GitHub App private key at fixed Render secret-file path `/etc/secrets/github-reviewer-app.pem` and `ACA_REVIEW_GITHUB_APP_PRIVATE_KEY_PATH` set to that exact path. No environment-key fallback is permitted. Never print or copy the private key into CI, docs, or logs.
+- New `reviewerStagingServer.js` calls the pinned key reader for authenticated GitHub review/triage. A successful old deployment does not establish the new path is configured.
+- [ ] Confirm **names and presence only** of the Render staging secret file and environment variable; do not retrieve or display secret contents.
+- [ ] Confirm `ACA_PHASE2A_ENABLED`, `ACA_PHASE2A_PREFLIGHT`, `ACA_PHASE2A_SMOKE_ENABLED`, and `ACA_PHASE2A_POSITIVE_PROOF_ONCE` are in the intended safe disabled state before any deployment; review staging database role and isolation separately.
+- [ ] Confirm rollback to known live deployment `dep-dc0ssd97lnhs739ln0dg` and require explicit staging-only deploy approval. Do not deploy by default.
