@@ -100,3 +100,10 @@ All acceptance checks remain advisory. No merge, deployment, production database
 - All four lack mapping-table SELECT. RLS-visible correction ledger IDs by role: runtime reader=1080201236 (1), reader A=880001 (1), reader B=880002 (1), writer A=880001 (1). No other repository ledgers returned in grouped SELECT.
 - Runtime reader and reader A/B lack event INSERT grant; writer A has event INSERT grant. No INSERT attempted. Authorization check for runtime reader's expected repo 1080201236=true, unrelated 9223372036854775807=false. Reader A/B and writer A correctly returned false for 1080201236; their respective RLS-visible repository IDs were verified separately.
 - Result: **PASS for scoped read isolation and privilege metadata on tested fixtures**; not a proof of write denial, all application call paths, or live Render credentials. Original staging grant remains unchanged. Disposable branch retained; deletion requires explicit branch-specific instruction.
+
+## Disposable grant-regression branch cleanup (2026-11-22)
+- Deleted only Neon staging disposable branch `br-withered-wildflower-bcdwu6ag` (`phase2a-grant-regression-disposable-20261122`) from project `still-cell-80928176` after user continuation approval.
+- Verified branch listing now contains only original `br-lucky-surf-bcn2xj6u` (`staging`).
+- Rechecked original staging as actual `aca_phase2a_runtime_reader`: direct mapping SELECT still true and authorized ledger count=1. No parent grant changes.
+- Proposed permanent staging correction, **NOT EXECUTED**: `REVOKE SELECT ON TABLE aca_automation.repository_role_scopes FROM aca_phase2a_runtime_reader;` only on project `still-cell-80928176`, branch `br-lucky-surf-bcn2xj6u`, database `aca_phase2_staging`. Before application: verify Render runtime identity and any other direct mapping-table consumers; afterward: rerun actual-login ledger/RLS and authorization tests; rollback is `GRANT SELECT ON TABLE aca_automation.repository_role_scopes TO aca_phase2a_runtime_reader;` under staging-owner authorization.
+- No deploy, merge, signing, dispatch or production operations.
