@@ -49,3 +49,16 @@ jobs:
       - run: npm ci --ignore-scripts --no-audit --no-fund
       - name: Disposable PostgreSQL integration tests
         run: node scripts/run-postgres-isolated-ci.cjs
+  security-regressions:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Exact staging origin and fail-closed DB readiness tests
+        run: |
+          node --test test/phase2a-staging-origin-security.test.js test/phase2aDbReadiness.test.js
