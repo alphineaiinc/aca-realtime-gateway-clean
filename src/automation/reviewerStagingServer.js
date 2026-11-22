@@ -73,6 +73,30 @@ function startServer(env=process.env,{githubTokenProvider=installationReadToken,
    const answer=(status,data)=>{res.writeHead(status,{"Content-Type":"application/json"});
      res.end(JSON.stringify(data));};
    if(req.method==="GET"&&req.url==="/health")return answer(200,{status:"up",mode:"fail_closed"});
+   // Authenticated, read-only staging DB readiness. No corrections or GitHub actions.
+   if(req.method==="POST"&&req.url==="/phase2a/db-readiness"){
+     if(env.ACA_PHASE2A_ENABLED!=="true"||
+        !equalBearer(req.headers.authorization,env.ACA_PHASE2A_API_TOKEN))
+       return answer(401,{error:"unauthorized"});
+     if(!createdClients?.pool)return answer(503,{status:"blocked",reason:"database_not_configured"});
+     let client;
+     try{
+       client=await createdClients.pool.connect();
+       const identity=await client.query("SELECT current_user AS db_role, pg_has_role(current_user, 'pg_read_all_data', 'member') AS broad_read");
+       const grants=await client.query(`SELECT
+         has_table_privilege(current_user,'aca_automation.correction_ledgers','SELECT') AS rl,
+         has_table_privilege(current_user,'aca_automation.correction_events','SELECT') AS re,
+         has_table_privilege(current_user,'aca_automation.correction_ledgers','INSERT,UPDATE,DELETE') AS wl,
+         has_table_privilege(current_user,'aca_automation.correction_events','INSERT,UPDATE,DELETE') AS we`);
+       const row=identity.rows?.[0],g=grants.rows?.[0];
+       if(identity.rows?.length!==1||grants.rows?.length!==1||
+          row.db_role!==env.ACA_PHASE2A_LEDGER_ROLE||row.broad_read!==false||
+          g.rl!==true||g.re!==true||g.wl!==false||g.we!==false)
+         return answer(503,{status:"blocked",reason:"unsafe_database_identity_or_grants"});
+       return answer(200,{status:"ready",mode:"read_only",databaseRoleVerified:true});
+     }catch{return answer(503,{status:"blocked",reason:"database_evidence_unavailable"});}
+     finally{try{client?.release();}catch{}}
+   }
    if(req.method==="POST"&&req.url==="/phase2a/correction-request"){
      // Isolated staging-only endpoint, with a separate token and explicit
      // injected clients. Absence of either dependency disables the endpoint.
