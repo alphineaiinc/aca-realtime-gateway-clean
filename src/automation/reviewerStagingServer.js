@@ -110,6 +110,20 @@ function startServer(env=process.env,{githubTokenProvider=installationReadToken,
        env.ACA_REVIEW_PRIVATE_KEY.replace(/\\n/g,String.fromCharCode(10))));
    }catch{return answer(503,{error:"review_evidence_unavailable"});}
  });
+ // One-shot, read-only startup check. Never emit keys, JWTs, tokens or GitHub responses.
+ // This diagnostic cannot authorize signing, merging or agent dispatch.
+ if(env.ACA_REVIEW_GITHUB_APP_AUTH_SMOKE==="1"){
+   Promise.resolve().then(async()=>{
+     const key=githubAppKeyReader(env);
+     const token=await githubTokenProvider({
+       appId:Number(env.ACA_REVIEW_GITHUB_APP_ID),
+       installationId:Number(env.ACA_REVIEW_GITHUB_INSTALLATION_ID),
+       repositoryId,privateKey:key
+     });
+     if(typeof token!=="string"||token.length<20)throw Error("token_invalid");
+     console.info("reviewer_github_app_auth_smoke=passed");
+   }).catch(()=>console.error("reviewer_github_app_auth_smoke=blocked"));
+ }
  server.listen(port,"0.0.0.0");
  return server;
 }
