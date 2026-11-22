@@ -37,3 +37,24 @@ No CI run, PR, merge, deploy, Render environment update, database mutation, sign
 10. Reconfirmed no current-head status checks or completed verification runs. No PR, workflow run, merge, deploy, signing, dispatch, or database mutation was performed.
 
 **Next execution gate:** GitHub Actions workflow dispatch generally requires the workflow to be present on the default branch. Do not merge just to unlock it. The alternative is a separately approved PR-based verification plan with a tightly scoped, reviewed workflow trigger, or a separately approved local/isolated CI run. Security alerts must be independently scanned and adjudicated.
+
+## Batch 8 — execution-path preparation (10 tasks)
+1. Confirmed proposal branch remains separate from the development branch.
+2. Confirmed manual-only workflow cannot be assumed dispatchable before default-branch registration.
+3. Inspected main-only CI trigger; unchanged.
+4. Inspected existing `scripts/run-phase2-isolated-tests.ps1` disposable Docker PostgreSQL test path.
+5. Added `scripts/run-phase2-verification-proposal.ps1` for safe local security and unit tests.
+6. Added exact proposal-branch guard.
+7. Added pre-existing `ACA_TEST_DATABASE_URL` refusal guard.
+8. Added high-severity dependency audit with nonzero exit handling.
+9. Verified script content and required test references on GitHub.
+10. Prepared the exact operator invocation below, without executing any tests or changing infrastructure.
+
+Operator invocation from repository root, on Windows PowerShell:
+```powershell
+git fetch origin
+git switch aca-phase2-verification-workflow-proposal
+git pull --ff-only origin aca-phase2-verification-workflow-proposal
+& ./scripts/run-phase2-verification-proposal.ps1
+```
+Before invoking, confirm `git status --short` is clean and that no local uncommitted work would be overwritten. Do not paste credentials, tokens, or full database URLs. This local run is **not** independent GitHub CI attestation or CodeQL clearance. Existing disposable PostgreSQL integration script remains separate and requires its dedicated Docker fixture.
