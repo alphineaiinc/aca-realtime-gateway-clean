@@ -17,15 +17,25 @@ function constantEqual(a,b){
  const x=Buffer.from(a),y=Buffer.from(b);
  return x.length===y.length&&timingSafeEqual(x,y);
 }
+// Match the entire trusted staging origin, never a substring of a URL.
+function trustedStagingOrigin(origin){
+ if(!text(origin))return false;
+ try{
+  const u=new URL(origin);
+  return u.protocol==="https:"&&
+   u.hostname==="alphine-aca-phase2a-correction-staging.onrender.com"&&
+   u.port===""&&u.username===""&&u.password===""&&
+   u.pathname==="/"&&u.search===""&&u.hash===""&&
+   origin===u.origin;
+ }catch{return false;}
+}
 function validateStagingOwnerMount(config={}){
  if(config.enabled!==true||config.isolatedStaging!==true)
   return deny("disabled");
  if(!trustedCallback(config.callbackUrl,config.siteOrigin)||
     !text(config.expectedSiteOrigin)||
     config.siteOrigin!==config.expectedSiteOrigin||
-    !/^https:\/\/[a-z0-9-]+(?:\.[a-z0-9-]+)+$/.test(config.siteOrigin)||
-    config.siteOrigin.includes("alphineai.com")||
-    config.siteOrigin.includes("onrender.com")&&!config.siteOrigin.startsWith("https://alphine-aca-phase2a-correction-staging."))
+    !trustedStagingOrigin(config.siteOrigin))
   return deny("untrusted_staging_origin");
  if(!positive(config.repositoryId)||!positive(config.ownerId)||
     !/^[A-Za-z0-9-]{1,39}$/.test(config.ownerLogin||"")||
