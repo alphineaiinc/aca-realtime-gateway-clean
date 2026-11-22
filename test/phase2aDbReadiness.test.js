@@ -27,3 +27,18 @@ test("database readiness fails closed without configured DB clients",async()=>{
   assert.deepEqual(await response.json(),{status:"blocked",reason:"database_not_configured"});
  });
 });
+
+test("database readiness does not accept GET",async()=>{
+ await withServer({},async base=>{
+  const response=await fetch(base+"/phase2a/db-readiness");
+  assert.equal(response.status,404);
+ });
+});
+
+test("database readiness remains unauthorized when Phase 2A is disabled",async()=>{
+ await withServer({ACA_PHASE2A_ENABLED:"false"},async base=>{
+  const response=await fetch(base+"/phase2a/db-readiness",{
+   method:"POST",headers:{Authorization:"Bearer test-only-secret"}});
+  assert.equal(response.status,401);
+ });
+});
