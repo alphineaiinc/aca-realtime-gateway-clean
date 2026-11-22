@@ -1,0 +1,69 @@
+name: Phase 2 Dependency Remediation Verification (Manual Only)
+# Explicitly manual: no push, pull_request, schedule, or deployment triggers.
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: phase2-dependency-remediation-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  dependency-and-regression:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout without persisted credentials
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Set up Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Reproducible install
+        run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Validate dependency tree
+        run: npm ls --depth=0
+      - name: Syntax check tracked JavaScript outside node_modules
+        run: git ls-files -z '*.js' | grep -zv '^node_modules/' | xargs -0 -r -n 1 node --check
+      - name: Non-integration Node regression tests
+        run: |
+          mapfile -d '' files < <(find test -maxdepth 1 -name '*.test.js' ! -name '*.integration.test.js' -print0 | sort -z)
+          if [ "${#files[@]}" -eq 0 ]; then echo 'No unit tests found'; exit 1; fi
+          node --test --test-concurrency=1 "${files[@]}"
+      - name: Production dependency audit (high or critical must fail)
+        run: npm audit --omit=dev --audit-level=high
+
+  postgres-isolated:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: aca_test
+          POSTGRES_PASSWORD: aca_test_only
+          POSTGRES_DB: aca_automation_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U aca_test -d aca_automation_test"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      CI: 'true'
+      ACA_TEST_DATABASE_URL: postgresql://aca_test:aca_test_only@localhost:5432/aca_automation_test
+    steps:
+      - name: Checkout without persisted credentials
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Set up Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Reproducible install
+        run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Disposable PostgreSQL integration
+        run: node scripts/run-postgres-isolated-ci.cjs
