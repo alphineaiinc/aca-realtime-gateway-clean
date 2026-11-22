@@ -58,3 +58,25 @@ git pull --ff-only origin aca-phase2-verification-workflow-proposal
 & ./scripts/run-phase2-verification-proposal.ps1
 ```
 Before invoking, confirm `git status --short` is clean and that no local uncommitted work would be overwritten. Do not paste credentials, tokens, or full database URLs. This local run is **not** independent GitHub CI attestation or CodeQL clearance. Existing disposable PostgreSQL integration script remains separate and requires its dedicated Docker fixture.
+
+## Batch 9 — operator evidence and npm audit repair (10 tasks)
+1. Read operator PowerShell output for the proposal branch.
+2. Verified clean `git status --short` output before checkout.
+3. Verified fetch, switch and fast-forward pull succeeded.
+4. Recorded targeted staging-origin/readiness security tests: **31 passed, 0 failed**.
+5. Recorded non-integration regression suite: **379 passed, 0 failed**.
+6. Classified audit failure as **not executed successfully**: `Unknown command: "pm"`; do not classify as vulnerability-free or vulnerable.
+7. Reviewed exact PowerShell audit invocation and replaced ambiguous `npm` with explicitly resolved `npm.cmd` application.
+8. Preserved branch and DB URL guards, no Neon/Render connections.
+9. Committed the script repair on proposal branch; independent CI and CodeQL remain outstanding.
+10. Prepared minimal audit-only operator rerun below (avoid repeating 410 passing tests unnecessarily).
+
+Operator PowerShell audit-only rerun, from repository root, after `git pull --ff-only`:
+```powershell
+git status --short
+git pull --ff-only origin aca-phase2-verification-workflow-proposal
+Get-Command npm.cmd -CommandType Application
+& (Get-Command npm.cmd -CommandType Application).Source audit --omit=dev --audit-level=high
+Write-Host "npm audit exit code: $LASTEXITCODE"
+```
+Do not paste tokens or private URLs. If the audit command fails, capture its exit code and sanitized advisory summary. An npm advisory scan is not CodeQL or an independent GitHub Actions attestation.
