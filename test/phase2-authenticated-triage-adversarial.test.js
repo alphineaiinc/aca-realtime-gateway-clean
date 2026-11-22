@@ -25,14 +25,17 @@ test("eligible current-head PR is advisory only, never independent approval",asy
  assert.equal(result.signature,undefined);
  assert.equal(result.filesInspected,1);
 });
-test("stale SHA and draft PR both fail closed",async()=>{
- for(const before of [{...pr,head:{...pr.head,sha:"c".repeat(40)}},
-   {...pr,draft:true}]){
+test("stale SHA fails closed while draft PR remains unsigned advisory",async()=>{
+ for(const before of [{...pr,head:{...pr.head,sha:"c".repeat(40)}}]){
   const result=await inspectAuthenticatedPr({github:client({before}),...scope});
   assert.equal(result.status,"blocked");
   assert.equal(result.reason,"stale_or_unsupported_pr");
   assert.equal(result.independent,false);
  }
+ const draft=await inspectAuthenticatedPr({github:client({before:{...pr,draft:true}}),...scope});
+ assert.equal(draft.status,"manual_review_required");
+ assert.equal(draft.independent,false);
+ assert.equal(draft.signature,undefined);
 });
 test("head or base changing during inspection fails closed",async()=>{
  for(const after of [{...pr,head:{...pr.head,sha:"c".repeat(40)}},
