@@ -86,3 +86,11 @@ All acceptance checks remain advisory. No merge, deployment, production database
 - `src/automation/phase2aStagingClients.js` creates a pinned-host Postgres pool and GitHub read client; its source contains **no direct SELECT of** `aca_automation.repository_role_scopes` and no requirement for the direct mapping-table grant. The ledger RLS authorization function is SECURITY DEFINER and consults the table on behalf of scoped callers.
 - This is a **bounded source-path review**, not an exhaustive repository-wide reference search or runtime dependency proof. Recommend staging-only regression using actual `aca_phase2a_runtime_reader` login on a disposable branch with direct SELECT revoked, validating scoped ledger reads and cross-repo denial before any permanent grant change.
 - Do not revoke staging grants yet; do not create disposable branches or apply owner migrations without separate scope approval. No production access or deployment.
+
+## Disposable Neon runtime mapping-grant regression (2026-11-22)
+- Created isolated child branch `br-withered-wildflower-bcdwu6ag` (`phase2a-grant-regression-disposable-20261122`) from staging parent `br-lucky-surf-bcn2xj6u` in project `still-cell-80928176`; database `aca_phase2_staging`.
+- Baseline as actual `aca_phase2a_runtime_reader`: mapping SELECT=true, scoped ledger count=1.
+- On **disposable branch only**, executed `REVOKE SELECT ON TABLE aca_automation.repository_role_scopes FROM aca_phase2a_runtime_reader`.
+- Post-revoke as actual runtime reader: mapping SELECT=false, scoped ledger count=1, events count=0, `is_authorized_repository(1080201236)=true`; unrelated repository ID 9223372036854775807 authorization=false and ledger count=0. This confirms the targeted direct grant is not necessary for these scoped queries; it does not establish exhaustive application compatibility.
+- Independently rechecked **original staging parent**: runtime reader mapping SELECT remains **true** (unchanged). Production not accessed.
+- Disposable child branch remains available for further isolated verification; do not apply the grant change to original staging until explicit authorization and broader tests. No deploy, merge, signing or dispatch.
