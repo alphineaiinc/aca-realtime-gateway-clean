@@ -4,6 +4,7 @@
  * No env key fallback, no arbitrary caller-supplied paths, no logging.
  */
 const fs=require("node:fs");
+const {createPrivateKey}=require("node:crypto");
 const PATH="/etc/secrets/github-reviewer-app.pem";
 function readReviewerGithubAppKey(env=process.env,{readFileSync=fs.readFileSync}={}){
  if(!env||typeof env!=="object"||
