@@ -4,7 +4,7 @@ const assert=require("node:assert/strict");
 const {startServer}=require("../src/automation/reviewerStagingServer");
 
 async function withServer(env,run,options={}){
- const server=startServer({PORT:"0",ACA_PHASE2A_ENABLED:"true",ACA_PHASE2A_API_TOKEN:"test-only-secret",...env},options);
+ const server=startServer({PORT:"0",ACA_PHASE2A_ENABLED:"true",ACA_PHASE2A_DB_READINESS_ENABLED:"true",ACA_PHASE2A_API_TOKEN:"test-only-secret",...env},options);
  try{
   await new Promise(resolve=>server.listening?resolve():server.once("listening",resolve));
   await run("http://127.0.0.1:"+server.address().port);
@@ -83,4 +83,13 @@ test("readiness denies missing SELECT privileges",async()=>{
 });
 test("readiness fails closed on database connection errors",async()=>{
  await probe(mockPool({fail:true}).pool,503);
+});
+
+test("readiness is disabled by default even when Phase 2A is enabled",async()=>{
+ await withServer({ACA_PHASE2A_DB_READINESS_ENABLED:"false"},async base=>{
+  const response=await fetch(base+"/phase2a/db-readiness",{
+   method:"POST",headers:{Authorization:"Bearer test-only-secret"}});
+  assert.equal(response.status,401);
+  assert.deepEqual(await response.json(),{error:"unauthorized"});
+ });
 });
