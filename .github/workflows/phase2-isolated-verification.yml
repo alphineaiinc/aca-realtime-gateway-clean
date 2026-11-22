@@ -1,0 +1,51 @@
+name: Phase 2 Isolated Verification (Manual Only)
+# Proposal: no push, PR, schedule, or deployment triggers.
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: phase2-isolated-verification-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  node-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Syntax check
+        run: git ls-files -z '*.js' | grep -zv '^node_modules/' | xargs -0 -r -n 1 node --check
+      - name: Unit tests
+        run: node --test test/*.test.js
+  postgres-isolated:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: aca_test
+          POSTGRES_PASSWORD: aca_test_only
+          POSTGRES_DB: aca_automation_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U aca_test -d aca_automation_test"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      CI: 'true'
+      ACA_TEST_DATABASE_URL: postgresql://aca_test:aca_test_only@localhost:5432/aca_automation_test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Disposable PostgreSQL integration tests
+        run: node scripts/run-postgres-isolated-ci.cjs
