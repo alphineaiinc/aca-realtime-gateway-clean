@@ -25,3 +25,12 @@ Status: **NOT APPROVED FOR MERGE, DEPLOYMENT, SIGNING OR AGENT DISPATCH**.
 
 ## Safety boundaries
 All acceptance checks remain advisory. No merge, deployment, production database write, credential exposure, signing or agent dispatch is authorized by passing tests.
+
+## Render staging deployment comparison (read-only, 2026-11-22)
+- Confirmed workspace `tea-d3rfdemr433s73e3nnfg` and service `srv-dc0rjq2vcj2c73bi7v5g` (`alphine-aca-phase2a-correction-staging`). Its URL matches the exact trusted hostname and automatic deploy is disabled.
+- Last live deployment `dep-dc0ssd97lnhs739ln0dg` runs commit `a2ff24350221f6e611c4602f831d3e77d29e8b6a`, older than development head `3c1e692074d86f4172a123285c8668c6d1a4a3d7` at inspection.
+- `src/automation/phase2aOwnerMountPreflight.js` is absent at deployed SHA but present on development head. Therefore latest staging-origin guard and associated owner approval flow are **not validated on live staging**.
+- `src/automation/reviewerStagingServer.js` also differs: development head adds GitHub App private-key secret-file reader; deployed SHA uses the earlier key loading path.
+- Production service `aca-realtime-gateway-clean` is distinct and remains untouched. No Render changes were made.
+- [ ] Review staging deployment delta and dependencies, including service entrypoint, secrets references (names only), database role separation, and rollback plan. Deployment requires explicit owner authorization.
+- [ ] After an authorized staging-only deployment, validate health, fail-closed denial, origin/callback checks, and no merge/sign/dispatch permissions.
