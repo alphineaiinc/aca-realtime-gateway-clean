@@ -210,7 +210,8 @@ async function embedText(text) {
   return v;
 }
 
-async function searchKB({ tenant_id = 1, query, topK = 5 }) {
+async function searchKB({ tenant_id, query, topK = 5 }) {
+  if (!/^[1-9]\d*$/.test(String(tenant_id)) || !Number.isSafeInteger(Number(tenant_id))) throw new Error("INVALID_TENANT_ID");
   const q = (query || "").trim();
   if (!q) return [];
 
@@ -226,17 +227,16 @@ async function searchKB({ tenant_id = 1, query, topK = 5 }) {
   const sql = `
     SELECT
       id,
-      content,
-      source,
-      title,
-      metadata
-    FROM knowledge_base
+      answer AS content,
+      query_text AS title,
+      'kb' AS source
+    FROM kb_entries
     WHERE tenant_id = $1
-    ORDER BY embedding <-> $2::vector
+    ORDER BY embedding <=> $2::vector
     LIMIT $3
   `;
 
-  const params = [tenant_id, embedding, Math.max(1, Number(topK || 5))];
+  const params = [Number(tenant_id), "[" + embedding.join(",") + "]", Math.min(20, Math.max(1, Math.trunc(Number(topK) || 5)))];
 
   const rows = await withTimeout(
     pool.query(sql, params).then((r) => r.rows || []),
@@ -252,11 +252,12 @@ async function searchKB({ tenant_id = 1, query, topK = 5 }) {
 // ------------------------------------------------------------------
 async function retrieveAnswer(
   text,
-  tenant_id = 1,
+  tenant_id,
   locale = "en-US",
   session_id = "anon",
   opts = {}
 ) {
+  if (!/^[1-9]\d*$/.test(String(tenant_id)) || !Number.isSafeInteger(Number(tenant_id))) return { ok: false, source: "invalid_tenant", reply: "Unable to identify the business." };
   const t = (text || "").trim();
 
   // 1) small-talk fast path
