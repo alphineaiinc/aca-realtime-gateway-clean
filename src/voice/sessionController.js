@@ -1344,6 +1344,13 @@ async function handleCallerTurn({ callSid, businessId = null, transcript, meta =
   }
 
   const utterance = normalizeText(transcript);
+  if (session.workflowStatus === "request_recorded") {
+    return {
+      shouldSpeak: true,
+      replyText: "Your request has been recorded for the business to review. Thank you for calling.",
+      replyType: "closing",
+    };
+  }
   session.lastCallerText = utterance;
 
   const askingPhoneConfirm =
@@ -1437,6 +1444,15 @@ if (isClosing) {
     if (!identityMatches) {
       session.awaitingExplicitConfirmation = false;
       return { shouldSpeak: true, replyText: "I'm sorry, I couldn't verify this request. Please call again.", replyType: "error" };
+    }
+    const requiredMissing = getMissingRequiredSlots(session.businessType || "generic", session.slots || {});
+    if (requiredMissing.length) {
+      session.awaitingExplicitConfirmation = false;
+      return {
+        shouldSpeak: true,
+        replyText: getPremiumNextSlotQuestion(session.businessType || "generic", requiredMissing[0], session),
+        replyType: "missing_detail",
+      };
     }
     if (/^(?:yes|yeah|yep|correct|that's correct|that is correct|confirmed|confirm|absolutely|right|yes please)[.! ]*$/i.test(utterance)) {
       session.awaitingExplicitConfirmation = false;
