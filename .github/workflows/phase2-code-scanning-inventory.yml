@@ -1,0 +1,36 @@
+name: Phase 2 Code Scanning Alert Inventory
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/phase2-code-scanning-inventory.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+  security-events: read
+jobs:
+  inventory:
+    name: Read CodeQL alerts (metadata only)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - name: Query code scanning alerts without printing sensitive findings
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Exit nonzero on API errors; never interpret 403/404 as zero alerts.
+          json="$(gh api --paginate --slurp \
+            -H 'Accept: application/vnd.github+json' \
+            "/repos/${GH_REPO}/code-scanning/alerts?state=open&per_page=100")"
+          printf '%s' "$json" | jq -e 'type == "array" and all(.[]; type == "array")' >/dev/null
+          printf '%s' "$json" | jq -r '
+            [ .[][] | select(.tool.name == "CodeQL") ] as $alerts |
+            "Open CodeQL alerts: \($alerts | length)",
+            "Open CodeQL alerts by severity: " +
+              ([$alerts[] | (.rule.security_severity_level // .rule.severity // "unknown")] |
+               group_by(.) | map("\(.[0])=\(length)") | join(", "))
+          '
+          echo "Alert inventory retrieved. Review actual alert locations and dismissals in GitHub Security before merge."
