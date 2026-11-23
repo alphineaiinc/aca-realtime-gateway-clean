@@ -393,7 +393,6 @@ async function synthesizeWithOpenAI(text, langCode = "en-US", options = {}) {
 
   console.log("🔐 [tts:openai] key exists:", !!process.env.OPENAI_API_KEY);
   console.log("🔐 [tts:openai] key trimmed exists:", !!apiKey);
-  console.log("🔐 [tts:openai] key length:", apiKey ? apiKey.length : 0);
 
   if (!apiKey) {
     throw new Error("Missing OPENAI_API_KEY in environment");
@@ -509,7 +508,6 @@ async function synthesizeWithElevenLabs(text, langCode = "en-US", options = {}) 
 
   console.log("🔐 [tts:elevenlabs] key exists:", !!rawApiKey);
   console.log("🔐 [tts:elevenlabs] key trimmed exists:", !!apiKey);
-  console.log("🔐 [tts:elevenlabs] key length:", apiKey ? apiKey.length : 0);
   // Never log API key bytes, including prefixes.
 
   if (!apiKey) {
@@ -564,7 +562,6 @@ async function synthesizeWithElevenLabs(text, langCode = "en-US", options = {}) 
     similarity_boost,
     outputFormat: ctx.outputFormat,
     acceptMime: ctx.acceptMime,
-    keyLength: apiKey ? apiKey.length : 0,
   });
 
   try {
@@ -606,7 +603,6 @@ async function synthesizeWithElevenLabs(text, langCode = "en-US", options = {}) 
     const status = err.response?.status || null;
     console.error("❌ [tts:elevenlabs] status:", status);
     console.error("❌ [tts:elevenlabs] request failed in file:", __filename);
-    console.error("❌ [tts:elevenlabs] axios error code:", err.code || null);
 
     throw new Error(safeUpstreamError(err, "ElevenLabs"));
   }
