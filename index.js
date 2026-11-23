@@ -1093,6 +1093,9 @@ if (compression) {
 }
 
 // ✅ FIX (Story 12.3): app must exist before any app.use(...)
+// Stripe signature verification requires the untouched raw request body.
+app.use("/api/stripe", require("./src/routes/stripeWebhook"));
+
 app.use(express.json({ limit: "1mb" }));
 
 app.post("/api/gpt/chat", async (req, res) => {
@@ -1315,9 +1318,6 @@ app.get(/^\/\.well-known\/(.+)$/i, (req, res) => {
 });
 
 console.log("✅ .well-known bound to:", wellKnownAbsolute);
-
-// Stripe Webhook Route (Story 11.6)
-app.use("/api/stripe", require("./src/routes/stripeWebhook"));
 
 // also expose everything under /public normally
 const staticDir = path.resolve(__dirname, "public");
