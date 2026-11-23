@@ -22,24 +22,45 @@ function validateConfirmedIntake(input) {
 }
 
 async function saveConfirmedIntake(pool, input) {
-  if (!pool || typeof pool.query !== "function") throw new Error("database_unavailable");
+  if (!pool || typeof pool.connect !== "function") throw new Error("database_unavailable");
   if (input?.confirmed !== true) throw new Error("confirmation_required");
   const data = validateConfirmedIntake(input);
-  const result = await pool.query(
-    `INSERT INTO aca_intake_requests (tenant_id, call_sid, cluster_id, intent, slots)
-     VALUES ($1, $2, $3, $4, $5::jsonb)
-     ON CONFLICT (tenant_id, call_sid) DO NOTHING
-     RETURNING id, tenant_id, call_sid, status, confirmed_at`,
-    [data.tenantId, data.callSid, data.clusterId, data.intent, JSON.stringify(data.slots)]
-  );
-  if (result.rows[0]) return { created: true, request: result.rows[0] };
-  const existing = await pool.query(
-    `SELECT id, tenant_id, call_sid, status, confirmed_at
-     FROM aca_intake_requests WHERE tenant_id = $1 AND call_sid = $2`,
-    [data.tenantId, data.callSid]
-  );
-  if (!existing.rows[0]) throw new Error("intake_conflict_not_found");
-  return { created: false, request: existing.rows[0] };
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    const inserted = await client.query(
+      `INSERT INTO aca_intake_requests (tenant_id, call_sid, cluster_id, intent, slots)
+       VALUES ($1, $2, $3, $4, $5::jsonb)
+       ON CONFLICT (tenant_id, call_sid) DO NOTHING
+       RETURNING id, tenant_id, call_sid, status, confirmed_at`,
+      [data.tenantId, data.callSid, data.clusterId, data.intent, JSON.stringify(data.slots)]
+    );
+    let request = inserted.rows[0];
+    if (!request) {
+      const existing = await client.query(
+        `SELECT id, tenant_id, call_sid, status, confirmed_at
+         FROM aca_intake_requests WHERE tenant_id = $1 AND call_sid = $2`,
+        [data.tenantId, data.callSid]
+      );
+      request = existing.rows[0];
+    }
+    if (!request) throw new Error("intake_conflict_not_found");
+    // Persist intent to notify in the SAME transaction as the confirmed intake.
+    // This does not dispatch anything or imply the business has been notified.
+    await client.query(
+      `INSERT INTO aca_notification_outbox (tenant_id, intake_request_id, event_type)
+       VALUES ($1, $2, 'intake.confirmed')
+       ON CONFLICT (intake_request_id, event_type) DO NOTHING`,
+      [data.tenantId, request.id]
+    );
+    await client.query("COMMIT");
+    return { created: Boolean(inserted.rows[0]), request };
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  } finally {
+    client.release();
+  }
 }
 
 module.exports = { validateConfirmedIntake, saveConfirmedIntake };
