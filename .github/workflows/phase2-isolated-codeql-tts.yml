@@ -25,6 +25,7 @@ jobs:
             -o /tmp/codeql-linux64.zip
           unzip -q /tmp/codeql-linux64.zip -d /tmp
           /tmp/codeql/codeql version
+          /tmp/codeql/codeql pack download codeql/javascript-queries
       - name: Build isolated JavaScript analysis database
         shell: bash
         run: |
@@ -38,7 +39,7 @@ jobs:
         run: |
           set -euo pipefail
           /tmp/codeql/codeql database analyze /tmp/aca-codeql-db \
-            codeql/javascript-queries:codeql-suites/javascript-security-extended.qls \
+            codeql/javascript-queries \
             --format=sarif-latest \
             --output=codeql-isolated.sarif \
             --threads=2
