@@ -1,0 +1,22 @@
+const test = require('node:test');
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
+const source = fs.readFileSync(path.join(__dirname, '..', 'src/routes/uploadKnowledge.js'), 'utf8');
+
+test('upload uses bounded in-memory Multer storage', () => {
+  assert.match(source, /multer\.memoryStorage\(\)/);
+  assert.match(source, /fileSize: 10 \* 1024 \* 1024/);
+  assert.match(source, /files: 1/);
+});
+
+test('upload never opens or deletes a request-derived filesystem path', () => {
+  assert.doesNotMatch(source, /fs\.(?:readFileSync|unlinkSync|createReadStream|rmSync)/);
+  assert.doesNotMatch(source, /req\.file\.path/);
+  assert.match(source, /req\.file\.buffer/);
+});
+
+test('upload validates PDF signature and does not reflect parser exceptions', () => {
+  assert.match(source, /%PDF-/);
+  assert.doesNotMatch(source, /error: err\.message/);
+});
