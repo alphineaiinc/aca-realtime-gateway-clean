@@ -1,5 +1,6 @@
 -- ACA-L3 durable notification outbox; DRAFT ONLY, unapplied.
 -- No sending credentials, worker, or automatic dispatch are enabled by this migration.
+CREATE UNIQUE INDEX IF NOT EXISTS idx_aca_intake_tenant_id ON aca_intake_requests (tenant_id, id);
 CREATE TABLE IF NOT EXISTS aca_notification_outbox (
   id BIGSERIAL PRIMARY KEY,
   tenant_id INTEGER NOT NULL REFERENCES master_tenants(id) ON DELETE CASCADE,
@@ -13,6 +14,7 @@ CREATE TABLE IF NOT EXISTS aca_notification_outbox (
   last_error_code TEXT,
   delivered_at TIMESTAMPTZ,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  FOREIGN KEY (tenant_id, intake_request_id) REFERENCES aca_intake_requests(tenant_id, id) ON DELETE CASCADE,
   UNIQUE (intake_request_id, event_type)
 );
 CREATE INDEX IF NOT EXISTS idx_aca_notification_outbox_pending
