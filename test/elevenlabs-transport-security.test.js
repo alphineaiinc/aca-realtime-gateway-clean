@@ -152,3 +152,39 @@ test("ElevenLabs valid MP3 synthesis uses expected MIME and no redirect", async 
     delete require.cache[require.resolve("../tts")];
   }
 });
+
+test("ElevenLabs upstream failure rejects safely without retrying", async () => {
+  const originalLoad = Module._load;
+  const oldOpenAI = process.env.OPENAI_API_KEY;
+  const oldEleven = process.env.ELEVENLABS_API_KEY;
+  let calls = 0;
+  process.env.OPENAI_API_KEY = "test-openai-key";
+  process.env.ELEVENLABS_API_KEY = "test-eleven-key";
+  try {
+    Module._load = function(request, parent, isMain) {
+      if (request === "axios") return { post: async (_url, _body, config) => {
+        calls++;
+        assert.equal(config.maxRedirects, 0);
+        const err = new Error("upstream unavailable");
+        err.code = "ECONNRESET";
+        throw err;
+      }};
+      if (request === "openai") return class FakeOpenAI {};
+      if (request.endsWith("/voiceProfileLoader")) return { getTenantVoiceProfile: async () => null };
+      return originalLoad.apply(this, arguments);
+    };
+    delete require.cache[require.resolve("../tts")];
+    const { synthesizeSpeech } = require("../tts");
+    await assert.rejects(() => synthesizeSpeech("hello", "en-US", {
+      provider: "elevenlabs", useFillers: false,
+    }), /ElevenLabs TTS failed: upstream unavailable/);
+    assert.equal(calls, 1);
+  } finally {
+    Module._load = originalLoad;
+    if (oldOpenAI === undefined) delete process.env.OPENAI_API_KEY;
+    else process.env.OPENAI_API_KEY = oldOpenAI;
+    if (oldEleven === undefined) delete process.env.ELEVENLABS_API_KEY;
+    else process.env.ELEVENLABS_API_KEY = oldEleven;
+    delete require.cache[require.resolve("../tts")];
+  }
+});
