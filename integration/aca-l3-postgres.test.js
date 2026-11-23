@@ -18,7 +18,7 @@ const db = new URL(url);
 if (!["127.0.0.1", "localhost", "::1"].includes(db.hostname)) {
   throw new Error("Postgres integration tests require local disposable database");
 }
-if (!db.pathname.replace(/^\\//, "").startsWith("aca_test_")) {
+if (!db.pathname.slice(1).startsWith("aca_test_")) {
   throw new Error("Postgres integration database name must start with aca_test_");
 }
 const pool = new Pool({ connectionString: url, max: 6 });
