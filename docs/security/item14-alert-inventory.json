@@ -513,8 +513,8 @@
       "path": "src/routes/memoryDebug.js",
       "line": 46,
       "baseline_sha": "02395a18092277a8cb65e0d5b4bdb26c3ae5dac2",
-      "candidate_pr": null,
-      "disposition": "outstanding",
+      "candidate_pr": 125,
+      "disposition": "candidate-remediation",
       "verified_closed": false
     },
     {
@@ -549,8 +549,8 @@
       "path": "src/routes/envTest.js",
       "line": 28,
       "baseline_sha": "02395a18092277a8cb65e0d5b4bdb26c3ae5dac2",
-      "candidate_pr": null,
-      "disposition": "outstanding",
+      "candidate_pr": 125,
+      "disposition": "candidate-remediation",
       "verified_closed": false
     },
     {
@@ -801,8 +801,8 @@
       "path": "src/routes/brain.js",
       "line": 131,
       "baseline_sha": "02395a18092277a8cb65e0d5b4bdb26c3ae5dac2",
-      "candidate_pr": null,
-      "disposition": "outstanding",
+      "candidate_pr": 125,
+      "disposition": "candidate-remediation",
       "verified_closed": false
     },
     {
@@ -813,8 +813,8 @@
       "path": "index.js",
       "line": 1466,
       "baseline_sha": "02395a18092277a8cb65e0d5b4bdb26c3ae5dac2",
-      "candidate_pr": null,
-      "disposition": "outstanding",
+      "candidate_pr": 125,
+      "disposition": "candidate-remediation",
       "verified_closed": false
     },
     {
@@ -825,8 +825,8 @@
       "path": "index.js",
       "line": 1392,
       "baseline_sha": "02395a18092277a8cb65e0d5b4bdb26c3ae5dac2",
-      "candidate_pr": null,
-      "disposition": "outstanding",
+      "candidate_pr": 125,
+      "disposition": "candidate-remediation",
       "verified_closed": false
     },
     {
@@ -837,8 +837,8 @@
       "path": "index.js",
       "line": 1294,
       "baseline_sha": "02395a18092277a8cb65e0d5b4bdb26c3ae5dac2",
-      "candidate_pr": null,
-      "disposition": "outstanding",
+      "candidate_pr": 125,
+      "disposition": "candidate-remediation",
       "verified_closed": false
     },
     {
@@ -849,8 +849,8 @@
       "path": "index.js",
       "line": 1282,
       "baseline_sha": "02395a18092277a8cb65e0d5b4bdb26c3ae5dac2",
-      "candidate_pr": null,
-      "disposition": "outstanding",
+      "candidate_pr": 125,
+      "disposition": "candidate-remediation",
       "verified_closed": false
     },
     {
@@ -861,8 +861,8 @@
       "path": "index.js",
       "line": 1271,
       "baseline_sha": "02395a18092277a8cb65e0d5b4bdb26c3ae5dac2",
-      "candidate_pr": null,
-      "disposition": "outstanding",
+      "candidate_pr": 125,
+      "disposition": "candidate-remediation",
       "verified_closed": false
     },
     {
@@ -873,8 +873,8 @@
       "path": "index.js",
       "line": 1194,
       "baseline_sha": "02395a18092277a8cb65e0d5b4bdb26c3ae5dac2",
-      "candidate_pr": null,
-      "disposition": "outstanding",
+      "candidate_pr": 125,
+      "disposition": "candidate-remediation",
       "verified_closed": false
     },
     {
