@@ -17,4 +17,12 @@ function buildElevenLabsTtsUrl(voiceId, outputFormat) {
   return url.toString();
 }
 
-module.exports = { buildElevenLabsTtsUrl };
+function getElevenLabsRequestLimits() {
+  return {
+    maxRedirects: 0,
+    timeout: 15000,
+    maxContentLength: 20 * 1024 * 1024,
+  };
+}
+
+module.exports = { buildElevenLabsTtsUrl, getElevenLabsRequestLimits };
