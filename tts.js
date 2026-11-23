@@ -198,18 +198,15 @@ function normalizeApiKey(raw) {
   return raw.trim();
 }
 
-function decodeErrorBody(data) {
-  if (!data) return null;
-  if (Buffer.isBuffer(data)) return data.toString("utf8");
-  if (data instanceof ArrayBuffer) return Buffer.from(data).toString("utf8");
-  if (typeof data === "object") {
-    try {
-      return JSON.stringify(data);
-    } catch {
-      return String(data);
-    }
-  }
-  return String(data);
+function safeUpstreamError(err, provider) {
+  // Never propagate upstream response bodies, URLs, headers, or exception text:
+  // providers can echo request payloads and authentication material.
+  const status = Number(err?.response?.status || err?.status);
+  const code = typeof err?.code === "string" && /^[A-Z_]{2,24}$/.test(err.code)
+    ? err.code : null;
+  const suffix = Number.isInteger(status) && status >= 100 && status <= 599
+    ? " (HTTP " + status + ")" : code ? " (" + code + ")" : "";
+  return provider + " TTS failed" + suffix;
 }
 
 // ------------------------------------------------------
@@ -495,16 +492,11 @@ async function synthesizeWithOpenAI(text, langCode = "en-US", options = {}) {
     return finalBuffer;
   } catch (err) {
     const status = err.status || err.response?.status || null;
-    const statusText = err.statusText || err.response?.statusText || null;
-    const decodedError = decodeErrorBody(err.response?.data) || err.message;
-
     console.error("❌ [tts:openai] status:", status);
-    console.error("❌ [tts:openai] statusText:", statusText);
-    console.error("❌ [tts:openai] error body:", decodedError);
     console.error("❌ [tts:openai] elapsedMs:", Date.now() - startedAt);
     console.error("❌ [tts:openai] request failed in file:", __filename);
 
-    throw new Error("OpenAI TTS failed: " + (statusText || decodedError || err.message));
+    throw new Error(safeUpstreamError(err, "OpenAI"));
   }
 }
 
@@ -612,18 +604,11 @@ async function synthesizeWithElevenLabs(text, langCode = "en-US", options = {}) 
     return finalBuffer;
   } catch (err) {
     const status = err.response?.status || null;
-    const statusText = err.response?.statusText || null;
-    const decodedError = decodeErrorBody(err.response?.data);
-
     console.error("❌ [tts:elevenlabs] status:", status);
-    console.error("❌ [tts:elevenlabs] statusText:", statusText);
-    console.error("❌ [tts:elevenlabs] error body:", decodedError || err.message);
     console.error("❌ [tts:elevenlabs] request failed in file:", __filename);
     console.error("❌ [tts:elevenlabs] axios error code:", err.code || null);
 
-    throw new Error(
-      "ElevenLabs TTS failed: " + (statusText || decodedError || err.message)
-    );
+    throw new Error(safeUpstreamError(err, "ElevenLabs"));
   }
 }
 
