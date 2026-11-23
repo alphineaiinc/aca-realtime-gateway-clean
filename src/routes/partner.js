@@ -12,6 +12,8 @@ const path = require("path");
 const fs = require("fs");
 const pool = require("../db/pool");
 const router = express.Router();
+const { createPostgresRateLimiter } = require("../middleware/postgresRateLimit");
+const registrationLimit = createPostgresRateLimiter({ pool, scope: "partner-registration", max: 30, windowMs: 60000, publicGlobal: true });
 
 // -----------------------------------------------------------------------------
 // 🔐 Load partner policy + language registry dynamically
@@ -50,7 +52,7 @@ function getAllowedCountriesFromLanguages() {
 // -----------------------------------------------------------------------------
 // 🧩 POST /partner/register — Register new partner
 // -----------------------------------------------------------------------------
-router.post("/register", async (req, res) => {
+router.post("/register", registrationLimit, async (req, res) => {
   try {
     const { name, email, country } = req.body;
 
@@ -80,7 +82,7 @@ router.post("/register", async (req, res) => {
         .json({ ok: false, error: `Referral not available in ${normalizedCountry} region yet.` });
     }
 
-    const referral = "REF" + Math.random().toString(36).substring(2, 8).toUpperCase();
+    const referral = "REF" + crypto.randomBytes(3).toString("hex").toUpperCase();
     const jwtSecret = crypto.randomBytes(32).toString("hex");
 
     const result = await pool.query(
@@ -105,7 +107,7 @@ router.post("/register", async (req, res) => {
       global_mode: policy.global_mode,
     });
   } catch (err) {
-    console.error("❌ Partner register error:", err);
+    console.error("Partner registration failed");
     res.status(500).json({ ok: false, error: "Registration failed" });
   }
 });
