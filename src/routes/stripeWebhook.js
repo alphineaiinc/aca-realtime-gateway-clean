@@ -49,10 +49,10 @@ router.post(
     } catch (err) {
       fs.appendFileSync(
         logPath,
-        `[${new Date().toISOString()}] Signature verification failed: ${err.message}\n`
+        `[${new Date().toISOString()}] Signature verification failed\n`
       );
-      console.error("❌ Stripe signature verification failed:", err.message);
-      return res.status(400).send(`Webhook Error: ${err.message}`);
+      console.error("Stripe signature verification failed");
+      return res.status(400).send("Webhook signature verification failed");
     }
 
     const type = event.type;
@@ -189,9 +189,9 @@ router.post(
     } catch (err) {
       fs.appendFileSync(
         logPath,
-        `[${new Date().toISOString()}] ERROR processing webhook: ${err.message}\n`
+        `[${new Date().toISOString()}] ERROR processing webhook\n`
       );
-      console.error("❌ Error processing Stripe webhook:", err);
+      console.error("Stripe webhook processing failed");
     }
 
     res.json({ received: true });
