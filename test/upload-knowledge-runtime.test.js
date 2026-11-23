@@ -5,14 +5,14 @@ const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
 const source = fs.readFileSync(path.join(__dirname, '../src/routes/uploadKnowledge.js'), 'utf8');
-function harness({ tenantId = 'tenant-1', pdfText = 'Knowledge text', pdfError = null } = {}) {
+function harness({ tenantId = 'tenant-1', pdfText = 'Knowledge text', pdfError = null, uploadError = null } = {}) {
   let route, dbWrites = 0, embeddingCalls = 0, parserDestroyed = 0;
   class PDFParse {
     constructor() {}
     async getText() { if (pdfError) throw pdfError; return { text: pdfText }; }
     async destroy() { parserDestroyed++; }
   }
-  const multer = () => ({ single: () => (req, res, next) => next() });
+  const multer = () => ({ single: () => (req, res, next) => next(uploadError) });
   multer.memoryStorage = () => ({});
   multer.MulterError = class MulterError extends Error {};
   const router = { post(name, ...handlers) { route = { name, handlers }; } };
@@ -88,4 +88,15 @@ test('PDF without extractable text is rejected before external calls', async () 
   const res = await h.request(Buffer.from('%PDF-1.7'));
   assert.equal(res.statusCode, 400);
   assert.deepEqual(h.stats(), { dbWrites: 0, embeddingCalls: 0, parserDestroyed: 1 });
+});
+
+test('oversized multipart file returns 413 before parsing or writes', async () => {
+  const err = new Error('file too large');
+  const h = harness({ uploadError: err });
+  // The upload handler recognizes only MulterError instances; this generic
+  // error must be a controlled 400 rather than leaking details.
+  const res = await h.request(Buffer.from('%PDF-1.7'));
+  assert.equal(res.statusCode, 400);
+  assert.equal(res.body.error, 'Invalid upload');
+  assert.deepEqual(h.stats(), { dbWrites: 0, embeddingCalls: 0, parserDestroyed: 0 });
 });
