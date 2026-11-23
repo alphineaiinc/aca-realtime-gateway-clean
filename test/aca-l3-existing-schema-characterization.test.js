@@ -35,3 +35,12 @@ test("known incompatible write/read paths are recorded as existing technical deb
   assert.match(tenant, /INSERT INTO businesses/);
   assert.match(embedding, /FROM embedding_spaces/);
 });
+
+test("nearest embedding lookup uses tenant ID and live KB column names", () => {
+  const embedding = source("src/brain/utils/embeddingManager.js");
+  const fn = embedding.slice(embedding.indexOf("async function getNearestEmbeddingsForBusiness("));
+  assert.match(fn, /SELECT id, query_text AS question, answer, embedding/);
+  assert.match(fn, /WHERE tenant_id = \\$1/);
+  assert.match(fn, /embedding <-> \\$2::vector/);
+  assert.doesNotMatch(fn, /WHERE business_id =/);
+});
