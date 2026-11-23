@@ -36,7 +36,8 @@ router.post("/public/signup", async (req, res) => {
       VALUES ($1, $2, $3, $4, $5, $6, $7)
       RETURNING id, email, region, preferred_lang;
     `;
-    const jwtSecret = process.env.TENANT_JWT_SECRET || "alphine_tenant_jwt_2025_secure!";
+    const jwtSecret = process.env.TENANT_JWT_SECRET;
+    if (!jwtSecret) return res.status(503).json({ ok: false, error: "Authentication unavailable" });
     const apiKey = "tenant_" + randomBytes(32).toString("hex");
     const result = await client.query(insertTenant, [
       email,
@@ -77,8 +78,8 @@ router.post("/public/signup", async (req, res) => {
       source: "public",
     });
   } catch (err) {
-    console.error("❌ /public/signup failed:", err);
-    res.status(500).json({ ok: false, error: err.message });
+    console.error("Public signup failed");
+    res.status(500).json({ ok: false, error: "Signup failed" });
   }
 });
 
@@ -109,8 +110,8 @@ router.post("/public/login", async (req, res) => {
 
     res.json({ ok: true, token, tenant_id: rows[0].id });
   } catch (err) {
-    console.error("❌ /public/login failed:", err);
-    res.status(500).json({ ok: false, error: err.message });
+    console.error("Public login failed");
+    res.status(500).json({ ok: false, error: "Login failed" });
   }
 });
 
