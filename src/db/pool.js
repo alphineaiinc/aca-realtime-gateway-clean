@@ -1,3 +1,4 @@
+const console = require("../voice/voiceLogger").operationalConsole;
 // ============================================================
 // src/db/pool.js — Final Render + Local PostgreSQL connection (adaptive SSL)
 // ============================================================
