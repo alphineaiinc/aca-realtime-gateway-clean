@@ -6,6 +6,7 @@ const express = require("express");
 const router = express.Router();
 const { Pool } = require("pg");
 const jwt = require("jsonwebtoken");
+const { randomBytes } = require("node:crypto");
 
 // Load environment variables
 require("dotenv").config({ path: require("path").resolve(__dirname, "../../.env") });
@@ -36,7 +37,7 @@ router.post("/public/signup", async (req, res) => {
       RETURNING id, email, region, preferred_lang;
     `;
     const jwtSecret = process.env.TENANT_JWT_SECRET || "alphine_tenant_jwt_2025_secure!";
-    const apiKey = "tenant_" + Math.random().toString(36).substring(2, 10);
+    const apiKey = "tenant_" + randomBytes(32).toString("hex");
     const result = await client.query(insertTenant, [
       email,
       contact_number || "",
