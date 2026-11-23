@@ -6,7 +6,7 @@ const path = require('node:path');
 const vm = require('node:vm');
 const source = fs.readFileSync(path.join(__dirname, '../src/routes/uploadKnowledge.js'), 'utf8');
 function harness({ tenantId = 'tenant-1', pdfText = 'Knowledge text', pdfError = null, uploadError = null } = {}) {
-  let route, dbWrites = 0, embeddingCalls = 0, parserDestroyed = 0;
+  let route, dbWrites = 0, embeddingCalls = 0, parserDestroyed = 0, commits = 0, rollbacks = 0;
   class PDFParse {
     constructor() {}
     async getText() { if (pdfError) throw pdfError; return { text: pdfText }; }
@@ -21,7 +21,7 @@ function harness({ tenantId = 'tenant-1', pdfText = 'Knowledge text', pdfError =
     express: { Router: () => router }, multer,
     jsonwebtoken: { verify: (token) => { if (token !== 'valid') throw new Error('Invalid test token'); return { tenant_id: tenantId }; } },
     'pdf-parse': { PDFParse },
-    '../db/pool': { async query() { dbWrites++; } },
+    '../db/pool': { async connect() { return { async query(sql) { if (sql === 'COMMIT') commits++; else if (sql === 'ROLLBACK') rollbacks++; else if (sql.startsWith('INSERT')) dbWrites++; }, release() {} }; } },
     '../brain/utils/embeddingManager': { async embedText() { embeddingCalls++; return [0.1, 0.2]; } },
   };
   const context = { require(name) { if (!(name in mocks)) throw new Error('Unexpected import ' + name); return mocks[name]; }, module: { exports: {} }, Buffer, process: { env: { JWT_SECRET: 'test-only-secret' } }, console: { error() {} } };
@@ -42,7 +42,7 @@ function harness({ tenantId = 'tenant-1', pdfText = 'Knowledge text', pdfError =
     await run();
     return res;
   }
-  return { request, stats: () => ({ dbWrites, embeddingCalls, parserDestroyed }) };
+  return { request, stats: () => ({ dbWrites, embeddingCalls, parserDestroyed }), tx: () => ({ commits, rollbacks }) };
 }
 test('invalid PDF signature rejects without embedding or writes', async () => {
   const h = harness();
@@ -108,4 +108,11 @@ test('Multer file size limit returns 413 without parsing or writes', async () =>
   assert.equal(res.statusCode, 413);
   assert.equal(res.body.error, 'Invalid upload');
   assert.deepEqual(h.stats(), { dbWrites: 0, embeddingCalls: 0, parserDestroyed: 0 });
+});
+
+test('successful knowledge upload commits a single transaction', async () => {
+  const h = harness({ pdfText: 'Knowledge text' });
+  const res = await h.request(Buffer.from('%PDF-1.7'));
+  assert.equal(res.statusCode, 200);
+  assert.deepEqual(h.tx(), { commits: 1, rollbacks: 0 });
 });
