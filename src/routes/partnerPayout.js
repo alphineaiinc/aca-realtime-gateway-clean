@@ -44,73 +44,7 @@ function requireAdmin(req, res, next) {
 // ============================================================
 // POST /api/partner/payout
 // ============================================================
-router.post("/partner/payout", authenticate, requireAdmin, async (req, res) => {
-  try {
-    const { amount, currency = "USD", provider = "stripe" } = req.body;
-
-    const partner_id = req.user.partner_id;
-
-    if (!partner_id || !amount) {
-      return res.status(400).json({ ok: false, error: "invalid_request" });
-    }
-
-    console.log(`💰 Processing payout → Partner ${partner_id} | ${amount} ${currency}`);
-
-    const result = await processPayout(partner_id, amount, currency, provider);
-
-    if (result.ok) {
-      recordEvent({
-        tenant_id: null,
-        partner_id,
-        event_type: "PAYOUT_SUCCESS",
-        quantity: Number(amount),
-        unit: currency,
-        cost: 0,
-        meta: {
-          provider,
-          payout_ref: result.reference || null,
-          ip: req.ip,
-        },
-      });
-
-      return res.json({ ok: true, message: "Payout successful" });
-    }
-
-    recordEvent({
-      tenant_id: null,
-      partner_id,
-      event_type: "PAYOUT_FAILED",
-      quantity: Number(amount),
-      unit: currency,
-      cost: 0,
-      meta: {
-        provider,
-        error: result.error || "Unknown",
-        ip: req.ip,
-      },
-    });
-
-    return res.status(500).json({ ok: false, error: "payout_failed" });
-
-  } catch (err) {
-    console.error("❌ payout error:", err.message);
-
-    recordEvent({
-      tenant_id: null,
-      partner_id: req.user?.partner_id || null,
-      event_type: "PAYOUT_EXCEPTION",
-      quantity: Number(req.body?.amount) || 0,
-      unit: req.body?.currency || "USD",
-      cost: 0,
-      meta: { message: err.message },
-    });
-
-    return res.status(500).json({
-      ok: false,
-      error: "internal_error",
-    });
-  }
-});
+router.post("/partner/payout", authenticate, requireAdmin, (_req,res)=>res.status(503).json({ok:false,error:"Verified payout settlement unavailable"}));
 
 // ============================================================
 // GET /api/partner/payouts
