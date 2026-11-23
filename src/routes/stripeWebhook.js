@@ -49,10 +49,10 @@ router.post(
     } catch (err) {
       fs.appendFileSync(
         logPath,
-        `[${new Date().toISOString()}] Signature verification failed: ${err.message}\n`
+        `[${new Date().toISOString()}] Signature verification failed\n`
       );
-      console.error("❌ Stripe signature verification failed:", err.message);
-      return res.status(400).send(`Webhook Error: ${err.message}`);
+      console.error("Stripe signature verification failed");
+      return res.status(400).send("Webhook signature verification failed");
     }
 
     const type = event.type;
@@ -81,7 +81,7 @@ router.post(
           );
           fs.appendFileSync(
             logPath,
-            `[${new Date().toISOString()}] invoice.created → Email sent to ${email}\n`
+            `[${new Date().toISOString()}] invoice.created → Email sent\n`
           );
         }
       }
@@ -101,7 +101,7 @@ router.post(
 
           fs.appendFileSync(
             logPath,
-            `[${new Date().toISOString()}] invoice.payment_succeeded → Email sent to ${email}\n`
+            `[${new Date().toISOString()}] invoice.payment_succeeded → Email sent\n`
           );
         }
       }
@@ -121,7 +121,7 @@ router.post(
 
           fs.appendFileSync(
             logPath,
-            `[${new Date().toISOString()}] invoice.payment_failed → Email sent to ${email}\n`
+            `[${new Date().toISOString()}] invoice.payment_failed → Email sent\n`
           );
         }
       }
@@ -141,7 +141,7 @@ router.post(
 
           fs.appendFileSync(
             logPath,
-            `[${new Date().toISOString()}] subscription.updated → Email to ${email}\n`
+            `[${new Date().toISOString()}] subscription.updated → Email sent\n`
           );
         }
       }
@@ -161,7 +161,7 @@ router.post(
 
           fs.appendFileSync(
             logPath,
-            `[${new Date().toISOString()}] charge.refunded → Email to ${email}\n`
+            `[${new Date().toISOString()}] charge.refunded → Email sent\n`
           );
         }
       }
@@ -181,7 +181,7 @@ router.post(
 
           fs.appendFileSync(
             logPath,
-            `[${new Date().toISOString()}] partner.payout → Email to ${email}\n`
+            `[${new Date().toISOString()}] partner.payout → Email sent\n`
           );
         }
       }
@@ -189,9 +189,9 @@ router.post(
     } catch (err) {
       fs.appendFileSync(
         logPath,
-        `[${new Date().toISOString()}] ERROR processing webhook: ${err.message}\n`
+        `[${new Date().toISOString()}] ERROR processing webhook\n`
       );
-      console.error("❌ Error processing Stripe webhook:", err);
+      console.error("Stripe webhook processing failed");
     }
 
     res.json({ received: true });
