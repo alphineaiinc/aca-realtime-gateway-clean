@@ -81,3 +81,34 @@ test("ElevenLabs rejects redirect responses without retrying at redirected origi
     delete require.cache[require.resolve("../tts")];
   }
 });
+
+test("ElevenLabs rejects unsupported output format before outbound HTTP", async () => {
+  const originalLoad = Module._load;
+  const oldOpenAI = process.env.OPENAI_API_KEY;
+  const oldEleven = process.env.ELEVENLABS_API_KEY;
+  let calls = 0;
+  process.env.OPENAI_API_KEY = "test-openai-key";
+  process.env.ELEVENLABS_API_KEY = "test-eleven-key";
+  try {
+    Module._load = function(request, parent, isMain) {
+      if (request === "axios") return { post: async () => { calls++; throw new Error("Unexpected network call"); } };
+      if (request === "openai") return class FakeOpenAI {};
+      if (request.endsWith("/voiceProfileLoader")) return { getTenantVoiceProfile: async () => null };
+      return originalLoad.apply(this, arguments);
+    };
+    delete require.cache[require.resolve("../tts")];
+    const { synthesizeSpeech } = require("../tts");
+    await assert.rejects(() => synthesizeSpeech("hello", "en-US", {
+      provider: "elevenlabs", outputFormat: "mp3_44100_128&redirect=http://127.0.0.1",
+      useFillers: false,
+    }), TypeError);
+    assert.equal(calls, 0);
+  } finally {
+    Module._load = originalLoad;
+    if (oldOpenAI === undefined) delete process.env.OPENAI_API_KEY;
+    else process.env.OPENAI_API_KEY = oldOpenAI;
+    if (oldEleven === undefined) delete process.env.ELEVENLABS_API_KEY;
+    else process.env.ELEVENLABS_API_KEY = oldEleven;
+    delete require.cache[require.resolve("../tts")];
+  }
+});
