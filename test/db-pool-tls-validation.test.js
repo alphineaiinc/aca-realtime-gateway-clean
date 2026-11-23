@@ -65,3 +65,15 @@ test('cloud URL SSL query options cannot override certificate policy', () => {
   assert.equal(config.connectionString.includes('sslrootcert='), false);
   assert.equal(config.connectionString.includes('application_name=aca'), true);
 });
+
+test('node-postgres effective cloud TLS policy validates certificates', () => {
+  for (const databaseUrl of [
+    'postgres://test:pass@db.example.neon.tech/db',
+    'postgres://test:pass@db.example.neon.tech/db?sslmode=require',
+    'postgres://test:pass@db.example.render.com/db?sslmode=require&sslrootcert=ignored',
+  ]) {
+    const config = loadPool(databaseUrl);
+    const effective = new ConnectionParameters(config);
+    assert.equal(effective.ssl.rejectUnauthorized, true, databaseUrl);
+  }
+});
