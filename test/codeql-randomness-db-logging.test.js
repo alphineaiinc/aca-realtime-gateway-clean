@@ -7,11 +7,10 @@ const root = path.join(__dirname, '..');
 const publicRoute = fs.readFileSync(path.join(root, 'src/routes/public.js'), 'utf8');
 const pool = fs.readFileSync(path.join(root, 'src/db/pool.js'), 'utf8');
 
-test('tenant API key uses cryptographic random bytes, not Math.random', () => {
-  assert.match(publicRoute, /randomBytes\(32\)\.toString\("hex"\)/);
+test('unverified public signup cannot generate tenant keys', () => {
   assert.doesNotMatch(publicRoute, /Math\.random\(/);
-  const sample = crypto.randomBytes(32).toString('hex');
-  assert.match(sample, /^[a-f0-9]{64}$/);
+  assert.doesNotMatch(publicRoute, /randomBytes\(32\)/);
+  assert.match(publicRoute, /Verified onboarding required/);
 });
 
 test('database connection URL is never printed, even partially', () => {
