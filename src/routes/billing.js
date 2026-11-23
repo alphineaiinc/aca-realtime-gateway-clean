@@ -22,9 +22,12 @@ const paymentRateLimit = createAuthenticatedRateLimiter({ windowMs: 10_000, max:
 // ---------------------------------------------------------------------
 function authenticate(req, res, next) {
   try {
-    const token = (req.headers.authorization || "").replace("Bearer ", "");
+    const auth = req.headers.authorization || "";
+    if (!auth.startsWith("Bearer ")) throw new Error("unauthorized");
+    const token = auth.slice(7).trim();
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    req.tenant_id = decoded.tenant_id;
+    if (!Number.isSafeInteger(Number(decoded.tenant_id)) || Number(decoded.tenant_id) <= 0) throw new Error("unauthorized");
+    req.tenant_id = Number(decoded.tenant_id);
     req.partner_id = decoded.partner_id;
     next();
   } catch {
@@ -49,7 +52,7 @@ router.post("/generate", authenticate, billingRateLimit, async (req, res) => {
     res.json({ ok: true, invoice });
   } catch (err) {
     console.error("[billing/generate]", err);
-    res.status(500).json({ ok: false, error: err.message });
+    res.status(500).json({ ok: false, error: "billing_operation_failed" });
   }
 });
 
@@ -79,69 +82,14 @@ router.get("/history", authenticate, billingRateLimit, async (req, res) => {
     res.json({ ok: true, invoices: result.rows });
   } catch (err) {
     console.error("[billing/history]", err);
-    res.status(500).json({ ok: false, error: err.message });
+    res.status(500).json({ ok: false, error: "billing_operation_failed" });
   }
 });
 
 // ---------------------------------------------------------------------
 // POST /api/billing/pay – mark invoice paid (rate-limited)
 // ---------------------------------------------------------------------
-router.post("/pay", authenticate, billingRateLimit, paymentRateLimit, async (req, res) => {
-  try {
-    const { invoice_id, payment_method = "mock", notes = "" } = req.body;
-    if (!invoice_id) return res.status(400).json({ ok: false, error: "invoice_id required" });
-
-    const paymentRef = `pay_${Date.now()}`;
-    const upd = await pool.query(
-      `UPDATE billing_invoices
-          SET status='paid',
-              paid_at=NOW(),
-              paid_by=$1,
-              payment_method=$2,
-              payment_reference=$3,
-              notes=$4
-        WHERE id=$5 AND tenant_id=$6
-        RETURNING id, tenant_id, partner_id, status, paid_at, payment_method, payment_reference, amount_usd;`,
-      [
-        `partner_${req.partner_id}`,
-        payment_method,
-        paymentRef,
-        notes,
-        invoice_id,
-        req.tenant_id,
-      ]
-    );
-    if (upd.rowCount === 0)
-      return res.status(404).json({ ok: false, error: "Invoice not found or access denied" });
-
-    const row = upd.rows[0];
-    logPayment({
-      t: new Date().toISOString(),
-      event: "invoice_paid",
-      partner_id: req.partner_id,
-      tenant_id: row.tenant_id,
-      invoice_id: row.id,
-      amount_usd: row.amount_usd,
-      method: row.payment_method,
-      ref: row.payment_reference
-    });
-
-    console.log(`[billing/pay] partner=${req.partner_id} invoice=${invoice_id} method=${payment_method}`);
-    res.json({
-      ok: true,
-      payment: {
-        id: row.id,
-        status: row.status,
-        paid_at: row.paid_at,
-        payment_method: row.payment_method,
-        payment_reference: row.payment_reference
-      }
-    });
-  } catch (err) {
-    console.error("[billing/pay]", err);
-    res.status(500).json({ ok: false, error: err.message });
-  }
-});
+router.post("/pay", authenticate, billingRateLimit, paymentRateLimit, (req,res)=>res.status(503).json({ok:false,error:"verified_settlement_required"}));
 
 // ---------------------------------------------------------------------
 // GET /api/billing/status/:id – single invoice
@@ -161,7 +109,7 @@ router.get("/status/:id", authenticate, billingRateLimit, async (req, res) => {
     res.json({ ok: true, invoice: result.rows[0] });
   } catch (err) {
     console.error("[billing/status]", err);
-    res.status(500).json({ ok: false, error: err.message });
+    res.status(500).json({ ok: false, error: "billing_operation_failed" });
   }
 });
 
@@ -203,7 +151,7 @@ router.get("/stats", authenticate, billingRateLimit, async (req, res) => {
     });
   } catch (err) {
     console.error("[billing/stats]", err);
-    res.status(500).json({ ok: false, error: err.message });
+    res.status(500).json({ ok: false, error: "billing_operation_failed" });
   }
 });
 
@@ -245,7 +193,7 @@ router.get("/summary", authenticate, billingRateLimit, async (req, res) => {
     });
   } catch (err) {
     console.error("[billing/summary]", err);
-    res.status(500).json({ ok: false, error: err.message });
+    res.status(500).json({ ok: false, error: "billing_operation_failed" });
   }
 });
 
@@ -277,29 +225,14 @@ router.get("/export", authenticate, billingRateLimit, async (req, res) => {
     res.send(csv);
   } catch (err) {
     console.error("[billing/export]", err);
-    res.status(500).json({ ok: false, error: err.message });
+    res.status(500).json({ ok: false, error: "billing_operation_failed" });
   }
 });
 
 // ---------------------------------------------------------------------
 // POST /api/billing/email/:id – mock email sender
 // ---------------------------------------------------------------------
-router.post("/email/:id", authenticate, billingRateLimit, async (req, res) => {
-  try {
-    const id = parseInt(req.params.id);
-    const q = await pool.query(
-      `SELECT id, invoice_path, amount_usd FROM billing_invoices
-        WHERE id=$1 AND tenant_id=$2`, [id, req.tenant_id]
-    );
-    if (q.rowCount === 0)
-      return res.status(404).json({ ok:false, error:"Invoice not found" });
-    console.log(`[billing/email] mock sent invoice=${id} path=${q.rows[0].invoice_path}`);
-    res.json({ ok:true, email_sent:true, invoice_id:id });
-  } catch (err) {
-    console.error("[billing/email]", err);
-    res.status(500).json({ ok:false, error: err.message });
-  }
-});
+router.post("/email/:id", authenticate, billingRateLimit, (req,res)=>res.status(503).json({ok:false,error:"billing_email_disabled"}));
 
 // ---------------------------------------------------------------------
 // GET /api/billing/download-all  –  returns ZIP of all invoices for tenant
@@ -329,7 +262,7 @@ router.get("/download-all", authenticate, billingRateLimit, async (req, res) => 
     await archive.finalize();
   } catch (err) {
     console.error("[billing/download-all]", err);
-    res.status(500).json({ ok:false, error:err.message });
+    res.status(500).json({ ok:false, error: "billing_operation_failed" });
   }
 });
 
