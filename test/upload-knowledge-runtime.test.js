@@ -23,7 +23,7 @@ function harness({ tenantId = 'tenant-1', pdfText = 'Knowledge text', pdfError =
     '../db/pool': { async query() { dbWrites++; } },
     '../brain/utils/embeddingManager': { async embedText() { embeddingCalls++; return [0.1, 0.2]; } },
   };
-  const context = { require(name) { if (!(name in mocks)) throw new Error('Unexpected import ' + name); return mocks[name]; }, module: { exports: {} }, Buffer, console: { error() {} } };
+  const context = { require(name) { if (!(name in mocks)) throw new Error('Unexpected import ' + name); return mocks[name]; }, module: { exports: {} }, Buffer, process: { env: { JWT_SECRET: 'test-only-secret' } }, console: { error() {} } };
   vm.runInNewContext(source, context, { filename: 'uploadKnowledge.js' });
   async function request(buffer, token = 'Bearer valid') {
     const req = { headers: { authorization: token }, file: buffer == null ? undefined : { buffer, originalname: 'doc.pdf' } };
