@@ -110,3 +110,10 @@ test('malformed and non-postgres URLs fail before pool creation', () => {
     assert.throws(() => loadPool(url));
   }
 });
+
+test('database error logging excludes raw driver errors and messages', () => {
+  assert.equal(source.includes('err.message'), false);
+  assert.equal(source.includes('error:", err)'), false);
+  assert.ok(source.includes('Unexpected database pool error'));
+  assert.ok(source.includes('Database startup connection failed'));
+});
