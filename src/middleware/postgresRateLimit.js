@@ -52,4 +52,19 @@ async function pruneExpiredRateLimitBuckets(pool, batchSize = 1000) {
        AND b.reset_at <= clock_timestamp()`, [batchSize]);
   return result.rowCount;
 }
-module.exports = { createPostgresRateLimiter, pruneExpiredRateLimitBuckets };
+// Bounded maintenance invocation; scheduling and database grants are external.
+async function runRateLimitMaintenance(pool, { batchSize = 1000, maxBatches = 5 } = {}) {
+  if (!Number.isSafeInteger(batchSize) || batchSize < 1 || batchSize > 10000 ||
+      !Number.isSafeInteger(maxBatches) || maxBatches < 1 || maxBatches > 20) {
+    throw new TypeError('Invalid maintenance budget');
+  }
+  let deleted = 0;
+  for (let i = 0; i < maxBatches; i++) {
+    const count = await pruneExpiredRateLimitBuckets(pool, batchSize);
+    if (!Number.isSafeInteger(count) || count < 0 || count > batchSize) throw new Error('Invalid cleanup result');
+    deleted += count;
+    if (count < batchSize) return { deleted, batches: i + 1, budgetExhausted: false };
+  }
+  return { deleted, batches: maxBatches, budgetExhausted: true };
+}
+module.exports = { createPostgresRateLimiter, pruneExpiredRateLimitBuckets, runRateLimitMaintenance };
