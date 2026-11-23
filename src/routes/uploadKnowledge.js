@@ -2,7 +2,7 @@
 const express = require("express");
 const multer = require("multer");
 const jwt = require("jsonwebtoken");
-const pdfParse = require("pdf-parse");
+const { PDFParse } = require("pdf-parse");
 const pool = require("../db/pool");
 const { embedText } = require("../brain/utils/embeddingManager");
 
@@ -58,8 +58,15 @@ router.post("/tenant/upload-knowledge", authenticate, upload.single("file"), asy
     if (!Buffer.isBuffer(dataBuffer) || dataBuffer.subarray(0, 5).toString("ascii") !== "%PDF-") {
       return res.status(400).json({ ok: false, error: "Invalid PDF file" });
     }
-    const pdfData = await pdfParse(dataBuffer);
-    const text = pdfData.text.trim();
+    // pdf-parse v2 exposes PDFParse, not the legacy callable v1 API.
+    const parser = new PDFParse({ data: dataBuffer });
+    let text;
+    try {
+      const pdfData = await parser.getText();
+      text = pdfData.text.trim();
+    } finally {
+      await parser.destroy();
+    }
     if (!text) throw new Error("Empty PDF");
 
     // 2️⃣ Chunk + embed
