@@ -9,8 +9,8 @@ async function claimNext(pool) {
   const result = await pool.query(
     `WITH candidate AS (
        SELECT id FROM aca_notification_outbox
-       WHERE ((status IN ('pending','failed') AND next_attempt_at <= NOW())
-          OR (status = 'processing' AND locked_until < NOW()))
+       WHERE status IN ('pending','failed')
+         AND next_attempt_at <= NOW()
          AND attempt_count < $1
        ORDER BY next_attempt_at, id
        FOR UPDATE SKIP LOCKED LIMIT 1
