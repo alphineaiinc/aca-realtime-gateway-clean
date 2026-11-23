@@ -1027,6 +1027,8 @@ function createRateLimiter({ windowMs, max, keyFn }) {
 
 const {createPostgresRateLimiter}=require("./src/middleware/postgresRateLimit");
 const monitorLimit=createPostgresRateLimiter({pool:require("./src/db/pool"),scope:"admin-monitor",max:30});
+const uploadIngressLimit=createRateLimiter({windowMs:60000,max:10,keyFn:req=>req.ip || "unknown"});
+const stripeIngressLimit=createRateLimiter({windowMs:60000,max:600,keyFn:()=> "stripe-webhook"});
 const manifestLimit=createRateLimiter({windowMs:60000,max:120,keyFn:()=> "manifest"});
 const publicRateLimit = createRateLimiter({
   windowMs: 60 * 1000,
@@ -1320,6 +1322,7 @@ app.get(/^\/\.well-known\/(.+)$/i, manifestLimit, (req, res) => {
 console.log("✅ .well-known bound to:", wellKnownAbsolute);
 
 // Stripe Webhook Route (Story 11.6)
+app.use("/api/stripe/webhook", stripeIngressLimit);
 app.use("/api/stripe", require("./src/routes/stripeWebhook"));
 
 // also expose everything under /public normally
@@ -1420,6 +1423,7 @@ try {
 
 try {
   const uploadKnowledgeRoutes = require("./src/routes/uploadKnowledge");
+  app.use("/tenant/upload-knowledge", uploadIngressLimit);
   app.use("/", uploadKnowledgeRoutes);
   console.log("✅ Mounted /tenant/upload-knowledge");
 } catch (err) {
