@@ -43,7 +43,7 @@ test('missing email does not invoke login token issuance', async () => {
 });
 test('no hardcoded tenant JWT signing fallback remains', () => {
   assert.doesNotMatch(source, /alphine_tenant_jwt_2025_secure/);
-  assert.match(source, /if \(!jwtSecret\)/);
+  assert.equal(source.includes('jwt.sign('), false);
 });
 
 test('unverified public signup cannot create tenant, business, API key or JWT', async () => {
