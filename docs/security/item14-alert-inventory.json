@@ -189,9 +189,11 @@
       "path": "src/routes/uploadKnowledge.js",
       "line": 46,
       "baseline_sha": "02395a18092277a8cb65e0d5b4bdb26c3ae5dac2",
-      "candidate_pr": 124,
-      "disposition": "outstanding",
-      "verified_closed": false
+      "candidate_pr": 125,
+      "disposition": "candidate-remediation",
+      "verified_closed": false,
+      "related_pr": 124,
+      "notes": "Ingress quota candidate; verify middleware ordering and route-level controls together; no verified closure."
     },
     {
       "number": 64,
@@ -201,9 +203,11 @@
       "path": "src/routes/uploadKnowledge.js",
       "line": 46,
       "baseline_sha": "02395a18092277a8cb65e0d5b4bdb26c3ae5dac2",
-      "candidate_pr": 124,
-      "disposition": "outstanding",
-      "verified_closed": false
+      "candidate_pr": 125,
+      "disposition": "candidate-remediation",
+      "verified_closed": false,
+      "related_pr": 124,
+      "notes": "Ingress quota candidate; verify middleware ordering and route-level controls together; no verified closure."
     },
     {
       "number": 63,
@@ -273,9 +277,11 @@
       "path": "src/routes/stripeWebhook.js",
       "line": 39,
       "baseline_sha": "02395a18092277a8cb65e0d5b4bdb26c3ae5dac2",
-      "candidate_pr": 122,
-      "disposition": "outstanding",
-      "verified_closed": false
+      "candidate_pr": 125,
+      "disposition": "candidate-remediation",
+      "verified_closed": false,
+      "related_pr": 122,
+      "notes": "Ingress quota candidate; verify middleware ordering and route-level controls together; no verified closure."
     },
     {
       "number": 57,
