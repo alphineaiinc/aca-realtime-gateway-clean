@@ -3,6 +3,9 @@ const express = require("express");
 const jwt = require("jsonwebtoken");
 const router = express.Router();
 const pool = require("../db/pool");
+const { createPostgresRateLimiter } = require("../middleware/postgresRateLimit");
+const provisionLimit = createPostgresRateLimiter({pool,scope:"tenant-provision",max:10,publicGlobal:true});
+const profileLimit = createPostgresRateLimiter({pool,scope:"tenant-profile",max:60});
 
 // ---------------------------------------------------------------------------
 // Utility: build safe insert for master_tenants based on actual columns
@@ -135,13 +138,16 @@ async function ensureDefaultEmbeddingSpace(client, tenantId) {
 // ---------------------------------------------------------------------------
 // POST /tenant/provision (secured via header API key)
 // ---------------------------------------------------------------------------
-router.post("/provision", async (req, res) => {
+function authorizeProvision(req,res,next) {
   const key = req.headers["x-api-key"] || "";
 
   if (!process.env.PROVISION_API_KEY || key !== process.env.PROVISION_API_KEY) {
     return res.status(401).json({ ok: false, error: "unauthorized" });
   }
 
+  return next();
+}
+router.post("/provision", authorizeProvision, provisionLimit, async (req,res) => {
   const businessName = req.body?.business_name || null;
 
   let client;
@@ -183,7 +189,7 @@ router.post("/login", (req, res) => {
 // ---------------------------------------------------------------------------
 // GET /tenant/profile (JWT required)
 // ---------------------------------------------------------------------------
-router.get("/profile", async (req, res) => {
+function authorizeProfile(req,res,next) {
   try {
     const auth = req.headers.authorization || "";
 
@@ -194,8 +200,16 @@ router.get("/profile", async (req, res) => {
     const token = auth.slice(7).trim();
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
 
-    const tenantId = decoded.tenant_id;
-
+    if (!decoded.tenant_id || decoded.role === "demo" || decoded.demo === true) return res.status(401).json({ok:false,error:"unauthorized"});
+    req.tenant_id = decoded.tenant_id;
+    return next();
+  } catch {
+    return res.status(401).json({ok:false,error:"unauthorized"});
+  }
+}
+router.get("/profile", authorizeProfile, profileLimit, async (req,res) => {
+  try {
+    const tenantId = req.tenant_id;
     const { rows } = await pool.query(
       `SELECT t.id AS tenant_id,
               t.email,
