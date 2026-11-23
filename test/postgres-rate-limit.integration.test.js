@@ -31,6 +31,11 @@ test('shared PostgreSQL limiter enforces atomic budgets across independent pools
   assert.equal(remaining.rowCount, 1);
   assert.equal(Number(remaining.rows[0].hits), 1);
   assert.equal(await pruneExpiredRateLimitBuckets(pools[1], 1), 0);
+  const publicScope = scope + '-public';
+  const publicLimiters = pools.map(pool => createPostgresRateLimiter({pool,scope:publicScope,max:3,windowMs:60000,publicGlobal:true}));
+  const publicResults = await Promise.all(Array.from({length:12},(_,i)=>invoke(publicLimiters[i%2],i%3===0?null:'caller-'+i)));
+  assert.equal(publicResults.filter(code=>code===200).length,3);
+  assert.equal(publicResults.filter(code=>code===429).length,9);
   const unavailable = createPostgresRateLimiter({ pool: { query: async () => { throw new Error('private detail'); } }, scope });
   assert.equal(await invoke(unavailable, 'tenant-a'), 503);
 });
