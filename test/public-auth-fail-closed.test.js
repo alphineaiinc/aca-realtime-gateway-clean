@@ -68,9 +68,9 @@ test('missing signup fields cannot bypass onboarding gate', async () => {
 });
 
 test('blocked public auth does not initialize an unverified TLS database pool', () => {
-  assert.doesNotMatch(source, /rejectUnauthorized\\s*:\\s*false/);
-  assert.doesNotMatch(source, /new\\s+Pool\\s*\\(/);
-  assert.doesNotMatch(source, /require\\s*\\(\\s*['"]pg['"]\\s*\\)/);
+  assert.equal(source.includes('rejectUnauthorized: false'), false);
+  assert.equal(source.includes('new Pool('), false);
+  assert.equal(source.includes('require("pg")'), false);
 });
 
 test('missing request body is rejected without an exception', async () => {
