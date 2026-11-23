@@ -1,0 +1,8 @@
+"use strict";
+const {test}=require("node:test");const assert=require("node:assert/strict");
+const {reconcileOne}=require("../src/brain/stripeReconciliation");
+function fixture(invoice,match=true){const calls=[];const client={release(){},async query(sql,args){calls.push({sql,args});if(sql.startsWith("SELECT event_id"))return {rows:[{event_id:"evt_test",payload:{livemode:false,data:{object:invoice}}}]};if(sql.startsWith("UPDATE public.billing_invoices"))return {rowCount:match?1:0,rows:match?[{id:2,tenant_id:3}]:[]};return {rows:[],rowCount:1};}};return {pool:{connect:async()=>client},calls};}
+const valid={object:"invoice",status:"paid",paid:true,currency:"usd",amount_paid:1200,id:"in_test",customer:"cus_test"};
+test("verified bound invoice settles and queues notification atomically",async()=>{const f=fixture(valid);assert.equal(await reconcileOne(f.pool),"settled");assert.deepEqual(f.calls.find(x=>x.sql.startsWith("UPDATE public.billing_invoices")).args,["in_test","cus_test",1200,false]);assert.ok(f.calls.some(x=>x.sql.startsWith("INSERT INTO public.aca_billing_notification_outbox")));assert.equal(f.calls.at(-1).sql,"COMMIT");});
+test("unmatched invoice does not queue notification",async()=>{const f=fixture(valid,false);assert.equal(await reconcileOne(f.pool),"unmatched");assert.ok(!f.calls.some(x=>x.sql.startsWith("INSERT INTO public.aca_billing_notification_outbox")));});
+test("wrong currency or unpaid invoice cannot settle",async()=>{for(const invoice of [{...valid,currency:"cad"},{...valid,paid:false}]){const f=fixture(invoice);assert.equal(await reconcileOne(f.pool),"unmatched");assert.ok(!f.calls.some(x=>x.sql.startsWith("UPDATE public.billing_invoices")));}});
