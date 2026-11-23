@@ -33,7 +33,7 @@ function isSlotFilled(slotName, slots) {
 }
 
 function getMissingRequiredSlots(businessType, slots) {
-  const profile = getBusinessSlotProfile(businessType);
+  const profile = businessType && typeof businessType === "object" ? businessType : getBusinessSlotProfile(businessType);
   return profile.required.filter((slotName) => !isSlotFilled(slotName, slots || {}));
 }
 
@@ -47,7 +47,7 @@ function canConfirmNow(businessType, slots) {
 }
 
 function getNextSlotQuestion(businessType, slotName) {
-  const profile = getBusinessSlotProfile(businessType);
+  const profile = businessType && typeof businessType === "object" ? businessType : getBusinessSlotProfile(businessType);
   return profile.slotQuestions?.[slotName] || "Could you share that detail with me?";
 }
 

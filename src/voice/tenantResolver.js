@@ -1,225 +1,62 @@
 "use strict";
-
-const path = require("path");
-const dotenv = require("dotenv");
-
-dotenv.config({ path: path.resolve(process.cwd(), ".env") });
-
-let pool = null;
-try {
-  pool = require("../db/pool");
-} catch (err) {
-  try {
-    pool = require("../../aca-orchestrator/src/db/pool");
-  } catch (innerErr) {
-    console.warn("[tenantResolver] DB pool module not found in default locations");
+const { validateWorkflowSchema } = require("./clusterSchemaLoader");
+const validated = new WeakSet();
+function deepFreeze(value) {
+  if (value && typeof value === "object") {
+    Object.values(value).forEach(deepFreeze);
+    Object.freeze(value);
   }
+  return value;
 }
-
 function normalizePhoneNumber(value) {
-  if (!value) return null;
-  const digits = String(value).replace(/[^\d+]/g, "");
-  if (!digits) return null;
-  return digits;
+  // No country inference: routing keys must already be canonical E.164.
+  return typeof value === "string" && /^\+[1-9]\d{1,14}$/.test(value) ? value : null;
 }
-
-function extractRoutingCandidates(input = {}) {
-  const customParameters = input.customParameters || {};
-
-  return {
-    tenantId:
-      input.tenantId ||
-      input.tenant_id ||
-      customParameters.tenantId ||
-      customParameters.tenant_id ||
-      null,
-
-    businessId:
-      input.businessId ||
-      input.business_id ||
-      customParameters.businessId ||
-      customParameters.business_id ||
-      null,
-
-    calledNumber:
-      normalizePhoneNumber(
-        input.calledNumber ||
-          input.called_number ||
-          input.toNumber ||
-          input.to ||
-          input.twilioNumber ||
-          customParameters.calledNumber ||
-          customParameters.called_number ||
-          customParameters.to ||
-          customParameters.To ||
-          customParameters.phone_number ||
-          null
-      ),
-
-    callSid: input.callSid || customParameters.callSid || null,
-
-    raw: {
-      input,
-      customParameters
+const failure = (reason) => ({ ok: false, reason });
+function isValidatedRoutingContext(context) {
+  return !!context && validated.has(context);
+}
+function createTenantResolver({ query }) {
+  return async function resolveTenantFromVoiceContext(input = {}) {
+    if (["tenantId", "tenant_id", "businessId", "business_id", "customParameters"].some((k) => input[k] !== undefined)) {
+      return failure("UNTRUSTED_IDENTIFIER");
     }
-  };
-}
-
-async function lookupTenantByTenantId(tenantId) {
-  if (!tenantId || !pool || !pool.query) return null;
-
-  const query = `
-    SELECT
-      t.id AS tenant_id,
-      t.business_id,
-      t.cluster_id
-    FROM tenants t
-    WHERE t.id = $1
-    LIMIT 1
-  `;
-
-  try {
-    const result = await pool.query(query, [tenantId]);
-    return result.rows[0] || null;
-  } catch (err) {
-    console.warn("[tenantResolver] tenantId lookup failed:", err.message);
-    return null;
-  }
-}
-
-async function lookupTenantByBusinessId(businessId) {
-  if (!businessId || !pool || !pool.query) return null;
-
-  const query = `
-    SELECT
-      t.id AS tenant_id,
-      t.business_id,
-      t.cluster_id
-    FROM tenants t
-    WHERE t.business_id = $1
-    LIMIT 1
-  `;
-
-  try {
-    const result = await pool.query(query, [businessId]);
-    return result.rows[0] || null;
-  } catch (err) {
-    console.warn("[tenantResolver] businessId lookup failed:", err.message);
-    return null;
-  }
-}
-
-async function lookupTenantByPhoneNumber(calledNumber) {
-  if (!calledNumber || !pool || !pool.query) return null;
-
-  const queryVariants = [
-    `
-      SELECT
-        t.id AS tenant_id,
-        t.business_id,
-        t.cluster_id
-      FROM tenant_phone_numbers p
-      INNER JOIN tenants t ON t.id = p.tenant_id
-      WHERE p.phone_number = $1
-        AND COALESCE(p.is_active, true) = true
-      LIMIT 1
-    `,
-    `
-      SELECT
-        t.id AS tenant_id,
-        t.business_id,
-        t.cluster_id
-      FROM businesses b
-      INNER JOIN tenants t ON t.business_id = b.id
-      WHERE b.phone_number = $1
-      LIMIT 1
-    `,
-    `
-      SELECT
-        t.id AS tenant_id,
-        t.business_id,
-        t.cluster_id
-      FROM tenants t
-      WHERE t.phone_number = $1
-      LIMIT 1
-    `
-  ];
-
-  for (const sql of queryVariants) {
+    const calledNumber = normalizePhoneNumber(input.calledNumber);
+    if (!calledNumber) return failure("INVALID_CALLED_NUMBER");
     try {
-      const result = await pool.query(sql, [calledNumber]);
-      if (result.rows[0]) {
-        return result.rows[0];
-      }
-    } catch (err) {
-      console.warn("[tenantResolver] phone lookup query skipped:", err.message);
-    }
-  }
-
-  return null;
-}
-
-function buildResolutionResult(resolved, candidates) {
-  if (!resolved) {
-    console.warn("⚠️ [tenantResolver] fallback to default tenant", {
-      candidates
-    });
-
-    return {
-      ok: true,
-      tenantId: 1,
-      businessId: candidates.businessId || null,
-     clusterId: process.env.DEFAULT_VOICE_CLUSTER_ID || "medical_clinic",
-      callSid: candidates.callSid || null,
-      calledNumber: candidates.calledNumber || null,
-      reason: "FALLBACK_DEFAULT"
-    };
-  }
-
-  return {
-    ok: true,
-    tenantId: resolved.tenant_id || resolved.tenantId || 1,
-    businessId: resolved.business_id || resolved.businessId || candidates.businessId || null,
-    clusterId: resolved.cluster_id || resolved.clusterId || process.env.DEFAULT_VOICE_CLUSTER_ID || "medical_clinic",
-    callSid: candidates.callSid || null,
-    calledNumber: candidates.calledNumber || null,
-    reason: null
+      const phones = await query(`SELECT p.tenant_id, p.is_active, t.preferred_lang, t.region
+        FROM public.tenant_phone_numbers p
+        JOIN public.master_tenants t ON t.id = p.tenant_id
+        WHERE p.phone_number = $1 LIMIT 2`, [calledNumber]);
+      if (phones.rows.length !== 1) return failure(phones.rows.length ? "AMBIGUOUS_NUMBER" : "UNKNOWN_NUMBER");
+      const tenant = phones.rows[0];
+      if (tenant.is_active !== true) return failure("INACTIVE_NUMBER");
+      if (!Number.isInteger(tenant.tenant_id) || tenant.tenant_id <= 0) return failure("INVALID_TENANT");
+      const mappings = await query(`SELECT c.workflow_id, c.workflow_version, c.is_active,
+          d.is_active AS definition_active, d.schema_json
+        FROM public.tenant_workflow_configs c
+        JOIN public.voice_workflow_definitions d ON d.workflow_id = c.workflow_id AND d.version = c.workflow_version
+        WHERE c.tenant_id = $1 LIMIT 2`, [tenant.tenant_id]);
+      if (mappings.rows.length !== 1) return failure(mappings.rows.length ? "AMBIGUOUS_WORKFLOW" : "MISSING_WORKFLOW");
+      const mapping = mappings.rows[0];
+      if (mapping.is_active !== true || mapping.definition_active !== true) return failure("INACTIVE_WORKFLOW");
+      let schema;
+      try {
+        schema = validateWorkflowSchema(mapping.schema_json);
+        if (schema.cluster_id !== mapping.workflow_id || schema.version !== mapping.workflow_version) throw new Error();
+      } catch { return failure("INVALID_WORKFLOW_SCHEMA"); }
+      const context = deepFreeze({ ok: true, tenantId: tenant.tenant_id, businessId: null,
+        clusterId: mapping.workflow_id, workflowVersion: mapping.workflow_version,
+        calledNumber, callSid: input.callSid, accountSid: input.accountSid,
+        languageCode: tenant.preferred_lang || "en-US", region: tenant.region || null,
+        schema: JSON.parse(JSON.stringify(schema)) });
+      validated.add(context);
+      return context;
+    } catch { return failure("ROUTING_UNAVAILABLE"); }
   };
 }
-
-async function resolveTenantFromVoiceContext(input = {}) {
-  const candidates = extractRoutingCandidates(input);
-
-  console.log("🧭 [tenantResolver] candidates:", candidates);
-
-  let resolved = null;
-
-  try {
-    if (candidates.tenantId) {
-      resolved = await lookupTenantByTenantId(candidates.tenantId);
-    }
-
-    if (!resolved && candidates.businessId) {
-      resolved = await lookupTenantByBusinessId(candidates.businessId);
-    }
-
-    if (!resolved && candidates.calledNumber) {
-      resolved = await lookupTenantByPhoneNumber(candidates.calledNumber);
-    }
-  } catch (err) {
-    console.warn("[tenantResolver] resolve flow failed, using fallback:", err.message);
-    resolved = null;
-  }
-
-  const result = buildResolutionResult(resolved, candidates);
-
-  console.log("🧭 [tenantResolver] result:", result);
-
-  return result;
+async function resolveTenantFromVoiceContext(input) {
+  // Lazy import keeps pure validation/tests free of database startup side effects.
+  return createTenantResolver({ query: (...args) => require("../db/pool").query(...args) })(input);
 }
-
-module.exports = {
-  normalizePhoneNumber,
-  extractRoutingCandidates,
-  resolveTenantFromVoiceContext
-};
+module.exports = { normalizePhoneNumber, createTenantResolver, resolveTenantFromVoiceContext, isValidatedRoutingContext };
