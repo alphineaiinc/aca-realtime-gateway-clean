@@ -1,9 +1,9 @@
 'use strict';
 const { createHash } = require('node:crypto');
-function createPostgresRateLimiter({ pool, scope, windowMs = 60000, max = 60, publicGlobal = false }) {
-  if (!pool || typeof pool.query !== 'function' || typeof scope !== 'string' || !/^[a-z0-9_-]{1,80}$/.test(scope) || !Number.isSafeInteger(windowMs) || windowMs < 1 || windowMs > 86400000 || !Number.isSafeInteger(max) || max < 1 || max > 1000000) throw new TypeError('Invalid rate limiter configuration');
+function createPostgresRateLimiter({ pool, scope, windowMs = 60000, max = 60, publicGlobal = false, ipBased = false }) {
+  if (!pool || typeof pool.query !== 'function' || typeof scope !== 'string' || !/^[a-z0-9_-]{1,80}$/.test(scope) || !Number.isSafeInteger(windowMs) || windowMs < 1 || windowMs > 86400000 || !Number.isSafeInteger(max) || max < 1 || max > 1000000 || typeof publicGlobal !== 'boolean' || typeof ipBased !== 'boolean' || (publicGlobal && ipBased)) throw new TypeError('Invalid rate limiter configuration');
   return async function postgresRateLimit(req, res, next) {
-    const identity = publicGlobal === true ? ['public-global', scope] : req.auth?.sub != null ? ['user', req.auth.sub]
+    const identity = ipBased === true ? (typeof req.ip === 'string' && req.ip.length > 0 ? ['ip', req.ip] : null) : publicGlobal === true ? ['public-global', scope] : req.auth?.sub != null ? ['user', req.auth.sub]
       : req.auth?.partner_id != null ? ['partner', req.auth.partner_id]
       : req.partner_id != null ? ['partner', req.partner_id]
       : req.user?.partner_id != null ? ['partner', req.user.partner_id]
