@@ -4,7 +4,7 @@ Status: **proposed baseline, awaiting owner review and merge**. Updated 2026-11-
 
 ## Document versioning policy
 
-- Version: **v1.2.1-draft**. Baseline: v1.0.0-draft. This document is currently proposed in PR #121, not merged.
+- Version: **v1.3.0-draft**. Baseline: v1.0.0-draft. This document is currently proposed in PR #121, not merged.
 - Every material update MUST increment the document version, add a new append-only change-log entry with an ISO-8601 UTC timestamp (YYYY-MM-DDTHH:mm:ssZ), identify **Added / Changed / Removed / Verified / Still unverified**, and link the PR, commit SHA and evidence.
 - Use the Git commit's authoritative timestamp when an exact timestamp is required; never invent one. Draft entries can state the calendar date and Git-commit timestamp reference until the exact time is retrieved.
 - Never rewrite or delete historical entries to conceal a change. Correct inaccuracies with a new entry explaining the correction. Git history remains the underlying immutable revision trail, subject to repository permissions.
@@ -16,6 +16,7 @@ Status: **proposed baseline, awaiting owner review and merge**. Updated 2026-11-
 | Version | Timestamp | Added | Changed | Removed | Verification / reference |
 | --- | --- | --- | --- | --- | --- |
 | v1.0.0-draft | 2026-11-22; Git commit timestamp | Initial eight-role baseline, implementation inventory, acceptance tracker links, safety gates | Reconciled claimed agent count with evidence status | None | Commit `6861f165e2f054cac24dc9886a8c8f6c17f60d0f`; PR #121; eight executable roles not yet audited |
+| v1.3.0-draft | 2026-11-23T03:14:46.355Z | Explicit eight-agent delivery commitment, acceptance requirements and delivery stages | Clarified target architecture versus verified implementation | None | Owner's eight-agent direction; this is a roadmap commitment, not proof of implementation |
 | v1.2.1-draft | 2026-11-23T03:13:02.834Z | PR #117 TTS error-redaction code and regression test references | Item 12 remains pending until exact-SHA CI/CodeQL and full acceptance | None | PR #117 head `befc3093e1f30dd1d23a53bfcfdec6b9f9cf`; tests not yet verified |
 | v1.2.0-draft | 2026-11-23T03:07:36.282Z | Eight-role evidence matrix, verified iPhone push delivery, exact test links | Updated notification status and role-by-role distinctions | None | PR #121; Issue #118; bot comment 7090423512; user screenshot confirms push; unverified roles remain open |
 | v1.1.0-draft | 2026-11-22 (UTC; exact time recorded by Git commit) | Versioning policy and append-only change log | Requires version bump, timestamp, delta, references on each future update | None | This PR #121 revision; exact timestamp and SHA from resulting Git commit |
@@ -34,6 +35,25 @@ This document distinguishes **agreed design**, **verified implementation**, **ve
 8. Orchestrator — dispatch, policy, coordination and status.
 
 **Important:** The eight-role architecture is the agreed design baseline. This audit has NOT verified eight distinct executable agent implementations, independent tests or live dispatch. Do not call them complete or remove roles without owner approval. A role may share an execution engine with others, but its implementation and acceptance evidence must be documented separately.
+
+## Eight-agent delivery commitment and acceptance contract
+
+**Decision:** All eight named roles remain in scope and **will be built and verified** as part of the Alphine AI engineering automation target. None is cancelled, removed or optional. This is a **delivery commitment**, not a statement that eight independent agents already exist or that their activation has been authorized. The exact Phase 2 versus subsequent-phase release allocation is to be tracked explicitly; do not silently defer roles or reclassify them as already complete.
+
+| Agent | Delivery commitment | Minimum functional acceptance | Existing supporting implementation | Remaining work |
+| --- | --- | --- | --- | --- |
+| Project Manager | Build | Issue intake, priority/dependency planning, tracked milestones and owner escalation | Issue #118 and safe queue | Dedicated agent behavior, tests, orchestration integration |
+| Solution Architect | Build | Produce architecture/API/data-model proposals with reviewable rationale | `AGENTS.md` architecture policies | Executable role, design validation and tests |
+| Backend Developer | Build | Bounded backend changes with draft PRs, tests and no unauthorized merge | ACA backend, manual Codex workflow | Autonomous bounded coding integration and tests |
+| Frontend Developer | Build | Bounded UI changes, accessibility and visual/regression evidence | Existing ACA dashboard code | Dedicated UI agent and validation |
+| QA & Testing | Build | Independent test generation, execution, regression reporting and failure escalation | CI and regression tests | Autonomous QA role, evidence and isolation |
+| Security Reviewer | Build | Independent security findings and fail-closed review with verifiable provenance | Draft PR #21, issue #22 | Independent audit, staging proof and approval gate |
+| DevOps | Build | CI/CD maintenance, monitoring, rollback proposals, approval-gated deployment | CI, queue and notification workflows | Dedicated operations agent, controls and tests |
+| Orchestrator | Build | Policy-bound assignment of seven roles, deduplication, retries, audit, cancellation, budget and approval gates | Safe queue policy/runner and GitHub workflows | Complete dispatch lifecycle and end-to-end proof |
+
+**Common acceptance for each agent:** (1) entrypoint/configuration mapped to exact commit, (2) bounded role permissions and threat model, (3) dedicated unit and integration tests passing, (4) observable outputs and auditable actions, (5) failure/rollback behavior tested, (6) independent review where required, (7) explicit owner authorization for any privileged activation. Mark as `Planned`, `Implemented`, `Tested`, `Integrated`, or `Operational` only with linked evidence; do not collapse statuses. Agent role count is not concurrent worker count.
+
+**Execution order:** stabilize shared orchestration/security boundaries and the current Phase 2 acceptance backlog, complete the agent-specific implementations and integrations in coordinated batches, then demonstrate safe cross-product operation. Preserve owner approval gates and document any proposed phase allocation changes before accepting them.
 
 ## Evidence-backed implementation inventory
 | Component | Evidence | Current classification |
