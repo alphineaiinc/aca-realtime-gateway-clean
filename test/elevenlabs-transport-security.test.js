@@ -271,3 +271,49 @@ test("ElevenLabs never exposes upstream response bodies or API key in errors", a
     delete require.cache[require.resolve("../tts")];
   }
 });
+
+test("ElevenLabs diagnostics omit credential length and untrusted error code", async () => {
+  const originalLoad = Module._load;
+  const oldOpenAI = process.env.OPENAI_API_KEY;
+  const oldEleven = process.env.ELEVENLABS_API_KEY;
+  const originalLog = console.log;
+  const originalError = console.error;
+  const logs = [];
+  const errors = [];
+  const secret = "test-eleven-key-sensitive";
+  process.env.OPENAI_API_KEY = "test-openai-key";
+  process.env.ELEVENLABS_API_KEY = secret;
+  try {
+    console.log = (...args) => logs.push(args.map(String).join(" "));
+    console.error = (...args) => errors.push(args.map(String).join(" "));
+    Module._load = function(request, parent, isMain) {
+      if (request === "axios") return { post: async () => {
+        const err = new Error("upstream failure");
+        err.code = "SENSITIVE_ERROR_CODE_" + secret;
+        throw err;
+      }};
+      if (request === "openai") return class FakeOpenAI {};
+      if (request.endsWith("/voiceProfileLoader")) return { getTenantVoiceProfile: async () => null };
+      return originalLoad.apply(this, arguments);
+    };
+    delete require.cache[require.resolve("../tts")];
+    const { synthesizeSpeech } = require("../tts");
+    await assert.rejects(() => synthesizeSpeech("hello", "en-US", {
+      provider: "elevenlabs", useFillers: false,
+    }), /ElevenLabs TTS failed/);
+    const diagnostic = logs.concat(errors).join(" ");
+    assert.ok(!diagnostic.includes(secret), "credential bytes must not appear in diagnostics");
+    assert.ok(!diagnostic.includes("SENSITIVE_ERROR_CODE"), "untrusted transport code must not be logged");
+    assert.ok(!diagnostic.includes("key length"), "credential length must not be logged");
+    assert.ok(!diagnostic.includes("keyLength"), "credential length metadata must not be logged");
+  } finally {
+    console.log = originalLog;
+    console.error = originalError;
+    Module._load = originalLoad;
+    if (oldOpenAI === undefined) delete process.env.OPENAI_API_KEY;
+    else process.env.OPENAI_API_KEY = oldOpenAI;
+    if (oldEleven === undefined) delete process.env.ELEVENLABS_API_KEY;
+    else process.env.ELEVENLABS_API_KEY = oldEleven;
+    delete require.cache[require.resolve("../tts")];
+  }
+});
