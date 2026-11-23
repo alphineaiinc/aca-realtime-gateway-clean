@@ -78,13 +78,13 @@ const pool = new Pool(poolConfig);
     console.log("📊 DB Info:", result.rows[0]);
     client.release();
   } catch (err) {
-    console.error("❌ Startup connection failed:", err.message);
+    console.error("Database startup connection failed", { code: typeof err.code === "string" && /^[A-Z0-9_]{1,64}$/.test(err.code) ? err.code : "UNKNOWN" });
   }
 })();
 
 // --- Handle unexpected pool errors ---
 pool.on("error", (err) => {
-  console.error("❌ Unexpected PG Pool error:", err);
+  console.error("Unexpected database pool error", { code: typeof err.code === "string" && /^[A-Z0-9_]{1,64}$/.test(err.code) ? err.code : "UNKNOWN" });
   process.exit(-1);
 });
 
