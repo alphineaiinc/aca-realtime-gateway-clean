@@ -86,3 +86,27 @@ test('SSL disable query cannot silently downgrade a recognized cloud host', () =
   assert.equal(config.connectionString.includes('sslmode='), false);
   assert.equal(config.connectionString.includes('application_name=aca'), true);
 });
+
+test('unrecognized remote hosts cannot fall back to plaintext', () => {
+  for (const url of [
+    'postgres://test:pass@db.example.org/db?sslmode=disable',
+    'postgres://test:pass@postgres/db',
+    'postgres://test:pass@localhost.example.org/db',
+    'postgres://test:pass@db.example.org/db?ssl=false',
+  ]) {
+    const effective = new ConnectionParameters(loadPool(url));
+    assert.equal(effective.ssl.rejectUnauthorized, true);
+  }
+});
+
+test('query host override cannot redirect a loopback plaintext connection', () => {
+  const effective = new ConnectionParameters(loadPool('postgres://test:pass@localhost/db?host=db.example.org&sslmode=disable'));
+  assert.equal(effective.host, 'localhost');
+  assert.equal(effective.ssl, false);
+});
+
+test('malformed and non-postgres URLs fail before pool creation', () => {
+  for (const url of ['', 'invalid', 'https://example.org/db']) {
+    assert.throws(() => loadPool(url));
+  }
+});
