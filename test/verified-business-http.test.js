@@ -24,3 +24,17 @@ test("tenant ID login blocked and new login disabled by default",()=>fixture(asy
  for(const [route,status] of [["login",403],["login/start",503],["login/redeem",503]]){const r=await fetch(url+"/tenant/"+route,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({tenant_id:7})});assert.equal(r.status,status)}
  assert.equal(calls.length,0);
 }));
+
+test("profile requires verified identity and scopes lookup to signed tenant",()=>fixture(async(url,calls)=>{
+ const good=await fetch(url+"/tenant/profile",{headers:{Authorization:"Bearer "+token(7)}});
+ assert.equal(good.status,200);assert.equal(calls[1][1][0],7);
+ const legacy=jwt.sign({tenant_id:7},secret);
+ const denied=await fetch(url+"/tenant/profile",{headers:{Authorization:"Bearer "+legacy}});
+ assert.equal(denied.status,401);
+}));
+test("profile ingress is rate-limited before database access",()=>fixture(async(url,calls)=>{
+ let last;
+ for(let i=0;i<31;i++)last=await fetch(url+"/tenant/profile",{headers:{Authorization:"Bearer "+token(7)}});
+ assert.equal(last.status,429);
+ assert.ok(calls.length<=30);
+}));
