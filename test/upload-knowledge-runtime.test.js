@@ -5,14 +5,14 @@ const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
 const source = fs.readFileSync(path.join(__dirname, '../src/routes/uploadKnowledge.js'), 'utf8');
-function harness({ tenantId = 'tenant-1', pdfText = 'Knowledge text', pdfError = null, uploadError = null, waitForEmbedding = null } = {}) {
+function harness({ tenantId = 'tenant-1', pdfText = 'Knowledge text', pdfError = null, uploadError = null, waitForEmbedding = null, disconnectBeforeParsing = false } = {}) {
   let route, dbWrites = 0, embeddingCalls = 0, parserDestroyed = 0;
   class PDFParse {
     constructor() {}
     async getText() { if (pdfError) throw pdfError; return { text: pdfText }; }
     async destroy() { parserDestroyed++; }
   }
-  const multer = () => ({ single: () => (req, res, next) => next(uploadError) });
+  const multer = () => ({ single: () => (req, res, next) => { if (disconnectBeforeParsing) { res.destroyed = true; res.closeHandler?.(); } next(uploadError); } });
   multer.memoryStorage = () => ({});
   multer.MulterError = class MulterError extends Error { constructor(code) { super(code); this.code = code; } };
   if (uploadError === 'LIMIT_FILE_SIZE') uploadError = new multer.MulterError('LIMIT_FILE_SIZE');
@@ -28,7 +28,7 @@ function harness({ tenantId = 'tenant-1', pdfText = 'Knowledge text', pdfError =
   vm.runInNewContext(source, context, { filename: 'uploadKnowledge.js' });
   async function request(buffer, token = 'Bearer valid') {
     const req = { headers: { authorization: token }, file: buffer == null ? undefined : { buffer, originalname: 'doc.pdf' } };
-    const res = { statusCode: 200, status(code) { this.statusCode = code; return this; }, json(body) { this.body = body; return this; } };
+    const res = { once(event, handler) { if (event === 'close') this.closeHandler = handler; }, statusCode: 200, status(code) { this.statusCode = code; return this; }, json(body) { this.body = body; return this; } };
     let idx = 0;
     const run = async () => {
       const handler = route.handlers[idx++];
@@ -121,4 +121,14 @@ test('concurrent same-tenant upload is rejected and capacity is released after c
   } finally { release(); }
   assert.equal((await first).statusCode, 200);
   assert.equal((await h.request(Buffer.from('%PDF-1.7'))).statusCode, 200);
+});
+
+test('disconnect before PDF processing releases capacity and prevents writes', async () => {
+  const h = harness({ disconnectBeforeParsing: true });
+  const first = await h.request(Buffer.from('%PDF-1.7'));
+  assert.equal(first.destroyed, true);
+  const second = await h.request(Buffer.from('%PDF-1.7'));
+  assert.equal(second.destroyed, true);
+  assert.notEqual(second.statusCode, 429);
+  assert.deepEqual(h.stats(), { dbWrites: 0, embeddingCalls: 0, parserDestroyed: 0 });
 });
