@@ -39,7 +39,7 @@ function loadPool(databaseUrl) {
 test('Neon URL enables certificate verification', () => {
   const config = loadPool('postgres://test:pass@db.example.neon.tech/db');
   assert.equal(config.ssl.rejectUnauthorized, true);
-  assert.match(config.connectionString, /sslmode=require/);
+  assert.equal(config.connectionString.includes('sslmode='), false);
 });
 
 test('Render URL enables certificate verification', () => {
@@ -54,4 +54,14 @@ test('local PostgreSQL keeps existing no-TLS behavior', () => {
 
 test('shared pool must never disable certificate verification', () => {
   assert.equal(source.includes('rejectUnauthorized: false'), false);
+});
+
+test('cloud URL SSL query options cannot override certificate policy', () => {
+  const config = loadPool(
+    'postgres://test:pass@db.example.neon.tech/db?sslmode=require&sslrootcert=ignored&application_name=aca'
+  );
+  assert.equal(config.ssl.rejectUnauthorized, true);
+  assert.equal(config.connectionString.includes('sslmode='), false);
+  assert.equal(config.connectionString.includes('sslrootcert='), false);
+  assert.equal(config.connectionString.includes('application_name=aca'), true);
 });
