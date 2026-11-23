@@ -2,8 +2,6 @@
 const express = require("express");
 const multer = require("multer");
 const jwt = require("jsonwebtoken");
-const fs = require("fs");
-const path = require("path");
 const pdfParse = require("pdf-parse");
 const pool = require("../db/pool");
 const { embedText } = require("../brain/utils/embeddingManager");
@@ -11,9 +9,12 @@ const { embedText } = require("../brain/utils/embeddingManager");
 const router = express.Router();
 
 // ---------------------------------------------------------------------------
-// Multer setup: temporary store in /tmp (Render ephemeral FS safe)
+// Keep uploaded PDF bytes in memory; never resolve an uploaded path for filesystem access.
 // ---------------------------------------------------------------------------
-const upload = multer({ dest: "/tmp" });
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 10 * 1024 * 1024, files: 1 },
+});
 
 // ---------------------------------------------------------------------------
 // Middleware: verify JWT
@@ -48,13 +49,15 @@ router.post("/tenant/upload-knowledge", authenticate, upload.single("file"), asy
     return res.status(400).json({ ok: false, error: "File missing" });
   }
 
-  const filePath = req.file.path;
   const originalName = req.file.originalname;
   const tenantId = req.tenant_id;
 
   try {
     // 1️⃣ Extract text from PDF
-    const dataBuffer = fs.readFileSync(filePath);
+    const dataBuffer = req.file.buffer;
+    if (!Buffer.isBuffer(dataBuffer) || dataBuffer.subarray(0, 5).toString("ascii") !== "%PDF-") {
+      return res.status(400).json({ ok: false, error: "Invalid PDF file" });
+    }
     const pdfData = await pdfParse(dataBuffer);
     const text = pdfData.text.trim();
     if (!text) throw new Error("Empty PDF");
@@ -81,9 +84,6 @@ router.post("/tenant/upload-knowledge", authenticate, upload.single("file"), asy
       inserted++;
     }
 
-    // 3️⃣ Cleanup temporary file
-    fs.unlinkSync(filePath);
-
     return res.json({
       ok: true,
       message: "Knowledge uploaded successfully",
@@ -91,8 +91,8 @@ router.post("/tenant/upload-knowledge", authenticate, upload.single("file"), asy
       chunks: inserted,
     });
   } catch (err) {
-    console.error("UploadKnowledge error:", err);
-    return res.status(500).json({ ok: false, error: err.message });
+    console.error("UploadKnowledge processing failed");
+    return res.status(500).json({ ok: false, error: "Upload processing failed" });
   }
 });
 
