@@ -69,3 +69,11 @@ test('all partner dashboard routes enforce shared limits after partner authentic
   for (const route of routes) assert.ok(route.includes('partnerAuth, dashboardRateLimit,'));
   assert.ok(source.includes('createPostgresRateLimiter({ pool, scope: "partner-dashboard"'));
 });
+
+test('partner registration has explicit public quota and cryptographic referral generation', () => {
+ const source = fs.readFileSync(path.join(__dirname,'../src/routes/partner.js'),'utf8');
+ assert.ok(source.includes('router.post("/register", registrationLimit, async'));
+ assert.ok(source.includes('publicGlobal: true'));
+ assert.ok(source.includes('crypto.randomBytes(3)'));
+ assert.ok(!source.includes('Math.random('));
+});
