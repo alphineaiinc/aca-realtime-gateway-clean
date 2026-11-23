@@ -23,6 +23,9 @@ function authenticate(req, res, next) {
   try {
     const token = (req.headers.authorization || "").replace("Bearer ", "");
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    if (!decoded || !decoded.tenant_id) {
+      return res.status(401).json({ ok: false, error: "Unauthorized" });
+    }
     req.tenant_id = decoded.tenant_id;
     next();
   } catch (err) {
@@ -44,7 +47,18 @@ function chunkText(text, size = 1000) {
 // ---------------------------------------------------------------------------
 // POST /tenant/upload-knowledge  (JWT required)
 // ---------------------------------------------------------------------------
-router.post("/tenant/upload-knowledge", authenticate, upload.single("file"), async (req, res) => {
+function acceptPdfUpload(req, res, next) {
+  upload.single("file")(req, res, (err) => {
+    if (!err) return next();
+    if (err instanceof multer.MulterError) {
+      const status = err.code === "LIMIT_FILE_SIZE" ? 413 : 400;
+      return res.status(status).json({ ok: false, error: "Invalid upload" });
+    }
+    return res.status(400).json({ ok: false, error: "Invalid upload" });
+  });
+}
+
+router.post("/tenant/upload-knowledge", authenticate, acceptPdfUpload, async (req, res) => {
   if (!req.file) {
     return res.status(400).json({ ok: false, error: "File missing" });
   }
