@@ -26,12 +26,12 @@ test("knowledge retrieval path reads canonical tenant-scoped KB columns", () => 
   assert.match(brain, /WHERE tenant_id = \$2/);
   assert.match(brain, /query_text AS question/);
 });
-test("remaining upload and embedding-space drift is characterized", () => {
+test("canonical upload and remaining embedding-space drift are characterized", () => {
   const upload = source("src/routes/uploadKnowledge.js");
   const tenant = source("src/routes/tenant.js");
   const embedding = source("src/brain/utils/embeddingManager.js");
   // These are characterization assertions, NOT desired behavior. Remove when reconciled.
-  assert.match(upload, /INSERT INTO kb_entries \(business_id, content, embedding, source_filename, chunk_index, created_at\)/);
+  assert.match(upload, /INSERT INTO kb_entries \(tenant_id, query_text, answer, embedding\)/);
   assert.doesNotMatch(tenant, /INSERT INTO businesses/);
   assert.match(tenant, /INSERT INTO master_tenants \(business_name, preferred_lang, region\)/);
   assert.match(embedding, /FROM embedding_spaces/);
