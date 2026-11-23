@@ -19,7 +19,7 @@ const RATE_MAX = 3;
 const rateBucket = new Map(); // partner_id -> {count, resetAt}
 
 function rateLimit(req, res, next) {
-  const pid = req.partner_id || "anon";
+  const pid = String(req.tenant_id || req.ip || "anon");
   const now = Date.now();
   const bucket = rateBucket.get(pid) || { count: 0, resetAt: now + RATE_WINDOW_MS };
   if (now > bucket.resetAt) {
@@ -55,7 +55,7 @@ async function authenticate(req, res, next) {
 // ---------------------------------------------------------------------
 // POST /api/billing/generate – create invoice
 // ---------------------------------------------------------------------
-router.post("/generate", authenticate, async (req, res) => {
+router.post("/generate", authenticate, rateLimit, async (req, res) => {
   try {
     const { usage_minutes, ai_tokens } = req.body;
     const invoice = await generateInvoice(
@@ -76,7 +76,7 @@ router.post("/generate", authenticate, async (req, res) => {
 // ---------------------------------------------------------------------
 // GET /api/billing/history – list invoices
 // ---------------------------------------------------------------------
-router.get("/history", authenticate, async (req, res) => {
+router.get("/history", authenticate, rateLimit, async (req, res) => {
   try {
     const { status, from, to } = req.query;
     const where = ["tenant_id = $1"];
@@ -107,12 +107,12 @@ router.get("/history", authenticate, async (req, res) => {
 // POST /api/billing/pay – mark invoice paid (rate-limited)
 // ---------------------------------------------------------------------
 // Payment state may only be changed by verified payment-provider webhooks.
-router.post("/pay", authenticate, (_req,res) => res.status(410).json({ok:false,error:"Direct payment marking is disabled; use the configured payment provider."}));
+router.post("/pay", authenticate, rateLimit, (_req,res) => res.status(410).json({ok:false,error:"Direct payment marking is disabled; use the configured payment provider."}));
 
 // ---------------------------------------------------------------------
 // GET /api/billing/status/:id – single invoice
 // ---------------------------------------------------------------------
-router.get("/status/:id", authenticate, async (req, res) => {
+router.get("/status/:id", authenticate, rateLimit, async (req, res) => {
   try {
     const invoiceId = parseInt(req.params.id);
     const result = await pool.query(
@@ -134,7 +134,7 @@ router.get("/status/:id", authenticate, async (req, res) => {
 // ---------------------------------------------------------------------
 // GET /api/billing/stats – totals + monthly series
 // ---------------------------------------------------------------------
-router.get("/stats", authenticate, async (req, res) => {
+router.get("/stats", authenticate, rateLimit, async (req, res) => {
   try {
     const totals = await pool.query(
       `SELECT
