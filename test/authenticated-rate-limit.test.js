@@ -57,7 +57,7 @@ test('user and tenant identifiers cannot collide', () => {
 
 test('payment write route retains a separate stricter three-per-ten-seconds limiter', () => {
   const source = fs.readFileSync(path.join(__dirname, '../src/routes/billing.js'), 'utf8');
-  assert.match(source, /const paymentRateLimit = createAuthenticatedRateLimiter\(\{ windowMs: 10_000, max: 3 \}\)/);
+  assert.ok(source.includes('const paymentRateLimit = createPostgresRateLimiter({ pool, scope: "billing-payment", windowMs: 10_000, max: 3 })'));
   assert.match(source, /router\.post\("\/pay", authenticate, billingRateLimit, paymentRateLimit,/);
   assert.doesNotMatch(source, /const rateBucket = new Map\(/);
 });
