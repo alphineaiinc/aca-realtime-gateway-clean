@@ -8,53 +8,17 @@ const pool = require("../db/pool");
 // Utility: build safe insert for master_tenants based on actual columns
 // ---------------------------------------------------------------------------
 async function insertTenantDynamic(client, payload) {
-  const { rows: cols } = await client.query(`
-    SELECT column_name
-    FROM information_schema.columns
-    WHERE table_schema='public' AND table_name='master_tenants'
-  `);
-
-  const allowed = new Set(cols.map(c => c.column_name));
-
-  const candidateFields = {
-    email:
-      payload.email ||
-      payload.contact_email ||
-      `tenant_${Date.now()}@autogen.local`,
-    business_type: payload.business_type || "unknown",
-    preferred_lang: payload.preferred_lang || "en-US",
-    contact_email: payload.contact_email || null,
-    region: payload.region || "global",
-    phone: payload.phone || null,
-  };
-
-  const fields = [];
-  const values = [];
-  const params = [];
-  let i = 1;
-
-  for (const [k, v] of Object.entries(candidateFields)) {
-    if (allowed.has(k) && v !== null && v !== undefined) {
-      fields.push(k);
-      values.push(v);
-      params.push(`$${i++}`);
-    }
+  const name = String(payload?.business_name || "").trim();
+  if (!name) {
+    const error = new Error("business_name_required");
+    error.statusCode = 400;
+    throw error;
   }
-
-  if (fields.length === 0) {
-    const { rows } = await client.query(
-      `INSERT INTO master_tenants DEFAULT VALUES RETURNING id`
-    );
-    return rows[0].id;
-  }
-
-  const sql = `
-    INSERT INTO master_tenants (${fields.join(", ")})
-    VALUES (${params.join(", ")})
-    RETURNING id
-  `;
-
-  const { rows } = await client.query(sql, values);
+  const { rows } = await client.query(
+    `INSERT INTO master_tenants (business_name, preferred_lang, region)
+     VALUES ($1, $2, $3) RETURNING id`,
+    [name, payload?.preferred_lang || "en-US", payload?.region || "global"]
+  );
   return rows[0].id;
 }
 
@@ -145,13 +109,21 @@ router.post("/provision", async (req, res) => {
   const businessName = req.body?.business_name || null;
 
   try {
-    await pool.query("BEGIN");
-
-    const tenantId = await insertTenantDynamic(pool, req.body);
-    await insertBusiness(pool, tenantId, businessName);
-    await ensureDefaultEmbeddingSpace(pool, tenantId);
-
-    await pool.query("COMMIT");
+    // Use one dedicated connection for the entire transaction.
+    const client = await pool.connect();
+    let tenantId;
+    try {
+      await client.query("BEGIN");
+      tenantId = await insertTenantDynamic(client, req.body);
+      // The deployed schema uses master_tenants as the canonical business row.
+      // No businesses or embedding_spaces table is required for provisioning.
+      await client.query("COMMIT");
+    } catch (error) {
+      await client.query("ROLLBACK");
+      throw error;
+    } finally {
+      client.release();
+    }
 
     return res.json({
       ok: true,
@@ -160,11 +132,9 @@ router.post("/provision", async (req, res) => {
     });
   } catch (err) {
     console.error("Provision error:", err);
-    await pool.query("ROLLBACK").catch(() => {});
-
-    return res.status(500).json({
+    return res.status(err.statusCode || 500).json({
       ok: false,
-      error: "internal_error",
+      error: err.statusCode === 400 ? "business_name_required" : "internal_error",
     });
   }
 });
@@ -219,14 +189,8 @@ router.get("/profile", async (req, res) => {
     const tenantId = decoded.tenant_id;
 
     const { rows } = await pool.query(
-      `SELECT t.id AS tenant_id,
-              t.email,
-              t.preferred_lang,
-              t.business_type,
-              b.id AS business_id
-       FROM master_tenants t
-       LEFT JOIN businesses b ON t.id=b.id
-       WHERE t.id=$1`,
+      `SELECT id AS tenant_id, business_name, preferred_lang, region
+       FROM master_tenants WHERE id=$1`,
       [tenantId]
     );
 
