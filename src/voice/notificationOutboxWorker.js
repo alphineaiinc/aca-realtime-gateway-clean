@@ -20,7 +20,7 @@ async function claimNext(pool) {
          attempt_count = o.attempt_count + 1,
          locked_until = NOW() + ($2::integer * INTERVAL '1 second')
      FROM candidate WHERE o.id = candidate.id
-     RETURNING o.id, o.tenant_id, o.intake_request_id, o.event_type, o.attempt_count`,
+     RETURNING o.id, o.tenant_id, o.intake_request_id, o.event_type, o.attempt_count, o.locked_until`,
     [MAX_ATTEMPTS, LEASE_SECONDS]
   );
   return result.rows[0] || null;
