@@ -39,5 +39,5 @@ test('PDF parsing bounds downstream embedding costs before writes', () => {
   assert.match(source, /text\.length > 100_000/);
   assert.match(source, /fields: 0, parts: 1/);
   assert.ok(source.indexOf('text.length > 100_000') < source.indexOf('await embedText(content)'));
-  assert.ok(source.indexOf('text.length > 100_000') < source.indexOf('await pool.query('));
+  assert.ok(source.indexOf('text.length > 100_000') < source.indexOf('await client.query('));
 });
