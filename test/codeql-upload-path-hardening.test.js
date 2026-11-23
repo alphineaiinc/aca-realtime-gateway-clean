@@ -32,7 +32,7 @@ test('pdf-parse v2 parser API is used with guaranteed cleanup', () => {
 test('oversized and malformed uploads get controlled client errors', () => {
   assert.match(source, /err instanceof multer\.MulterError/);
   assert.match(source, /err\.code === "LIMIT_FILE_SIZE" \? 413 : 400/);
-  assert.match(source, /authenticate, reserveUpload, acceptPdfUpload, async/);
+  assert.match(source, /authenticate, uploadRateLimit, reserveUpload, acceptPdfUpload, async/);
 });
 
 test('PDF parsing bounds downstream embedding costs before writes', () => {
@@ -44,7 +44,7 @@ test('PDF parsing bounds downstream embedding costs before writes', () => {
 
 
 test('knowledge upload applies shared tenant quota after JWT verification and before multipart parsing', () => {
-  assert.match(source, /createPostgresRateLimiter\\(\\{ pool, scope: "knowledge-upload", windowMs: 60_000, max: 5 \\}\\)/);
-  assert.match(source, /router\\.post\\("\\/tenant\\/upload-knowledge", authenticate, uploadRateLimit, reserveUpload, acceptPdfUpload,/);
+  assert.ok(source.includes('createPostgresRateLimiter({ pool, scope: "knowledge-upload", windowMs: 60_000, max: 5 })'));
+  assert.ok(source.includes('router.post("/tenant/upload-knowledge", authenticate, uploadRateLimit, reserveUpload, acceptPdfUpload,'));
   assert.ok(source.indexOf('authenticate, uploadRateLimit, reserveUpload') < source.indexOf('upload.single("file")'));
 });
