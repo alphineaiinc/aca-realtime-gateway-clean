@@ -19,19 +19,11 @@ function sanitizeEnvValue(value) {
     .replace(/^['"]+|['"]+$/g, "");
 }
 
-function redactDbUrl(raw) {
-  if (!raw) return "(missing)";
-  try {
-    return raw.replace(/:\/\/([^:]+):([^@]+)@/, "://$1:***@");
-  } catch {
-    return "(unreadable)";
-  }
-}
 
 // --- Base connection URL ---
 let baseUrl = sanitizeEnvValue(process.env.DATABASE_URL);
 
-console.log("🔍 Using DATABASE_URL =", redactDbUrl(baseUrl));
+console.log("🔍 DATABASE_URL configured:", Boolean(baseUrl));
 
 // --- Detect environment type ---
 const isRender =
