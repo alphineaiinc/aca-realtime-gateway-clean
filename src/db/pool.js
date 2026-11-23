@@ -40,7 +40,20 @@ const isRender =
   baseUrl.includes("sslmode=require");
 
 // --- Cloud TLS is enforced by the explicit pg ssl configuration. ---
-// Do not append sslmode=require: pg-connection-string may override ssl options.
+// pg-connection-string can override explicit ssl settings when sslmode,
+// sslcert, sslkey or sslrootcert appear in the URL. Remove those URL
+// parameters for recognized cloud connections and use the explicit TLS policy.
+if (isRender && baseUrl) {
+  try {
+    const parsed = new URL(baseUrl);
+    for (const key of ["sslmode", "sslcert", "sslkey", "sslrootcert"]) {
+      parsed.searchParams.delete(key);
+    }
+    baseUrl = parsed.toString();
+  } catch {
+    // Existing URL validation below reports malformed connection strings.
+  }
+}
 
 // --- Validate URL early so startup log is clearer ---
 try {
