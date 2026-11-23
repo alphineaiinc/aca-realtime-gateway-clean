@@ -47,9 +47,29 @@ function chunkText(text, size = 1000) {
 // ---------------------------------------------------------------------------
 // POST /tenant/upload-knowledge  (JWT required)
 // ---------------------------------------------------------------------------
+let activeUploads = 0;
+const activeTenants = new Set();
+function reserveUpload(req, res, next) {
+  const tenant = String(req.tenant_id);
+  if (activeUploads >= 4 || activeTenants.has(tenant)) {
+    return res.status(429).json({ ok: false, error: "Upload capacity reached" });
+  }
+  activeUploads++;
+  activeTenants.add(tenant);
+  let released = false;
+  req.releaseUpload = () => {
+    if (released) return;
+    released = true;
+    activeUploads--;
+    activeTenants.delete(tenant);
+  };
+  next();
+}
+
 function acceptPdfUpload(req, res, next) {
   upload.single("file")(req, res, (err) => {
     if (!err) return next();
+    req.releaseUpload?.();
     if (err instanceof multer.MulterError) {
       const status = err.code === "LIMIT_FILE_SIZE" ? 413 : 400;
       return res.status(status).json({ ok: false, error: "Invalid upload" });
@@ -58,7 +78,8 @@ function acceptPdfUpload(req, res, next) {
   });
 }
 
-router.post("/tenant/upload-knowledge", authenticate, acceptPdfUpload, async (req, res) => {
+router.post("/tenant/upload-knowledge", authenticate, reserveUpload, acceptPdfUpload, async (req, res) => {
+  try {
   if (!req.file) {
     return res.status(400).json({ ok: false, error: "File missing" });
   }
@@ -121,6 +142,9 @@ router.post("/tenant/upload-knowledge", authenticate, acceptPdfUpload, async (re
   } catch (err) {
     console.error("UploadKnowledge processing failed");
     return res.status(500).json({ ok: false, error: "Upload processing failed" });
+  }
+  } finally {
+    req.releaseUpload?.();
   }
 });
 
