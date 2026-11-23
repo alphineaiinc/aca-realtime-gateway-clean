@@ -1,0 +1,24 @@
+'use strict';
+const test=require('node:test');
+const assert=require('node:assert/strict');
+const fs=require('node:fs');
+const path=require('node:path');
+const vm=require('node:vm');
+const express=require('express');
+const jwt=require('jsonwebtoken');
+test('tenant login denies arbitrary IDs and provisioning uses one client with rollback',async t=>{
+ const calls=[];
+ let fail=false;
+ const client={async query(sql){calls.push(sql);if(sql.includes('information_schema.columns')){if(fail)throw Error('fixture failure');return {rows:[]};}return {rows:[{id:42}]};},release(){calls.push('release');}};
+ const pool={async connect(){calls.push('connect');return client;},async query(){throw Error('unexpected shared pool query');}};
+ const context={require(n){if(n==='express')return express;if(n==='jsonwebtoken')return jwt;if(n==='../db/pool')return pool;throw Error(n);},process:{env:{PROVISION_API_KEY:'fixture-only',JWT_SECRET:'fixture-jwt'}},console:{error(){}},module:{exports:{}}};
+ vm.runInNewContext(fs.readFileSync(path.join(__dirname,'../src/routes/tenant.js'),'utf8'),context);
+ const app=express();app.use(express.json());app.use(context.module.exports);
+ const server=app.listen(0,'127.0.0.1');t.after(()=>new Promise(r=>server.close(r)));await new Promise(r=>server.once('listening',r));
+ const post=(route,key)=>fetch('http://127.0.0.1:'+server.address().port+route,{method:'POST',headers:{'content-type':'application/json','x-api-key':key},body:JSON.stringify({tenant_id:42})});
+ assert.equal((await post('/login','')).status,403);assert.equal(calls.length,0);
+ assert.equal((await post('/provision','wrong')).status,401);assert.equal(calls.length,0);
+ assert.equal((await post('/provision','fixture-only')).status,200);assert.equal(calls[0],'connect');assert.equal(calls[1],'BEGIN');assert.deepEqual(calls.slice(-2),['COMMIT','release']);
+ calls.length=0;fail=true;
+ assert.equal((await post('/provision','fixture-only')).status,500);assert.deepEqual(calls.slice(-2),['ROLLBACK','release']);assert.ok(!calls.includes('COMMIT'));
+});
