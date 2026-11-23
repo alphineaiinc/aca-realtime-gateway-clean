@@ -41,3 +41,10 @@ test('PDF parsing bounds downstream embedding costs before writes', () => {
   assert.ok(source.indexOf('text.length > 100_000') < source.indexOf('await embedText(content)'));
   assert.ok(source.indexOf('text.length > 100_000') < source.indexOf('await pool.query('));
 });
+
+
+test('knowledge upload applies shared tenant quota after JWT verification and before multipart parsing', () => {
+  assert.match(source, /createPostgresRateLimiter\\(\\{ pool, scope: "knowledge-upload", windowMs: 60_000, max: 5 \\}\\)/);
+  assert.match(source, /router\\.post\\("\\/tenant\\/upload-knowledge", authenticate, uploadRateLimit, reserveUpload, acceptPdfUpload,/);
+  assert.ok(source.indexOf('authenticate, uploadRateLimit, reserveUpload') < source.indexOf('upload.single("file")'));
+});
