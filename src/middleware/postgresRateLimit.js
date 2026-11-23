@@ -6,6 +6,9 @@ function createPostgresRateLimiter({ pool, scope, windowMs = 60000, max = 60, pu
     const identity = publicGlobal === true ? ['public-global', scope] : req.auth?.sub != null ? ['user', req.auth.sub]
       : req.auth?.partner_id != null ? ['partner', req.auth.partner_id]
       : req.partner_id != null ? ['partner', req.partner_id]
+      : req.user?.partner_id != null ? ['partner', req.user.partner_id]
+      : req.user?.role === 'admin' ? ['admin', req.user.sub || 'shared']
+      : req.tenant?.tenant_id != null ? ['tenant', req.tenant.tenant_id]
       : req.tenant_id != null ? ['tenant', req.tenant_id] : null;
     if (!identity || !String(identity[1]).length) return res.status(401).json({ ok: false, error: 'Unauthorized' });
     const hash = createHash('sha256').update(JSON.stringify(identity)).digest('hex');
