@@ -24,17 +24,17 @@ try {
       pass: process.env.SMTP_PASS
     },
     tls: {
-      rejectUnauthorized: false
+      rejectUnauthorized: true
     }
   });
 } catch (err) {
   fs.appendFileSync(
     logPath,
-    `[${new Date().toISOString()}] EMAIL TRANSPORT INIT FAILED: ${err.message}\n`
+    `[${new Date().toISOString()}] EMAIL TRANSPORT INIT FAILED: transport initialization failed\n`
   );
 }
 
-async function sendBillingEmail(to, subject, html, text) {
+async function sendBillingEmail(to, subject, html, text, { singleAttempt = false } = {}) {
   const mailOptions = {
     from: process.env.SMTP_FROM || "Alphine AI Billing <no-reply@alphineai.com>",
     to,
@@ -43,20 +43,21 @@ async function sendBillingEmail(to, subject, html, text) {
     html
   };
 
-  for (let i = 1; i <= 3; i++) {
+  const attempts = singleAttempt ? 1 : 3;
+  for (let i = 1; i <= attempts; i++) {
     try {
       const result = await transporter.sendMail(mailOptions);
       fs.appendFileSync(
         logPath,
-        `[${new Date().toISOString()}] Email sent → ${to}, subject: ${subject}\n`
+        `[${new Date().toISOString()}] Email accepted\n`
       );
       return result;
     } catch (err) {
       fs.appendFileSync(
         logPath,
-        `[${new Date().toISOString()}] Email attempt ${i} FAILED: ${err.message}\n`
+        `[${new Date().toISOString()}] Email attempt ${i} failed\n`
       );
-      if (i === 3) throw err;
+      if (i === attempts) throw err;
     }
   }
 }
