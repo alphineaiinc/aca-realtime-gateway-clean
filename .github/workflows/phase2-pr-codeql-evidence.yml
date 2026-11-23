@@ -13,13 +13,14 @@ permissions:
   security-events: read
 jobs:
   evidence:
-    name: Check CodeQL analysis metadata for exact PR head
+    name: Check CodeQL analysis metadata for PR head and merge ref
     runs-on: ubuntu-latest
     timeout-minutes: 10
     env:
       GH_TOKEN: ${{ github.token }}
       GH_REPO: ${{ github.repository }}
       TARGET_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+      PR_NUMBER: ${{ github.event.pull_request.number || '' }}
     steps:
       - name: Read exact-commit CodeQL analysis metadata
         shell: bash
@@ -30,16 +31,16 @@ jobs:
             -H 'Accept: application/vnd.github+json' \
             "/repos/${GH_REPO}/code-scanning/analyses?per_page=100")"
           printf '%s' "$json" | jq -e 'type == "array" and all(.[]; type == "array")' >/dev/null
-          count="$(printf '%s' "$json" | jq --arg sha "$TARGET_SHA" \
-            '[.[][] | select(.commit_sha == $sha and .tool.name == "CodeQL")] | length')"
-          echo "PR target commit: ${TARGET_SHA}"
-          echo "CodeQL analyses matching exact commit: ${count}"
-          if [ "$count" -eq 0 ]; then
-            echo "::warning::NO CODEQL ANALYSIS FOUND FOR EXACT PR HEAD. Security disposition remains PENDING."
-          else
-            printf '%s' "$json" | jq -r --arg sha "$TARGET_SHA" '
-              .[][] | select(.commit_sha == $sha and .tool.name == "CodeQL") |
-              "CodeQL analysis id=\(.id) ref=\(.ref) created_at=\(.created_at)"'
-            echo "::notice::CodeQL analysis exists; inspect its findings before any clearance claim."
-          fi
+          printf '%s' "$json" | jq -r --arg sha "$TARGET_SHA" --arg pr "$PR_NUMBER" '
+            [ .[][] | select(.tool.name == "CodeQL") ] as $all |
+            [ $all[] | select(.commit_sha == $sha) ] as $head |
+            [ $all[] | select($pr != "" and .ref == ("refs/pull/" + $pr + "/merge")) ] as $merge |
+            "PR target commit: " + $sha,
+            "CodeQL analyses matching exact head: " + ($head | length | tostring),
+            "CodeQL analyses on PR merge ref: " + ($merge | length | tostring),
+            ($merge[] | "  merge analysis id=\\(.id) commit=\\(.commit_sha) ref=\\(.ref)"),
+            ($head[] | "  head analysis id=\\(.id) commit=\\(.commit_sha) ref=\\(.ref)")
+          '
+          echo "::notice::Analysis metadata only; inspect code scanning findings before clearance."
+          echo "No analysis match is NOT evidence of zero vulnerabilities."
           echo "This inventory does not run CodeQL or establish absence of alerts."
