@@ -1003,6 +1003,7 @@ function createRateLimiter({ windowMs, max, keyFn }) {
 
       const existing = hits.get(key);
       if (!existing || now - existing.windowStart >= windowMs) {
+        if (!existing && hits.size >= 10000) return res.status(503).json({ok:false,error:"rate_limit_capacity"});
         hits.set(key, { count: 1, windowStart: now });
         return next();
       }
@@ -1018,12 +1019,15 @@ function createRateLimiter({ windowMs, max, keyFn }) {
 
       return next();
     } catch (err) {
-      console.warn("⚠️ rate limiter error:", err.message);
-      return next();
+      console.warn("Rate limiter unavailable");
+      return res.status(503).json({ok:false,error:"rate_limit_unavailable"});
     }
   };
 }
 
+const {createPostgresRateLimiter}=require("./src/middleware/postgresRateLimit");
+const monitorLimit=createPostgresRateLimiter({pool:require("./src/db/pool"),scope:"admin-monitor",max:30});
+const manifestLimit=createRateLimiter({windowMs:60000,max:120,keyFn:()=> "manifest"});
 const publicRateLimit = createRateLimiter({
   windowMs: 60 * 1000,
   max: 20,
@@ -1035,7 +1039,7 @@ const demoRateLimit = createRateLimiter({
   max: 10,
   keyFn: (req) => {
     const auth = req.headers.authorization || "";
-    return `${req.ip || "unknown"}:${auth.slice(0, 80)}`;
+    return req.ip || "unknown";
   },
 });
 
@@ -1044,7 +1048,7 @@ const authRateLimit = createRateLimiter({
   max: 30,
   keyFn: (req) => {
     const auth = req.headers.authorization || "";
-    return `${req.ip || "unknown"}:${auth.slice(0, 80)}`;
+    return req.ip || "unknown";
   },
 });
 
@@ -1191,7 +1195,7 @@ const {
 app.use("/twilio", twilioRouter);
 console.log("✅ Mounted /twilio routes");
 
-app.get("/monitor/twilio-debug", requireAdmin, (req, res) => {
+app.get("/monitor/twilio-debug", requireAdmin, monitorLimit, (req, res) => {
   try {
     return res.status(200).json({
       ok: true,
@@ -1268,7 +1272,7 @@ console.log(
 // ---------------------------------------------------------------------------
 const wellKnownAbsolute = path.resolve(__dirname, "public", "wellknown");
 
-app.get("/.well-known/ai-plugin.json", (req, res) => {
+app.get("/.well-known/ai-plugin.json", manifestLimit, (req, res) => {
   const filePath = path.join(wellKnownAbsolute, "ai-plugin.json");
   console.log("➡️  [.well-known] serving:", filePath);
   res.sendFile(filePath, (err) => {
@@ -1279,7 +1283,7 @@ app.get("/.well-known/ai-plugin.json", (req, res) => {
   });
 });
 
-app.get("/.well-known/openapi.yaml", (req, res) => {
+app.get("/.well-known/openapi.yaml", manifestLimit, (req, res) => {
   const filePath = path.join(wellKnownAbsolute, "openapi.yaml");
   console.log("➡️  [.well-known] serving:", filePath);
   res.sendFile(filePath, (err) => {
@@ -1291,7 +1295,7 @@ app.get("/.well-known/openapi.yaml", (req, res) => {
 });
 
 // 🔒 Regex catch-all for any .well-known/*
-app.get(/^\/\.well-known\/(.+)$/i, (req, res) => {
+app.get(/^\/\.well-known\/(.+)$/i, manifestLimit, (req, res) => {
   const requested = (req.params[0] || "").toString();
   const safeName = requested.replace(/[^a-zA-Z0-9._-]/g, "");
   const filePath = path.join(wellKnownAbsolute, safeName);
@@ -1389,7 +1393,7 @@ app.get("/health", (req, res) => {
   }
 });
 
-app.get("/monitor/resilience", requireAdmin, (req, res) => {
+app.get("/monitor/resilience", requireAdmin, monitorLimit, (req, res) => {
   res.set("Content-Type", "text/plain; version=0.0.4");
   res.send(getMetricsText());
 });
@@ -1463,7 +1467,7 @@ try {
 // ============================================================
 // === Story 9.6 — Global Matrix Health Endpoint ===
 // ============================================================
-app.get("/monitor/deploy-matrix", requireAdmin, async (req, res) => {
+app.get("/monitor/deploy-matrix", requireAdmin, monitorLimit, async (req, res) => {
   try {
     const dashboardUrl =
       process.env.DASHBOARD_URL || "https://alphine-dashboard.vercel.app";
