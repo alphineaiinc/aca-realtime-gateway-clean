@@ -63,12 +63,20 @@ function reserveUpload(req, res, next) {
     activeUploads--;
     activeTenants.delete(tenant);
   };
+  // Release abandoned multipart requests, but retain capacity while processing.
+  res.once?.("close", () => {
+    if (!req.uploadProcessing) req.releaseUpload();
+  });
   next();
 }
 
 function acceptPdfUpload(req, res, next) {
   upload.single("file")(req, res, (err) => {
-    if (!err) return next();
+    if (!err) {
+      if (res.destroyed) { req.releaseUpload?.(); return; }
+      req.uploadProcessing = true;
+      return next();
+    }
     req.releaseUpload?.();
     if (err instanceof multer.MulterError) {
       const status = err.code === "LIMIT_FILE_SIZE" ? 413 : 400;
