@@ -6,6 +6,10 @@ const crypto = require("crypto");
 const fs = require("fs");
 
 const router = express.Router();
+const pool = require("../db/pool");
+const { createPostgresRateLimiter } = require("../middleware/postgresRateLimit");
+const routeLimit = createPostgresRateLimiter({pool, scope: "partner-legal", max: 60});
+const downloadLimit = createPostgresRateLimiter({pool, scope: "partner-legal-download", max: 30, publicGlobal: true});
 
 function authenticate(req, res, next) {
   try {
@@ -25,7 +29,7 @@ function authenticate(req, res, next) {
 }
 
 // Download current Partner Terms
-router.get("/partner/legal/download", async (req, res) => {
+router.get("/partner/legal/download", downloadLimit, async (req, res) => {
   try {
     const version = process.env.LEGAL_CURRENT_VERSION || "1.0";
     const pdfPath = await generatePartnerTermsPDF(version);
@@ -53,7 +57,7 @@ router.get("/partner/legal/download", async (req, res) => {
 });
 
 // Record acceptance
-router.post("/partner/legal/accept", authenticate, async (req, res) => {
+router.post("/partner/legal/accept", authenticate, routeLimit, async (req, res) => {
   try {
     const partner_id = req.user?.partner_id || null;
     if (!partner_id) {
