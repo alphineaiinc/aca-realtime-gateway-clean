@@ -134,3 +134,19 @@ test("outbox SQL failure rolls back confirmed request", async () => {
     await pool.query("DROP FUNCTION aca_test_reject_outbox()");
   }
 });
+
+test("database rejects outbox references belonging to another tenant", async () => {
+  const other = (await pool.query("INSERT INTO master_tenants (business_name) VALUES ('Other fixture') RETURNING id")).rows[0].id;
+  try {
+    const request = (await pool.query(
+      "INSERT INTO aca_intake_requests (tenant_id,call_sid,cluster_id,slots) VALUES ($1,$2,'medical_clinic','{}') RETURNING id",
+      [tenantId,sid(6)]
+    )).rows[0];
+    await assert.rejects(pool.query(
+      "INSERT INTO aca_notification_outbox (tenant_id,intake_request_id,event_type) VALUES ($1,$2,'intake.confirmed')",
+      [other,request.id]
+    ), error => error.code === "23503");
+  } finally {
+    await pool.query("DELETE FROM master_tenants WHERE id=$1",[other]);
+  }
+});
