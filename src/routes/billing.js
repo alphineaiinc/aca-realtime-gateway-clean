@@ -8,14 +8,14 @@ const fs = require("fs");
 const path = require("path");
 const archiver = require("archiver");   // ensure available
 
-const { createAuthenticatedRateLimiter } = require("../middleware/authenticatedRateLimit");
+const { createPostgresRateLimiter } = require("../middleware/postgresRateLimit");
 
 const router = express.Router();
-const billingRateLimit = createAuthenticatedRateLimiter({ windowMs: 60_000, max: 60 });
+const billingRateLimit = createPostgresRateLimiter({ pool, scope: "billing", windowMs: 60_000, max: 60 });
 
 
 // Stricter payment-write budget, in addition to the general billing budget.
-const paymentRateLimit = createAuthenticatedRateLimiter({ windowMs: 10_000, max: 3 });
+const paymentRateLimit = createPostgresRateLimiter({ pool, scope: "billing-payment", windowMs: 10_000, max: 3 });
 
 // ---------------------------------------------------------------------
 // Middleware: partner / tenant JWT auth
