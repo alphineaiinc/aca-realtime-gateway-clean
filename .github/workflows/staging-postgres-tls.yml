@@ -1,0 +1,28 @@
+name: Staging PostgreSQL verified TLS (manual)
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify-staging-tls:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - name: Verify staging TLS with read-only role
+        env:
+          RUN_ACA_STAGING_TLS_CHECK: '1'
+          ACA_STAGING_TLS_DATABASE_URL: ${{ secrets.ACA_STAGING_TLS_READONLY_URL }}
+        run: |
+          if [ -z "$ACA_STAGING_TLS_DATABASE_URL" ]; then
+            echo "Missing ACA_STAGING_TLS_READONLY_URL secret; refusing to run"
+            exit 1
+          fi
+          node --test test/db-pool-staging-tls.optin.test.js
