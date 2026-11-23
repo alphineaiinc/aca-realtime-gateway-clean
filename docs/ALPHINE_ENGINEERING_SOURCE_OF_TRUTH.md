@@ -2,6 +2,22 @@
 
 Status: **proposed baseline, awaiting owner review and merge**. Updated 2026-11-22. Repository: `alphineaiinc/aca-realtime-gateway-clean`.
 
+## Document versioning policy
+
+- Version: **v1.1.0-draft**. Baseline: v1.0.0-draft. This document is currently proposed in PR #121, not merged.
+- Every material update MUST increment the document version, add a new append-only change-log entry with an ISO-8601 UTC timestamp (YYYY-MM-DDTHH:mm:ssZ), identify **Added / Changed / Removed / Verified / Still unverified**, and link the PR, commit SHA and evidence.
+- Use the Git commit's authoritative timestamp when an exact timestamp is required; never invent one. Draft entries can state the calendar date and Git-commit timestamp reference until the exact time is retrieved.
+- Never rewrite or delete historical entries to conceal a change. Correct inaccuracies with a new entry explaining the correction. Git history remains the underlying immutable revision trail, subject to repository permissions.
+- Versioning: major = approved architecture/boundary change; minor = new capability or substantive scope addition; patch = documentation/evidence/status correction. Proposed changes remain draft until approved and merged.
+- Maintain this document and the Phase 2 tracker together; reconcile version, evidence and checklist status in the same PR when relevant.
+
+## Append-only change log
+
+| Version | Timestamp | Added | Changed | Removed | Verification / reference |
+| --- | --- | --- | --- | --- | --- |
+| v1.0.0-draft | 2026-11-22; Git commit timestamp | Initial eight-role baseline, implementation inventory, acceptance tracker links, safety gates | Reconciled claimed agent count with evidence status | None | Commit `6861f165e2f054cac24dc9886a8c8f6c17f60d0f`; PR #121; eight executable roles not yet audited |
+| v1.1.0-draft | 2026-11-22 (UTC; exact time recorded by Git commit) | Versioning policy and append-only change log | Requires version bump, timestamp, delta, references on each future update | None | This PR #121 revision; exact timestamp and SHA from resulting Git commit |
+
 ## Purpose and authority
 This document distinguishes **agreed design**, **verified implementation**, **verified tests**, **pending validation**, and **operational activation**. Never infer one from another. Before reporting progress, inspect this document, Issue #118, the relevant exact branch/commit, CI runs and deployment state. GitHub code/evidence overrides conversational recollections. If evidence conflicts, flag the discrepancy rather than changing the architecture silently.
 
