@@ -4,7 +4,7 @@ Status: **proposed baseline, awaiting owner review and merge**. Updated 2026-11-
 
 ## Document versioning policy
 
-- Version: **v1.2.0-draft**. Baseline: v1.0.0-draft. This document is currently proposed in PR #121, not merged.
+- Version: **v1.2.1-draft**. Baseline: v1.0.0-draft. This document is currently proposed in PR #121, not merged.
 - Every material update MUST increment the document version, add a new append-only change-log entry with an ISO-8601 UTC timestamp (YYYY-MM-DDTHH:mm:ssZ), identify **Added / Changed / Removed / Verified / Still unverified**, and link the PR, commit SHA and evidence.
 - Use the Git commit's authoritative timestamp when an exact timestamp is required; never invent one. Draft entries can state the calendar date and Git-commit timestamp reference until the exact time is retrieved.
 - Never rewrite or delete historical entries to conceal a change. Correct inaccuracies with a new entry explaining the correction. Git history remains the underlying immutable revision trail, subject to repository permissions.
@@ -16,6 +16,7 @@ Status: **proposed baseline, awaiting owner review and merge**. Updated 2026-11-
 | Version | Timestamp | Added | Changed | Removed | Verification / reference |
 | --- | --- | --- | --- | --- | --- |
 | v1.0.0-draft | 2026-11-22; Git commit timestamp | Initial eight-role baseline, implementation inventory, acceptance tracker links, safety gates | Reconciled claimed agent count with evidence status | None | Commit `6861f165e2f054cac24dc9886a8c8f6c17f60d0f`; PR #121; eight executable roles not yet audited |
+| v1.2.1-draft | 2026-11-23T03:13:02.834Z | PR #117 TTS error-redaction code and regression test references | Item 12 remains pending until exact-SHA CI/CodeQL and full acceptance | None | PR #117 head `befc3093e1f30dd1d23a53bfcfdec6b9f9cf`; tests not yet verified |
 | v1.2.0-draft | 2026-11-23T03:07:36.282Z | Eight-role evidence matrix, verified iPhone push delivery, exact test links | Updated notification status and role-by-role distinctions | None | PR #121; Issue #118; bot comment 7090423512; user screenshot confirms push; unverified roles remain open |
 | v1.1.0-draft | 2026-11-22 (UTC; exact time recorded by Git commit) | Versioning policy and append-only change log | Requires version bump, timestamp, delta, references on each future update | None | This PR #121 revision; exact timestamp and SHA from resulting Git commit |
 
@@ -84,6 +85,10 @@ These entries mean **not verified by this inventory**, not that the code does no
 - Owner supplied an iPhone screenshot showing a GitHub banner at approximately 10:03 PM Eastern on Sunday 2026-11-22. GitHub Mobile working-hours setting was changed to include all days before the successful test.
 - Scope of acceptance: **one end-to-end controlled issue-edit → GitHub Actions bot comment → iPhone push**. Not proof of guaranteed future push, every checklist update, every workflow failure, or cross-repository alerts.
 - The preceding self-authored comment was not a valid independent push-delivery test because it was authored by the target account.
+
+## Current Item 12 execution checkpoint (2026-11-23T03:13:02.834Z)
+- PR #117 head `befc3093e1f30dd1d23a53bfcfdec6b9f9cf` (draft/unmerged). Changes on PR branch: `tts.js` avoids logging/throwing upstream response bodies and exception text; `test/elevenlabs-transport-security.test.js` adds redaction assertions and credential placement checks.
+- **Not yet accepted:** no successful CI or isolated CodeQL run verified on this exact SHA at checkpoint. Preserve Issue #118 TTS behavior checklist as unchecked until final evidence is collected. Independent reviewer signoff is a separate pending acceptance item.
 
 ## Reference evidence
 - [Issue #118](https://github.com/alphineaiinc/aca-realtime-gateway-clean/issues/118)
