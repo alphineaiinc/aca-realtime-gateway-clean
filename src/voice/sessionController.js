@@ -525,7 +525,7 @@ function handleTranscriptFinal(callSid, text) {
 
   logEvent(callSid, "TRANSCRIPT_FINAL", { text });
 
-  if (!text || text.trim().length < 3) {
+  if (!text || (text.trim().length < 3 && !/^(no|ok)$/i.test(text.trim()))) {
     logDecision(callSid, "Ignoring short/invalid transcript");
     return null;
   }
@@ -1495,13 +1495,14 @@ if (isClosing) {
  const configuredSlots = (slots) => Object.fromEntries(Object.entries(slots).filter(([key]) =>
   Object.hasOwn(clusterSchema.slot_definitions, key)));
 const deterministicSlots = configuredSlots(inferHeuristicSlotsFromUtterance(session, utterance));
-const holisticSlots = configuredSlots(inferHolisticSlotsFromConversation(session));
-const extractionSlots = extraction?.slots || {};
+// Never re-extract from assistant prompts or overwrite current corrections with history.
+const holisticSlots = {};
+const extractionSlots = configuredSlots(mergeSlotsWithoutEmpty(extraction?.slots || {}, extraction?.slot_updates || {}));
 
 const combinedExtractionSlots = normalizeExtractedSlotsForSession(
   session,
   mergeSlotsWithoutEmpty(
-    mergeSlotsWithoutEmpty(extractionSlots, deterministicSlots),
+    mergeSlotsWithoutEmpty(deterministicSlots, extractionSlots),
     holisticSlots
   )
 );
@@ -1543,7 +1544,7 @@ const effectiveExtraction = {
 const newSlots = normalizeExtractedSlotsForSession(
   session,
   mergeSlotsWithoutEmpty(
-    mergeSlotsWithoutEmpty(workflowState.slots || {}, deterministicSlots),
+    mergeSlotsWithoutEmpty(deterministicSlots, workflowState.slots || {}),
     holisticSlots
   )
 );
