@@ -5,7 +5,8 @@ const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
 const source = fs.readFileSync(path.join(__dirname, '../src/routes/uploadKnowledge.js'), 'utf8');
-function harness({ tenantId = 'tenant-1', pdfText = 'Knowledge text', pdfError = null, uploadError = null, waitForEmbedding = null, disconnectBeforeParsing = false, rateLimitReject = false } = {}) {
+function harness({ tenantId = 'tenant-1', pdfText = 'Knowledge text', pdfError = null, uploadError = null, waitForEmbedding = null, disconnectBeforeParsing = false, rateLimitReject = false, disconnectDuringEmbedding = false } = {}) {
+  let currentResponse;
   let route, dbWrites = 0, embeddingCalls = 0, parserDestroyed = 0;
   class PDFParse {
     constructor() {}
@@ -23,13 +24,14 @@ function harness({ tenantId = 'tenant-1', pdfText = 'Knowledge text', pdfError =
     'pdf-parse': { PDFParse },
     '../db/pool': { async query() { dbWrites++; } },
     '../middleware/postgresRateLimit': { createPostgresRateLimiter: () => (req, res, next) => rateLimitReject ? res.status(429).json({ ok: false, error: 'Rate limit exceeded' }) : next() },
-    '../brain/utils/embeddingManager': { async embedText() { embeddingCalls++; if (waitForEmbedding) await waitForEmbedding; return [0.1, 0.2]; } },
+    '../brain/utils/embeddingManager': { async embedText() { embeddingCalls++; if (waitForEmbedding) await waitForEmbedding; if (disconnectDuringEmbedding) { currentResponse.destroyed = true; currentResponse.closeHandler?.(); } return [0.1, 0.2]; } },
   };
   const context = { require(name) { if (!(name in mocks)) throw new Error('Unexpected import ' + name); return mocks[name]; }, module: { exports: {} }, Buffer, process: { env: { JWT_SECRET: 'test-only-secret' } }, console: { error() {} } };
   vm.runInNewContext(source, context, { filename: 'uploadKnowledge.js' });
   async function request(buffer, token = 'Bearer valid') {
     const req = { headers: { authorization: token }, file: buffer == null ? undefined : { buffer, originalname: 'doc.pdf' } };
     const res = { once(event, handler) { if (event === 'close') this.closeHandler = handler; }, statusCode: 200, status(code) { this.statusCode = code; return this; }, json(body) { this.body = body; return this; } };
+    currentResponse = res;
     let idx = 0;
     const run = async () => {
       const handler = route.handlers[idx++];
@@ -141,3 +143,13 @@ test('shared upload quota denial happens before multipart parsing, embedding or 
   assert.equal(res.statusCode, 429);
   assert.deepEqual(h.stats(), { dbWrites: 0, embeddingCalls: 0, parserDestroyed: 0 });
 });
+
+ test('disconnect during embedding stops remaining chunks and writes, releases capacity', async () => {
+ const h = harness({ pdfText: 'x'.repeat(2500), disconnectDuringEmbedding: true });
+ const first = await h.request(Buffer.from('%PDF-1.7'));
+ assert.equal(first.destroyed, true);
+ assert.deepEqual(h.stats(), {dbWrites:0, embeddingCalls:1, parserDestroyed:1});
+ const second = await h.request(Buffer.from('%PDF-1.7'));
+ assert.notEqual(second.statusCode,429);
+ assert.equal(h.stats().embeddingCalls,2);
+ });
