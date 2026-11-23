@@ -32,6 +32,12 @@ const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
 // Stripe webhook secret
 const endpointSecret = process.env.STRIPE_WEBHOOK_SECRET;
 
+// Instance-local duplicate suppression; durable cross-instance delivery is a separate release gate.
+const processing = new Set();
+const completed = new Map();
+const retentionMs = 24 * 60 * 60 * 1000;
+const maxEvents = 10000;
+
 // MUST use raw body for Stripe
 router.post(
   "/webhook",
@@ -55,6 +61,20 @@ router.post(
       return res.status(400).send("Webhook signature verification failed");
     }
 
+    const eventId = event.id;
+    if (typeof eventId !== "string" || !/^evt_[A-Za-z0-9_]{1,200}$/.test(eventId)) {
+      return res.status(400).send("Invalid webhook event");
+    }
+    const now = Date.now();
+    for (const [id, expiry] of completed) {
+      if (expiry <= now) completed.delete(id);
+    }
+    if (completed.has(eventId)) return res.json({ received: true });
+    if (processing.has(eventId) || processing.size >= 100 || completed.size + processing.size >= maxEvents) {
+      return res.status(503).send("Webhook temporarily unavailable");
+    }
+    processing.add(eventId);
+    try {
     const type = event.type;
     const data = event.data.object;
 
@@ -192,9 +212,14 @@ router.post(
         `[${new Date().toISOString()}] ERROR processing webhook\n`
       );
       console.error("Stripe webhook processing failed");
+      return res.status(503).send("Webhook processing failed");
     }
 
+    completed.set(eventId, Date.now() + retentionMs);
     res.json({ received: true });
+    } finally {
+      processing.delete(eventId);
+    }
   }
 );
 
