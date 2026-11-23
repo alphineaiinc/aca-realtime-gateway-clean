@@ -14,28 +14,8 @@ const router = express.Router();
 const billingRateLimit = createAuthenticatedRateLimiter({ windowMs: 60_000, max: 60 });
 
 
-// ---------------------------------------------------------------------
-// Simple in-memory rate limiter per partner for /pay (3 reqs / 10s)
-// ---------------------------------------------------------------------
-const RATE_WINDOW_MS = 10_000;
-const RATE_MAX = 3;
-const rateBucket = new Map(); // partner_id -> {count, resetAt}
-
-function rateLimit(req, res, next) {
-  const pid = req.partner_id || "anon";
-  const now = Date.now();
-  const bucket = rateBucket.get(pid) || { count: 0, resetAt: now + RATE_WINDOW_MS };
-  if (now > bucket.resetAt) {
-    bucket.count = 0;
-    bucket.resetAt = now + RATE_WINDOW_MS;
-  }
-  bucket.count += 1;
-  rateBucket.set(pid, bucket);
-  if (bucket.count > RATE_MAX) {
-    return res.status(429).json({ ok: false, error: "Rate limit exceeded. Try again shortly." });
-  }
-  next();
-}
+// Stricter payment-write budget, in addition to the general billing budget.
+const paymentRateLimit = createAuthenticatedRateLimiter({ windowMs: 10_000, max: 3 });
 
 // ---------------------------------------------------------------------
 // Middleware: partner / tenant JWT auth
@@ -106,7 +86,7 @@ router.get("/history", authenticate, billingRateLimit, async (req, res) => {
 // ---------------------------------------------------------------------
 // POST /api/billing/pay – mark invoice paid (rate-limited)
 // ---------------------------------------------------------------------
-router.post("/pay", authenticate,billingRateLimit,  rateLimit, async (req, res) => {
+router.post("/pay", authenticate, billingRateLimit, paymentRateLimit, async (req, res) => {
   try {
     const { invoice_id, payment_method = "mock", notes = "" } = req.body;
     if (!invoice_id) return res.status(400).json({ ok: false, error: "invoice_id required" });
