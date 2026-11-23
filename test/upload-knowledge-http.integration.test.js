@@ -16,6 +16,7 @@ test('real multipart and PDF parser enforce authentication and tenant-scoped ing
   const context = {
     require(name) {
       if (name === '../db/pool') return { query: async (...args) => writes.push(args) };
+      if (name === '../middleware/postgresRateLimit') return { createPostgresRateLimiter: () => (req, res, next) => next() };
       if (name === '../brain/utils/embeddingManager') return { embedText: async text => { embeddings.push(text); return [0.1, 0.2]; } };
       return require(name);
     },
