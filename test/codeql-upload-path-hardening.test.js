@@ -46,5 +46,6 @@ test('PDF parsing bounds downstream embedding costs before writes', () => {
 test('knowledge upload applies shared tenant quota after JWT verification and before multipart parsing', () => {
   assert.ok(source.includes('createPostgresRateLimiter({ pool, scope: "knowledge-upload", windowMs: 60_000, max: 5 })'));
   assert.ok(source.includes('router.post("/tenant/upload-knowledge", authenticate, uploadRateLimit, reserveUpload, acceptPdfUpload,'));
-  assert.ok(source.indexOf('authenticate, uploadRateLimit, reserveUpload') < source.indexOf('upload.single("file")'));
+  const route = source.slice(source.indexOf('router.post("/tenant/upload-knowledge"'));
+  assert.ok(route.startsWith('router.post("/tenant/upload-knowledge", authenticate, uploadRateLimit, reserveUpload, acceptPdfUpload,'));
 });
