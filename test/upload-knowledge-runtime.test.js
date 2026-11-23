@@ -5,7 +5,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
 const source = fs.readFileSync(path.join(__dirname, '../src/routes/uploadKnowledge.js'), 'utf8');
-function harness({ tenantId = 'tenant-1', pdfText = 'Knowledge text', pdfError = null, uploadError = null } = {}) {
+function harness({ tenantId = 'tenant-1', pdfText = 'Knowledge text', pdfError = null, uploadError = null, failInsert = false, failEmbedding = false } = {}) {
   let route, dbWrites = 0, embeddingCalls = 0, parserDestroyed = 0, commits = 0, rollbacks = 0;
   class PDFParse {
     constructor() {}
@@ -21,8 +21,8 @@ function harness({ tenantId = 'tenant-1', pdfText = 'Knowledge text', pdfError =
     express: { Router: () => router }, multer,
     jsonwebtoken: { verify: (token) => { if (token !== 'valid') throw new Error('Invalid test token'); return { tenant_id: tenantId }; } },
     'pdf-parse': { PDFParse },
-    '../db/pool': { async connect() { return { async query(sql) { if (sql === 'COMMIT') commits++; else if (sql === 'ROLLBACK') rollbacks++; else if (sql.startsWith('INSERT')) dbWrites++; }, release() {} }; } },
-    '../brain/utils/embeddingManager': { async embedText() { embeddingCalls++; return [0.1, 0.2]; } },
+    '../db/pool': { async connect() { return { async query(sql) { if (sql === 'COMMIT') commits++; else if (sql === 'ROLLBACK') rollbacks++; else if (sql.startsWith('INSERT')) { if (failInsert) throw new Error('mock insert failed'); dbWrites++; } }, release() {} }; } },
+    '../brain/utils/embeddingManager': { async embedText() { embeddingCalls++; if (failEmbedding) throw new Error('mock embedding failed'); return [0.1, 0.2]; } },
   };
   const context = { require(name) { if (!(name in mocks)) throw new Error('Unexpected import ' + name); return mocks[name]; }, module: { exports: {} }, Buffer, process: { env: { JWT_SECRET: 'test-only-secret' } }, console: { error() {} } };
   vm.runInNewContext(source, context, { filename: 'uploadKnowledge.js' });
@@ -115,4 +115,18 @@ test('successful knowledge upload commits a single transaction', async () => {
   const res = await h.request(Buffer.from('%PDF-1.7'));
   assert.equal(res.statusCode, 200);
   assert.deepEqual(h.tx(), { commits: 1, rollbacks: 0 });
+});
+
+test('embedding failure causes no database transaction or inserts', async () => {
+  const h = harness({ failEmbedding: true });
+  const res = await h.request(Buffer.from('%PDF-1.7'));
+  assert.equal(res.statusCode, 500);
+  assert.equal(h.stats().dbWrites, 0);
+  assert.deepEqual(h.tx(), { commits: 0, rollbacks: 0 });
+});
+test('database insert failure rolls back and never commits', async () => {
+  const h = harness({ failInsert: true });
+  const res = await h.request(Buffer.from('%PDF-1.7'));
+  assert.equal(res.statusCode, 500);
+  assert.deepEqual(h.tx(), { commits: 0, rollbacks: 1 });
 });
