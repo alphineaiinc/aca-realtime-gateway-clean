@@ -1,5 +1,9 @@
 name: Phase 2 item completion and intervention notifications
 on:
+  pull_request:
+    paths:
+      - '.github/workflows/phase2-item-notifications.yml'
+      - 'scripts/test_phase2_notifications.py'
   issues:
     types: [edited]
 permissions:
@@ -9,8 +13,16 @@ concurrency:
   group: phase2-item-notify-${{ github.event.issue.number }}
   cancel-in-progress: false
 jobs:
+  test:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - run: python3 -m unittest discover -s scripts -p 'test_phase2_notifications.py' -v
   notify:
-    if: github.event.issue.number == 118 && github.event.changes.body.from != null
+    if: github.event_name == 'issues' && github.event.issue.number == 118 && github.event.changes.body.from != null
     runs-on: ubuntu-latest
     steps:
       - name: Detect newly completed items or manual intervention
