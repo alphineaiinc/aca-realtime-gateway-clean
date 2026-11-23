@@ -40,9 +40,12 @@ function rateLimit(req, res, next) {
 function authenticate(req, res, next) {
   try {
     const token = (req.headers.authorization || "").replace("Bearer ", "");
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    const decoded = jwt.verify(token, process.env.JWT_SECRET, { algorithms: ["HS256"], issuer: "alphine-ai", audience: "aca-business" });
+    if (decoded.purpose !== "verified_business" || !Number.isInteger(decoded.tenant_id) || decoded.tenant_id <= 0 || typeof decoded.sub !== "string") throw new Error("invalid business identity");
+    const { rows } = await pool.query("SELECT tenant_id FROM public.aca_business_identities WHERE email=$1 AND tenant_id=$2 AND is_active", [decoded.sub, decoded.tenant_id]);
+    if (rows.length !== 1) throw new Error("inactive business identity");
     req.tenant_id = decoded.tenant_id;
-    req.partner_id = decoded.partner_id;
+    req.partner_id = null;
     next();
   } catch {
     return res.status(401).json({ ok: false, error: "Unauthorized" });
@@ -103,62 +106,8 @@ router.get("/history", authenticate, async (req, res) => {
 // ---------------------------------------------------------------------
 // POST /api/billing/pay – mark invoice paid (rate-limited)
 // ---------------------------------------------------------------------
-router.post("/pay", authenticate, rateLimit, async (req, res) => {
-  try {
-    const { invoice_id, payment_method = "mock", notes = "" } = req.body;
-    if (!invoice_id) return res.status(400).json({ ok: false, error: "invoice_id required" });
-
-    const paymentRef = `pay_${Date.now()}`;
-    const upd = await pool.query(
-      `UPDATE billing_invoices
-          SET status='paid',
-              paid_at=NOW(),
-              paid_by=$1,
-              payment_method=$2,
-              payment_reference=$3,
-              notes=$4
-        WHERE id=$5 AND tenant_id=$6
-        RETURNING id, tenant_id, partner_id, status, paid_at, payment_method, payment_reference, amount_usd;`,
-      [
-        `partner_${req.partner_id}`,
-        payment_method,
-        paymentRef,
-        notes,
-        invoice_id,
-        req.tenant_id,
-      ]
-    );
-    if (upd.rowCount === 0)
-      return res.status(404).json({ ok: false, error: "Invoice not found or access denied" });
-
-    const row = upd.rows[0];
-    logPayment({
-      t: new Date().toISOString(),
-      event: "invoice_paid",
-      partner_id: req.partner_id,
-      tenant_id: row.tenant_id,
-      invoice_id: row.id,
-      amount_usd: row.amount_usd,
-      method: row.payment_method,
-      ref: row.payment_reference
-    });
-
-    console.log(`[billing/pay] partner=${req.partner_id} invoice=${invoice_id} method=${payment_method}`);
-    res.json({
-      ok: true,
-      payment: {
-        id: row.id,
-        status: row.status,
-        paid_at: row.paid_at,
-        payment_method: row.payment_method,
-        payment_reference: row.payment_reference
-      }
-    });
-  } catch (err) {
-    console.error("[billing/pay]", err);
-    res.status(500).json({ ok: false, error: err.message });
-  }
-});
+// Payment state may only be changed by verified payment-provider webhooks.
+router.post("/pay", authenticate, (_req,res) => res.status(410).json({ok:false,error:"Direct payment marking is disabled; use the configured payment provider."}));
 
 // ---------------------------------------------------------------------
 // GET /api/billing/status/:id – single invoice
