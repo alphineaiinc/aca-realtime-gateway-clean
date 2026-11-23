@@ -32,7 +32,7 @@ async function markDelivered(pool, job, leaseToken) {
     `UPDATE aca_notification_outbox
      SET status = 'delivered', delivered_at = NOW(), locked_until = NULL, last_error_code = NULL
      WHERE id = $1 AND tenant_id = $2 AND status = 'processing'
-       AND attempt_count = $3 AND locked_until = $4
+       AND attempt_count = $3 AND locked_until = $4 AND locked_until > NOW()
      RETURNING id`,
     [job.id, job.tenant_id, job.attempt_count, leaseToken]
   );
@@ -50,7 +50,7 @@ async function markFailed(pool, job, leaseToken, code = "delivery_failed") {
      SET status = $5, locked_until = NULL, last_error_code = $6,
          next_attempt_at = NOW() + ($7::integer * INTERVAL '1 second')
      WHERE id = $1 AND tenant_id = $2 AND status = 'processing'
-       AND attempt_count = $3 AND locked_until = $4
+       AND attempt_count = $3 AND locked_until = $4 AND locked_until > NOW()
      RETURNING id`,
     [job.id, job.tenant_id, attempts, leaseToken,
       terminal ? "dead_letter" : "failed", String(code).slice(0, 64), backoffSeconds]
