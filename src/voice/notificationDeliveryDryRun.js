@@ -2,7 +2,6 @@
 
 // Dry-run preparation only. Never contacts a provider, sends a message, or
 // starts a worker. A delivery adapter requires separate approval.
-const { claimNext, reapExpiredLeases } = require("./notificationOutboxWorker");
 
 function safePreview(record) {
   if (!record || !Number.isSafeInteger(Number(record.id)) ||
