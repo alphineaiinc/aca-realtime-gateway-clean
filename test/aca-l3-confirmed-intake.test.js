@@ -4,29 +4,54 @@ const assert = require("node:assert/strict");
 const { saveConfirmedIntake } = require("../src/voice/confirmedIntakeStore");
 const callSid = "CA" + "a".repeat(32);
 const base = { confirmed: true, tenantId: 3, callSid, clusterId: "medical_clinic", intent: "appointment", slots: { name: "Caller", date: "2026-12-01", time: "10:00" } };
-test("rejects unconfirmed, invalid tenant and malformed call IDs without database writes", async () => {
+function mock({ duplicate = false, failOutbox = false } = {}) {
+  const queries = [];
+  let released = 0;
+  const request = { id: 9, tenant_id: 3, call_sid: callSid };
+  const client = {
+    async query(sql, params) {
+      queries.push({ sql, params });
+      if (sql.includes("INSERT INTO aca_intake_requests")) return { rows: duplicate ? [] : [request] };
+      if (sql.includes("SELECT id, tenant_id, call_sid")) return { rows: [request] };
+      if (sql.includes("INSERT INTO aca_notification_outbox")) {
+        if (failOutbox) throw new Error("outbox unavailable");
+        return { rows: [] };
+      }
+      return { rows: [] };
+    },
+    release() { released++; }
+  };
+  return { pool: { async connect() { return client; } }, queries, released: () => released };
+}
+test("rejects unconfirmed and malformed requests before opening a connection", async () => {
   let count = 0;
-  const pool = { async query() { count++; return { rows: [] }; } };
-  for (const input of [{ ...base, confirmed: false }, { ...base, tenantId: 0 }, { ...base, callSid: "not-a-call" }, { ...base, slots: {} }]) {
+  const pool = { async connect() { count++; throw Error("unexpected"); } };
+  for (const input of [{ ...base, confirmed: false }, { ...base, tenantId: 0 }, { ...base, callSid: "invalid" }, { ...base, slots: {} }]) {
     await assert.rejects(saveConfirmedIntake(pool, input));
   }
   assert.equal(count, 0);
 });
-test("writes only tenant-scoped parameterized confirmed request", async () => {
-  const calls = [];
-  const pool = { async query(sql, params) { calls.push({ sql, params }); return { rows: [{ id: 9, tenant_id: 3, call_sid: callSid }] }; } };
-  const result = await saveConfirmedIntake(pool, base);
+test("persists intake and outbox in one transaction without dispatch", async () => {
+  const h = mock();
+  const result = await saveConfirmedIntake(h.pool, base);
   assert.equal(result.created, true);
-  assert.equal(calls.length, 1);
-  assert.match(calls[0].sql, /ON CONFLICT \(tenant_id, call_sid\) DO NOTHING/);
-  assert.deepEqual(calls[0].params.slice(0, 3), [3, callSid, "medical_clinic"]);
+  assert.deepEqual(h.queries.map(x => x.sql === "BEGIN" ? "BEGIN" : x.sql === "COMMIT" ? "COMMIT" : x.sql.includes("aca_notification_outbox") ? "OUTBOX" : "INTAKE"), ["BEGIN", "INTAKE", "OUTBOX", "COMMIT"]);
+  assert.deepEqual(h.queries[1].params.slice(0, 3), [3, callSid, "medical_clinic"]);
+  assert.deepEqual(h.queries[2].params, [3, 9]);
+  assert.match(h.queries[2].sql, /ON CONFLICT \(intake_request_id, event_type\) DO NOTHING/);
+  assert.equal(h.released(), 1);
 });
-test("duplicate call returns original row without second write", async () => {
-  const queries = [];
-  const pool = { async query(sql) { queries.push(sql); return { rows: queries.length === 1 ? [] : [{ id: 7, tenant_id: 3, call_sid: callSid }] }; } };
-  const result = await saveConfirmedIntake(pool, base);
+test("duplicate call returns existing request and deduplicates notification", async () => {
+  const h = mock({ duplicate: true });
+  const result = await saveConfirmedIntake(h.pool, base);
   assert.equal(result.created, false);
-  assert.equal(result.request.id, 7);
-  assert.equal(queries.length, 2);
-  assert.match(queries[1], /WHERE tenant_id = \$1 AND call_sid = \$2/);
+  assert.deepEqual(h.queries.map(x => x.sql.includes("aca_notification_outbox") ? "OUTBOX" : x.sql.includes("SELECT") ? "SELECT" : x.sql), ["BEGIN", h.queries[1].sql, "SELECT", "OUTBOX", "COMMIT"]);
+  assert.equal(h.released(), 1);
+});
+test("outbox failure rolls back confirmed intake rather than losing notification intent", async () => {
+  const h = mock({ failOutbox: true });
+  await assert.rejects(saveConfirmedIntake(h.pool, base), /outbox unavailable/);
+  assert.equal(h.queries.some(x => x.sql === "COMMIT"), false);
+  assert.equal(h.queries.at(-1).sql, "ROLLBACK");
+  assert.equal(h.released(), 1);
 });
