@@ -32,7 +32,7 @@ test('pdf-parse v2 parser API is used with guaranteed cleanup', () => {
 test('oversized and malformed uploads get controlled client errors', () => {
   assert.match(source, /err instanceof multer\.MulterError/);
   assert.match(source, /err\.code === "LIMIT_FILE_SIZE" \? 413 : 400/);
-  assert.match(source, /authenticate, acceptPdfUpload, async/);
+  assert.match(source, /authenticate, reserveUpload, acceptPdfUpload, async/);
 });
 
 test('PDF parsing bounds downstream embedding costs before writes', () => {
