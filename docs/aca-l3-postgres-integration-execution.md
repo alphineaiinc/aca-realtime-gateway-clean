@@ -1,6 +1,6 @@
 # ACA-L3: disposable PostgreSQL integration test execution
 
-This suite is **opt-in** and is not executed by the default unit-test CI job. The default CI syntax-checks tracked JavaScript files, but that is not a substitute for running SQL assertions.
+This suite is **opt-in locally**. Draft PR #138 now also configures its ACA CI job to run the suite against an ephemeral PostgreSQL 17 service container (not Neon or any external database). The CI integration result must be checked at the exact head commit before claiming these SQL tests passed.
 
 Run only against a **local disposable PostgreSQL database**, whose name begins with `aca_test_`. Do not use Neon production, staging, shared databases, or existing tenant data.
 
@@ -18,4 +18,4 @@ The test runner refuses missing confirmation, non-loopback hosts, and databases 
 
 Acceptance: concurrent claims, stale lease fencing, exhausted retries, duplicate confirmed intake, atomic notification enqueue and rollback on SQL failure. The test does **not** send SMS or email.
 
-**Current execution evidence:** no disposable PostgreSQL runtime was available in the development tool environment; the tests have been authored, but **not executed against PostgreSQL**. CI may verify JavaScript syntax and existing mock tests only. Execute these tests on an approved disposable local database before marking this acceptance gate complete.
+**Current execution evidence:** the isolated PostgreSQL CI service was added in the draft workflow; its first run is pending verification. Do not claim PostgreSQL acceptance until that exact-head CI job succeeds.
