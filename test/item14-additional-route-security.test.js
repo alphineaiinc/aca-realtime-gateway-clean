@@ -18,3 +18,14 @@ test('tenant ID alone cannot mint credentials and provisioning uses dedicated tr
  assert.ok(!login.includes('jwt.sign'));
  for(const value of ['client = await pool.connect()', 'client.query("BEGIN")','insertTenantDynamic(client, req.body || {})','insertBusiness(client, tenantId','ensureDefaultEmbeddingSpace(client, tenantId)','client.query("COMMIT")','client.query("ROLLBACK")','client.release()']) assert.ok(source.includes(value),value);
 });
+
+test('chat and voice routes enforce shared quotas and explicit tenant boundaries',()=>{
+ for(const [file,count] of [['chat.js',1],['chat_stream.js',2],['voice.js',3]]){
+ const routes=read(file).split('\n').filter(line=>/router\.(get|post)\(/.test(line));
+ assert.equal(routes.length,count);
+ for(const route of routes)assert.ok(route.includes('authenticate, sharedLimit,'),route);
+ }
+ assert.ok(!read('chat.js').includes('cfg.tenantId || decoded.tenant_id'));
+ assert.ok(!read('chat_stream.js').includes('forcedTenant || decoded.tenant_id'));
+ assert.ok(read('voice.js').includes('trimmedText.length > 2000'));
+});
