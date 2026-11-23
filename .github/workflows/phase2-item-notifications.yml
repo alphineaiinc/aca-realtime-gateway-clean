@@ -1,0 +1,59 @@
+name: Phase 2 item completion and intervention notifications
+on:
+  issues:
+    types: [edited]
+permissions:
+  contents: read
+  issues: write
+concurrency:
+  group: phase2-item-notify-${{ github.event.issue.number }}
+  cancel-in-progress: false
+jobs:
+  notify:
+    if: github.event.issue.number == 118 && github.event.changes.body.from != ''
+    runs-on: ubuntu-latest
+    steps:
+      - name: Detect newly completed items or manual intervention
+        id: detect
+        env:
+          OLD_BODY: ${{ github.event.changes.body.from }}
+          NEW_BODY: ${{ github.event.issue.body }}
+        run: |
+          python3 - <<'PY'
+          import os, re
+          old = os.environ["OLD_BODY"]
+          new = os.environ["NEW_BODY"]
+          def items(body, mark):
+              return set(re.findall(r"(?m)^- \\[\\%s\\] (.+)$" % mark, body))
+          # Identify items by stable checklist text before optional evidence suffix.
+          def keys(body, mark):
+              return {re.split(r"; \\*\\*in progress\\*\\*|; evidence:", x, 1)[0].strip()
+                      for x in items(body, mark)}
+          completed = sorted(keys(new, "x") - keys(old, "x"))
+          # Manual intervention is explicit, never inferred from a failed test.
+          def interventions(body):
+              return set(re.findall(r"(?m)^<!-- phase2-owner-action: ([^\\n<>]+) -->$", body))
+          actions = sorted(interventions(new) - interventions(old))
+          with open(os.environ["GITHUB_OUTPUT"], "a") as f:
+              f.write("notify=" + str(bool(completed or actions)).lower() + "\\n")
+          with open("/tmp/phase2-message.txt", "w") as f:
+              f.write("Phase 2 tracker update (Issue #118)\\n\\n")
+              if completed:
+                  f.write("Fully completed checklist item(s):\\n")
+                  for item in completed: f.write("- " + item[:300] + "\\n")
+              if actions:
+                  f.write("\\nManual intervention required:\\n")
+                  for action in actions: f.write("- " + action[:300] + "\\n")
+              f.write("\\nTracker: https://github.com/" + os.environ["GITHUB_REPOSITORY"] + "/issues/118\\n")
+          PY
+      - name: Post owner-visible tracker notification
+        if: steps.detect.outputs.notify == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          NOTIFY_LOGIN: ${{ vars.PHASE2_NOTIFY_LOGIN }}
+        run: |
+          if [ -n "$NOTIFY_LOGIN" ]; then
+            printf '\\n@%s\\n' "$NOTIFY_LOGIN" >> /tmp/phase2-message.txt
+          fi
+          gh issue comment 118 --repo "$GH_REPO" --body-file /tmp/phase2-message.txt
