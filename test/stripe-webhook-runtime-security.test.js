@@ -13,6 +13,7 @@ test('Stripe webhook verifies real signatures and never reflects errors or logs 
   const stripe = new Stripe('sk_test_disposable');
   const logs = [];
   const emails = [];
+  let failDelivery = false;
   const templates = new Proxy({}, { get: () => () => '<p>test invoice</p>' });
   const context = {
     require(name) {
@@ -20,7 +21,7 @@ test('Stripe webhook verifies real signatures and never reflects errors or logs 
       if (name === 'stripe') return Stripe;
       if (name === 'path') return path;
       if (name === 'fs') return { existsSync: () => true, appendFileSync: (_, value) => logs.push(value) };
-      if (name.endsWith('/emailer')) return { sendBillingEmail: async (...args) => emails.push(args) };
+      if (name.endsWith('/emailer')) return { sendBillingEmail: async (...args) => { if (failDelivery) throw new Error('private delivery failure'); emails.push(args); } };
       if (name.endsWith('/emailTemplates')) return templates;
       throw new Error('Unexpected dependency: ' + name);
     },
@@ -51,4 +52,17 @@ test('Stripe webhook verifies real signatures and never reflects errors or logs 
   assert.equal(logs.join(' ').includes(email), false);
   assert.equal(logs.join(' ').includes('<script>'), false);
   assert.equal(logs.join(' ').includes(secret), false);
+  const duplicate = await send(stripe.webhooks.generateTestHeaderString({ payload, secret }));
+  assert.equal(duplicate.status, 200);
+  assert.equal(emails.length, 1);
+  const retryPayload = JSON.stringify({ id: 'evt_retry', type: 'invoice.created', data: { object: { customer_email: email } } });
+  const retry = () => fetch(url, { method: 'POST', headers: { 'content-type': 'application/json', 'stripe-signature': stripe.webhooks.generateTestHeaderString({ payload: retryPayload, secret }) }, body: retryPayload });
+  failDelivery = true;
+  const failed = await retry();
+  assert.equal(failed.status, 503);
+  assert.equal(await failed.text(), 'Webhook processing failed');
+  failDelivery = false;
+  assert.equal((await retry()).status, 200);
+  assert.equal(emails.length, 2);
+  assert.equal(logs.join(' ').includes('private delivery failure'), false);
 });
