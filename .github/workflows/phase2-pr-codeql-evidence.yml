@@ -1,0 +1,45 @@
+name: Phase 2 PR CodeQL Analysis Evidence
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'tts.js'
+      - 'src/voice/elevenLabsUrl.js'
+      - 'test/elevenlabs-url-security.test.js'
+      - '.github/workflows/phase2-pr-codeql-evidence.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+  security-events: read
+jobs:
+  evidence:
+    name: Check CodeQL analysis metadata for exact PR head
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      TARGET_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+    steps:
+      - name: Read exact-commit CodeQL analysis metadata
+        shell: bash
+        run: |
+          set -euo pipefail
+          # API failure is an error, never interpreted as absence of findings.
+          json="$(gh api --paginate --slurp \
+            -H 'Accept: application/vnd.github+json' \
+            "/repos/${GH_REPO}/code-scanning/analyses?per_page=100")"
+          printf '%s' "$json" | jq -e 'type == "array" and all(.[]; type == "array")' >/dev/null
+          count="$(printf '%s' "$json" | jq --arg sha "$TARGET_SHA" \
+            '[.[][] | select(.commit_sha == $sha and .tool.name == "CodeQL")] | length')"
+          echo "PR target commit: ${TARGET_SHA}"
+          echo "CodeQL analyses matching exact commit: ${count}"
+          if [ "$count" -eq 0 ]; then
+            echo "::warning::NO CODEQL ANALYSIS FOUND FOR EXACT PR HEAD. Security disposition remains PENDING."
+          else
+            printf '%s' "$json" | jq -r --arg sha "$TARGET_SHA" '
+              .[][] | select(.commit_sha == $sha and .tool.name == "CodeQL") |
+              "CodeQL analysis id=\(.id) ref=\(.ref) created_at=\(.created_at)"'
+            echo "::notice::CodeQL analysis exists; inspect its findings before any clearance claim."
+          fi
+          echo "This inventory does not run CodeQL or establish absence of alerts."
