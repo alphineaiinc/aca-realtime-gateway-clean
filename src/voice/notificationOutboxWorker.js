@@ -58,4 +58,37 @@ async function markFailed(pool, job, leaseToken, code = "delivery_failed") {
   return result.rowCount === 1;
 }
 
-module.exports = { MAX_ATTEMPTS, LEASE_SECONDS, claimNext, markDelivered, markFailed };
+
+/**
+ * Recover abandoned leases in bounded batches. A final-attempt expiry is
+ * dead-lettered rather than silently stranded as "processing".
+ * Earlier attempts become retryable only after their next_attempt_at.
+ * This never sends a message; delivery outcome remains unknown after a crash.
+ */
+async function reapExpiredLeases(pool, limit = 100) {
+  if (!Number.isSafeInteger(limit) || limit < 1 || limit > 500) {
+    throw new Error("invalid_recovery_limit");
+  }
+  const result = await pool.query(
+    `WITH expired AS (
+       SELECT id FROM aca_notification_outbox
+       WHERE status = 'processing' AND locked_until < NOW()
+       ORDER BY locked_until, id
+       FOR UPDATE SKIP LOCKED LIMIT $1
+     )
+     UPDATE aca_notification_outbox AS o
+     SET status = CASE WHEN o.attempt_count >= $2 THEN 'dead_letter' ELSE 'failed' END,
+         locked_until = NULL,
+         last_error_code = 'lease_expired',
+         next_attempt_at = CASE
+           WHEN o.attempt_count >= $2 THEN o.next_attempt_at
+           ELSE NOW() + (LEAST(3600, 30 * POWER(2, GREATEST(o.attempt_count - 1, 0))) * INTERVAL '1 second')
+         END
+     FROM expired WHERE o.id = expired.id
+     RETURNING o.id, o.status`,
+    [limit, MAX_ATTEMPTS]
+  );
+  return result.rows;
+}
+
+module.exports = { MAX_ATTEMPTS, LEASE_SECONDS, claimNext, markDelivered, markFailed, reapExpiredLeases };
