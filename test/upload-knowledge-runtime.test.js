@@ -22,6 +22,7 @@ function harness({ tenantId = 'tenant-1', pdfText = 'Knowledge text', pdfError =
     jsonwebtoken: { verify: (token) => { if (token !== 'valid') throw new Error('Invalid test token'); return { tenant_id: tenantId }; } },
     'pdf-parse': { PDFParse },
     '../db/pool': { async query() { dbWrites++; } },
+    '../middleware/postgresRateLimit': { createPostgresRateLimiter: () => (req, res, next) => next() },
     '../brain/utils/embeddingManager': { async embedText() { embeddingCalls++; if (waitForEmbedding) await waitForEmbedding; return [0.1, 0.2]; } },
   };
   const context = { require(name) { if (!(name in mocks)) throw new Error('Unexpected import ' + name); return mocks[name]; }, module: { exports: {} }, Buffer, process: { env: { JWT_SECRET: 'test-only-secret' } }, console: { error() {} } };
