@@ -32,7 +32,8 @@ test("remaining upload and embedding-space drift is characterized", () => {
   const embedding = source("src/brain/utils/embeddingManager.js");
   // These are characterization assertions, NOT desired behavior. Remove when reconciled.
   assert.match(upload, /INSERT INTO kb_entries \(business_id, content, embedding, source_filename, chunk_index, created_at\)/);
-  assert.doesNotMatch(tenant, /INSERT INTO businesses/);\n  assert.match(tenant, /INSERT INTO master_tenants \(business_name, preferred_lang, region\)/);
+  assert.doesNotMatch(tenant, /INSERT INTO businesses/);
+  assert.match(tenant, /INSERT INTO master_tenants \(business_name, preferred_lang, region\)/);
   assert.match(embedding, /FROM embedding_spaces/);
 });
 
