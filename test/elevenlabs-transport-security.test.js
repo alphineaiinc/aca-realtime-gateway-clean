@@ -188,3 +188,44 @@ test("ElevenLabs upstream failure rejects safely without retrying", async () => 
     delete require.cache[require.resolve("../tts")];
   }
 });
+
+test("OpenAI provider remains usable independently of ElevenLabs credentials", async () => {
+  const originalLoad = Module._load;
+  const oldOpenAI = process.env.OPENAI_API_KEY;
+  const oldEleven = process.env.ELEVENLABS_API_KEY;
+  let openAiCalls = 0;
+  let axiosCalls = 0;
+  process.env.OPENAI_API_KEY = "test-openai-key";
+  delete process.env.ELEVENLABS_API_KEY;
+  try {
+    Module._load = function(request, parent, isMain) {
+      if (request === "axios") return { post: async () => { axiosCalls++; throw new Error("unexpected ElevenLabs call"); } };
+      if (request === "openai") return class FakeOpenAI {
+        constructor() {
+          this.audio = { speech: { create: async (request) => {
+            openAiCalls++;
+            assert.equal(request.response_format, "mp3");
+            return { arrayBuffer: async () => Uint8Array.from([0x49, 0x44, 0x33]).buffer };
+          }}};
+        }
+      };
+      if (request.endsWith("/voiceProfileLoader")) return { getTenantVoiceProfile: async () => null };
+      return originalLoad.apply(this, arguments);
+    };
+    delete require.cache[require.resolve("../tts")];
+    const { synthesizeSpeech } = require("../tts");
+    const data = await synthesizeSpeech("hello", "en-US", {
+      provider: "openai", outputFormat: "mp3_44100_128", useFillers: false,
+    });
+    assert.deepEqual(data, Buffer.from([0x49, 0x44, 0x33]));
+    assert.equal(openAiCalls, 1);
+    assert.equal(axiosCalls, 0);
+  } finally {
+    Module._load = originalLoad;
+    if (oldOpenAI === undefined) delete process.env.OPENAI_API_KEY;
+    else process.env.OPENAI_API_KEY = oldOpenAI;
+    if (oldEleven === undefined) delete process.env.ELEVENLABS_API_KEY;
+    else process.env.ELEVENLABS_API_KEY = oldEleven;
+    delete require.cache[require.resolve("../tts")];
+  }
+});
