@@ -5,7 +5,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
 const source = fs.readFileSync(path.join(__dirname, '../src/routes/uploadKnowledge.js'), 'utf8');
-function harness({ tenantId = 'tenant-1', pdfText = 'Knowledge text', pdfError = null, uploadError = null } = {}) {
+function harness({ tenantId = 'tenant-1', pdfText = 'Knowledge text', pdfError = null, uploadError = null, waitForEmbedding = null } = {}) {
   let route, dbWrites = 0, embeddingCalls = 0, parserDestroyed = 0;
   class PDFParse {
     constructor() {}
@@ -22,7 +22,7 @@ function harness({ tenantId = 'tenant-1', pdfText = 'Knowledge text', pdfError =
     jsonwebtoken: { verify: (token) => { if (token !== 'valid') throw new Error('Invalid test token'); return { tenant_id: tenantId }; } },
     'pdf-parse': { PDFParse },
     '../db/pool': { async query() { dbWrites++; } },
-    '../brain/utils/embeddingManager': { async embedText() { embeddingCalls++; return [0.1, 0.2]; } },
+    '../brain/utils/embeddingManager': { async embedText() { embeddingCalls++; if (waitForEmbedding) await waitForEmbedding; return [0.1, 0.2]; } },
   };
   const context = { require(name) { if (!(name in mocks)) throw new Error('Unexpected import ' + name); return mocks[name]; }, module: { exports: {} }, Buffer, process: { env: { JWT_SECRET: 'test-only-secret' } }, console: { error() {} } };
   vm.runInNewContext(source, context, { filename: 'uploadKnowledge.js' });
@@ -108,4 +108,17 @@ test('Multer file size limit returns 413 without parsing or writes', async () =>
   assert.equal(res.statusCode, 413);
   assert.equal(res.body.error, 'Invalid upload');
   assert.deepEqual(h.stats(), { dbWrites: 0, embeddingCalls: 0, parserDestroyed: 0 });
+});
+
+test('concurrent same-tenant upload is rejected and capacity is released after completion', async () => {
+  let release;
+  const waitForEmbedding = new Promise(resolve => { release = resolve; });
+  const h = harness({ waitForEmbedding });
+  const first = h.request(Buffer.from('%PDF-1.7'));
+  try {
+    const second = await h.request(Buffer.from('%PDF-1.7'));
+    assert.equal(second.statusCode, 429);
+  } finally { release(); }
+  assert.equal((await first).statusCode, 200);
+  assert.equal((await h.request(Buffer.from('%PDF-1.7'))).statusCode, 200);
 });
