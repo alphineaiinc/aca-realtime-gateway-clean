@@ -24,7 +24,7 @@ jobs:
           old = os.environ["OLD_BODY"]
           new = os.environ["NEW_BODY"]
           def items(body, mark):
-              return set(re.findall(r"(?m)^- \[\%s\] (.+)$" % mark, body))
+              return set(re.findall(r"(?m)^- \[%s\] (.+)$" % mark, body))
           # Identify items by stable checklist text before optional evidence suffix.
           def keys(body, mark):
               return {re.split(r"; \*\*in progress\*\*|; evidence:", x, 1)[0].strip()
