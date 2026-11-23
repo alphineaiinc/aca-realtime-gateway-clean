@@ -39,10 +39,8 @@ const isRender =
   baseUrl.includes("render.com") ||
   baseUrl.includes("sslmode=require");
 
-// --- Append sslmode if missing for cloud ---
-if (isRender && baseUrl && !baseUrl.includes("sslmode")) {
-  baseUrl += baseUrl.includes("?") ? "&sslmode=require" : "?sslmode=require";
-}
+// --- Cloud TLS is enforced by the explicit pg ssl configuration. ---
+// Do not append sslmode=require: pg-connection-string may override ssl options.
 
 // --- Validate URL early so startup log is clearer ---
 try {
