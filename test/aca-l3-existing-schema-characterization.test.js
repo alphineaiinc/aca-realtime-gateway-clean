@@ -57,3 +57,12 @@ test("provisioning uses one transaction connection and blocks tenant-id-only log
   assert.match(tenant, /business_name, preferred_lang, region/);
   assert.match(tenant, /SELECT id AS tenant_id, business_name, preferred_lang, region/);
 });
+
+test("knowledge upload embeds before opening one atomic transaction", () => {
+  const upload = source("src/routes/uploadKnowledge.js");
+  assert.ok(upload.indexOf("await embedText(content)") < upload.indexOf("await pool.connect()"));
+  assert.match(upload, /await client.query\("BEGIN"\)/);
+  assert.match(upload, /await client.query\("COMMIT"\)/);
+  assert.match(upload, /await client.query\("ROLLBACK"\)/);
+  assert.match(upload, /client.release\(\)/);
+});
