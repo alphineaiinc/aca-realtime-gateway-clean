@@ -1335,9 +1335,14 @@ async function handleCallerTurn({ callSid, businessId = null, transcript, meta =
   session.lastCallerText = utterance;
   if (session.workflowStatus === "ready_for_confirmation" &&
       !session.confirmationBlocked && /^(yes|yes please|correct|that is correct|that's correct|okay|ok)[.!]?$/i.test(utterance)) {
+    try {
+      await require("./confirmedRequestStore").saveConfirmedRequest(routing, session.active_intent, session.slots);
+    } catch {
+      return { shouldSpeak: true, replyText: "I could not save your request yet. Would you like me to try again?", replyType: "request_save_failed" };
+    }
     session.workflowStatus = "details_confirmed";
     session.lastAskedSlot = null;
-    return { shouldSpeak: true, replyText: "Thank you. I have your confirmed details. Availability and fulfillment are not yet confirmed.", replyType: "details_confirmed" };
+    return { shouldSpeak: true, replyText: "Thank you. Your request has been recorded. Availability and fulfillment are not yet confirmed.", replyType: "details_confirmed" };
   }
   if (session.workflowStatus === "details_confirmed" && /^(yes|correct|okay|ok)[.!]?$/i.test(utterance)) {
     return { shouldSpeak: true, replyText: "Is there anything else I can help with?", replyType: "acknowledgement" };
