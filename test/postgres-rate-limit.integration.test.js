@@ -2,7 +2,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { Pool } = require('pg');
-const { createPostgresRateLimiter } = require('../src/middleware/postgresRateLimit');
+const { createPostgresRateLimiter, pruneExpiredRateLimitBuckets } = require('../src/middleware/postgresRateLimit');
 const enabled = process.env.RUN_RATE_LIMIT_CI === '1';
 test('shared PostgreSQL limiter enforces atomic budgets across independent pools', { skip: !enabled }, async t => {
   const url = process.env.RATE_LIMIT_CI_DATABASE_URL;
@@ -26,6 +26,11 @@ test('shared PostgreSQL limiter enforces atomic budgets across independent pools
   assert.equal(await invoke(limiters[0], null), 401);
   await pools[0].query("UPDATE aca_rate_limit_buckets SET reset_at = clock_timestamp() - interval '1 second' WHERE scope = $1", [scope]);
   assert.equal(await invoke(limiters[1], 'tenant-a'), 200);
+  assert.equal(await pruneExpiredRateLimitBuckets(pools[0], 1), 1);
+  const remaining = await pools[1].query('SELECT hits FROM aca_rate_limit_buckets WHERE scope = $1', [scope]);
+  assert.equal(remaining.rowCount, 1);
+  assert.equal(Number(remaining.rows[0].hits), 1);
+  assert.equal(await pruneExpiredRateLimitBuckets(pools[1], 1), 0);
   const unavailable = createPostgresRateLimiter({ pool: { query: async () => { throw new Error('private detail'); } }, scope });
   assert.equal(await invoke(unavailable, 'tenant-a'), 503);
 });
