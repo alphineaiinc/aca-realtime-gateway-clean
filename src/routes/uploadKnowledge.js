@@ -7,6 +7,15 @@ const pool = require("../db/pool");
 const { embedText } = require("../brain/utils/embeddingManager");
 
 const router = express.Router();
+const requestWindows = new Map();
+function requestLimit(req,res,next) {
+  const now=Date.now(),key=String(req.ip||"unknown");
+  for(const [k,v] of requestWindows) if(v.until<=now) requestWindows.delete(k);
+  let bucket=requestWindows.get(key);
+  if(!bucket){if(requestWindows.size>=10000)return res.status(429).json({ok:false,error:"Upload rate limit reached"});bucket={count:0,until:now+60000};}
+  if(bucket.count>=20)return res.status(429).json({ok:false,error:"Upload rate limit reached"});
+  bucket.count++;requestWindows.set(key,bucket);next();
+}
 
 // ---------------------------------------------------------------------------
 // Keep uploaded PDF bytes in memory; never resolve an uploaded path for filesystem access.
@@ -101,7 +110,7 @@ function acceptPdfUpload(req, res, next) {
   });
 }
 
-router.post("/tenant/upload-knowledge", authenticate, reserveUpload, acceptPdfUpload, async (req, res) => {
+router.post("/tenant/upload-knowledge", requestLimit, authenticate, reserveUpload, acceptPdfUpload, async (req, res) => {
   try {
   if (!req.file) {
     return res.status(400).json({ ok: false, error: "File missing" });

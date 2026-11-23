@@ -3,11 +3,20 @@ const express = require("express");
 const jwt = require("jsonwebtoken");
 const router = express.Router();
 const pool = require("../db/pool");
+const requestWindows = new Map();
+function requestLimit(req,res,next) {
+ const now=Date.now(),key=String(req.ip||"unknown");
+ for(const [k,v] of requestWindows) if(v.until<=now) requestWindows.delete(k);
+ let bucket=requestWindows.get(key);
+ if(!bucket){if(requestWindows.size>=10000)return res.status(429).json({ok:false,error:"Try again later"});bucket={count:0,until:now+60000};}
+ if(bucket.count>=30)return res.status(429).json({ok:false,error:"Try again later"});
+ bucket.count++;requestWindows.set(key,bucket);next();
+}
 
 // ---------------------------------------------------------------------------
 // POST /tenant/provision (secured via header API key)
 // ---------------------------------------------------------------------------
-router.post("/provision", async (req,res) => {
+router.post("/provision", requestLimit, async (req,res) => {
   const crypto = require("node:crypto");
   const expected = Buffer.from(process.env.PROVISION_API_KEY || "");
   const actual = Buffer.from(String(req.headers["x-api-key"] || ""));
@@ -30,18 +39,9 @@ router.post("/login", (_req, res) => {
 // ---------------------------------------------------------------------------
 // GET /tenant/profile (JWT required)
 // ---------------------------------------------------------------------------
-router.get("/profile", async (req, res) => {
+router.get("/profile", requestLimit, verifiedBusiness, async (req, res) => {
   try {
-    const auth = req.headers.authorization || "";
-
-    if (!auth.startsWith("Bearer ")) {
-      return res.status(401).json({ ok: false, error: "unauthorized" });
-    }
-
-    const token = auth.slice(7).trim();
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
-
-    const tenantId = decoded.tenant_id;
+    const tenantId = req.verifiedTenantId;
 
     const { rows } = await pool.query(
       `SELECT id AS tenant_id, business_name, preferred_lang, region FROM public.master_tenants WHERE id=$1`,
@@ -53,9 +53,8 @@ router.get("/profile", async (req, res) => {
     }
 
     return res.json({ ok: true, profile: rows[0] });
-  } catch (err) {
-    console.error("Profile error:", err);
-    return res.status(401).json({ ok: false, error: "unauthorized" });
+  } catch {
+    return res.status(500).json({ ok: false, error: "internal_error" });
   }
 });
 
