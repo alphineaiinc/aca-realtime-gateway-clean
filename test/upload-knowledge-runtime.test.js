@@ -5,7 +5,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
 const source = fs.readFileSync(path.join(__dirname, '../src/routes/uploadKnowledge.js'), 'utf8');
-function harness({ tenantId = 'tenant-1', pdfText = 'Knowledge text', pdfError = null, uploadError = null, waitForEmbedding = null, disconnectBeforeParsing = false } = {}) {
+function harness({ tenantId = 'tenant-1', pdfText = 'Knowledge text', pdfError = null, uploadError = null, waitForEmbedding = null, disconnectBeforeParsing = false, rateLimitReject = false } = {}) {
   let route, dbWrites = 0, embeddingCalls = 0, parserDestroyed = 0;
   class PDFParse {
     constructor() {}
@@ -22,7 +22,7 @@ function harness({ tenantId = 'tenant-1', pdfText = 'Knowledge text', pdfError =
     jsonwebtoken: { verify: (token) => { if (token !== 'valid') throw new Error('Invalid test token'); return { tenant_id: tenantId }; } },
     'pdf-parse': { PDFParse },
     '../db/pool': { async query() { dbWrites++; } },
-    '../middleware/postgresRateLimit': { createPostgresRateLimiter: () => (req, res, next) => next() },
+    '../middleware/postgresRateLimit': { createPostgresRateLimiter: () => (req, res, next) => rateLimitReject ? res.status(429).json({ ok: false, error: 'Rate limit exceeded' }) : next() },
     '../brain/utils/embeddingManager': { async embedText() { embeddingCalls++; if (waitForEmbedding) await waitForEmbedding; return [0.1, 0.2]; } },
   };
   const context = { require(name) { if (!(name in mocks)) throw new Error('Unexpected import ' + name); return mocks[name]; }, module: { exports: {} }, Buffer, process: { env: { JWT_SECRET: 'test-only-secret' } }, console: { error() {} } };
@@ -131,5 +131,13 @@ test('disconnect before PDF processing releases capacity and prevents writes', a
   const second = await h.request(Buffer.from('%PDF-1.7'));
   assert.equal(second.destroyed, true);
   assert.notEqual(second.statusCode, 429);
+  assert.deepEqual(h.stats(), { dbWrites: 0, embeddingCalls: 0, parserDestroyed: 0 });
+});
+
+
+test('shared upload quota denial happens before multipart parsing, embedding or database writes', async () => {
+  const h = harness({ rateLimitReject: true });
+  const res = await h.request(Buffer.from('%PDF-1.7'));
+  assert.equal(res.statusCode, 429);
   assert.deepEqual(h.stats(), { dbWrites: 0, embeddingCalls: 0, parserDestroyed: 0 });
 });
