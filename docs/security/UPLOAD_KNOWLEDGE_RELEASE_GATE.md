@@ -18,3 +18,6 @@ Status: draft only; requires coordinated PR #125 rate-limit schema.
 5. Complete fresh CodeQL alert reconciliation and independent security review.
 
 No merge, migration on staging/production, deployment, or alert dismissal is authorized by this draft.
+
+## Disconnect behavior
+The draft stops further chunk processing and database writes after a closed response is observed, including after an in-flight embedding returns. It does not cancel an already-dispatched provider call or database statement, and previously written chunks are not rolled back. Local capacity is retained until the processing handler exits. A distributed concurrent admission control remains a separate required gate.
