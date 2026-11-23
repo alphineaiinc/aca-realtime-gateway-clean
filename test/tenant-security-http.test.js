@@ -11,7 +11,7 @@ test('tenant login denies arbitrary IDs and provisioning uses one client with ro
  let fail=false;
  const client={async query(sql){calls.push(sql);if(sql.includes('information_schema.columns')){if(fail)throw Error('fixture failure');return {rows:[]};}return {rows:[{id:42}]};},release(){calls.push('release');}};
  const pool={async connect(){calls.push('connect');return client;},async query(){throw Error('unexpected shared pool query');}};
- const context={require(n){if(n==='express')return express;if(n==='jsonwebtoken')return jwt;if(n==='../db/pool')return pool;throw Error(n);},process:{env:{PROVISION_API_KEY:'fixture-only',JWT_SECRET:'fixture-jwt'}},console:{error(){}},module:{exports:{}}};
+ const context={require(n){if(n==='express')return express;if(n==='jsonwebtoken')return jwt;if(n==='../db/pool')return pool;if(n==='../middleware/postgresRateLimit')return {createPostgresRateLimiter:()=> (req,res,next)=>next()};throw Error(n);},process:{env:{PROVISION_API_KEY:'fixture-only',JWT_SECRET:'fixture-jwt'}},console:{error(){}},module:{exports:{}}};
  vm.runInNewContext(fs.readFileSync(path.join(__dirname,'../src/routes/tenant.js'),'utf8'),context);
  const app=express();app.use(express.json());app.use(context.module.exports);
  const server=app.listen(0,'127.0.0.1');t.after(()=>new Promise(r=>server.close(r)));await new Promise(r=>server.once('listening',r));
