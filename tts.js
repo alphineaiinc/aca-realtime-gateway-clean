@@ -6,7 +6,7 @@
 const axios = require("axios");
 const path = require("path");
 const OpenAI = require("openai");
-const { buildElevenLabsTtsUrl } = require("./src/voice/elevenLabsUrl");
+const { buildElevenLabsTtsUrl, getElevenLabsRequestLimits } = require("./src/voice/elevenLabsUrl");
 
 // ------------------------------------------------------
 // Global language registry (Story 9.1 / 9.7)
@@ -591,9 +591,7 @@ async function synthesizeWithElevenLabs(text, langCode = "en-US", options = {}) 
           "Content-Type": "application/json",
         },
         responseType: "arraybuffer",
-        maxRedirects: 0,
-        timeout: 15000,
-        maxContentLength: 20 * 1024 * 1024,
+        ...getElevenLabsRequestLimits(),
       }
     );
 
