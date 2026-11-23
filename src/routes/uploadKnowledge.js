@@ -5,6 +5,7 @@ const jwt = require("jsonwebtoken");
 const { PDFParse } = require("pdf-parse");
 const pool = require("../db/pool");
 const { embedText } = require("../brain/utils/embeddingManager");
+const { createPostgresRateLimiter } = require("../middleware/postgresRateLimit");
 
 const router = express.Router();
 
@@ -43,6 +44,10 @@ function chunkText(text, size = 1000) {
   }
   return chunks;
 }
+
+// Shared per-tenant request quota runs before multipart parsing and local capacity reservation.
+// Requires the draft aca_rate_limit_buckets migration from coordinated PR #125.
+const uploadRateLimit = createPostgresRateLimiter({ pool, scope: "knowledge-upload", windowMs: 60_000, max: 5 });
 
 // ---------------------------------------------------------------------------
 // POST /tenant/upload-knowledge  (JWT required)
@@ -86,7 +91,7 @@ function acceptPdfUpload(req, res, next) {
   });
 }
 
-router.post("/tenant/upload-knowledge", authenticate, reserveUpload, acceptPdfUpload, async (req, res) => {
+router.post("/tenant/upload-knowledge", authenticate, uploadRateLimit, reserveUpload, acceptPdfUpload, async (req, res) => {
   try {
   if (!req.file) {
     return res.status(400).json({ ok: false, error: "File missing" });
