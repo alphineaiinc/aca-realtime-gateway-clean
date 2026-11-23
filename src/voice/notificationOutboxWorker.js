@@ -1,0 +1,61 @@
+"use strict";
+
+// Database-only outbox lifecycle. No SMS, email, or external network calls.
+// Worker execution is not scheduled or enabled by importing this module.
+const MAX_ATTEMPTS = 5;
+const LEASE_SECONDS = 120;
+
+async function claimNext(pool) {
+  const result = await pool.query(
+    `WITH candidate AS (
+       SELECT id FROM aca_notification_outbox
+       WHERE ((status IN ('pending','failed') AND next_attempt_at <= NOW())
+          OR (status = 'processing' AND locked_until < NOW()))
+         AND attempt_count < $1
+       ORDER BY next_attempt_at, id
+       FOR UPDATE SKIP LOCKED LIMIT 1
+     )
+     UPDATE aca_notification_outbox AS o
+     SET status = 'processing',
+         attempt_count = o.attempt_count + 1,
+         locked_until = NOW() + ($2::integer * INTERVAL '1 second')
+     FROM candidate WHERE o.id = candidate.id
+     RETURNING o.id, o.tenant_id, o.intake_request_id, o.event_type, o.attempt_count`,
+    [MAX_ATTEMPTS, LEASE_SECONDS]
+  );
+  return result.rows[0] || null;
+}
+
+async function markDelivered(pool, job, leaseToken) {
+  if (!job || !leaseToken) throw new Error("lease_required");
+  const result = await pool.query(
+    `UPDATE aca_notification_outbox
+     SET status = 'delivered', delivered_at = NOW(), locked_until = NULL, last_error_code = NULL
+     WHERE id = $1 AND tenant_id = $2 AND status = 'processing'
+       AND attempt_count = $3 AND locked_until = $4
+     RETURNING id`,
+    [job.id, job.tenant_id, job.attempt_count, leaseToken]
+  );
+  return result.rowCount === 1;
+}
+
+async function markFailed(pool, job, leaseToken, code = "delivery_failed") {
+  if (!job || !leaseToken) throw new Error("lease_required");
+  const attempts = Number(job.attempt_count);
+  if (!Number.isInteger(attempts) || attempts < 1 || attempts > MAX_ATTEMPTS) throw new Error("invalid_attempt");
+  const terminal = attempts >= MAX_ATTEMPTS;
+  const backoffSeconds = Math.min(3600, 30 * Math.pow(2, attempts - 1));
+  const result = await pool.query(
+    `UPDATE aca_notification_outbox
+     SET status = $5, locked_until = NULL, last_error_code = $6,
+         next_attempt_at = NOW() + ($7::integer * INTERVAL '1 second')
+     WHERE id = $1 AND tenant_id = $2 AND status = 'processing'
+       AND attempt_count = $3 AND locked_until = $4
+     RETURNING id`,
+    [job.id, job.tenant_id, attempts, leaseToken,
+      terminal ? "dead_letter" : "failed", String(code).slice(0, 64), backoffSeconds]
+  );
+  return result.rowCount === 1;
+}
+
+module.exports = { MAX_ATTEMPTS, LEASE_SECONDS, claimNext, markDelivered, markFailed };
