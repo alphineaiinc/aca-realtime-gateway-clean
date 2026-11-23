@@ -93,3 +93,44 @@ test("expired fifth attempt dead-letters and cannot be acknowledged", async () =
   );
   assert.equal(status.rows[0].status, "dead_letter");
 });
+
+test("concurrent duplicate intake inserts create one request and one event", async () => {
+  const input = { confirmed: true, tenantId, callSid: sid(4), clusterId: "medical_clinic",
+    slots: { name: "Test", date: "2026-12-01", time: "10:00" } };
+  const results = await Promise.all([saveConfirmedIntake(pool, input), saveConfirmedIntake(pool, input)]);
+  assert.equal(results.filter(x => x.created).length, 1);
+  const counts = await pool.query(
+    `SELECT (SELECT COUNT(*)::int FROM aca_intake_requests WHERE tenant_id=$1 AND call_sid=$2) AS requests,
+            (SELECT COUNT(*)::int FROM aca_notification_outbox o
+               JOIN aca_intake_requests r ON r.id=o.intake_request_id
+               WHERE r.tenant_id=$1 AND r.call_sid=$2) AS events`,
+    [tenantId, input.callSid]
+  );
+  assert.deepEqual(counts.rows[0], { requests: 1, events: 1 });
+});
+test("outbox SQL failure rolls back confirmed request", async () => {
+  const input = { confirmed: true, tenantId, callSid: sid(5), clusterId: "medical_clinic",
+    slots: { name: "Test", date: "2026-12-01", time: "10:00" } };
+  // Disposable DB only: trigger rejects the matching tenant's notification event.
+  await pool.query(`CREATE OR REPLACE FUNCTION aca_test_reject_outbox() RETURNS trigger
+    LANGUAGE plpgsql AS $$
+    BEGIN
+      IF NEW.tenant_id = ${Number(tenantId)} THEN
+        RAISE EXCEPTION 'test forced outbox failure';
+      END IF;
+      RETURN NEW;
+    END $$`);
+  await pool.query(`CREATE TRIGGER aca_test_outbox_reject BEFORE INSERT
+    ON aca_notification_outbox FOR EACH ROW EXECUTE FUNCTION aca_test_reject_outbox()`);
+  try {
+    await assert.rejects(saveConfirmedIntake(pool, input), /test forced outbox failure/);
+    const result = await pool.query(
+      "SELECT COUNT(*)::int AS count FROM aca_intake_requests WHERE tenant_id=$1 AND call_sid=$2",
+      [tenantId, input.callSid]
+    );
+    assert.equal(result.rows[0].count, 0);
+  } finally {
+    await pool.query("DROP TRIGGER aca_test_outbox_reject ON aca_notification_outbox");
+    await pool.query("DROP FUNCTION aca_test_reject_outbox()");
+  }
+});
