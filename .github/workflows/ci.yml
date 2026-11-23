@@ -14,6 +14,16 @@ jobs:
     name: Node tests
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: aca_ci
+          POSTGRES_PASSWORD: disposable_ci_only
+          POSTGRES_DB: aca_stripe_ci
+        ports:
+          - 5432:5432
+        options: --health-cmd "pg_isready -U aca_ci -d aca_stripe_ci" --health-interval 5s --health-timeout 5s --health-retries 10
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -34,3 +44,8 @@ jobs:
           else
             node --test test/*.test.js
           fi
+      - name: Isolated Stripe receipt PostgreSQL integration
+        env:
+          RUN_STRIPE_RECEIPT_CI: '1'
+          STRIPE_RECEIPT_CI_URL: postgresql://aca_ci:disposable_ci_only@127.0.0.1:5432/aca_stripe_ci
+        run: node --test test/stripe-event-receipt.integration.test.js
