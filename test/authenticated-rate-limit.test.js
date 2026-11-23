@@ -77,3 +77,13 @@ test('partner registration has explicit public quota and cryptographic referral 
  assert.ok(source.includes('crypto.randomBytes(3)'));
  assert.ok(!source.includes('Math.random('));
 });
+
+
+test('partner dashboard applies a shared IP ingress budget before DB-backed partner authentication', () => {
+  const source = fs.readFileSync(path.join(__dirname, '../src/routes/partnerDashboard.js'), 'utf8');
+  const routes = source.split('\\n').filter(line => line.startsWith('router.get('));
+  assert.equal(routes.length, 3);
+  for (const route of routes) assert.ok(route.includes('dashboardIngressLimit, partnerAuth, dashboardRateLimit,'), route);
+  assert.ok(source.includes('scope: "partner-dashboard-ingress"'));
+  assert.ok(source.includes('ipBased: true'));
+});
