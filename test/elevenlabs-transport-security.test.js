@@ -112,3 +112,43 @@ test("ElevenLabs rejects unsupported output format before outbound HTTP", async 
     delete require.cache[require.resolve("../tts")];
   }
 });
+
+test("ElevenLabs valid MP3 synthesis uses expected MIME and no redirect", async () => {
+  const originalLoad = Module._load;
+  const oldOpenAI = process.env.OPENAI_API_KEY;
+  const oldEleven = process.env.ELEVENLABS_API_KEY;
+  const requests = [];
+  process.env.OPENAI_API_KEY = "test-openai-key";
+  process.env.ELEVENLABS_API_KEY = "test-eleven-key";
+  try {
+    Module._load = function(request, parent, isMain) {
+      if (request === "axios") return { post: async (...args) => {
+        requests.push(args);
+        return { data: Buffer.from([0x49, 0x44, 0x33]) };
+      }};
+      if (request === "openai") return class FakeOpenAI {};
+      if (request.endsWith("/voiceProfileLoader")) return { getTenantVoiceProfile: async () => null };
+      return originalLoad.apply(this, arguments);
+    };
+    delete require.cache[require.resolve("../tts")];
+    const { synthesizeSpeech } = require("../tts");
+    const data = await synthesizeSpeech("bonjour", "fr-FR", {
+      provider: "elevenlabs", outputFormat: "mp3_44100_128", useFillers: false,
+    });
+    assert.deepEqual(data, Buffer.from([0x49, 0x44, 0x33]));
+    assert.equal(requests.length, 1);
+    const [url, payload, config] = requests[0];
+    assert.equal(new URL(url).origin, "https://api.elevenlabs.io");
+    assert.equal(new URL(url).searchParams.get("output_format"), "mp3_44100_128");
+    assert.equal(config.headers.Accept, "audio/mpeg");
+    assert.equal(config.maxRedirects, 0);
+    assert.equal(payload.model_id, "eleven_multilingual_v2");
+  } finally {
+    Module._load = originalLoad;
+    if (oldOpenAI === undefined) delete process.env.OPENAI_API_KEY;
+    else process.env.OPENAI_API_KEY = oldOpenAI;
+    if (oldEleven === undefined) delete process.env.ELEVENLABS_API_KEY;
+    else process.env.ELEVENLABS_API_KEY = oldEleven;
+    delete require.cache[require.resolve("../tts")];
+  }
+});
