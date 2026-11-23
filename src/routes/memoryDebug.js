@@ -6,6 +6,8 @@ const express = require("express");
 const jwt = require("jsonwebtoken");
 
 const router = express.Router();
+const {createPostgresRateLimiter}=require("../middleware/postgresRateLimit");
+const debugLimit=createPostgresRateLimiter({pool:require("../db/pool"),scope:"memory-debug",max:15});
 
 // Prefer Story 12.7 store; fallback to older store
 let getSessionState;
@@ -29,13 +31,12 @@ function authenticate(req, res, next) {
     req.partner_id = decoded.partner_id;
     req.role = decoded.role;
 
-    if (!req.tenant_id) {
+    if (!req.tenant_id || decoded.role === "demo" || decoded.demo === true) {
       return res.status(401).json({ ok: false, error: "Unauthorized (no tenant_id)" });
     }
     next();
   } catch (err) {
-    console.warn("🔐 [memoryDebug] JWT verify failed:", err?.message || err);
-    console.warn("🔐 [memoryDebug] JWT_SECRET present?", !!process.env.JWT_SECRET);
+    console.warn("Memory debug authentication failed");
     return res.status(401).json({ ok: false, error: "Unauthorized" });
   }
 }
@@ -43,7 +44,7 @@ function authenticate(req, res, next) {
 // ---------------------------------------------------------------------------
 // GET /api/chat/debug-memory?session_id=...
 // ---------------------------------------------------------------------------
-router.get("/chat/debug-memory", authenticate, (req, res) => {
+router.get("/chat/debug-memory", authenticate, debugLimit, (req, res) => {
   try {
     const tenant_id = req.tenant_id;
     const session_id = String(req.query?.session_id || "web");
@@ -60,7 +61,7 @@ router.get("/chat/debug-memory", authenticate, (req, res) => {
       now: new Date().toISOString(),
     });
   } catch (err) {
-    console.error("❌ [memoryDebug] error:", err?.message || err);
+    console.error("Memory debug failed");
     return res.status(500).json({ ok: false, error: "Server error" });
   }
 });
