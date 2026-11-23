@@ -46,9 +46,23 @@ test('no hardcoded tenant JWT signing fallback remains', () => {
   assert.match(source, /if \(!jwtSecret\)/);
 });
 
-test('signup without JWT signing secret rejects before acquiring a DB client', async () => {
-  const h = harness(undefined);
-  const r = await h.request('/public/signup', { email: 'new@example.com', business_name: 'Test Business' });
-  assert.equal(r.statusCode, 503);
+test('unverified public signup cannot create tenant, business, API key or JWT', async () => {
+  for (const secret of [undefined, 'test-secret']) {
+    const h = harness(secret);
+    const r = await h.request('/public/signup', {
+      email: 'victim@example.com', business_name: 'Unverified Business'
+    });
+    assert.equal(r.statusCode, 403);
+    assert.equal(r.body.error, 'Verified onboarding required');
+    assert.deepEqual(h.stats(), { queries: 0, signed: 0, connects: 0 });
+    assert.equal(r.body.token, undefined);
+    assert.equal(r.body.tenant_key, undefined);
+  }
+});
+
+test('missing signup fields cannot bypass onboarding gate', async () => {
+  const h = harness('test-secret');
+  const r = await h.request('/public/signup', {});
+  assert.equal(r.statusCode, 403);
   assert.deepEqual(h.stats(), { queries: 0, signed: 0, connects: 0 });
 });
