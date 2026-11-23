@@ -90,16 +90,17 @@ async function getNearestEmbeddingsForBusiness(
   limit = 5
 ) {
   const query = `
-    SELECT id, question, answer, embedding
+    SELECT id, query_text AS question, answer, embedding
     FROM kb_entries
-    WHERE business_id = $1
-    ORDER BY embedding <-> $2
+    WHERE tenant_id = $1
+    ORDER BY embedding <-> $2::vector
     LIMIT $3
   `;
 
+  const vectorLiteral = Array.isArray(vector) ? "[" + vector.join(",") + "]" : vector;
   const { rows } = await pool.query(query, [
     business_id,
-    vector,
+    vectorLiteral,
     limit,
   ]);
 
