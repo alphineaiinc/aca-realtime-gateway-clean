@@ -53,7 +53,7 @@ async function markFailed(pool, job, leaseToken, code = "delivery_failed") {
        AND attempt_count = $3 AND locked_until = $4 AND locked_until > NOW()
      RETURNING id`,
     [job.id, job.tenant_id, attempts, leaseToken,
-      terminal ? "dead_letter" : "failed", String(code).slice(0, 64), backoffSeconds]
+      terminal ? "dead_letter" : "failed", ["delivery_failed", "temporary_failure", "provider_timeout", "recipient_unavailable"].includes(code) ? code : "delivery_failed", backoffSeconds]
   );
   return result.rowCount === 1;
 }
