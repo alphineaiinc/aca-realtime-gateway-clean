@@ -32,5 +32,5 @@ test('pdf-parse v2 parser API is used with guaranteed cleanup', () => {
 test('oversized and malformed uploads get controlled client errors', () => {
   assert.match(source, /err instanceof multer\.MulterError/);
   assert.match(source, /err\.code === "LIMIT_FILE_SIZE" \? 413 : 400/);
-  assert.match(source, /router\.post\("iet-placeholder"/.replace('iet-placeholder','\/tenant\/upload-knowledge'), /placeholder/);
+  assert.match(source, /authenticate, acceptPdfUpload, async/);
 });
