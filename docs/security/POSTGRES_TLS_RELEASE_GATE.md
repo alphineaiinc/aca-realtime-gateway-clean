@@ -28,3 +28,9 @@ Never paste database credentials into PR comments or issue logs. Record only the
 5. Rollback plan and explicit deployment authorization.
 
 A Neon provider-side query or connector transport alone is **not** proof that the ACA Node client negotiates verified TLS.
+
+## Pre-merge execution constraint
+
+GitHub `workflow_dispatch` workflows must be registered on the repository's default branch to be selectable for manual dispatch. Because this security change remains a **draft**, do not merge a workflow merely to enable the probe. Execute the opt-in test locally from this draft branch with a short-lived, dedicated staging role connection string loaded into the test process environment; never commit it or put it in a GitHub issue. A GitHub Actions workflow can be considered separately after default-branch approval. The connected GitHub integration cannot provision repository Actions secrets or dispatch new workflows, so these actions must not be represented as complete.
+
+The test has not been executed against the staging Neon endpoint until an actual run with `RUN_ACA_STAGING_TLS_CHECK=1` is evidenced. Do not equate the Neon connector's session settings with the ACA Node client TLS behavior.
