@@ -29,7 +29,7 @@ test.before(async () => {
     id SERIAL PRIMARY KEY, business_name TEXT NOT NULL,
     preferred_lang TEXT, region TEXT
   )`);
-  for (const file of ["009_aca_intake_requests.sql", "010_aca_notification_outbox.sql", "011_aca_notification_recipients.sql"]) {
+  for (const file of ["009_aca_intake_requests.sql", "010_aca_notification_outbox.sql", "011_aca_notification_recipients.sql", "012_aca_notification_simulations.sql"]) {
     await pool.query(fs.readFileSync(path.join(__dirname, "../migrations", file), "utf8"));
   }
   const result = await pool.query(
@@ -170,4 +170,17 @@ test("recipient planning excludes other tenants, revoked and unverified recipien
   } finally {
     await pool.query("DELETE FROM master_tenants WHERE id=$1",[other]);
   }
+});
+
+test("simulated delivery is durable, deduplicated and never marks actual delivery", async () => {
+  const {simulateNotification}=require("../src/voice/notificationSimulation");
+  const saved=await saveConfirmedIntake(pool,{confirmed:true,tenantId,callSid:sid(8),clusterId:"medical_clinic",slots:{name:"Fixture"}});
+  const job=(await pool.query("SELECT id FROM aca_notification_outbox WHERE intake_request_id=$1",[saved.request.id])).rows[0];
+  await pool.query("INSERT INTO aca_notification_recipients (tenant_id,channel,destination,verified_at,consent_at,enabled) VALUES ($1,'sms','+14165550100',NOW(),NOW(),true)",[tenantId]);
+  const results=await Promise.all([simulateNotification(pool,tenantId,job.id),simulateNotification(pool,tenantId,job.id)]);
+  assert.equal(results.reduce((sum,x)=>sum+x.created,0),1);
+  const state=(await pool.query("SELECT status FROM aca_notification_outbox WHERE id=$1",[job.id])).rows[0];
+  assert.equal(state.status,"pending");
+  assert.equal((await simulateNotification(pool,tenantId,job.id)).created,0);
+  assert.equal((await simulateNotification(pool,tenantId+10000,job.id)).created,0);
 });
