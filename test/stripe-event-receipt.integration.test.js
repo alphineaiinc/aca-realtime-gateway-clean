@@ -24,4 +24,9 @@ test('durable receipt claims survive independent pools and block uncertain resen
   const pending = await stores[1].claim(other);
   await stores[1].finish(other,pending.claimId,'uncertain');
   assert.equal((await stores[0].claim(other)).status,'blocked');
+  const unresolved = await stores[0].listUnresolved(100);
+  assert.ok(unresolved.some(row=>row.event_id===other && row.state==='uncertain'));
+  assert.ok(!unresolved.some(row=>row.event_id===id));
+  assert.ok(unresolved.every(row=>!Object.hasOwn(row,'claim_id')));
+  await assert.rejects(stores[0].listUnresolved(501));
 });
