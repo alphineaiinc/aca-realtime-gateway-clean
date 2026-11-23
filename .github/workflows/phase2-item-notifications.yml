@@ -63,7 +63,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
-          NOTIFY_LOGIN: ${{ vars.PHASE2_NOTIFY_LOGIN }}
+          NOTIFY_LOGIN: alphineaiinc
         run: |
           if [ -n "$NOTIFY_LOGIN" ]; then
             printf '\n@%s\n' "$NOTIFY_LOGIN" >> /tmp/phase2-message.txt
