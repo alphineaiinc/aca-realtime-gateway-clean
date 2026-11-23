@@ -780,6 +780,7 @@ async function handleTwilioStream(ws, req) {
   let activeStreamSid = null;
   let streamActive = true;
   let mediaPacketCount = 0;
+  let meteredMediaBytes = 0;
 
   let tenantId = null;
   let tenantLangCode = null;
@@ -1859,6 +1860,7 @@ ws.__sttStream = createStreamingTranscriber({
         mediaPacketCount += 1;
 
         const payloadBuffer = Buffer.from(data.media.payload, "base64");
+        if (routingReady) meteredMediaBytes += payloadBuffer.length;
 
         // 🔥 HARD BARGE-IN DETECTION (NEW)
 const session = getSession(activeCallSid);
@@ -1984,6 +1986,12 @@ return;
   function cleanup() {
     if (cleaned) return;
     cleaned = true;
+    if (process.env.ACA_USAGE_METERING_ENABLED === "true" && routingReady && /^CA[0-9a-f]{32}$/i.test(activeCallSid || "") && Number.isSafeInteger(tenantId) && mediaPacketCount > 0) {
+      const quantity = Math.ceil(meteredMediaBytes / 8000);
+      if (quantity > 0) {
+        Promise.resolve().then(() => require("../analytics/billableUsage").recordUsage(require("../db/pool"), {tenantId,eventId:activeCallSid,kind:"voice_seconds",quantity})).catch(() => console.error("Verified usage persistence failed"));
+      }
+    }
     inputVersion += 1;
     cancelSpeech(activeCallSid);
     routingReady = false;
