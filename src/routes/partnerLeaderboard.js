@@ -7,10 +7,10 @@ const path = require("path");
 const { rankPartners } = require("../brain/utils/rewardEngine");
 const { encrypt } = require("../brain/utils/cryptoVault");
 
-const { createAuthenticatedRateLimiter } = require("../middleware/authenticatedRateLimit");
+const { createPostgresRateLimiter } = require("../middleware/postgresRateLimit");
 
 const router = express.Router();
-const partnerRateLimit = createAuthenticatedRateLimiter({ windowMs: 60_000, max: 60 });
+const partnerRateLimit = createPostgresRateLimiter({ pool, scope: "partner-leaderboard", windowMs: 60_000, max: 60 });
 
 // --- Logger (append-only) ---
 const LOG_DIR = path.resolve(__dirname, "../logs");
