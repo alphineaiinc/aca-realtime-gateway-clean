@@ -34,4 +34,19 @@ function createPostgresRateLimiter({ pool, scope, windowMs = 60000, max = 60 }) 
     return next();
   };
 }
-module.exports = { createPostgresRateLimiter };
+// Invoke from an authorized maintenance worker, not from incoming requests.
+async function pruneExpiredRateLimitBuckets(pool, batchSize = 1000) {
+  if (!Number.isSafeInteger(batchSize) || batchSize < 1 || batchSize > 10000) throw new TypeError('Invalid cleanup batch size');
+  const result = await pool.query(
+    `WITH expired AS (
+       SELECT scope, principal_hash FROM aca_rate_limit_buckets
+       WHERE reset_at <= clock_timestamp()
+       ORDER BY reset_at LIMIT $1
+       FOR UPDATE SKIP LOCKED
+     )
+     DELETE FROM aca_rate_limit_buckets AS b USING expired AS e
+     WHERE b.scope = e.scope AND b.principal_hash = e.principal_hash
+       AND b.reset_at <= clock_timestamp()`, [batchSize]);
+  return result.rowCount;
+}
+module.exports = { createPostgresRateLimiter, pruneExpiredRateLimitBuckets };
