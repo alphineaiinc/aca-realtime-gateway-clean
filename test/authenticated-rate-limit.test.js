@@ -26,3 +26,14 @@ test('isolates tenants and returns 429 with Retry-After', () => {
 test('invalid limits are rejected', () => {
   assert.throws(() => createAuthenticatedRateLimiter({ max: 0 }), TypeError);
 });
+
+const fs = require('node:fs');
+const path = require('node:path');
+test('all billing and leaderboard routes enforce rate limits after authentication', () => {
+  for (const [file, limiter] of [['billing.js','billingRateLimit'],['partnerLeaderboard.js','partnerRateLimit']]) {
+    const source = fs.readFileSync(path.join(__dirname,'../src/routes',file),'utf8');
+    const routes = source.split('\n').filter(line => /router\.(get|post|put|patch|delete)\(/.test(line));
+    assert.ok(routes.length >= 4, file);
+    for (const route of routes) assert.ok(route.includes('authenticate, '+limiter), route);
+  }
+});
