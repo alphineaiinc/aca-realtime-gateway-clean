@@ -31,39 +31,20 @@ function redactDbUrl(raw) {
 // --- Base connection URL ---
 let baseUrl = sanitizeEnvValue(process.env.DATABASE_URL);
 
-console.log("🔍 Using DATABASE_URL =", redactDbUrl(baseUrl));
+console.log("Database connection configuration loaded");
 
-// --- Detect environment type ---
-const isRender =
-  baseUrl.includes("neon.tech") ||
-  baseUrl.includes("render.com") ||
-  baseUrl.includes("sslmode=require");
-
-// --- Cloud TLS is enforced by the explicit pg ssl configuration. ---
-// pg-connection-string can override explicit ssl settings when sslmode,
-// sslcert, sslkey or sslrootcert appear in the URL. Remove those URL
-// parameters for recognized cloud connections and use the explicit TLS policy.
-if (isRender && baseUrl) {
-  try {
-    const parsed = new URL(baseUrl);
-    for (const key of ["sslmode", "sslcert", "sslkey", "sslrootcert"]) {
-      parsed.searchParams.delete(key);
-    }
-    baseUrl = parsed.toString();
-  } catch {
-    // Existing URL validation below reports malformed connection strings.
+// Remote connections require verified TLS; only loopback is exempt.
+const parsed = new URL(baseUrl);
+if (!["postgres:", "postgresql:"].includes(parsed.protocol) || !parsed.hostname) {
+  throw new Error("Invalid PostgreSQL connection configuration");
+}
+const isRender = !["localhost", "127.0.0.1", "[::1]"].includes(parsed.hostname.toLowerCase());
+for (const key of [...parsed.searchParams.keys()]) {
+  if (["ssl", "sslmode", "sslcert", "sslkey", "sslrootcert", "host", "hostaddr"].includes(key.toLowerCase())) {
+    parsed.searchParams.delete(key);
   }
 }
-
-// --- Validate URL early so startup log is clearer ---
-try {
-  if (!baseUrl) {
-    throw new Error("DATABASE_URL is missing");
-  }
-  new URL(baseUrl);
-} catch (err) {
-  console.error("❌ DATABASE_URL validation failed:", err.message);
-}
+baseUrl = parsed.toString();
 
 // --- Pool configuration ---
 const poolConfig = {
@@ -91,7 +72,7 @@ const pool = new Pool(poolConfig);
     );
     console.log(
       `🌐 Connected successfully to ${
-        isRender ? "Render/Neon (TLS certificate validation enabled)" : "Local PostgreSQL (non-SSL)"
+        isRender ? "Remote PostgreSQL (TLS certificate validation enabled)" : "Local PostgreSQL (non-SSL)"
       }`
     );
     console.log("📊 DB Info:", result.rows[0]);
