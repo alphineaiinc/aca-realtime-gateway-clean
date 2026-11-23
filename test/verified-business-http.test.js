@@ -36,5 +36,5 @@ test("profile ingress is rate-limited before database access",()=>fixture(async(
  let last;
  for(let i=0;i<31;i++)last=await fetch(url+"/tenant/profile",{headers:{Authorization:"Bearer "+token(7)}});
  assert.equal(last.status,429);
- assert.ok(calls.length<=30);
+ assert.ok(calls.length<=60); // 30 allowed requests, each performs identity and profile queries
 }));
