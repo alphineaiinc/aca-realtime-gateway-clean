@@ -37,7 +37,7 @@ Owner supplied successful opt-in execution output for commit `8c3c780536e820761c
 
 ## Remaining review findings
 
-- Shared pool currently classifies cloud URLs by substring rather than parsed hostname; remote endpoints outside the recognized patterns may fall back to plaintext. Resolve before release.
+- The current draft source parses the PostgreSQL URL and requires certificate-validated TLS for every non-loopback hostname; only localhost, 127.0.0.1 and ::1 retain the local plaintext exception. Tests cover unrecognized remote hosts and query-parameter downgrade attempts. This resolves the earlier substring-classification fallback in the draft source; retain the exact-head tests and independent review as release gates.
 - Review URL parameter overrides and ensure startup failures do not disclose credentials.
 - Confirm rotation of both previously exposed staging role credentials with dependent services coordinated; do not record secrets.
 - Independent review and release approval remain pending.
