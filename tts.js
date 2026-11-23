@@ -188,9 +188,9 @@ function resolveOpenAiVoice(langCode, voiceProfile, explicitVoiceId) {
 
   return normalizeOpenAiVoice(process.env.OPENAI_TTS_VOICE) || "marin";
 }
-function safePreview(value, max = 80) {
-  const str = typeof value === "string" ? value : String(value ?? "");
-  return str.length > max ? str.slice(0, max) + "..." : str;
+function safePreview(_value, _max = 80) {
+  // Caller speech and model input can contain personal or confidential information.
+  return "[redacted]";
 }
 
 function normalizeApiKey(raw) {
