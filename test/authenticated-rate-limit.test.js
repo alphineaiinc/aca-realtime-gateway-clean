@@ -1,5 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const { createPostgresRateLimiter } = require('../src/middleware/postgresRateLimit');
 const { createAuthenticatedRateLimiter } = require('../src/middleware/authenticatedRateLimit');
 function invoke(middleware, principal) {
   const req = { auth: principal === null ? undefined : { sub: principal } };
@@ -86,4 +87,24 @@ test('partner dashboard applies a shared IP ingress budget before DB-backed part
   for (const route of routes) assert.ok(route.includes('dashboardIngressLimit, partnerAuth, dashboardRateLimit,'), route);
   assert.ok(source.includes('scope: "partner-dashboard-ingress"'));
   assert.ok(source.includes('ipBased: true'));
+});
+
+
+test('PostgreSQL IP limiter uses Express request IP and rejects missing IP without a database query', async () => {
+  const calls = [];
+  const limiter = createPostgresRateLimiter({ pool: { query: async (...args) => { calls.push(args); return { rows: [{ hits: 1, retry_after: 60 }] }; } }, scope: 'unit-ip-ingress', ipBased: true });
+  function response() { return { code: 200, status(n) { this.code = n; return this; }, json() { return this; }, setHeader() {} }; }
+  const missing = response();
+  await limiter({}, missing, () => assert.fail('missing IP must not advance'));
+  assert.equal(missing.code, 401);
+  assert.equal(calls.length, 0);
+  for (const ip of ['198.51.100.10', '198.51.100.10', '198.51.100.11']) {
+    const res = response();
+    await limiter({ ip }, res, () => {});
+    assert.equal(res.code, 200);
+  }
+  assert.equal(calls.length, 3);
+  assert.equal(calls[0][1][1], calls[1][1][1]);
+  assert.notEqual(calls[0][1][1], calls[2][1][1]);
+  assert.throws(() => createPostgresRateLimiter({ pool: { query: async () => ({ rows: [] }) }, scope: 'invalid-ip-global', ipBased: true, publicGlobal: true }), TypeError);
 });
