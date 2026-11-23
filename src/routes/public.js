@@ -20,68 +20,11 @@ const pool = new Pool({
 // ---------------------------------------------------------------------------
 // 🔹 POST /public/signup — create a new tenant (business)
 // ---------------------------------------------------------------------------
-router.post("/public/signup", async (req, res) => {
-  const { email, business_name, contact_number } = req.body;
-
-  if (!email || !business_name) {
-    return res.status(400).json({ ok: false, error: "Missing required fields" });
-  }
-
-  const jwtSecret = process.env.TENANT_JWT_SECRET;
-  if (!jwtSecret) return res.status(503).json({ ok: false, error: "Authentication unavailable" });
-
-  try {
-    const client = await pool.connect();
-
-    // 1️⃣  Insert into master_tenants
-    const insertTenant = `
-      INSERT INTO master_tenants (email, contact_number, business_type, region, preferred_lang, jwt_secret, api_key)
-      VALUES ($1, $2, $3, $4, $5, $6, $7)
-      RETURNING id, email, region, preferred_lang;
-    `;
-    const apiKey = "tenant_" + randomBytes(32).toString("hex");
-    const result = await client.query(insertTenant, [
-      email,
-      contact_number || "",
-      "restaurant",
-      "global",
-      "en-IN",
-      jwtSecret,
-      apiKey,
-    ]);
-
-    const tenant = result.rows[0];
-
-    // 2️⃣  Generate Tenant JWT token
-    const token = jwt.sign(
-      { tenant_id: tenant.id, email: tenant.email },
-      jwtSecret,
-      { expiresIn: "1h" }
-    );
-
-    // 3️⃣  Create corresponding business record
-    await client.query(
-      `INSERT INTO businesses (name, email, phone) VALUES ($1, $2, $3)`,
-      [business_name, email, contact_number || ""]
-    );
-
-    client.release();
-
-    console.log(`✅ Tenant created: ${tenant.email} (id=${tenant.id})`);
-    res.json({
-      ok: true,
-      id: tenant.id,
-      email: tenant.email,
-      business_name,
-      contact_number,
-      tenant_key: apiKey,
-      token,
-      source: "public",
-    });
-  } catch (err) {
-    console.error("Public signup failed");
-    res.status(500).json({ ok: false, error: "Signup failed" });
-  }
+// Public self-service onboarding is intentionally disabled until a verified
+// tenant-ownership flow exists. An arbitrary email is not proof of authority.
+// This is a draft-only fail-closed security proposal, not an approved launch flow.
+router.post("/public/signup", (_req, res) => {
+  return res.status(403).json({ ok: false, error: "Verified onboarding required" });
 });
 
 // ---------------------------------------------------------------------------
