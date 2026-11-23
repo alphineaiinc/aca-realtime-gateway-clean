@@ -55,23 +55,7 @@ async function authenticate(req, res, next) {
 // ---------------------------------------------------------------------
 // POST /api/billing/generate – create invoice
 // ---------------------------------------------------------------------
-router.post("/generate", authenticate, rateLimit, async (req, res) => {
-  try {
-    const { usage_minutes, ai_tokens } = req.body;
-    const invoice = await generateInvoice(
-      req.tenant_id,
-      req.partner_id,
-      Number(usage_minutes || 0),
-      Number(ai_tokens || 0),
-      0.05,      // USD per minute
-      0.0005     // USD per token
-    );
-    res.json({ ok: true, invoice });
-  } catch (err) {
-    console.error("[billing/generate]", err);
-    res.status(500).json({ ok: false, error: err.message });
-  }
-});
+router.post("/generate", authenticate, rateLimit, (_req,res)=>res.status(503).json({ok:false,error:"Trusted usage invoicing unavailable"}));
 
 // ---------------------------------------------------------------------
 // GET /api/billing/history – list invoices
@@ -99,7 +83,7 @@ router.get("/history", authenticate, rateLimit, async (req, res) => {
     res.json({ ok: true, invoices: result.rows });
   } catch (err) {
     console.error("[billing/history]", err);
-    res.status(500).json({ ok: false, error: err.message });
+    res.status(500).json({ ok: false, error: "Billing operation failed" });
   }
 });
 
@@ -127,7 +111,7 @@ router.get("/status/:id", authenticate, rateLimit, async (req, res) => {
     res.json({ ok: true, invoice: result.rows[0] });
   } catch (err) {
     console.error("[billing/status]", err);
-    res.status(500).json({ ok: false, error: err.message });
+    res.status(500).json({ ok: false, error: "Billing operation failed" });
   }
 });
 
@@ -169,14 +153,14 @@ router.get("/stats", authenticate, rateLimit, async (req, res) => {
     });
   } catch (err) {
     console.error("[billing/stats]", err);
-    res.status(500).json({ ok: false, error: err.message });
+    res.status(500).json({ ok: false, error: "Billing operation failed" });
   }
 });
 
 // ---------------------------------------------------------------------
 // GET /api/billing/summary – alias for /stats (Story 11.7)
 // ---------------------------------------------------------------------
-router.get("/summary", authenticate, async (req, res) => {
+router.get("/summary", authenticate, rateLimit, async (req, res) => {
   try {
     const totals = await pool.query(
       `SELECT
@@ -211,14 +195,14 @@ router.get("/summary", authenticate, async (req, res) => {
     });
   } catch (err) {
     console.error("[billing/summary]", err);
-    res.status(500).json({ ok: false, error: err.message });
+    res.status(500).json({ ok: false, error: "Billing operation failed" });
   }
 });
 
 // ---------------------------------------------------------------------
 // GET /api/billing/export – CSV export of invoices for tenant
 // ---------------------------------------------------------------------
-router.get("/export", authenticate, async (req, res) => {
+router.get("/export", authenticate, rateLimit, async (req, res) => {
   try {
     const result = await pool.query(
       `SELECT id, tenant_id, partner_id, amount_usd, status, payment_method,
@@ -233,7 +217,9 @@ router.get("/export", authenticate, async (req, res) => {
     const csv = [
       header.join(","),
       ...rows.map(r => header.map(k => {
-        const v = r[k] == null ? "" : String(r[k]).replace(/"/g,'""');
+        let v = r[k] == null ? "" : String(r[k]);
+        if (/^[\s]*[=+@-]/.test(v) || /^[\t\r\n]/.test(v)) v = "'"+v;
+        v=v.replace(/"/g,'""');
         return `"${v}"`;
       }).join(","))
     ].join("\n");
@@ -243,34 +229,19 @@ router.get("/export", authenticate, async (req, res) => {
     res.send(csv);
   } catch (err) {
     console.error("[billing/export]", err);
-    res.status(500).json({ ok: false, error: err.message });
+    res.status(500).json({ ok: false, error: "Billing operation failed" });
   }
 });
 
 // ---------------------------------------------------------------------
 // POST /api/billing/email/:id – mock email sender
 // ---------------------------------------------------------------------
-router.post("/email/:id", authenticate, async (req, res) => {
-  try {
-    const id = parseInt(req.params.id);
-    const q = await pool.query(
-      `SELECT id, invoice_path, amount_usd FROM billing_invoices
-        WHERE id=$1 AND tenant_id=$2`, [id, req.tenant_id]
-    );
-    if (q.rowCount === 0)
-      return res.status(404).json({ ok:false, error:"Invoice not found" });
-    console.log(`[billing/email] mock sent invoice=${id} path=${q.rows[0].invoice_path}`);
-    res.json({ ok:true, email_sent:true, invoice_id:id });
-  } catch (err) {
-    console.error("[billing/email]", err);
-    res.status(500).json({ ok:false, error: err.message });
-  }
-});
+router.post("/email/:id", authenticate, rateLimit, (_req,res)=>res.status(503).json({ok:false,error:"Verified invoice email unavailable"}));
 
 // ---------------------------------------------------------------------
 // GET /api/billing/download-all  –  returns ZIP of all invoices for tenant
 // ---------------------------------------------------------------------
-router.get("/download-all", authenticate, async (req, res) => {
+router.get("/download-all", authenticate, rateLimit, async (req, res) => {
   try {
     const invoiceDir = path.join(__dirname, "../../public/invoices", String(req.tenant_id));
     if (!fs.existsSync(invoiceDir)) {
@@ -295,7 +266,7 @@ router.get("/download-all", authenticate, async (req, res) => {
     await archive.finalize();
   } catch (err) {
     console.error("[billing/download-all]", err);
-    res.status(500).json({ ok:false, error:err.message });
+    res.status(500).json({ ok:false, error:"Billing operation failed" });
   }
 });
 
