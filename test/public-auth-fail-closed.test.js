@@ -66,3 +66,16 @@ test('missing signup fields cannot bypass onboarding gate', async () => {
   assert.equal(r.statusCode, 403);
   assert.deepEqual(h.stats(), { queries: 0, signed: 0, connects: 0 });
 });
+
+test('blocked public auth does not initialize an unverified TLS database pool', () => {
+  assert.doesNotMatch(source, /rejectUnauthorized\\s*:\\s*false/);
+  assert.doesNotMatch(source, /new\\s+Pool\\s*\\(/);
+  assert.doesNotMatch(source, /require\\s*\\(\\s*['"]pg['"]\\s*\\)/);
+});
+
+test('missing request body is rejected without an exception', async () => {
+  const h = harness('test-secret');
+  const r = await h.request('/public/login', undefined);
+  assert.equal(r.statusCode, 400);
+  assert.deepEqual(h.stats(), { queries: 0, signed: 0, connects: 0 });
+});
