@@ -37,7 +37,7 @@ function rateLimit(req, res, next) {
 // ---------------------------------------------------------------------
 // Middleware: partner / tenant JWT auth
 // ---------------------------------------------------------------------
-function authenticate(req, res, next) {
+async function authenticate(req, res, next) {
   try {
     const token = (req.headers.authorization || "").replace("Bearer ", "");
     const decoded = jwt.verify(token, process.env.JWT_SECRET, { algorithms: ["HS256"], issuer: "alphine-ai", audience: "aca-business" });
