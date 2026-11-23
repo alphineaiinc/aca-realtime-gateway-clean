@@ -5,8 +5,6 @@
 const express = require("express");
 const router = express.Router();
 const { Pool } = require("pg");
-const jwt = require("jsonwebtoken");
-const { randomBytes } = require("node:crypto");
 
 // Load environment variables
 require("dotenv").config({ path: require("path").resolve(__dirname, "../../.env") });
