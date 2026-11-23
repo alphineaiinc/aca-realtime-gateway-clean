@@ -50,4 +50,12 @@ jobs:
              ($matches | group_by(.most_recent_instance.location.path) |
                .[] | "  \(.[0].most_recent_instance.location.path): \(length)"))
           '
+          # Print only the critical alert's numeric ID, rule and repository-relative path.
+          # Never print alert descriptions, snippets, secrets, or source lines.
+          printf '%s' "$json" | jq -r '
+            [ .[][] | select(.tool.name == "CodeQL")
+              | select(.rule.security_severity_level == "critical") ] |
+            "Critical CodeQL alert metadata:",
+            (.[] | "  id=\(.number) rule=\(.rule.id) path=\(.most_recent_instance.location.path // "unknown")")
+          '
           echo "Alert inventory retrieved. Review actual alert locations and dismissals in GitHub Security before merge."
