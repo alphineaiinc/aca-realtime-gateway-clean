@@ -57,3 +57,11 @@ test("normal claim excludes processing jobs until lease recovery", async () => {
   } };
   assert.equal(await claimNext(pool), null);
 });
+
+test("untrusted provider error details are not persisted", async () => {
+  const pool = { async query(sql, args) {
+    assert.equal(args[5], "delivery_failed");
+    return { rowCount: 1 };
+  } };
+  assert.equal(await markFailed(pool, job, job.locked_until, "provider error with private caller details"), true);
+});
