@@ -8,6 +8,7 @@ const router = express.Router();
 const Stripe = require("stripe");
 const fs = require("fs");
 const path = require("path");
+const pool = require("../db/pool");
 
 const { sendBillingEmail } = require("../brain/utils/emailer");
 const {
@@ -57,6 +58,21 @@ router.post(
 
     const type = event.type;
     const data = event.data.object;
+    // Persist a unique claim before side effects. Concurrent duplicates are
+    // rejected while the first delivery is being processed.
+    try {
+      const claim = await pool.query(
+        "INSERT INTO public.aca_stripe_webhook_events (event_id,event_type,status) VALUES ($1,$2,'processing') ON CONFLICT (event_id) DO NOTHING RETURNING event_id",
+        [event.id, type]
+      );
+      if (claim.rowCount !== 1) {
+        const prior = await pool.query("SELECT status FROM public.aca_stripe_webhook_events WHERE event_id=$1", [event.id]);
+        if (prior.rows[0]?.status === "processed") return res.json({ received: true, duplicate: true });
+        return res.status(409).json({ received: false, retry: true });
+      }
+    } catch {
+      return res.status(500).json({ received: false, retry: true });
+    }
 
     // 🔔 This is what we want to see in Render logs
     console.log("🔔 Stripe webhook received:", type);
@@ -187,14 +203,22 @@ router.post(
       }
 
     } catch (err) {
-      fs.appendFileSync(
-        logPath,
-        `[${new Date().toISOString()}] ERROR processing webhook: ${err.message}\n`
-      );
-      console.error("❌ Error processing Stripe webhook:", err);
+      await pool.query(
+        "DELETE FROM public.aca_stripe_webhook_events WHERE event_id=$1 AND status='processing'",
+        [event.id]
+      ).catch(() => {});
+      console.error("Stripe webhook processing failed; event released for retry");
+      return res.status(500).json({ received: false, retry: true });
     }
-
-    res.json({ received: true });
+    try {
+      await pool.query(
+        "UPDATE public.aca_stripe_webhook_events SET status='processed', processed_at=NOW() WHERE event_id=$1 AND status='processing'",
+        [event.id]
+      );
+    } catch {
+      return res.status(500).json({ received: false, retry: true });
+    }
+    return res.json({ received: true });
   }
 );
 
