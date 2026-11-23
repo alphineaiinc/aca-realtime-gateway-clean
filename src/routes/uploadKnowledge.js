@@ -13,7 +13,7 @@ const router = express.Router();
 // ---------------------------------------------------------------------------
 const upload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: 10 * 1024 * 1024, files: 1 },
+  limits: { fileSize: 10 * 1024 * 1024, files: 1, fields: 0, parts: 1 },
 });
 
 // ---------------------------------------------------------------------------
@@ -63,7 +63,7 @@ router.post("/tenant/upload-knowledge", authenticate, acceptPdfUpload, async (re
     return res.status(400).json({ ok: false, error: "File missing" });
   }
 
-  const originalName = req.file.originalname;
+  const originalName = String(req.file.originalname || "upload.pdf").slice(0, 255);
   const tenantId = req.tenant_id;
 
   try {
@@ -81,7 +81,14 @@ router.post("/tenant/upload-knowledge", authenticate, acceptPdfUpload, async (re
     } finally {
       await parser.destroy();
     }
-    if (!text) throw new Error("Empty PDF");
+    if (!text) {
+      return res.status(400).json({ ok: false, error: "PDF contains no extractable text" });
+    }
+    // Bound downstream embedding work independently of compressed PDF size.
+    // Reject before issuing any embedding API calls or database writes.
+    if (text.length > 100_000) {
+      return res.status(413).json({ ok: false, error: "PDF text exceeds upload limit" });
+    }
 
     // 2️⃣ Chunk + embed
     const chunks = chunkText(text);
