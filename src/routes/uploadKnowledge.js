@@ -90,27 +90,34 @@ router.post("/tenant/upload-knowledge", authenticate, acceptPdfUpload, async (re
       return res.status(413).json({ ok: false, error: "PDF text exceeds upload limit" });
     }
 
-    // 2️⃣ Chunk + embed
+    // Prepare every embedding before starting the database transaction.
+    // No partial knowledge is visible if an embedding provider fails.
     const chunks = chunkText(text);
-    let inserted = 0;
-
-    for (let i = 0; i < chunks.length; i++) {
-      const content = chunks[i];
-
-      // Get embedding array
+    const prepared = [];
+    for (const content of chunks) {
       const embedding = await embedText(content);
-
-      // ✅ Convert embedding array → valid pgvector literal
       const vectorLiteral = "[" + embedding.join(",") + "]";
-
-      await pool.query(
-        `INSERT INTO kb_entries (tenant_id, query_text, answer, embedding)
-         VALUES ($1, $2, $3, $4::vector)`,
-        [tenantId, content, content, vectorLiteral]
-      );
-
-      inserted++;
+      prepared.push({ content, vectorLiteral });
     }
+
+    const client = await pool.connect();
+    try {
+      await client.query("BEGIN");
+      for (const { content, vectorLiteral } of prepared) {
+        await client.query(
+          `INSERT INTO kb_entries (tenant_id, query_text, answer, embedding)
+           VALUES ($1, $2, $3, $4::vector)`,
+          [tenantId, content, content, vectorLiteral]
+        );
+      }
+      await client.query("COMMIT");
+    } catch (error) {
+      await client.query("ROLLBACK");
+      throw error;
+    } finally {
+      client.release();
+    }
+    const inserted = prepared.length;
 
     return res.json({
       ok: true,
