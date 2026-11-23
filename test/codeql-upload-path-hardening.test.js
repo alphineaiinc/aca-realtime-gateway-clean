@@ -20,3 +20,11 @@ test('upload validates PDF signature and does not reflect parser exceptions', ()
   assert.match(source, /%PDF-/);
   assert.doesNotMatch(source, /error: err\.message/);
 });
+
+test('pdf-parse v2 parser API is used with guaranteed cleanup', () => {
+  assert.match(source, /const \{ PDFParse \} = require\("pdf-parse"\)/);
+  assert.match(source, /new PDFParse\(\{ data: dataBuffer \}\)/);
+  assert.match(source, /await parser\.getText\(\)/);
+  assert.match(source, /finally \{\s*await parser\.destroy\(\)/);
+  assert.doesNotMatch(source, /await pdfParse\(dataBuffer\)/);
+});
