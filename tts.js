@@ -518,7 +518,7 @@ async function synthesizeWithElevenLabs(text, langCode = "en-US", options = {}) 
   console.log("🔐 [tts:elevenlabs] key exists:", !!rawApiKey);
   console.log("🔐 [tts:elevenlabs] key trimmed exists:", !!apiKey);
   console.log("🔐 [tts:elevenlabs] key length:", apiKey ? apiKey.length : 0);
-  console.log("🔐 [tts:elevenlabs] key prefix:", apiKey ? apiKey.slice(0, 5) : "NONE");
+  // Never log API key bytes, including prefixes.
 
   if (!apiKey) {
     throw new Error("Missing ELEVENLABS_API_KEY in environment");
@@ -572,7 +572,6 @@ async function synthesizeWithElevenLabs(text, langCode = "en-US", options = {}) 
     similarity_boost,
     outputFormat: ctx.outputFormat,
     acceptMime: ctx.acceptMime,
-    keyPrefix: apiKey ? apiKey.slice(0, 5) : "NONE",
     keyLength: apiKey ? apiKey.length : 0,
   });
 
