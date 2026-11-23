@@ -1,7 +1,7 @@
 name: ACA CI
 on:
   pull_request:
-    branches: [main]
+    branches: [main, aca-l3-durable-intake-20261123]
   push:
     branches: [main]
 permissions:
