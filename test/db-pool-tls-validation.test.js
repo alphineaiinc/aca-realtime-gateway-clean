@@ -78,3 +78,11 @@ test('node-postgres effective cloud TLS policy validates certificates', () => {
     assert.equal(effective.ssl.rejectUnauthorized, true, databaseUrl);
   }
 });
+
+test('SSL disable query cannot silently downgrade a recognized cloud host', () => {
+  const config = loadPool('postgres://test:pass@db.example.neon.tech/db?sslmode=disable&application_name=aca');
+  const effective = new ConnectionParameters(config);
+  assert.equal(effective.ssl.rejectUnauthorized, true);
+  assert.equal(config.connectionString.includes('sslmode='), false);
+  assert.equal(config.connectionString.includes('application_name=aca'), true);
+});
