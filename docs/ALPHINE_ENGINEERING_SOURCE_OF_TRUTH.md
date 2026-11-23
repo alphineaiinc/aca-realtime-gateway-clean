@@ -4,7 +4,7 @@ Status: **proposed baseline, awaiting owner review and merge**. Updated 2026-11-
 
 ## Document versioning policy
 
-- Version: **v1.4.1-draft**. Baseline: v1.0.0-draft. This document is currently proposed in PR #121, not merged.
+- Version: **v1.4.2-draft**. Baseline: v1.0.0-draft. This document is currently proposed in PR #121, not merged.
 - Every material update MUST increment the document version, add a new append-only change-log entry with an ISO-8601 UTC timestamp (YYYY-MM-DDTHH:mm:ssZ), identify **Added / Changed / Removed / Verified / Still unverified**, and link the PR, commit SHA and evidence.
 - Use the Git commit's authoritative timestamp when an exact timestamp is required; never invent one. Draft entries can state the calendar date and Git-commit timestamp reference until the exact time is retrieved.
 - Never rewrite or delete historical entries to conceal a change. Correct inaccuracies with a new entry explaining the correction. Git history remains the underlying immutable revision trail, subject to repository permissions.
@@ -16,6 +16,7 @@ Status: **proposed baseline, awaiting owner review and merge**. Updated 2026-11-
 | Version | Timestamp | Added | Changed | Removed | Verification / reference |
 | --- | --- | --- | --- | --- | --- |
 | v1.0.0-draft | 2026-11-22; Git commit timestamp | Initial eight-role baseline, implementation inventory, acceptance tracker links, safety gates | Reconciled claimed agent count with evidence status | None | Commit `6861f165e2f054cac24dc9886a8c8f6c17f60d0f`; PR #121; eight executable roles not yet audited |
+| v1.4.2-draft | 2026-11-23T03:50:10.683Z | Item 13 independent-review readiness checkpoint | No GitHub reviews found for PR #117; noted residual diagnostic leakage risks; 12/66 checklist unchanged | None | PR #117 `b80fc83`, Issue #118; independent signoff pending |
 | v1.4.1-draft | 2026-11-23T03:49:08.793Z | Verified Item 12 exact-SHA CI and isolated CodeQL evidence | Phase 2 tracker 12/66 checked, 54 pending; TTS mocked behavior accepted with explicit fallback limitation | None | PR #117 `b80fc83`; ACA CI 45106881883 (38/38); isolated CodeQL 45106881940 (0 SSRF); Issue #118 |
 | v1.4.0-draft | 2026-11-23T03:27:17.603Z | Company vision, future prospects, founder reporting roadmap and 19 Phase 2 acceptance gates | Tracker now 11/66 checked, 55 pending; formalizes eight-agent and Agent Manager exit criteria | None | Issue #118; draft roadmap only, email not yet configured |
 | v1.3.0-draft | 2026-11-23T03:14:46.355Z | Explicit eight-agent delivery commitment, acceptance requirements and delivery stages | Clarified target architecture versus verified implementation | None | Owner's eight-agent direction; this is a roadmap commitment, not proof of implementation |
@@ -143,6 +144,12 @@ These entries mean **not verified by this inventory**, not that the code does no
 - ACA CI run 45106881883 passed 38/38; isolated CodeQL run 45106881940 executed 89 queries and reported 0 `js/request-forgery` findings, SARIF artifact 14787837134; PR CodeQL evidence run 45106881895 passed.
 - Issue #118 mocked TTS behavioral Item 12 is checked. This does not certify automatic provider fallback, independent reviewer acceptance or closure of default-branch CodeQL alert #5.
 - Phase 2 tracker: 12 checked, 54 unchecked, 66 total. No merge, deployment, signing, privileged staging changes or agent dispatch.
+
+## Item 13 review-readiness checkpoint (2026-11-23T03:50:10.683Z)
+- PR #117 draft exact head `b80fc83e8bea883023ad075d6e817ff5fa3f7c6f`. GitHub review submissions and inline review threads: none returned at inspection.
+- Prior evidence: ACA CI 38/38 run 45106881883; isolated CodeQL 89 queries, zero `js/request-forgery` run 45106881940; metadata workflow 45106881895. These are not independent semantic review.
+- Preliminary inspection concerns: ElevenLabs catch still logs untrusted `err.code` without validation; request logging includes API-key length. Reviewers must assess these, broader secret/caller-data logging, SSRF boundary, provider behavior, failure handling and scan limitations.
+- **Item 13 stays unchecked.** Requires genuinely independent reviewer, recorded findings/disposition, correction if needed, exact-final-SHA CI/security scans, and review signoff. Do not conflate author/self-review with independence.
 
 ## Reference evidence
 - [Issue #118](https://github.com/alphineaiinc/aca-realtime-gateway-clean/issues/118)
