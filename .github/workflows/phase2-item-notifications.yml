@@ -10,7 +10,7 @@ concurrency:
   cancel-in-progress: false
 jobs:
   notify:
-    if: github.event.issue.number == 118 && github.event.changes.body.from != ''
+    if: github.event.issue.number == 118 && github.event.changes.body.from != null
     runs-on: ubuntu-latest
     steps:
       - name: Detect newly completed items or manual intervention
@@ -29,7 +29,7 @@ jobs:
           def keys(body, mark):
               return {re.split(r"; \*\*in progress\*\*|; evidence:", x, 1)[0].strip()
                       for x in items(body, mark)}
-          completed = sorted(keys(new, "x") - keys(old, "x"))
+          completed = sorted(keys(new, "x") & keys(old, " "))
           # Manual intervention is explicit, never inferred from a failed test.
           def interventions(body):
               return set(re.findall(r"(?m)^<!-- phase2-owner-action: ([^\n<>]+) -->$", body))
