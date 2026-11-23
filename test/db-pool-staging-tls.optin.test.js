@@ -28,6 +28,10 @@ test('isolated staging Neon verifies TLS and permits a read-only query', {
   });
   try {
     await client.connect();
+    const socket = client.connection.stream;
+    assert.equal(socket.encrypted, true, 'Client transport must be encrypted');
+    assert.equal(socket.authorized, true, 'Client must verify the server certificate');
+    assert.ok(socket.getProtocol(), 'Client TLS protocol must be negotiated');
     await client.query('BEGIN READ ONLY');
     const identity = await client.query('SELECT current_user, current_database()');
     assert.equal(identity.rows[0].current_user, 'aca_tls_probe_readonly');
@@ -36,8 +40,10 @@ test('isolated staging Neon verifies TLS and permits a read-only query', {
       'SELECT ssl, version FROM pg_stat_ssl WHERE pid = pg_backend_pid()'
     );
     assert.equal(result.rows.length, 1);
-    assert.equal(result.rows[0].ssl, true, 'Database session must use TLS');
-    assert.ok(result.rows[0].version, 'TLS version must be reported');
+    // Backend TLS metadata can describe the proxy-to-compute hop.
+    // The authenticated client socket above is the mandatory security gate.
+    console.log('Client TLS:', socket.getProtocol(), 'certificate authorized:', socket.authorized);
+    console.log('Backend TLS reported:', result.rows[0].ssl);
     await client.query('ROLLBACK');
   } finally {
     await client.end().catch(() => {});
