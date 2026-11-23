@@ -61,3 +61,11 @@ test('payment write route retains a separate stricter three-per-ten-seconds limi
   assert.match(source, /router\.post\("\/pay", authenticate, billingRateLimit, paymentRateLimit,/);
   assert.doesNotMatch(source, /const rateBucket = new Map\(/);
 });
+
+test('all partner dashboard routes enforce shared limits after partner authentication', () => {
+  const source = fs.readFileSync(path.join(__dirname, '../src/routes/partnerDashboard.js'), 'utf8');
+  const routes = source.split('\n').filter(line => line.startsWith('router.get('));
+  assert.equal(routes.length, 3);
+  for (const route of routes) assert.ok(route.includes('partnerAuth, dashboardRateLimit,'));
+  assert.ok(source.includes('createPostgresRateLimiter({ pool, scope: "partner-dashboard"'));
+});
