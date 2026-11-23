@@ -49,11 +49,26 @@ function chunkText(text, size = 1000) {
 // ---------------------------------------------------------------------------
 let activeUploads = 0;
 const activeTenants = new Set();
+const uploadWindows = new Map();
+const WINDOW_MS = 60_000;
+const MAX_UPLOADS_PER_WINDOW = 5;
+const MAX_TRACKED_TENANTS = 10_000;
 function reserveUpload(req, res, next) {
   const tenant = String(req.tenant_id);
   if (activeUploads >= 4 || activeTenants.has(tenant)) {
     return res.status(429).json({ ok: false, error: "Upload capacity reached" });
   }
+  const now = Date.now();
+  for (const [key, window] of uploadWindows) {
+    if (window.expires <= now) uploadWindows.delete(key);
+  }
+  const window = uploadWindows.get(tenant) || { count: 0, expires: now + WINDOW_MS };
+  if (window.count >= MAX_UPLOADS_PER_WINDOW ||
+      (!uploadWindows.has(tenant) && uploadWindows.size >= MAX_TRACKED_TENANTS)) {
+    return res.status(429).json({ ok: false, error: "Upload rate limit reached" });
+  }
+  window.count++;
+  uploadWindows.set(tenant, window);
   activeUploads++;
   activeTenants.add(tenant);
   let released = false;
@@ -121,25 +136,20 @@ router.post("/tenant/upload-knowledge", authenticate, reserveUpload, acceptPdfUp
 
     // 2️⃣ Chunk + embed
     const chunks = chunkText(text);
-    let inserted = 0;
-
-    for (let i = 0; i < chunks.length; i++) {
-      const content = chunks[i];
-
-      // Get embedding array
+    const vectors = [];
+    for (const content of chunks) {
       const embedding = await embedText(content);
-
-      // ✅ Convert embedding array → valid pgvector literal
-      const vectorLiteral = "[" + embedding.join(",") + "]";
-
-      await pool.query(
-        `INSERT INTO kb_entries (tenant_id, query_text, answer, embedding)
-         VALUES ($1, $2, $2, $3::vector)`,
-        [tenantId, content, vectorLiteral]
-      );
-
-      inserted++;
+      if (!Array.isArray(embedding) || !embedding.length || !embedding.every(Number.isFinite)) throw new Error("INVALID_EMBEDDING");
+      vectors.push("[" + embedding.join(",") + "]");
     }
+    // A single PostgreSQL statement is atomic: no partially ingested document.
+    await pool.query(
+      `INSERT INTO kb_entries (tenant_id, query_text, answer, embedding)
+       SELECT $1, item.content, item.content, item.vector_text::vector
+       FROM unnest($2::text[], $3::text[]) AS item(content, vector_text)`,
+      [tenantId, chunks, vectors]
+    );
+    const inserted = chunks.length;
 
     return res.json({
       ok: true,
