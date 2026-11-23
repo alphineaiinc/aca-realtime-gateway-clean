@@ -37,3 +37,20 @@ test('all billing and leaderboard routes enforce rate limits after authenticatio
     for (const route of routes) assert.ok(route.includes('authenticate, '+limiter), route);
   }
 });
+
+test('bounded limiter does not evict active buckets and reset their counters', () => {
+  const limit = createAuthenticatedRateLimiter({ windowMs: 60000, max: 1, maxKeys: 2 });
+  assert.equal(invoke(limit, 'a').next, true);
+  assert.equal(invoke(limit, 'b').next, true);
+  assert.equal(invoke(limit, 'c').status, 429);
+  assert.equal(invoke(limit, 'a').status, 429);
+});
+test('user and tenant identifiers cannot collide', () => {
+  const limit = createAuthenticatedRateLimiter({ windowMs: 60000, max: 1 });
+  assert.equal(invoke(limit, 'same').next, true);
+  const req = { tenant_id: 'same' };
+  const res = { status(n) { this.code = n; return this; }, json() { return this; }, setHeader() {} };
+  let advanced = false;
+  limit(req, res, () => { advanced = true; });
+  assert.equal(advanced, true);
+});
