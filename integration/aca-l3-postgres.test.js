@@ -29,7 +29,7 @@ test.before(async () => {
     id SERIAL PRIMARY KEY, business_name TEXT NOT NULL,
     preferred_lang TEXT, region TEXT
   )`);
-  for (const file of ["009_aca_intake_requests.sql", "010_aca_notification_outbox.sql"]) {
+  for (const file of ["009_aca_intake_requests.sql", "010_aca_notification_outbox.sql", "011_aca_notification_recipients.sql"]) {
     await pool.query(fs.readFileSync(path.join(__dirname, "../migrations", file), "utf8"));
   }
   const result = await pool.query(
@@ -146,6 +146,27 @@ test("database rejects outbox references belonging to another tenant", async () 
       "INSERT INTO aca_notification_outbox (tenant_id,intake_request_id,event_type) VALUES ($1,$2,'intake.confirmed')",
       [other,request.id]
     ), error => error.code === "23503");
+  } finally {
+    await pool.query("DELETE FROM master_tenants WHERE id=$1",[other]);
+  }
+});
+
+test("recipient planning excludes other tenants, revoked and unverified recipients", async () => {
+  const { planNotification } = require("../src/voice/notificationRecipientPlanner");
+  const other = (await pool.query("INSERT INTO master_tenants (business_name) VALUES ('Other fixture') RETURNING id")).rows[0].id;
+  try {
+    const saved = await saveConfirmedIntake(pool, { confirmed:true, tenantId, callSid:sid(7), clusterId:"medical_clinic", slots:{name:"Fixture"} });
+    const job = (await pool.query("SELECT id FROM aca_notification_outbox WHERE intake_request_id=$1",[saved.request.id])).rows[0];
+    await pool.query("INSERT INTO aca_notification_recipients (tenant_id,channel,destination,verified_at,consent_at,enabled) VALUES ($1,'email','fixture@example.invalid',NOW(),NOW(),true),($2,'email','other@example.invalid',NOW(),NOW(),true)",[tenantId,other]);
+    await pool.query("INSERT INTO aca_notification_recipients (tenant_id,channel,destination) VALUES ($1,'email','unverified@example.invalid')",[tenantId]);
+    await assert.rejects(pool.query("UPDATE aca_notification_recipients SET enabled=true WHERE tenant_id=$1 AND verified_at IS NULL",[tenantId]),e=>e.code==="23514");
+    const plans = await planNotification(pool,tenantId,job.id);
+    assert.equal(plans.length,1);
+    assert.equal(plans[0].mode,"dry_run_only");
+    assert.equal("destination" in plans[0],false);
+    assert.deepEqual(await planNotification(pool,other,job.id),[]);
+    await pool.query("UPDATE aca_notification_recipients SET enabled=false,revoked_at=NOW() WHERE tenant_id=$1",[tenantId]);
+    assert.deepEqual(await planNotification(pool,tenantId,job.id),[]);
   } finally {
     await pool.query("DELETE FROM master_tenants WHERE id=$1",[other]);
   }
