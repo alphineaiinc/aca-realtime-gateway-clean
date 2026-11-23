@@ -39,3 +39,25 @@ test('shared PostgreSQL limiter enforces atomic budgets across independent pools
   const unavailable = createPostgresRateLimiter({ pool: { query: async () => { throw new Error('private detail'); } }, scope });
   assert.equal(await invoke(unavailable, 'tenant-a'), 503);
 });
+
+
+test('shared PostgreSQL IP ingress limiter budgets callers independently before authentication', { skip: !enabled }, async () => {
+  const url = process.env.RATE_LIMIT_CI_DATABASE_URL;
+  const pool = new Pool({ connectionString: url });
+  try {
+    const scope = 'ci-ip-' + require('node:crypto').randomUUID();
+    const limiter = createPostgresRateLimiter({ pool, scope, max: 2, windowMs: 60000, ipBased: true });
+    async function invokeIp(ip) {
+      const res = { code: 200, status(n) { this.code = n; return this; }, json() { return this; }, setHeader() {} };
+      await limiter({ ip }, res, () => {});
+      return res.code;
+    }
+    assert.equal(await invokeIp('198.51.100.10'), 200);
+    assert.equal(await invokeIp('198.51.100.10'), 200);
+    assert.equal(await invokeIp('198.51.100.10'), 429);
+    assert.equal(await invokeIp('198.51.100.11'), 200);
+    assert.equal(await invokeIp(undefined), 401);
+  } finally {
+    await pool.end();
+  }
+});
