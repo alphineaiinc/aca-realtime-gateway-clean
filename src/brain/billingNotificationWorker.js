@@ -4,7 +4,7 @@ async function deliverOne({pool,sendMail}){
  const client=await pool.connect();
  try{
   await client.query("BEGIN");
-  const {rows}=await client.query("SELECT o.event_id,o.invoice_id,o.tenant_id,r.email FROM public.aca_billing_notification_outbox o JOIN public.aca_notification_recipients r ON r.tenant_id=o.tenant_id WHERE o.delivered_at IS NULL AND o.next_attempt_at<=NOW() AND o.attempts<8 AND r.is_active AND r.verified_at IS NOT NULL ORDER BY o.created_at LIMIT 1 FOR UPDATE OF o SKIP LOCKED");
+  const {rows}=await client.query("SELECT o.event_id,o.invoice_id,o.tenant_id,r.email FROM public.aca_billing_notification_outbox o JOIN public.billing_invoices i ON i.id=o.invoice_id AND i.tenant_id=o.tenant_id AND i.status='paid' JOIN public.aca_notification_recipients r ON r.tenant_id=o.tenant_id WHERE o.delivered_at IS NULL AND o.next_attempt_at<=NOW() AND o.attempts<8 AND r.is_active AND r.verified_at IS NOT NULL ORDER BY o.created_at LIMIT 1 FOR UPDATE OF o SKIP LOCKED");
   if(!rows.length){await client.query("COMMIT");return false;}
   const row=rows[0];
   let accepted=false;
