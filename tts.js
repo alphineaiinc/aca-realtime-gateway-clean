@@ -6,6 +6,7 @@
 const axios = require("axios");
 const path = require("path");
 const OpenAI = require("openai");
+const { buildElevenLabsTtsUrl } = require("./src/voice/elevenLabsUrl");
 
 // ------------------------------------------------------
 // Global language registry (Story 9.1 / 9.7)
@@ -561,7 +562,7 @@ async function synthesizeWithElevenLabs(text, langCode = "en-US", options = {}) 
     }
   }
 
-  const url = `https://api.elevenlabs.io/v1/text-to-speech/${selectedVoiceId}?output_format=${ctx.outputFormat}`;
+  const url = buildElevenLabsTtsUrl(selectedVoiceId, ctx.outputFormat);
   console.log("📤 [tts:elevenlabs] API Request:", {
     url,
     model_id: "eleven_multilingual_v2",
@@ -590,6 +591,9 @@ async function synthesizeWithElevenLabs(text, langCode = "en-US", options = {}) 
           "Content-Type": "application/json",
         },
         responseType: "arraybuffer",
+        maxRedirects: 0,
+        timeout: 15000,
+        maxContentLength: 20 * 1024 * 1024,
       }
     );
 
