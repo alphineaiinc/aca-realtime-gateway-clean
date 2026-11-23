@@ -18,7 +18,7 @@ function harness({ tenantId = 'tenant-1', pdfText = 'Knowledge text', pdfError =
   const router = { post(name, ...handlers) { route = { name, handlers }; } };
   const mocks = {
     express: { Router: () => router }, multer,
-    jsonwebtoken: { verify: () => ({ tenant_id: tenantId }) },
+    jsonwebtoken: { verify: (token) => { if (token !== 'valid') throw new Error('Invalid test token'); return { tenant_id: tenantId }; } },
     'pdf-parse': { PDFParse },
     '../db/pool': { async query() { dbWrites++; } },
     '../brain/utils/embeddingManager': { async embedText() { embeddingCalls++; return [0.1, 0.2]; } },
@@ -69,4 +69,23 @@ test('valid PDF text embeds and inserts tenant-scoped chunk', async () => {
   assert.equal(res.statusCode, 200);
   assert.equal(res.body.chunks, 1);
   assert.equal(h.stats().dbWrites, 1);
+});
+
+test('invalid JWT is rejected before PDF parsing or database activity', async () => {
+  const h = harness();
+  const res = await h.request(Buffer.from('%PDF-1.7'), 'Bearer invalid');
+  assert.equal(res.statusCode, 401);
+  assert.deepEqual(h.stats(), { dbWrites: 0, embeddingCalls: 0, parserDestroyed: 0 });
+});
+test('JWT missing tenant identity is rejected before PDF processing', async () => {
+  const h = harness({ tenantId: null });
+  const res = await h.request(Buffer.from('%PDF-1.7'));
+  assert.equal(res.statusCode, 401);
+  assert.equal(h.stats().dbWrites, 0);
+});
+test('PDF without extractable text is rejected before external calls', async () => {
+  const h = harness({ pdfText: '   ' });
+  const res = await h.request(Buffer.from('%PDF-1.7'));
+  assert.equal(res.statusCode, 400);
+  assert.deepEqual(h.stats(), { dbWrites: 0, embeddingCalls: 0, parserDestroyed: 1 });
 });
