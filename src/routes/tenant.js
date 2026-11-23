@@ -59,4 +59,45 @@ router.get("/profile", async (req, res) => {
   }
 });
 
+const {issueLogin,redeemLogin}=require("../security/verifiedBusinessLogin");
+const {createSmtpSender}=require("../voice/requestNotificationWorker");
+const loginWindows=new Map();
+function loginLimit(req,res,next){
+ const now=Date.now(),key=req.ip||"unknown";
+ for(const [k,v] of loginWindows) if(v.until<=now)loginWindows.delete(k);
+ const v=loginWindows.get(key)||{count:0,until:now+60000};
+ if(v.count>=5||(!loginWindows.has(key)&&loginWindows.size>=10000))return res.status(429).json({ok:false,error:"Try again later"});
+ v.count++;loginWindows.set(key,v);next();
+}
+router.post("/login/start",loginLimit,async(req,res)=>{
+ if(process.env.ACA_VERIFIED_LOGIN_ENABLED!=="true")return res.status(503).json({ok:false,error:"Login unavailable"});
+ try{await issueLogin({query:(...a)=>pool.query(...a),email:req.body?.email,sendMail:createSmtpSender()});}catch{}
+ return res.status(202).json({ok:true,message:"If eligible, a sign-in code will be sent."});
+});
+router.post("/login/redeem",loginLimit,async(req,res)=>{
+ if(process.env.ACA_VERIFIED_LOGIN_ENABLED!=="true")return res.status(503).json({ok:false,error:"Login unavailable"});
+ try{
+ const token=await redeemLogin({query:(...a)=>pool.query(...a),token:req.body?.token,secret:process.env.JWT_SECRET});
+ if(token)return res.json({ok:true,token});
+ }catch{}
+ return res.status(401).json({ok:false,error:"Invalid or expired code"});
+});
+async function verifiedBusiness(req,res,next){
+ try{
+ const auth=req.headers.authorization||"";
+ if(!auth.startsWith("Bearer "))throw Error();
+ const claims=jwt.verify(auth.slice(7),process.env.JWT_SECRET,{algorithms:["HS256"],issuer:"alphine-ai",audience:"aca-business"});
+ if(claims.purpose!=="verified_business"||!Number.isInteger(claims.tenant_id)||claims.tenant_id<=0||typeof claims.sub!=="string")throw Error();
+ const {rows}=await pool.query("SELECT tenant_id FROM public.aca_business_identities WHERE email=$1 AND tenant_id=$2 AND is_active",[claims.sub,claims.tenant_id]);
+ if(rows.length!==1)throw Error();
+ req.verifiedTenantId=claims.tenant_id;next();
+ }catch{return res.status(401).json({ok:false,error:"unauthorized"});}
+}
+router.get("/requests",loginLimit,verifiedBusiness,async(req,res)=>{
+ try{
+ const {rows}=await pool.query("SELECT id,workflow_id,intent,details,created_at FROM public.aca_customer_requests WHERE tenant_id=$1 ORDER BY id DESC LIMIT 100",[req.verifiedTenantId]);
+ res.set("Cache-Control","no-store");return res.json({ok:true,requests:rows});
+ }catch{return res.status(500).json({ok:false,error:"internal_error"});}
+});
+
 module.exports = router;
