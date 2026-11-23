@@ -29,6 +29,9 @@ test("ElevenLabs synthesis sends credentials only to fixed origin with redirects
     const [url, , config] = calls[0];
     assert.equal(new URL(url).origin, "https://api.elevenlabs.io");
     assert.equal(config.headers["xi-api-key"], "test-eleven-key");
+    assert.equal(config.headers.Authorization, undefined);
+    assert.equal(config.maxRedirects, 0);
+    assert.equal(config.beforeRedirect, undefined);
     assert.equal(config.maxRedirects, 0);
     assert.ok(config.timeout > 0);
     await assert.rejects(() => synthesizeSpeech("hello", "en-US", {
@@ -177,7 +180,7 @@ test("ElevenLabs upstream failure rejects safely without retrying", async () => 
     const { synthesizeSpeech } = require("../tts");
     await assert.rejects(() => synthesizeSpeech("hello", "en-US", {
       provider: "elevenlabs", useFillers: false,
-    }), /ElevenLabs TTS failed: upstream unavailable/);
+    }), /ElevenLabs TTS failed \\(ECONNRESET\\)/);
     assert.equal(calls, 1);
   } finally {
     Module._load = originalLoad;
@@ -221,6 +224,45 @@ test("OpenAI provider remains usable independently of ElevenLabs credentials", a
     assert.equal(openAiCalls, 1);
     assert.equal(axiosCalls, 0);
   } finally {
+    Module._load = originalLoad;
+    if (oldOpenAI === undefined) delete process.env.OPENAI_API_KEY;
+    else process.env.OPENAI_API_KEY = oldOpenAI;
+    if (oldEleven === undefined) delete process.env.ELEVENLABS_API_KEY;
+    else process.env.ELEVENLABS_API_KEY = oldEleven;
+    delete require.cache[require.resolve("../tts")];
+  }
+});
+
+
+test("ElevenLabs never exposes upstream response bodies or API key in errors", async () => {
+  const originalLoad = Module._load;
+  const oldOpenAI = process.env.OPENAI_API_KEY;
+  const oldEleven = process.env.ELEVENLABS_API_KEY;
+  process.env.OPENAI_API_KEY = "test-openai-key";
+  process.env.ELEVENLABS_API_KEY = "test-eleven-key";
+  const errors = [];
+  const originalError = console.error;
+  try {
+    console.error = (...args) => errors.push(args.map(String).join(" "));
+    Module._load = function(request, parent, isMain) {
+      if (request === "axios") return { post: async () => {
+        const err = new Error("test-eleven-key leaked in message");
+        err.response = { status: 401, statusText: "test-eleven-key", data: "test-eleven-key confidential caller text" };
+        throw err;
+      }};
+      if (request === "openai") return class FakeOpenAI {};
+      if (request.endsWith("/voiceProfileLoader")) return { getTenantVoiceProfile: async () => null };
+      return originalLoad.apply(this, arguments);
+    };
+    delete require.cache[require.resolve("../tts")];
+    const { synthesizeSpeech } = require("../tts");
+    await assert.rejects(() => synthesizeSpeech("hello", "en-US", {
+      provider: "elevenlabs", useFillers: false,
+    }), err => err.message === "ElevenLabs TTS failed (HTTP 401)");
+    assert.ok(!errors.join(" ").includes("test-eleven-key"));
+    assert.ok(!errors.join(" ").includes("confidential caller text"));
+  } finally {
+    console.error = originalError;
     Module._load = originalLoad;
     if (oldOpenAI === undefined) delete process.env.OPENAI_API_KEY;
     else process.env.OPENAI_API_KEY = oldOpenAI;
