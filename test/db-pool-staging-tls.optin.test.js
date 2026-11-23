@@ -14,7 +14,7 @@ test('isolated staging Neon verifies TLS and permits a read-only query', {
   const url = process.env.ACA_STAGING_TLS_DATABASE_URL;
   assert.ok(url, 'ACA_STAGING_TLS_DATABASE_URL is required');
   const parsed = new URL(url);
-  assert.match(parsed.hostname, /(^|\\.)neon\\.tech$/i, 'Only Neon staging endpoints are allowed');
+  assert.ok(parsed.hostname.toLowerCase().endsWith('.neon.tech'), 'Only Neon staging endpoints are allowed');
   assert.equal(decodeURIComponent(parsed.username), 'aca_tls_probe_readonly', 'Dedicated read-only role required');
   assert.equal(decodeURIComponent(parsed.pathname.slice(1)), 'aca_phase2_staging', 'Staging database required');
   for (const key of ['sslmode', 'sslcert', 'sslkey', 'sslrootcert']) {
