@@ -60,7 +60,7 @@ const poolConfig = {
   ssl: isRender
     ? {
         require: true,
-        rejectUnauthorized: false, // ✅ required for managed Neon/Render SSL
+        rejectUnauthorized: true, // Verify the server certificate and hostname
       }
     : false, // ✅ disables SSL for localhost
   max: 10,
@@ -80,7 +80,7 @@ const pool = new Pool(poolConfig);
     );
     console.log(
       `🌐 Connected successfully to ${
-        isRender ? "Render/Neon (SSL verified)" : "Local PostgreSQL (non-SSL)"
+        isRender ? "Render/Neon (TLS certificate validation enabled)" : "Local PostgreSQL (non-SSL)"
       }`
     );
     console.log("📊 DB Info:", result.rows[0]);
