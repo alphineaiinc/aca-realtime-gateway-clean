@@ -15,6 +15,8 @@ test('isolated staging Neon verifies TLS and permits a read-only query', {
   assert.ok(url, 'ACA_STAGING_TLS_DATABASE_URL is required');
   const parsed = new URL(url);
   assert.match(parsed.hostname, /(^|\\.)neon\\.tech$/i, 'Only Neon staging endpoints are allowed');
+  assert.equal(decodeURIComponent(parsed.username), 'aca_tls_probe_readonly', 'Dedicated read-only role required');
+  assert.equal(decodeURIComponent(parsed.pathname.slice(1)), 'aca_phase2_staging', 'Staging database required');
   for (const key of ['sslmode', 'sslcert', 'sslkey', 'sslrootcert']) {
     parsed.searchParams.delete(key);
   }
@@ -27,6 +29,9 @@ test('isolated staging Neon verifies TLS and permits a read-only query', {
   try {
     await client.connect();
     await client.query('BEGIN READ ONLY');
+    const identity = await client.query('SELECT current_user, current_database()');
+    assert.equal(identity.rows[0].current_user, 'aca_tls_probe_readonly');
+    assert.equal(identity.rows[0].current_database, 'aca_phase2_staging');
     const result = await client.query(
       'SELECT ssl, version FROM pg_stat_ssl WHERE pid = pg_backend_pid()'
     );
