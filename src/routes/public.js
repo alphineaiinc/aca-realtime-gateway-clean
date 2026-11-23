@@ -27,6 +27,9 @@ router.post("/public/signup", async (req, res) => {
     return res.status(400).json({ ok: false, error: "Missing required fields" });
   }
 
+  const jwtSecret = process.env.TENANT_JWT_SECRET;
+  if (!jwtSecret) return res.status(503).json({ ok: false, error: "Authentication unavailable" });
+
   try {
     const client = await pool.connect();
 
@@ -36,8 +39,6 @@ router.post("/public/signup", async (req, res) => {
       VALUES ($1, $2, $3, $4, $5, $6, $7)
       RETURNING id, email, region, preferred_lang;
     `;
-    const jwtSecret = process.env.TENANT_JWT_SECRET;
-    if (!jwtSecret) return res.status(503).json({ ok: false, error: "Authentication unavailable" });
     const apiKey = "tenant_" + randomBytes(32).toString("hex");
     const result = await client.query(insertTenant, [
       email,
