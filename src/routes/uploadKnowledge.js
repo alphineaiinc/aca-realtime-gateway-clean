@@ -93,6 +93,7 @@ function acceptPdfUpload(req, res, next) {
 
 router.post("/tenant/upload-knowledge", authenticate, uploadRateLimit, reserveUpload, acceptPdfUpload, async (req, res) => {
   try {
+  if (res.destroyed) return;
   if (!req.file) {
     return res.status(400).json({ ok: false, error: "File missing" });
   }
@@ -115,6 +116,7 @@ router.post("/tenant/upload-knowledge", authenticate, uploadRateLimit, reserveUp
     } finally {
       await parser.destroy();
     }
+    if (res.destroyed) return;
     if (!text) {
       return res.status(400).json({ ok: false, error: "PDF contains no extractable text" });
     }
@@ -129,10 +131,13 @@ router.post("/tenant/upload-knowledge", authenticate, uploadRateLimit, reserveUp
     let inserted = 0;
 
     for (let i = 0; i < chunks.length; i++) {
+      if (res.destroyed) return;
       const content = chunks[i];
 
       // Get embedding array
       const embedding = await embedText(content);
+      // An in-flight provider request cannot be undone; stop subsequent work.
+      if (res.destroyed) return;
 
       // ✅ Convert embedding array → valid pgvector literal
       const vectorLiteral = "[" + embedding.join(",") + "]";
@@ -146,6 +151,7 @@ router.post("/tenant/upload-knowledge", authenticate, uploadRateLimit, reserveUp
       inserted++;
     }
 
+    if (res.destroyed) return;
     return res.json({
       ok: true,
       message: "Knowledge uploaded successfully",
@@ -153,6 +159,7 @@ router.post("/tenant/upload-knowledge", authenticate, uploadRateLimit, reserveUp
       chunks: inserted,
     });
   } catch (err) {
+    if (res.destroyed) return;
     console.error("UploadKnowledge processing failed");
     return res.status(500).json({ ok: false, error: "Upload processing failed" });
   }
