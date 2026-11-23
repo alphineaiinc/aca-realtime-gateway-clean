@@ -4,7 +4,7 @@ Status: **proposed baseline, awaiting owner review and merge**. Updated 2026-11-
 
 ## Document versioning policy
 
-- Version: **v1.3.0-draft**. Baseline: v1.0.0-draft. This document is currently proposed in PR #121, not merged.
+- Version: **v1.4.0-draft**. Baseline: v1.0.0-draft. This document is currently proposed in PR #121, not merged.
 - Every material update MUST increment the document version, add a new append-only change-log entry with an ISO-8601 UTC timestamp (YYYY-MM-DDTHH:mm:ssZ), identify **Added / Changed / Removed / Verified / Still unverified**, and link the PR, commit SHA and evidence.
 - Use the Git commit's authoritative timestamp when an exact timestamp is required; never invent one. Draft entries can state the calendar date and Git-commit timestamp reference until the exact time is retrieved.
 - Never rewrite or delete historical entries to conceal a change. Correct inaccuracies with a new entry explaining the correction. Git history remains the underlying immutable revision trail, subject to repository permissions.
@@ -16,6 +16,7 @@ Status: **proposed baseline, awaiting owner review and merge**. Updated 2026-11-
 | Version | Timestamp | Added | Changed | Removed | Verification / reference |
 | --- | --- | --- | --- | --- | --- |
 | v1.0.0-draft | 2026-11-22; Git commit timestamp | Initial eight-role baseline, implementation inventory, acceptance tracker links, safety gates | Reconciled claimed agent count with evidence status | None | Commit `6861f165e2f054cac24dc9886a8c8f6c17f60d0f`; PR #121; eight executable roles not yet audited |
+| v1.4.0-draft | 2026-11-23T03:27:17.603Z | Company vision, future prospects, founder reporting roadmap and 19 Phase 2 acceptance gates | Tracker now 11/66 checked, 55 pending; formalizes eight-agent and Agent Manager exit criteria | None | Issue #118; draft roadmap only, email not yet configured |
 | v1.3.0-draft | 2026-11-23T03:14:46.355Z | Explicit eight-agent delivery commitment, acceptance requirements and delivery stages | Clarified target architecture versus verified implementation | None | Owner's eight-agent direction; this is a roadmap commitment, not proof of implementation |
 | v1.2.1-draft | 2026-11-23T03:13:02.834Z | PR #117 TTS error-redaction code and regression test references | Item 12 remains pending until exact-SHA CI/CodeQL and full acceptance | None | PR #117 head `befc3093e1f30dd1d23a53bfcfdec6b9f9cf`; tests not yet verified |
 | v1.2.0-draft | 2026-11-23T03:07:36.282Z | Eight-role evidence matrix, verified iPhone push delivery, exact test links | Updated notification status and role-by-role distinctions | None | PR #121; Issue #118; bot comment 7090423512; user screenshot confirms push; unverified roles remain open |
@@ -91,6 +92,32 @@ Issue [#118](https://github.com/alphineaiinc/aca-realtime-gateway-clean/issues/1
 | Orchestrator | `src/automation/safeQueuePolicy.js`, `.github/scripts/safe-queue-runner.js`, queue workflow | `test/safe-queue-policy.test.js`, `test/safe-queue-runner.test.js` | Manual native Codex dispatch boundary remains | No |
 
 These entries mean **not verified by this inventory**, not that the code does not exist. Next read-only audit must search relevant branches, PRs and repository paths and record exact links/SHAs. Agent names and the number of workers must never be silently conflated.
+
+## Alphine AI vision, strategy and future prospects — living company roadmap
+
+**Identity and mission:** Alphine AI — *Intelligence for a Connected World*. Build ethical, dependable, security-first AI platforms that help businesses communicate, operate and grow. Founded August 2025; Canadian company with ambitions to serve international markets. Company website: https://alphineai.com.
+
+**Founder-approved direction (2026-11):** Build a reusable, policy-governed autonomous engineering capability that serves the entire Alphine AI product portfolio. Finish Phase 2 only when eight functional engineering agent roles and the essential Agent Manager controls pass independently evidenced acceptance. Then use that engineering team to complete ACA for commercial launch. A second isolated eight-role Engineering Innovation Team will improve agent capabilities and build the full Agent Command Center. Expansion to more instances and specialized company operations agents is a roadmap, not an operational claim.
+
+### Strategic horizons
+1. **Now — Phase 2 engineering foundation:** Finish 55 pending acceptance items in Issue #118 (11 of 66 checked at this checkpoint), including eight agent roles, independent security, integrated pilot and Agent Manager enforcement. No premature completion claim.
+2. **Next — ACA commercial readiness:** Use verified autonomous engineering team to complete ACA multi-tenant, multi-industry workflows, Twilio/STT/LLM/TTS reliability, security, onboarding, support, billing, monitoring, quality gates and controlled launch. Validate customer demand and service economics before scaling.
+3. **Parallel after foundation — Engineering Innovation:** Establish isolated second team with separate queues, credentials, spending limits and audit. Build full visual Agent Command Center and continuously propose/test improvements; no self-modification of production governance without independent review and owner approval.
+4. **Growth — product portfolio and markets:** Reuse platform for Alphine AI's other planned products, including attendance/participation verification, social/engagement automation and knowledge orchestration. Evaluate Canadian SMB opportunities and possible Nigeria/Africa pilots with appropriate local data/privacy, telecommunications, payments and language requirements. These are opportunities, not contracted customers or confirmed launches.
+5. **Longer term — scalable company operations:** Consider additional supervised agents for customer success, sales operations, research, finance analysis and company administration. Require explicit business case, measurable ROI, access controls and legal/compliance review before activation.
+
+### Company-level operating principles
+- Security, privacy, customer trust and least privilege before autonomy; agent compliance means enforceable policy controls plus review, not a guarantee of flawless AI judgment.
+- Separate roles, instances and teams; use independent approval and avoid self-certification.
+- Keep customer data, repositories, environments, budgets and audit trails isolated by tenant/product/team.
+- Track product reliability, response latency, conversion, churn, unit economics, customer satisfaction, security incidents, engineering throughput and agent cost. Set numeric targets only when validated.
+- The founder retains authority over mergers, deployments, signing, production secrets, spending commitments and privileged dispatch.
+
+### Founder communications — planned, not active
+- Google Workspace exists for the `alphineai.com` domain; `support@alphineai.com` is an example company mailbox, **not** an assumed founder recipient or authorized sending identity.
+- Founder report should summarize company vision changes, Phase 2 checklist counts, eight-agent readiness, ACA milestones, risks/blockers, costs, approval requests and upcoming priorities, with GitHub evidence links.
+- **Not configured or sent:** founder recipient address, sender identity, Google Workspace Gmail connection, frequency and delivery test all require confirmation/authorization. No claim of email delivery until verified.
+- On each material milestone, reconcile Issue #118, this living roadmap, evidence links, and versioned changelog. Recurring proactive reports require an explicitly configured schedule and approved email transport.
 
 ## Change-control and execution rules
 - No merging, deploying, production/staging mutation, signing, agent dispatch, secrets/security setting changes or spending without the specific required owner authorization.
