@@ -1058,60 +1058,12 @@ function buildConfirmationReplyFromSession(session) {
     );
   }
 
-  const slots = session?.slots || {};
-  const values = Object.entries(slots)
-    .filter(([, value]) => normalizeText(value))
-    .map(([key, value]) => ({ key, value: normalizeText(value) }));
-
-  if (!values.length) {
-    return getPremiumEmptyConfirmation(session);
-  }
-
-  const findValue = (matcher) => {
-    const hit = values.find(({ key }) => matcher(String(key).toLowerCase()));
-    return hit ? hit.value : "";
-  };
-
-  const dateValue =
-    findValue((key) => key.includes("date") || key.includes("day")) || "";
-  const timeValue =
-    findValue((key) => key.includes("time")) || "";
-  const nameValue =
-    findValue((key) => key.includes("name")) || "";
-  const phoneValue =
-    findValue((key) => key.includes("phone") || key.includes("number")) || "";
-  const partyValue =
-    findValue((key) =>
-      key.includes("party") ||
-      key.includes("size") ||
-      key.includes("guest") ||
-      key.includes("people") ||
-      key.includes("person")
-    ) || "";
-
-  const serviceValue =
-    findValue((key) =>
-      key.includes("service") ||
-      key.includes("type") ||
-      key.includes("reason") ||
-      key.includes("purpose")
-    ) || "";
-
-  const parts = [];
-
-if (serviceValue && session?.businessType === "medical") {
-  parts.push(serviceValue);
-}
-
-if (dateValue) parts.push(dateValue);
-if (timeValue) parts.push(`at ${timeValue}`);
-if (partyValue) parts.push(`for ${partyValue}`);
-
-if (parts.length > 0) {
-  return `${getPremiumConfirmLead(session)} ${parts.join(" ")}. Is that correct?`;
-}
-
-  return getPremiumEmptyConfirmation(session);
+  const schema = session.clusterSchema;
+  const intent = schema.intents.find(i => i.intent === session.active_intent);
+  const fields = intent?.confirmation_slots || getSessionSlotProfile(session).required;
+  const parts = fields.filter(key => normalizeText(session.slots?.[key])).map(key =>
+    key.replace(/_/g, " ") + ": " + normalizeText(session.slots[key]));
+  return parts.length ? getPremiumConfirmLead(session) + " " + parts.join(", ") + ". Is that correct?" : getPremiumEmptyConfirmation(session);
 }
 
 function buildSlotQuestion(slotName, session = null) {
@@ -1381,6 +1333,15 @@ async function handleCallerTurn({ callSid, businessId = null, transcript, meta =
 
   const utterance = normalizeText(transcript);
   session.lastCallerText = utterance;
+  if (session.workflowStatus === "ready_for_confirmation" &&
+      !session.confirmationBlocked && /^(yes|yes please|correct|that is correct|that's correct|okay|ok)[.!]?$/i.test(utterance)) {
+    session.workflowStatus = "details_confirmed";
+    session.lastAskedSlot = null;
+    return { shouldSpeak: true, replyText: "Thank you. I have your confirmed details. Availability and fulfillment are not yet confirmed.", replyType: "details_confirmed" };
+  }
+  if (session.workflowStatus === "details_confirmed" && /^(yes|correct|okay|ok)[.!]?$/i.test(utterance)) {
+    return { shouldSpeak: true, replyText: "Is there anything else I can help with?", replyType: "acknowledgement" };
+  }
 
   const askingPhoneConfirm =
     /\b(confirm.*(phone|number)|what.*(phone|number)|did you get.*(phone|number))\b/i.test(utterance);
@@ -1677,8 +1638,7 @@ if (coreComplete && session.requiredSlots.includes("name") && !has("name")) {
   session.workflowStatus = workflowState.workflowStatus || "idle";
 
   if (
-  session.workflowStatus === "ready_for_confirmation" ||
-  session.workflowStatus === "completed"
+  !missingRequired.length && session.workflowStatus === "ready_for_confirmation"
 ) {
   session.lastAskedSlot = null;
   session.confirmationBlocked = false;
