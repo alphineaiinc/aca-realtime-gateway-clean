@@ -13,7 +13,7 @@ test("completed duplicate events are acknowledged without reprocessing",()=>{
 });
 test("failed processing releases claim and returns retryable status",()=>{
  assert.match(source,/DELETE FROM public\.aca_stripe_webhook_events/);
- assert.match(source,/status: false, retry: true/);
+ assert.match(source,/received: false, retry: true/);
 });
 test("successful processing is durably marked processed",()=>{
  assert.match(source,/SET status='processed', processed_at=NOW\(\)/);
