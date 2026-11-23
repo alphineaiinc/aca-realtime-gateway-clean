@@ -33,4 +33,21 @@ jobs:
               ([$alerts[] | (.rule.security_severity_level // .rule.severity // "unknown")] |
                group_by(.) | map("\(.[0])=\(length)") | join(", "))
           '
+          printf '%s' "$json" | jq -r '
+            [ .[][] | select(.tool.name == "CodeQL") ] as $alerts |
+            "Top CodeQL rules by alert count:",
+            ($alerts | group_by(.rule.id) | map({id: .[0].rule.id, n: length}) |
+              sort_by(-.n) | .[:15][] | "  \(.id): \(.n)"),
+            (["src/brain/utils/emailer.js",
+              ".github/workflows/phase2-code-scanning-inventory.yml",
+              ".github/workflows/phase2-dependency-security-audit.yml",
+              "test/billing-archiver-compat.test.js",
+              "test/emailer-nodemailer-compat.test.js",
+              "test/emailer-tls-certificate-rejection.test.js",
+              "package.json", "package-lock.json"] as $paths |
+             [$alerts[] | select(.most_recent_instance.location.path as $p | $paths | index($p))] as $matches |
+             "Open CodeQL alerts in PR-changed files: \($matches | length)",
+             ($matches | group_by(.most_recent_instance.location.path) |
+               .[] | "  \(.[0].most_recent_instance.location.path): \(length)"))
+          '
           echo "Alert inventory retrieved. Review actual alert locations and dismissals in GitHub Security before merge."
