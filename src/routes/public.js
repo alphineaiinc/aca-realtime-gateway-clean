@@ -102,13 +102,8 @@ router.post("/public/login", async (req, res) => {
   if (!email) return res.status(400).json({ ok: false, error: "Missing email" });
 
   try {
-    const { rows } = await pool.query("SELECT id, email FROM master_tenants WHERE email = $1", [email]);
-    if (rows.length === 0) return res.status(404).json({ ok: false, error: "Tenant not found" });
-
-    const jwtSecret = process.env.TENANT_JWT_SECRET || "alphine_tenant_jwt_2025_secure!";
-    const token = jwt.sign({ tenant_id: rows[0].id, email: rows[0].email }, jwtSecret, { expiresIn: "1h" });
-
-    res.json({ ok: true, token, tenant_id: rows[0].id });
+    // Email possession has not been verified: never mint a tenant JWT here.
+    return res.status(403).json({ ok: false, error: "Verified login required" });
   } catch (err) {
     console.error("Public login failed");
     res.status(500).json({ ok: false, error: "Login failed" });
