@@ -27,3 +27,6 @@ An unmounted transaction-scoped PostgreSQL advisory-lock primitive and five mock
 
 ## Atomic persistence
 All embeddings are collected and checked for finite numeric values before one parameterized PostgreSQL INSERT using paired arrays and ordinality. A failed embedding produces no knowledge writes; a statement failure cannot leave a subset of its rows committed. A lost response after database commit remains ambiguous; retry idempotency is not claimed. Verify the SQL against the actual pgvector schema before rollout. The distributed admission candidate remains unmounted pending validation.
+
+## Opt-in route integration
+`ACA_DISTRIBUTED_UPLOAD_ADMISSION=1` connects the candidate to embedding and atomic persistence after PDF extraction. Default is disabled; no runtime configuration changed. It is not a global multipart/PDF parsing cap. Validate pool capacity, connection loss and atomic persistence against actual pgvector before activation. Demo JWTs with demo=true or role=demo are denied. In-flight provider calls and writes remain potentially ambiguous after connection loss; strict fencing is not established.
