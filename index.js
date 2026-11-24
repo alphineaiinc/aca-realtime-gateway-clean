@@ -922,7 +922,7 @@ if(process.env.RENDER_SERVICE_ID==="srv-dc2ffvm8bjmc73fhn8j0"){
  app.get("/__aca_sec09_ready",(req,res)=>res.status(200).type("text/plain").send("aca-sec09-probe-v3"));
  const makeProbeLimit=require("./src/security/ingressLimit").ingressLimit;
  const diagnosticLimit=makeProbeLimit({max:10});
- const probeBudgets={twilio:makeProbeLimit({max:5}),stripe:makeProbeLimit({max:5}),ordinary:makeProbeLimit({max:5})};
+ const probeBudgets={twilio:makeProbeLimit({max:5,globalBudget:true}),stripe:makeProbeLimit({max:5,globalBudget:true}),ordinary:makeProbeLimit({max:5,globalBudget:true})};
  for(const kind of Object.keys(probeBudgets)) app.get("/__aca_sec09_capacity/"+kind,probeBudgets[kind],(req,res)=>res.status(204).end());
  app.get("/__aca_sec09_probe",diagnosticLimit,(req,res)=>{
   const chain=String(req.headers["x-forwarded-for"]||"").split(",").map(x=>x.trim()).filter(Boolean);
