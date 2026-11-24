@@ -39,3 +39,11 @@ CREATE TABLE engineering_team_quarantine (
  created_at timestamptz NOT NULL DEFAULT clock_timestamp(),
  PRIMARY KEY(product,repository,role)
 );
+
+-- Evidence digests only until proposal retention and data classification are approved.
+CREATE TABLE engineering_team_proposal_receipts (
+ task_id uuid PRIMARY KEY REFERENCES engineering_team_tasks(id),
+ lease_id uuid NOT NULL,
+ evidence_sha256 text NOT NULL CHECK(evidence_sha256 ~ '^[a-f0-9]{64}$'),
+ created_at timestamptz NOT NULL DEFAULT clock_timestamp()
+);
