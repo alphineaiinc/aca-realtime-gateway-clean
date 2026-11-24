@@ -34,14 +34,16 @@ function createDurableQueue({pool,scopes,authenticate,leaseSeconds=60,fixturePro
   async stop({scope,credential}){
    const params=checkScope(scope);const actor=await identity(credential,scope,null,'queue.manage');
    return guarded(params,async client=>{
-    await client.query('INSERT INTO engineering_team_stops(product,repository,actor_id) VALUES ($1,$2,$3) ON CONFLICT DO NOTHING',[...params.slice(0,2),actor]);
+    const inserted=await client.query('INSERT INTO engineering_team_stops(product,repository,actor_id) VALUES ($1,$2,$3) ON CONFLICT DO NOTHING RETURNING product',[...params.slice(0,2),actor]);
+    if(inserted.rowCount===1)await client.query("INSERT INTO engineering_team_governance_alerts(id,product,repository,event_type,actor_id) VALUES ($1,$2,$3,'stop.created',$4)",[randomUUID(),...params.slice(0,2),actor]);
     return true;
    });
   },
   async quarantine({scope,role,credential}){
    const params=checkScope(scope);getRole(role);const actor=await identity(credential,scope,null,'queue.manage');
    return guarded(params,async client=>{
-    await client.query('INSERT INTO engineering_team_quarantine(product,repository,role,actor_id) VALUES ($1,$2,$3,$4) ON CONFLICT DO NOTHING',[...params.slice(0,2),role,actor]);
+    const inserted=await client.query('INSERT INTO engineering_team_quarantine(product,repository,role,actor_id) VALUES ($1,$2,$3,$4) ON CONFLICT DO NOTHING RETURNING role',[...params.slice(0,2),role,actor]);
+    if(inserted.rowCount===1)await client.query("INSERT INTO engineering_team_governance_alerts(id,product,repository,event_type,role,actor_id) VALUES ($1,$2,$3,'quarantine.created',$4,$5)",[randomUUID(),...params.slice(0,2),role,actor]);
     return true;
    });
   },
