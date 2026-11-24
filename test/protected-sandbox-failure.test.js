@@ -30,36 +30,7 @@ test('failed state query or residual container denies acceptance',()=>{
 });
 test('unknown create never starts a container',()=>{
  const {api,calls}=harness([{error:new Error('timeout')},good('removed'),good('')]);assert.throws(()=>api.run(api.imagePin),/Create unresolved/);assert.equal(calls.length,3);
- const name=calls[0].args[2];assert.equal(calls[1].args.join(' '),'rm -f '+name);assert.equal(calls[2].args[4],'name=^/'+name+'
-});
-test('unreviewed image rejected before Docker',()=>{
- const {api,calls}=harness([]);assert.throws(()=>api.run('node@sha256:'+id),/Reviewed pinned/);assert.equal(calls.length,0);
-});
-test('writable root configuration rejected and removed',()=>{
- const {api,calls}=harness([good(id),good('false 134217728 134217728 500000000 32'),good(id),good('')]);assert.throws(()=>api.run(api.imagePin),/Configuration denied/);assert.equal(calls.length,4);
-});
-
-test('fixed timeout fixture uses bounded start and denies acceptance',()=>{
- const {api,calls}=harness([sequence()[0],sequence()[1],{error:{code:'ETIMEDOUT'}},good('true 123\n'),good(id),good('')]);
- assert.throws(()=>api.runTimeoutFixture(),/Fixed timeout observed/);assert.equal(calls[2].options.timeout,2000);assert.equal(calls[4].args.join(' '),'rm -f '+id);
-});
-test('fixed failed query fixture denies acceptance after removal',()=>{
- const s=sequence();s[5]={status:125,stdout:'',stderr:'unknown flag'};
- s.push(good(''));const {api,calls}=harness(s);assert.throws(()=>api.runFailedQueryFixture(),/Fixed query failure reconciled/);assert.equal(calls[5].args.join(' '),'ps --invalid-fixed-fixture-option');
-});
-
-test('timeout without running process evidence is not accepted',()=>{
- const {api}=harness([sequence()[0],sequence()[1],{error:{code:'ETIMEDOUT'}},good('false 0'),good(id),good('')]);
- assert.throws(()=>api.runTimeoutFixture(),/Timeout start unverified/);
-});
-test('query fixture cannot mask removal failure or residual state',()=>{
- for(const removal of [false,true]){
- const s=sequence();if(removal)s[4]={status:1,stdout:'',stderr:'failed'};
- s[5]={status:125,stdout:'',stderr:'unknown flag'};s.push(good(id));
- const {api}=harness(s);assert.throws(()=>api.runFailedQueryFixture(),removal?/Removal unresolved/:/Cleanup unresolved/);
- }
-});
-);
+ const name=calls[0].args[2];assert.equal(calls[1].args.join(' '),'rm -f '+name);assert.equal(calls[2].args[4],'name=^/'+name+'$');
 });
 test('unreviewed image rejected before Docker',()=>{
  const {api,calls}=harness([]);assert.throws(()=>api.run('node@sha256:'+id),/Reviewed pinned/);assert.equal(calls.length,0);
