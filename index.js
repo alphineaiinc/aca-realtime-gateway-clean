@@ -921,11 +921,13 @@ app.set("trust proxy", require("./src/security/proxyPolicy").proxyPolicy(process
 const { rateLimit: recognizedRateLimit } = require("express-rate-limit");
 const { ingressLimit: boundedIngress } = require("./src/security/ingressLimit");
 // Separate bounded budgets for provider callback namespaces; no authentication bypass.
-const providerPath = req => /^\/(?:twilio|api\/stripe)(?:\/|$)/i.test(req.path);
+const ingressClass = req => /^\/twilio(?:\/|$)/i.test(req.path) ? "twilio" : /^\/api\/stripe(?:\/|$)/i.test(req.path) ? "stripe" : "ordinary";
 const ordinaryIngress = boundedIngress({max: 300, windowMs: 60000});
-const providerIngress = boundedIngress({max: 300, windowMs: 60000});
-app.use((req,res,next)=>(providerPath(req)?providerIngress:ordinaryIngress)(req,res,next));
-app.use(recognizedRateLimit({windowMs: 60000, limit: 300, standardHeaders: "draft-8", legacyHeaders: false, passOnStoreError: false, keyGenerator: req => (providerPath(req)?"provider:":"ordinary:")+require("express-rate-limit").ipKeyGenerator(req.ip)}));
+const twilioIngress = boundedIngress({max: 300, windowMs: 60000});
+const stripeIngress = boundedIngress({max: 300, windowMs: 60000});
+const ingressBudgets = {ordinary:ordinaryIngress,twilio:twilioIngress,stripe:stripeIngress};
+app.use((req,res,next)=>ingressBudgets[ingressClass(req)](req,res,next));
+app.use(recognizedRateLimit({windowMs: 60000, limit: 300, standardHeaders: "draft-8", legacyHeaders: false, passOnStoreError: false, keyGenerator: req => (ingressClass(req)+":")+require("express-rate-limit").ipKeyGenerator(req.ip)}));
 
 // ✅ Story 12.8 — security headers + origin allowlist guard (fail-closed in prod)
 try {
