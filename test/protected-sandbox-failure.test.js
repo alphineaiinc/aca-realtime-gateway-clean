@@ -4,41 +4,36 @@ const assert=require('node:assert/strict');
 const fs=require('node:fs');
 const vm=require('node:vm');
 const source=fs.readFileSync(require.resolve('../scripts/protected-sandbox/fixtureHarness'),'utf8');
-const image='node@sha256:'+'a'.repeat(64);
-function harness(outcome,followups=[]){
- const calls=[];const module={exports:{}};
- vm.runInNewContext(source,{module,require:name=>name==='node:child_process'?{spawnSync:(exe,args,options)=>{calls.push({exe,args,options});return calls.length===1?outcome:(followups[calls.length-2]??{status:0,stdout:'',stderr:''});}}:require(name)});
+const id='a'.repeat(64);
+const good=stdout=>({status:0,stdout,stderr:''});
+const sequence=()=>[good(id+'\n'),good('true 134217728 134217728 500000000 32\n'),good('fixture-ok'),good('exited 0\n'),good(id+'\n'),good('')];
+function harness(results){
+ const calls=[],module={exports:{}};
+ vm.runInNewContext(source,{module,require:n=>n==='node:child_process'?{spawnSync:(exe,args,options)=>{calls.push({exe,args,options});return results.shift();}}:n==='node:os'?{platform:()=> 'linux',arch:()=> 'x64'}:require(n)});
  return {api:module.exports,calls};
 }
-test('unknown, malformed and failed fixture outcomes deny acceptance and attempt scoped cleanup',()=>{
- for(const outcome of [{error:new Error('timeout')},{signal:'SIGKILL'},{status:1},{status:0,stdout:'fixture-ok\n',stderr:''},{status:0,stdout:'fixture-ok',stderr:'warning'}]){
-  const {api,calls}=harness(outcome);
-  assert.throws(()=>api.run(image),/outcome denied/);
-  assert.equal(calls.length,3);
-  const name=calls[0].args[calls[0].args.indexOf('--name')+1];
-  assert.match(name,/^alphine-fixture-[a-f0-9-]{36}$/);
-  assert.equal(calls[1].args.join(' '),'rm -f '+name);
-  assert.equal(calls[1].options.timeout,5000);
+test('success uses ID-bound inspection, start and verified removal',()=>{
+ const {api,calls}=harness(sequence());const result=api.run(api.imagePin);
+ assert.equal(result.fixturePassed,true);assert.equal(result.executionAuthorized,false);assert.equal(result.attestation,false);
+ assert.equal(calls.length,6);assert.equal(calls[2].args.join(' '),'start -a '+id);assert.equal(calls[4].args.join(' '),'rm -f '+id);
+});
+test('timeout, malformed output and stderr deny acceptance with cleanup',()=>{
+ for(const outcome of [{error:new Error('timeout')},good('fixture-ok\n'),{status:0,stdout:'fixture-ok',stderr:'warning'}]){
+  const {api,calls}=harness([sequence()[0],sequence()[1],outcome,good(id),good('')]);
+  assert.throws(()=>api.run(api.imagePin),/outcome denied/);assert.equal(calls.length,5);
  }
 });
-test('fixed success remains non-authorizing and non-attesting',()=>{
- const {api,calls}=harness({status:0,stdout:'fixture-ok',stderr:''});
- const result=api.run(image);
- assert.equal(result.fixturePassed,true);
- assert.equal(result.executionAuthorized,false);
- assert.equal(result.attestation,false);
- assert.equal(calls.length,2);
- assert.equal(calls[0].options.timeout,15000);
-});
-test('invalid image never invokes Docker',()=>{
- const {api,calls}=harness({});
- assert.throws(()=>api.run('node:latest'),/Pinned/);
- assert.equal(calls.length,0);
-});
-
-test('residual or unverifiable container denies success even after cleanup',()=>{
- const ok={status:0,stdout:'fixture-ok',stderr:''};
- for(const followups of [[{status:0,stdout:'residual',stderr:''},{status:0},{status:0,stdout:'',stderr:''}],[{status:1},{status:1},{status:1}]]){
- const {api,calls}=harness(ok,followups);assert.throws(()=>api.run(image),/outcome denied/);assert.equal(calls.length,4);
+test('failed state query or residual container denies acceptance',()=>{
+ for(const outcome of [{status:1,stdout:'',stderr:''},good(id)]){
+  const s=sequence();s[5]=outcome;const {api}=harness(s);assert.throws(()=>api.run(api.imagePin),/Cleanup unresolved/);
  }
+});
+test('unknown create never starts a container',()=>{
+ const {api,calls}=harness([{error:new Error('timeout')}]);assert.throws(()=>api.run(api.imagePin),/Create unresolved/);assert.equal(calls.length,1);
+});
+test('unreviewed image rejected before Docker',()=>{
+ const {api,calls}=harness([]);assert.throws(()=>api.run('node@sha256:'+id),/Reviewed pinned/);assert.equal(calls.length,0);
+});
+test('writable root configuration rejected and removed',()=>{
+ const {api,calls}=harness([good(id),good('false 134217728 134217728 500000000 32'),good(id),good('')]);assert.throws(()=>api.run(api.imagePin),/Configuration denied/);assert.equal(calls.length,4);
 });
