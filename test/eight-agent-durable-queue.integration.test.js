@@ -586,4 +586,26 @@ test('isolated PostgreSQL queue: concurrent claims, retries, restart, expiry and
  assert.equal(boundaryProviderCalls,0);
  assert.deepEqual(boundaryTransport.usage(),{calls:0,inputTokens:0,outputTokens:0});
  assert.deepEqual((await pools[1].query('SELECT reserved_calls,reserved_microusd FROM engineering_team_spend_budgets WHERE budget_id=$1',[boundaryBudgetId])).rows[0],{reserved_calls:1,reserved_microusd:'100'});
+
+ // Same repository and SHA, different product scopes: stop and worker identities
+ // must remain isolated across products.
+ const productAScope={...scope,repository:'fixture/multi-product'};
+ const productBScope={...productAScope,product:'social-engagement'};
+ const productIdentities=new Map([
+  ['product-a-manager',{...productAScope,id:'product-a-manager',permission:'queue.manage'}],
+  ['product-a-worker',{...productAScope,id:'product-a-worker',role:'backend-developer',permission:'queue.work'}],
+  ['product-b-manager',{...productBScope,id:'product-b-manager',permission:'queue.manage'}],
+  ['product-b-worker',{...productBScope,id:'product-b-worker',role:'backend-developer',permission:'queue.work'}]
+ ]);
+ const productQueue=createDurableQueue({pool:pools[0],scopes:[productAScope,productBScope],authenticate:async c=>productIdentities.get(c)});
+ const productATask=await productQueue.enqueue({scope:productAScope,role:'backend-developer',credential:'product-a-manager'});
+ const productBTask=await productQueue.enqueue({scope:productBScope,role:'backend-developer',credential:'product-b-manager'});
+ await productQueue.stop({scope:productAScope,credential:'product-a-manager'});
+ await assert.rejects(productQueue.claim({scope:productAScope,role:'backend-developer',credential:'product-a-worker',expectedTaskId:productATask}),/Governance denied/);
+ await assert.rejects(productQueue.claim({scope:productBScope,role:'backend-developer',credential:'product-a-worker',expectedTaskId:productBTask}),/Identity denied/);
+ const productBLease=await productQueue.claim({scope:productBScope,role:'backend-developer',credential:'product-b-worker',expectedTaskId:productBTask});
+ assert.equal(productBLease.id,productBTask);
+ assert.equal(await productQueue.finish({scope:productBScope,role:'backend-developer',credential:'product-b-worker',taskId:productBTask,leaseId:productBLease.lease_id,outcome:'succeeded'}),'succeeded');
+ assert.equal((await pools[1].query('SELECT state FROM engineering_team_tasks WHERE id=$1',[productATask])).rows[0].state,'queued');
+ assert.equal((await pools[1].query('SELECT state FROM engineering_team_tasks WHERE id=$1',[productBTask])).rows[0].state,'succeeded');
 });
