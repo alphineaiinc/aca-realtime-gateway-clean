@@ -5,16 +5,17 @@ const {sequence}=require('./offlineTeam');
 const {digest}=require('./patchPlanner');
 // Durable, explicitly invoked fixture workflow. Unknown in-flight work is never replayed.
 function createFixtureRuntime({scope,queue,ledger,adapters,preparation,authorize}={}){
- if(!scope||typeof queue?.enqueue!=='function'||typeof queue?.inspectWorkflowStep!=='function'||typeof ledger?.create!=='function'||typeof ledger?.status!=='function'||typeof ledger?.readFixturePrior!=='function'||typeof preparation?.prepare!=='function'||typeof authorize!=='function')throw Error('Invalid fixture runtime');
+ if(!scope||typeof queue?.enqueue!=='function'||typeof queue?.inspectWorkflowStep!=='function'||typeof ledger?.create!=='function'||typeof ledger?.status!=='function'||typeof ledger?.readInput!=='function'||typeof ledger?.readFixturePrior!=='function'||typeof preparation?.prepare!=='function'||typeof authorize!=='function')throw Error('Invalid fixture runtime');
  const pinned=Object.freeze({product:scope.product,repository:scope.repository,sha:scope.sha});
  let active=false,created=false;
- async function drive({workflowId,subject,developerRole,managerCredential,workerCredentials}){
+ async function drive({workflowId,managerCredential,workerCredentials}){
   if(active)throw Error('Fixture runtime busy');
-  if(typeof workflowId!=='string'||typeof subject!=='string'||!subject.trim()||subject.length>2000||!['backend-developer','frontend-developer'].includes(developerRole)||!workerCredentials||sequence.some(r=>typeof workerCredentials[r]!=='string'||!workerCredentials[r]))throw Error('Fixture runtime denied');
+  if(typeof workflowId!=='string'||!workerCredentials||sequence.some(r=>typeof workerCredentials[r]!=='string'||!workerCredentials[r]))throw Error('Fixture runtime denied');
   active=true;
   try{
    if(await authorize({scope:pinned,action:'team.simulate'})!==true)return Object.freeze({state:'denied',workflowId,executionAuthorized:false,releaseApproved:false});
-   const status=await ledger.status({credential:managerCredential,id:workflowId});
+   const [status,input]=await Promise.all([ledger.status({credential:managerCredential,id:workflowId}),ledger.readInput({credential:managerCredential,id:workflowId})]);
+   const {subject,developerRole}=input;
    let step=status.next_step;
    if(!Number.isSafeInteger(step)||step<0||step>8)throw Error('Workflow state invalid');
    for(;step<sequence.length;step++){
@@ -54,9 +55,9 @@ function createFixtureRuntime({scope,queue,ledger,adapters,preparation,authorize
  return Object.freeze({
   async run(input={}){
    if(created)throw Error('Fixture runtime denied: consumed');
-   if(!input.managerCredential||!input.subject)throw Error('Fixture runtime denied');
+   if(!input.managerCredential||typeof input.subject!=='string'||!input.subject.trim()||!['backend-developer','frontend-developer'].includes(input.developerRole))throw Error('Fixture runtime denied');
    created=true;
-   const workflow=await ledger.create(input.managerCredential);
+   const workflow=await ledger.create(input.managerCredential,{subject:input.subject,developerRole:input.developerRole});
    return drive({...input,workflowId:workflow.id});
   },
   async resume(input={}){
