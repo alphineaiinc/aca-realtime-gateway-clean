@@ -53,3 +53,21 @@ jobs:
           RUN_ENGINEERING_QUEUE_CI: '1'
           ENGINEERING_QUEUE_CI_DATABASE_URL: postgresql://aca_ci:disposable-ci-only@127.0.0.1:5432/aca_engineering_queue_ci
         run: node --test test/eight-agent-durable-queue.integration.test.js
+
+  engineering-sandbox-probe:
+    name: Engineering sandbox probe (trusted fixture only)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Run trusted fixture without network or credentials
+        run: |
+          docker pull node:22-bookworm-slim
+          timeout --kill-after=5s 40s docker run --rm --name aca-sandbox-fixture \
+            --network none --read-only --user 65534:65534 \
+            --cap-drop ALL --security-opt no-new-privileges \
+            --memory 128m --cpus 0.5 --pids-limit 32 \
+            --mount "type=bind,source=$PWD/test/fixtures/engineering-sandbox-probe.js,target=/probe.js,readonly" \
+            node:22-bookworm-slim node /probe.js
