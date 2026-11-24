@@ -86,3 +86,10 @@ Trusted sandbox probe and Node CI passed at a776d4853c9d69a926aaff436868c2a605bc
 - Regression coverage verifies no raw queue without policy, blocked issue rejection before database access, repeated policy evaluation, and in-flight completion behavior.
 - Commits: d84d04a, df21b1d, 2051b72, 319ddc6, 823f83b, cf70046. CI #788 passed at the prior restart-recovery baseline. Exact-head validation for runtime integration and these tests is pending; CI #790 remained in progress and #792 was pending at checkpoint time.
 - Draft-only. No scheduler, live GitHub dispatch, provider execution, merge, deployment or production database migration is enabled.
+
+## Blocked continuation safe-stop behavior — 2026-11-24
+
+- CI #796 exposed an integration contract mismatch: the policy-bound queue correctly denied a claim after issue policy closure, but propagated the denial as an exception through the worker/drain/continuation stack.
+- Updated the policy-bound claim boundary to return no lease on any policy evaluation/eligibility failure. This is fail-closed: the durable queue's claim method is not called, no worker task is loaded, and no proposal is generated. Enqueue and workflow-step inspection continue to throw on denied policy.
+- Regression now asserts the successful CI completion event results in a clean idle drain, with only the policy evaluated and no durable claim, finish, task load or proposal call.
+- Commits: 90cda10, cf795ee. CI #796 failed before this correction; exact-head CI for the correction is required and has not yet passed.
