@@ -2,6 +2,7 @@ const test=require('node:test');
 const assert=require('node:assert/strict');
 const {Pool}=require('pg');
 const fs=require('node:fs');
+const {createPartnerReservationRelease}=require('../src/security/partnerReservationRelease');
 const {createVerifiedUsageStore}=require('../src/security/verifiedUsage');
 const {createBillingPeriodClosure}=require('../src/security/billingPeriodClosure');
 const {createPartnerReservation}=require('../src/security/partnerReservation');
@@ -34,4 +35,8 @@ test('commercial ledgers serialize closure and reservations',{skip:process.env.R
  assert.equal((await pool.query('SELECT available_cents FROM aca_partner_funds WHERE partner_id=2')).rows[0].available_cents,'1000');
  const winner=outcomes.findIndex(x=>x.status==='fulfilled');
  assert.equal(await reserve(1,'fixture_request_'+winner,300),'duplicate');
+ const release=createPartnerReservationRelease(pool);
+ const releases=await Promise.all(Array.from({length:8},()=>release(1,'fixture_request_'+winner)));
+ assert.equal(releases.filter(x=>x==='released').length,1);
+ assert.equal((await pool.query('SELECT available_cents FROM aca_partner_funds WHERE partner_id=1')).rows[0].available_cents,'400');
 });
