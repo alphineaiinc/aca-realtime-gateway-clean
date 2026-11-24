@@ -61,3 +61,29 @@ test('shared PostgreSQL IP ingress limiter budgets callers independently before 
     await pool.end();
   }
 });
+
+test('billing pre-authentication IP budget is shared, bounded, and fail-closed', { skip: !enabled }, async t => {
+  const url = process.env.RATE_LIMIT_CI_DATABASE_URL;
+  const pools = [new Pool({ connectionString: url }), new Pool({ connectionString: url })];
+  t.after(async () => { await Promise.all(pools.map(p => p.end())); });
+  const scope = 'ci-billing-ip-' + require('node:crypto').randomUUID();
+  const limiters = pools.map(pool => createPostgresRateLimiter({
+    pool, scope, max: 60, windowMs: 60000, ipBased: true
+  }));
+  async function invoke(limiter, ip) {
+    const res = { code: 200, status(n) { this.code = n; return this; }, json() { return this; }, setHeader() {} };
+    await limiter({ ip }, res, () => {});
+    return res.code;
+  }
+  const results = await Promise.all(Array.from({ length: 80 }, (_, i) =>
+    invoke(limiters[i % 2], '198.51.100.42')));
+  assert.equal(results.filter(code => code === 200).length, 60);
+  assert.equal(results.filter(code => code === 429).length, 20);
+  assert.equal(await invoke(limiters[0], '198.51.100.43'), 200);
+  assert.equal(await invoke(limiters[1], undefined), 401);
+  const unavailable = createPostgresRateLimiter({
+    pool: { query: async () => { throw new Error('private database detail'); } },
+    scope: scope + '-unavailable', max: 60, windowMs: 60000, ipBased: true
+  });
+  assert.equal(await invoke(unavailable, '198.51.100.44'), 503);
+});
