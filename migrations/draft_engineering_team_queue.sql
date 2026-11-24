@@ -157,3 +157,16 @@ CREATE TABLE engineering_team_provider_outcomes (
  CHECK ((outcome='unknown' AND input_tokens IS NULL AND output_tokens IS NULL AND actual_microusd IS NULL) OR
  (outcome IN ('completed','breach') AND input_tokens IS NOT NULL AND output_tokens IS NOT NULL AND actual_microusd IS NOT NULL))
 );
+
+-- Offline continuation receipt. Consumed events are never automatically replayed.
+CREATE TABLE engineering_team_ci_events (
+ product text NOT NULL,
+ repository text NOT NULL,
+ head_sha text NOT NULL CHECK(head_sha ~ '^[a-f0-9]{40}$'),
+ workflow_id bigint NOT NULL CHECK(workflow_id>0),
+ run_id bigint NOT NULL CHECK(run_id>0),
+ attempt integer NOT NULL CHECK(attempt>0),
+ actor_id text NOT NULL,
+ created_at timestamptz NOT NULL DEFAULT clock_timestamp(),
+ PRIMARY KEY(repository,workflow_id,run_id,attempt)
+);
