@@ -22,3 +22,20 @@ CREATE TABLE engineering_team_queue_audit (
  event text NOT NULL CHECK (event IN ('queued','claimed','succeeded','failed','retry','cancelled','expired')),
  created_at timestamptz NOT NULL DEFAULT clock_timestamp()
 );
+
+-- Scope-wide stop applies across commit revisions. No automatic resume.
+CREATE TABLE engineering_team_stops (
+ product text NOT NULL,
+ repository text NOT NULL,
+ actor_id text NOT NULL,
+ created_at timestamptz NOT NULL DEFAULT clock_timestamp(),
+ PRIMARY KEY(product,repository)
+);
+CREATE TABLE engineering_team_quarantine (
+ product text NOT NULL,
+ repository text NOT NULL,
+ role text NOT NULL CHECK (role IN ('orchestrator','project-manager','solution-architect','backend-developer','frontend-developer','qa-testing','security-reviewer','devops')),
+ actor_id text NOT NULL,
+ created_at timestamptz NOT NULL DEFAULT clock_timestamp(),
+ PRIMARY KEY(product,repository,role)
+);
