@@ -19,12 +19,12 @@ function createFixtureRuntime({scope,queue,ledger,adapters,preparation,authorize
    if(await authorize({scope:pinned,action:'role.simulate',role})!==true)throw Error('Role admission denied');
    const prior=await ledger.readFixturePrior({credential:managerCredential,id:workflow.id});
    if(prior.length!==step)throw Error('Fixture handoff denied');
-   const taskId=await queue.enqueue({scope:pinned,role,credential:managerCredential});
+   const taskId=await queue.enqueue({scope:pinned,role,credential:managerCredential,workflowId:workflow.id,workflowStep:step});
    const worker=createQueueWorker({queue,manager,fixtureProposalStorage:true,loadTask:async({id})=>{
     if(id!==taskId)throw Error('Unexpected task');
     return {id,...pinned,subject,fixturePrior:prior};
    }});
-   const completed=await worker.runOnce({scope:pinned,role,credential:workerCredentials[role]});
+   const completed=await worker.runOnce({scope:pinned,role,credential:workerCredentials[role],expectedTaskId:taskId});
    if(completed.state!=='succeeded'||completed.taskId!==taskId)throw Error('Fixture task incomplete; reconcile');
    await ledger.advance({credential:managerCredential,id:workflow.id,step,taskId});
   }
