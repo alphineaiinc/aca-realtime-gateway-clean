@@ -244,6 +244,12 @@ test('isolated PostgreSQL queue: concurrent claims, retries, restart, expiry and
  assert.equal(runtimeResult.executionAuthorized,false);
  assert.equal(runtimeResult.releaseApproved,false);
  assert.equal((await ledger(pools[0]).status({credential:'manager',id:runtimeResult.workflowId})).next_step,8);
+ let replayedPreparationCalls=0;
+ const restartPreparation={prepare:async()=>{replayedPreparationCalls++;throw Error('completed preparation must not replay');}};
+ const restartResult=await createFixtureRuntime({scope,queue:fixtureQueue,ledger:ledger(pools[1]),adapters:runtimeAdapters,preparation:restartPreparation,authorize:async()=>true}).resume({workflowId:runtimeResult.workflowId,managerCredential:'manager',workerCredentials:runtimeInput.workerCredentials});
+ assert.equal(restartResult.state,'completed');
+ assert.equal(replayedPreparationCalls,0);
+ assert.equal(restartResult.changeEvidenceSha256,runtimeResult.changeEvidenceSha256);
  await assert.rejects(runtime.run(runtimeInput),/Fixture runtime denied/);
  // A role-level policy closure pauses at the exact next step; reopening policy resumes
  // from durable handoffs without replaying the already completed roles.
