@@ -99,4 +99,25 @@ router.get("/requests",loginLimit,verifiedBusiness,async(req,res)=>{
  }catch{return res.status(500).json({ok:false,error:"internal_error"});}
 });
 
+// Owner-authorized onboarding only; disabled until staging acceptance.
+router.post("/onboarding/start",loginLimit,async(req,res)=>{
+ if(process.env.ACA_ONBOARDING_ENABLED!=="true")return res.status(503).json({ok:false,error:"Onboarding unavailable"});
+ const crypto=require("node:crypto"),expected=Buffer.from(process.env.PROVISION_API_KEY||""),actual=Buffer.from(String(req.headers["x-api-key"]||""));
+ if(!expected.length||actual.length!==expected.length||!crypto.timingSafeEqual(actual,expected))return res.status(401).json({ok:false,error:"unauthorized"});
+ try{
+ const {token,challenge}=require("../security/onboardingChallenge").issueChallenge({email:req.body?.email,businessName:req.body?.business_name});
+ await pool.query("INSERT INTO public.onboarding_challenges(token_hash,purpose,email,business_name,expires_at) VALUES($1,$2,$3,$4,$5)",[challenge.tokenHash,challenge.purpose,challenge.email,challenge.businessName,new Date(challenge.expiresAt)]);
+ const result=await createSmtpSender()({to:challenge.email,subject:"Alphine AI onboarding verification",text:"Your onboarding code is "+token});
+ if(!result?.accepted?.includes(challenge.email))throw Error();
+ return res.status(202).json({ok:true});
+ }catch{return res.status(400).json({ok:false,error:"Onboarding request unsuccessful"});}
+});
+router.post("/onboarding/redeem",loginLimit,async(req,res)=>{
+ if(process.env.ACA_ONBOARDING_ENABLED!=="true")return res.status(503).json({ok:false,error:"Onboarding unavailable"});
+ try{
+ const result=await require("../security/provisionVerifiedBusiness").provisionVerifiedBusiness({pool,token:req.body?.token,email:req.body?.email,businessName:req.body?.business_name});
+ if(result.ok)return res.status(201).json({ok:true,...result.result});
+ }catch{}
+ return res.status(400).json({ok:false,error:"Invalid or expired onboarding request"});
+});
 module.exports = router;
