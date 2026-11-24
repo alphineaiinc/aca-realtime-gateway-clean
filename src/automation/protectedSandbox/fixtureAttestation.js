@@ -23,7 +23,11 @@ function createFixtureAttestationVerifier({publicKey,expected,consumeReceipt}={}
    // Consume only after exact binding and signature verification. An unknown
    // storage outcome consumes this local verifier and requires reconciliation.
    consumed=true;
-   if(await consumeReceipt(receipt)!==true)return denied();
+   let outcome;
+   try{outcome=await consumeReceipt(receipt);}catch{return Object.freeze({status:'unknown',requiresReconciliation:true,executionAuthorized:false});}
+   if(outcome?.status==='unknown')return Object.freeze({status:'unknown',requiresReconciliation:true,executionAuthorized:false});
+   if(outcome?.status==='duplicate')return Object.freeze({status:'duplicate',executionAuthorized:false});
+   if(outcome?.status!=='inserted'||outcome.executionAuthorized!==false)return denied();
    return Object.freeze({status:'signature-verified',reportSha256:receipt.reportSha256,provenance:'configured-key-and-receipt-callback',executionAuthorized:false});
   }catch{return denied();}
   finally{active=false;}
