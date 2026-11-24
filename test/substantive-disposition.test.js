@@ -20,3 +20,9 @@ test("reject scope mismatch, stale evidence, inconsistent findings and wrong key
  const e=envelope();e.record.status="blocked";assert.equal(check(e),null);
 });
 test("authenticated findings remain findings, not clearance",()=>assert.equal(check(envelope({status:"findings",findings:2})).status,"findings"));
+
+test("challenge replay and legacy approval-only envelopes cannot clear disposition",()=>{
+ const signed=envelope();
+ assert.equal(validateDisposition({envelope:signed,publicKey:keys.publicKey,expected:{...expected,challenge:"d".repeat(64)},now}),null);
+ assert.equal(validateDisposition({envelope:{approved:true,reviewerId:expected.reviewerId,headSha:expected.headSha},publicKey:keys.publicKey,expected,now}),null);
+});
