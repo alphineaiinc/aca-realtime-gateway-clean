@@ -10,7 +10,8 @@ const config={scope,role,files,requiredChecks:['syntax','node-tests','security']
 const report=({plan,checks,profile},failed)=>({evidenceSha256:plan.evidenceSha256,profile,checks:checks.map(name=>({name,status:name===failed?'failed':'passed'}))});
 test('correction replans against pinned inventory and retests',async()=>{
  const runtime=createCorrectionRuntime({...config,proposeEdits:async()=>edits('fixed'),runIsolated:async input=>report(input,input.plan.changes[0].replacement==='fixed'?null:'node-tests')});
- assert.equal((await runtime.run({edits:edits('broken')})).state,'candidate-passed');
+ const result=await runtime.run({edits:edits('broken')});
+ assert.equal(result.state,'candidate-passed');assert.equal(result.candidate.changes[0].replacement,'fixed');assert.equal(result.candidateDigest,result.candidate.evidenceSha256);assert.equal(result.reviewRequired,true);assert.equal(result.executionAuthorized,false);
 });
 test('security check failure cannot trigger correction',async()=>{
  const runtime=createCorrectionRuntime({...config,proposeEdits:async()=>assert.fail('unexpected correction'),runIsolated:async input=>report(input,'security')});
