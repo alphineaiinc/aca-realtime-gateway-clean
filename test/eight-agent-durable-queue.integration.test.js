@@ -73,6 +73,8 @@ test('isolated PostgreSQL queue: concurrent claims, retries, restart, expiry and
  assert.equal(blockedResult.state,'drained');
  assert.equal(blockedResult.result.reason,'idle');
  assert.equal((await pools[0].query('SELECT state FROM engineering_team_tasks WHERE id=$1',[blockedTask])).rows[0].state,'queued');
+ assert.equal(await q.cancel({scope,credential:'manager',taskId:blockedTask}),true);
+ assert.equal((await pools[0].query('SELECT state FROM engineering_team_tasks WHERE id=$1',[blockedTask])).rows[0].state,'cancelled');
  assert.equal(blockedRuntime.executionAllowed(),false);
  continuation.stop();
  assert.equal((await continuation.onCompletion({runId:456,attempt:1})).state,'stopped');
