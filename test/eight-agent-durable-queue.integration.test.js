@@ -731,4 +731,31 @@ test('isolated PostgreSQL queue: concurrent claims, retries, restart, expiry and
   await observer.query('ROLLBACK');
   observer.release();
  }
+ // SEC-09: durable publication reconciliation is requester-, approval-, and
+ // exact-revision-bound; replay is idempotent and evidence is append-only.
+ const {createReconciliationStore}=require('../src/automation/engineeringTeam/publicationReconciliationStore');
+ const publicationScope={product:'aca',repository:'fixture/publication-reconciliation',sha:'a'.repeat(40)};
+ const publicationBinding='b'.repeat(64),publicationHead='c'.repeat(40),publicationApproval=randomUUID();
+ const publicationIdentity={id:'publication-manager',permission:'queue.manage',...publicationScope};
+ const publicationAuth=async credential=>credential==='publication-manager'?publicationIdentity:null;
+ await pools[0].query(`INSERT INTO engineering_team_approval_requests
+  (id,product,repository,head_sha,operation,evidence_sha256,binding,requested_by,state,created_at,expires_at,decided_by,decided_at)
+  VALUES ($1,$2,$3,$4,'github.write',$5,$6,$7,'approved',clock_timestamp(),clock_timestamp()+interval '10 minutes','independent-owner',clock_timestamp())`,
+ [publicationApproval,publicationScope.product,publicationScope.repository,publicationHead,'d'.repeat(64),publicationBinding,publicationIdentity.id]);
+ await pools[0].query(`INSERT INTO engineering_team_publication_attempts(binding,approval_id,product,repository,base_sha,reserved_by)
+  VALUES ($1,$2,$3,$4,$5,$6)`,[publicationBinding,publicationApproval,publicationScope.product,publicationScope.repository,publicationScope.sha,publicationIdentity.id]);
+ const publicationObservation={binding:publicationBinding,repository:publicationScope.repository,baseSha:publicationScope.sha,headSha:publicationHead,requesterId:publicationIdentity.id,baseBranch:'main',headBranch:'draft',complete:true,observations:[{number:77,body:'Evidence binding: '+publicationBinding,draft:true,state:'open',base:{repo:{full_name:publicationScope.repository},ref:'main',sha:publicationScope.sha},head:{repo:{full_name:publicationScope.repository},ref:'draft',sha:publicationHead}}]};
+ const publicationStore=createReconciliationStore({pool:pools[0],authenticate:publicationAuth,collect:async scope=>({...publicationObservation,...scope})});
+ const publicationResult=await publicationStore.record({credential:'publication-manager',binding:publicationBinding});
+ assert.equal(publicationResult.state,'observed-draft');
+ assert.equal(publicationResult.number,77);
+ assert.equal(publicationResult.retryAuthorized,false);
+ assert.equal(publicationResult.executionAuthorized,false);
+ const publicationReplay=await publicationStore.record({credential:'publication-manager',binding:publicationBinding});
+ assert.equal(publicationReplay.replayed,true);
+ assert.equal(publicationReplay.retryAuthorized,false);
+ assert.equal((await pools[1].query('SELECT count(*)::int AS n FROM engineering_team_publication_reconciliation WHERE binding=$1',[publicationBinding])).rows[0].n,1);
+ await assert.rejects(pools[0].query('UPDATE engineering_team_publication_reconciliation SET state=state WHERE binding=$1',[publicationBinding]),e=>e.code==='P0001');
+ await assert.rejects(pools[0].query('DELETE FROM engineering_team_publication_reconciliation WHERE binding=$1',[publicationBinding]),e=>e.code==='P0001');
+
 });
