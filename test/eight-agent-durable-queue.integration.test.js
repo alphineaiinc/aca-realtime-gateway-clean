@@ -13,7 +13,7 @@ const {digest}=require('../src/automation/engineeringTeam/patchPlanner');
 const {createAgentManager}=require('../src/automation/engineeringTeam/manager');
 const {createQueueWorker}=require('../src/automation/engineeringTeam/queueWorker');
 const {contract}=require('../src/automation/engineeringTeam/contracts');
-const {createPublicationReservation}=require('../src/automation/engineeringTeam/publicationReservation');
+const {createPublicationReservation,publicationBinding:computePublicationBinding}=require('../src/automation/engineeringTeam/publicationReservation');
 const {createWorkflowLedger}=require('../src/automation/engineeringTeam/workflowLedger');
 const {sequence}=require('../src/automation/engineeringTeam/offlineTeam');
 const {randomUUID}=require('node:crypto');
@@ -299,10 +299,11 @@ test('isolated PostgreSQL queue: concurrent claims, retries, restart, expiry and
  assert.equal(unknownResume.state,'needs-reconciliation');
  assert.equal(unknownResume.taskId,unknownTask);
  assert.equal((await fixtureQueue.inspectWorkflowStep({scope,workflowId:unknownWorkflow.id,workflowStep:0,credential:'manager'})).state,'running');
- const publicationBinding='e'.repeat(64);
+ const publicationDetails={evidenceSha256:'e'.repeat(64),baseBranch:'main',headBranch:'aca-agent-draft-'+'1'.repeat(16),headSha:'c'.repeat(40)};
+ const publicationBinding=computePublicationBinding({...publicationDetails,repository:scope.repository});
  const pub=await approval(pools[0]).request({scope,operation:'github.write',evidence:publicationBinding,credential:'manager'});
  const reserve=pool=>createPublicationReservation({pool,scope,authenticate:async c=>identities.get(c)});
- const reservation={credential:'manager',approvalId:pub.id,binding:publicationBinding};
+ const reservation={credential:'manager',approvalId:pub.id,binding:publicationBinding,...publicationDetails};
  await assert.rejects(reserve(pools[0]).reserve(reservation),/Reservation denied/);
  await approval(pools[1]).recordDecision({scope,id:pub.id,binding:pub.binding,decision:'approved',credential:'owner'});
  await assert.rejects(reserve(pools[1]).reserve({...reservation,binding:'f'.repeat(64)}),/Reservation denied/);
@@ -735,22 +736,31 @@ test('isolated PostgreSQL queue: concurrent claims, retries, restart, expiry and
  // exact-revision-bound; replay is idempotent and evidence is append-only.
  const {createReconciliationStore}=require('../src/automation/engineeringTeam/publicationReconciliationStore');
  const reconScope={product:'aca',repository:'fixture/publication-reconciliation',sha:'a'.repeat(40)};
- const reconBinding='b'.repeat(64),reconHead='c'.repeat(40),reconApproval=randomUUID();
+ const reconHead='c'.repeat(40),reconBranch='aca-agent-draft-'+'2'.repeat(16);
  const reconIdentity={id:'publication-manager',permission:'queue.manage',...reconScope};
- const reconAuth=async credential=>credential==='publication-manager'?reconIdentity:null;
- await pools[0].query(`INSERT INTO engineering_team_approval_requests
-  (id,product,repository,head_sha,operation,evidence_sha256,binding,requested_by,state,created_at,expires_at,decided_by,decided_at)
-  VALUES ($1,$2,$3,$4,'github.write',$5,$6,$7,'approved',clock_timestamp(),clock_timestamp()+interval '10 minutes','independent-owner',clock_timestamp())`,
- [reconApproval,reconScope.product,reconScope.repository,reconHead,reconBinding,reconBinding,reconIdentity.id]);
- await pools[0].query(`INSERT INTO engineering_team_publication_attempts(binding,approval_id,product,repository,base_sha,reserved_by)
-  VALUES ($1,$2,$3,$4,$5,$6)`,[reconBinding,reconApproval,reconScope.product,reconScope.repository,reconScope.sha,reconIdentity.id]);
+ const reconAuth=async credential=>credential==='publication-manager'?reconIdentity:credential==='independent-owner'?{...reconScope,id:'independent-owner',permission:'owner.approval'}:null;
+ const reconApprovals=createDurableApprovalPolicy({pool:pools[0],scopes:[reconScope],authenticate:reconAuth});
+ const reconReservations=createPublicationReservation({pool:pools[0],scope:reconScope,authenticate:reconAuth});
+ async function reserveRecon(evidenceSha256){
+  const details={evidenceSha256,baseBranch:'main',headBranch:reconBranch,headSha:reconHead};
+  const binding=computePublicationBinding({...details,repository:reconScope.repository});
+  const approval=await reconApprovals.request({scope:reconScope,operation:'github.write',evidence:binding,credential:'publication-manager'});
+  assert.equal(new Set([approval.binding,binding,evidenceSha256]).size,3);
+  await reconApprovals.recordDecision({scope:reconScope,id:approval.id,binding:approval.binding,decision:'approved',credential:'independent-owner'});
+  const input={credential:'publication-manager',approvalId:approval.id,binding,...details};
+  await assert.rejects(reconReservations.reserve({...input,headSha:'d'.repeat(40)}),/Reservation denied/);
+  await assert.rejects(reconReservations.reserve({...input,binding:approval.binding}),/Reservation denied/);
+  assert.equal((await reconReservations.reserve(input)).executionAuthorized,false);
+  return binding;
+ }
+ const reconBinding=await reserveRecon('b'.repeat(64));
  const {createGitHubPublicationEvidenceBoundary}=require('../src/automation/engineeringTeam/githubPublicationEvidenceBoundary');
- const githubPr={number:77,body:'Evidence binding: '+reconBinding,draft:true,state:'open',base:{repo:{full_name:reconScope.repository},ref:'main',sha:reconScope.sha},head:{repo:{full_name:reconScope.repository},ref:'draft',sha:reconHead}};
+ const githubPr={number:77,body:'Evidence binding: '+reconBinding,draft:true,state:'open',base:{repo:{full_name:reconScope.repository},ref:'main',sha:reconScope.sha},head:{repo:{full_name:reconScope.repository},ref:reconBranch,sha:reconHead}};
  const githubResponse=async()=>({status:200,json:async()=>[githubPr]});
  const collectorFetch=async(url,options)=>{assert.equal(options.method,'GET');return githubResponse();};
  const independentVerifierFetch=async(url,options)=>{assert.equal(options.method,'GET');return githubResponse();};
  const evidenceBoundary=createGitHubPublicationEvidenceBoundary({collectFetch:collectorFetch,verifyFetch:independentVerifierFetch,collectToken:async()=>'disposable-collector-read-token',verifyToken:async()=>'disposable-independent-read-token'});
- const reconStore=createReconciliationStore({pool:pools[0],authenticate:reconAuth,collect:evidenceBoundary.collect,verifyObservation:evidenceBoundary.verify,baseBranch:'main',headBranch:'draft'});
+ const reconStore=createReconciliationStore({pool:pools[0],authenticate:reconAuth,collect:evidenceBoundary.collect,verifyObservation:evidenceBoundary.verify,baseBranch:'main',headBranch:reconBranch});
  const reconResult=await reconStore.record({credential:'publication-manager',binding:reconBinding});
  assert.equal(reconResult.state,'observed-draft');
  assert.equal(reconResult.number,77);
@@ -766,13 +776,7 @@ test('isolated PostgreSQL queue: concurrent claims, retries, restart, expiry and
 
  // A second reservation proves failed independent verification rolls back the
  // transaction and leaves no durable reconciliation row.
- const rollbackBinding='f'.repeat(64),rollbackApproval=randomUUID();
- await pools[0].query(`INSERT INTO engineering_team_approval_requests
-  (id,product,repository,head_sha,operation,evidence_sha256,binding,requested_by,state,created_at,expires_at,decided_by,decided_at)
-  VALUES ($1,$2,$3,$4,'github.write',$5,$6,$7,'approved',clock_timestamp(),clock_timestamp()+interval '10 minutes','independent-owner',clock_timestamp())`,
- [rollbackApproval,reconScope.product,reconScope.repository,reconHead,rollbackBinding,rollbackBinding,reconIdentity.id]);
- await pools[0].query(`INSERT INTO engineering_team_publication_attempts(binding,approval_id,product,repository,base_sha,reserved_by)
-  VALUES ($1,$2,$3,$4,$5,$6)`,[rollbackBinding,rollbackApproval,reconScope.product,reconScope.repository,reconScope.sha,reconIdentity.id]);
+ const rollbackBinding=await reserveRecon('f'.repeat(64));
  const tamperedPr={...githubPr,head:{...githubPr.head,sha:'d'.repeat(40)}};
  const rollbackBoundary=createGitHubPublicationEvidenceBoundary({
   collectFetch:async()=>({status:200,json:async()=>[githubPr]}),
@@ -780,7 +784,7 @@ test('isolated PostgreSQL queue: concurrent claims, retries, restart, expiry and
   collectToken:async()=>'disposable-collector-read-token',
   verifyToken:async()=>'disposable-independent-read-token'
  });
- const rollbackStore=createReconciliationStore({pool:pools[0],authenticate:reconAuth,collect:rollbackBoundary.collect,verifyObservation:rollbackBoundary.verify,baseBranch:'main',headBranch:'draft'});
+ const rollbackStore=createReconciliationStore({pool:pools[0],authenticate:reconAuth,collect:rollbackBoundary.collect,verifyObservation:rollbackBoundary.verify,baseBranch:'main',headBranch:reconBranch});
  await assert.rejects(rollbackStore.record({credential:'publication-manager',binding:rollbackBinding}),/authentication failed/);
  assert.equal((await pools[1].query('SELECT count(*)::int AS n FROM engineering_team_publication_reconciliation WHERE binding=$1',[rollbackBinding])).rows[0].n,0);
 
