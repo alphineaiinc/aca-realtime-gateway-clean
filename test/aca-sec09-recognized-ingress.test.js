@@ -20,7 +20,7 @@ test("actual ingress rejects exhaustion before authentication or callback parsin
  assert.ok(start>=0&&end>start);
  vm.runInNewContext(source.slice(start,end),{app,require:p=>p==="./src/security/ingressLimit"?require("../src/security/ingressLimit"):require(p)});
  let reads=0;
- app.post("/callback",express.raw({type:"application/json"}),(req,res)=>{reads++;res.status(200).send(req.body);});
+ app.post("/callback",express.raw({type:"application/json"}),(req,res)=>{reads++;assert.deepEqual(req.body,Buffer.from('{"test":true}'));res.status(200).type('text/plain').send('{"test":true}');});
  const server=app.listen(0,"127.0.0.1");
  await new Promise((resolve,reject)=>{server.once("listening",resolve);server.once("error",reject);});
  t.after(()=>{server.closeAllConnections();return new Promise(resolve=>server.close(resolve));});
