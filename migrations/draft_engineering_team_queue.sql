@@ -47,3 +47,25 @@ CREATE TABLE engineering_team_proposal_receipts (
  evidence_sha256 text NOT NULL CHECK(evidence_sha256 ~ '^[a-f0-9]{64}$'),
  created_at timestamptz NOT NULL DEFAULT clock_timestamp()
 );
+
+-- Decisions are durable evidence only; no execution authorization is inferred.
+CREATE TABLE engineering_team_approval_requests (
+ id uuid PRIMARY KEY,
+ product text NOT NULL,
+ repository text NOT NULL,
+ head_sha text NOT NULL CHECK(head_sha ~ '^[a-f0-9]{40}$'),
+ operation text NOT NULL CHECK(operation IN ('provider.activate','github.write','agent.dispatch','merge','deploy','sign','secret.change','database.write')),
+ evidence_sha256 text NOT NULL CHECK(evidence_sha256 ~ '^[a-f0-9]{64}$'),
+ binding text NOT NULL CHECK(binding ~ '^[a-f0-9]{64}$'),
+ requested_by text NOT NULL,
+ state text NOT NULL DEFAULT 'pending' CHECK(state IN ('pending','approved','denied')),
+ created_at timestamptz NOT NULL DEFAULT clock_timestamp(),
+ expires_at timestamptz NOT NULL,
+ decided_by text,
+ decided_at timestamptz,
+ CHECK((state='pending' AND decided_by IS NULL AND decided_at IS NULL) OR
+ (state IN ('approved','denied') AND decided_by IS NOT NULL AND decided_at IS NOT NULL)),
+ CHECK(decided_by IS NULL OR decided_by<>requested_by),
+ CHECK(expires_at>created_at)
+);
+CREATE INDEX engineering_team_approval_scope_idx ON engineering_team_approval_requests(product,repository,head_sha,state);
