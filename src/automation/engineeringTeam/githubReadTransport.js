@@ -30,6 +30,12 @@ function createGitHubReadTransport({token,fetchImpl=globalThis.fetch,timeoutMs=1
    if(data.number!==s.issue||data.pull_request||typeof data.title!=='string')throw Error('Issue evidence denied');
    return Object.freeze({repository:s.repository,issue:s.issue,text:bounded(data.title+'\n'+(data.body??''))});
   },
+  async readIssueStatus(s){
+   const root=base(s);if(!Number.isSafeInteger(s.issue)||s.issue<1)throw Error('Invalid issue');
+   const data=await get(root+'/issues/'+s.issue);
+   if(data.number!==s.issue||data.pull_request||!['open','closed'].includes(data.state)||!Array.isArray(data.labels)||data.labels.length>100||data.labels.some(l=>typeof l?.name!=='string'||l.name.length>100))throw Error('Issue status denied');
+   return Object.freeze({repository:s.repository,issue:s.issue,state:data.state,labels:Object.freeze(data.labels.map(l=>l.name))});
+  },
   async readCI(s){
    const data=await get(base(s)+'/actions/runs?head_sha='+s.sha+'&per_page=20');
    if(!Array.isArray(data.workflow_runs)||data.workflow_runs.some(x=>x.head_sha!==s.sha))throw Error('CI revision denied');
