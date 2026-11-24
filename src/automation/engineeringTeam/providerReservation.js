@@ -45,6 +45,8 @@ function createProviderReservation({pool,manifest,policy,authenticate,ceilings,r
     // Rebind after lock acquisition to reject a changed review envelope.
     if(await evidence(reviewEnvelope,request)!==binding)throw Error('Review binding changed');
    }
+   const unresolved=await client.query(`SELECT 1 FROM engineering_team_provider_attempts a LEFT JOIN engineering_team_provider_outcomes o ON o.binding=a.binding WHERE a.product=$1 AND a.repository=$2 AND (o.binding IS NULL OR o.outcome<>'completed') LIMIT 1`,[scope.product,scope.repository]);
+   if(unresolved.rowCount!==0)throw Error('Reservation denied: unresolved provider attempt');
    const result=await client.query(`INSERT INTO engineering_team_provider_attempts(binding,approval_id,product,repository,head_sha,budget_id,model,reserved_microusd)
  SELECT $1,a.id,a.product,a.repository,a.head_sha,$6,$7,$8 FROM engineering_team_approval_requests a
  WHERE a.id=$2 AND a.product=$3 AND a.repository=$4 AND a.head_sha=$5 AND a.operation='provider.activate' AND a.evidence_sha256=$1 AND a.state='approved' AND a.expires_at>clock_timestamp()
