@@ -15,7 +15,8 @@ function requireDashboardAdmin(req,res,next){
     next();
   } catch {return res.status(401).json({ok:false,error:"unauthorized"});}
 }
-router.use(ingressRateLimit, requireDashboardAdmin);
+const recognizedLimit=require("express-rate-limit").rateLimit({windowMs:60000,limit:30,passOnStoreError:false});
+router.use(ingressRateLimit, recognizedLimit, requireDashboardAdmin);
 router.get("/", (req,res)=>res.sendFile(path.join(__dirname,"../../public/dashboard/index.html")));
 // Raw caller logs and host diagnostics are intentionally not exposed.
 router.get("/data", (req,res)=>res.json({entries:[],rawLogsAvailable:false}));
