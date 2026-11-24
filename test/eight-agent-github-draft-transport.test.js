@@ -49,3 +49,9 @@ test('ref change during admission prevents publication',async()=>{
  const f=fixture({race:true});await assert.rejects(f.transport.publish(input),/Revision changed/);
  assert.equal(f.admissions.length,1);assert.equal(f.calls.some(x=>x.method==='POST'),false);
 });
+
+test('pre-cancelled publication never contacts GitHub or admission',async()=>{
+ const f=fixture();const controller=new AbortController();controller.abort();
+ await assert.rejects(f.transport.publish({...input,signal:controller.signal}));
+ assert.equal(f.calls.length,0);assert.equal(f.admissions.length,0);
+});
