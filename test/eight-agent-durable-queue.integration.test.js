@@ -50,7 +50,13 @@ test('isolated PostgreSQL queue: concurrent claims, retries, restart, expiry and
  const continuationRun={id:456,run_attempt:1,workflow_id:42,repository:{full_name:scope.repository},head_sha:scope.sha,status:'completed',conclusion:'success'};
  const continuationConfig={scope,workflowId:42,authenticate:async c=>identities.get(c),managerCredential:'manager',workerCredential:'w1',role,readRun:async()=>continuationRun,queue:q,manager:{createTask:()=>({id:'fixture'}),propose:async()=>({role,approval:false,output:{fixture:true}})},loadTask:async ({id})=>({id,...scope,subject:'fixture continuation'})};
  const continuation=createContinuationRuntime({...continuationConfig,pool:pools[0]});
- const drained=await continuation.onCompletion({runId:456,attempt:1});
+ const {createCiCompletionEvent}=require('../src/automation/engineeringTeam/ciCompletionEvent');
+ const {createHmac}=require('node:crypto');
+ const secret='disposable-ci-fixture-secret-only';
+ const body=Buffer.from(JSON.stringify({action:'completed',repository:{full_name:scope.repository},workflow_run:continuationRun}));
+ const signature='sha256='+createHmac('sha256',secret).update(body).digest('hex');
+ const handle=createCiCompletionEvent({secret,repository:scope.repository,workflowId:42,runtime:continuation});
+ const drained=await handle({body,signature,eventType:'workflow_run'});
  assert.equal(drained.state,'drained');
  assert.equal(drained.result.succeeded,1);
  assert.equal(drained.result.reason,'idle');
