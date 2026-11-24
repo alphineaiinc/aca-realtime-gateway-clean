@@ -59,6 +59,20 @@ function createDurableQueue({pool,scopes,authenticate,leaseSeconds=60,fixturePro
    if(result.rowCount!==1)throw Error('Queue insert failed');return id;
    });
   },
+  async inspectWorkflowStep({scope,workflowId,workflowStep,credential}){
+   const params=checkScope(scope);await identity(credential,scope,null,'queue.manage');
+   if(typeof workflowId!=='string'||!Number.isSafeInteger(workflowStep)||workflowStep<0||workflowStep>=sequence.length)throw Error('Workflow inspection denied');
+   return guarded(params,async client=>{
+    await assertActive(client,params,sequence[workflowStep]);
+    const result=await client.query(`SELECT t.id,t.role,t.state,t.attempts,t.lease_until,
+      EXISTS(SELECT 1 FROM engineering_team_proposal_receipts r WHERE r.task_id=t.id) AS has_receipt
+      FROM engineering_team_tasks t JOIN engineering_team_workflows w ON w.id=t.workflow_id
+      WHERE t.workflow_id=$1 AND t.workflow_step=$2 AND t.product=$3 AND t.repository=$4 AND t.head_sha=$5
+      AND w.product=t.product AND w.repository=t.repository AND w.head_sha=t.head_sha`,[workflowId,workflowStep,...params]);
+    if(result.rowCount>1)throw Error('Workflow task integrity failure');
+    return result.rows[0]?Object.freeze({...result.rows[0]}):null;
+   });
+  },
   async claim({scope,role,credential,expectedTaskId}){
    const params=checkScope(scope);getRole(role);const worker=await identity(credential,scope,role,'queue.work');const lease=randomUUID();
    return guarded(params,async client=>{
