@@ -37,6 +37,13 @@ test('isolated PostgreSQL queue: concurrent claims, retries, restart, expiry and
  assert.equal(await q.claim({scope,role,credential:'w1'}),null);
  const audit=(await pools[0].query('SELECT event FROM engineering_team_queue_audit WHERE task_id=$1 ORDER BY id',[id])).rows.map(r=>r.event);
  assert.deepEqual(audit,['queued','claimed','retry','claimed','failed']);
+ const evidenceTask=await q.enqueue({scope,role,credential:'manager'});
+ const evidenceLease=await q.claim({scope,role,credential:'w1'});
+ const evidenceSha256='b'.repeat(64);
+ assert.equal(await q.finish({scope,role,credential:'w1',taskId:evidenceTask,leaseId:evidenceLease.lease_id,outcome:'succeeded',evidenceSha256}),'succeeded');
+ const receipt=(await pools[1].query('SELECT lease_id,evidence_sha256 FROM engineering_team_proposal_receipts WHERE task_id=$1',[evidenceTask])).rows[0];
+ assert.deepEqual(receipt,{lease_id:evidenceLease.lease_id,evidence_sha256:evidenceSha256});
+ await assert.rejects(q.finish({scope,role,credential:'w1',taskId:evidenceTask,leaseId:evidenceLease.lease_id,outcome:'succeeded',evidenceSha256}),/Lease denied/);
  const stoppedTask=await q.enqueue({scope,role,credential:'manager'});
  const running=await q.claim({scope,role,credential:'w1'});
  await q2.quarantine({scope,role,credential:'manager'});
