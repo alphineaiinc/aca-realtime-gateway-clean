@@ -1,9 +1,10 @@
 'use strict';
-const {randomUUID}=require('node:crypto');
+const {randomUUID,createHash}=require('node:crypto');
+const {validateProposal}=require('./contracts');
 const {getRole}=require('./registry');
 const scopeKey=s=>JSON.stringify([s.product,s.repository,s.sha]);
 const validScope=s=>s&&typeof s.product==='string'&&/^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,79}$/.test(s.product)&&typeof s.repository==='string'&&/^[a-zA-Z0-9_.-]+\/[a-zA-Z0-9_.-]+$/.test(s.repository)&&s.repository.length<=200&&typeof s.sha==='string'&&/^[a-f0-9]{40}$/.test(s.sha);
-function createDurableQueue({pool,scopes,authenticate,leaseSeconds=60}={}){
+function createDurableQueue({pool,scopes,authenticate,leaseSeconds=60,fixtureProposalStorage=false}={}){
  if(!pool||typeof pool.query!=='function'||typeof authenticate!=='function'||!Array.isArray(scopes)||!scopes.length||!scopes.every(validScope)||!Number.isSafeInteger(leaseSeconds)||leaseSeconds<5||leaseSeconds>300)throw Error('Invalid queue configuration');
  const allowed=new Set(scopes.map(scopeKey));
  function checkScope(s){if(!validScope(s)||!allowed.has(scopeKey(s)))throw Error('Scope denied');return [s.product,s.repository,s.sha];}
@@ -60,10 +61,17 @@ function createDurableQueue({pool,scopes,authenticate,leaseSeconds=60}={}){
    return result.rows[0]||null;
    });
   },
-  async finish({scope,role,credential,taskId,leaseId,outcome,evidenceSha256}){
+  async finish({scope,role,credential,taskId,leaseId,outcome,evidenceSha256,fixtureProposal}){
    const params=checkScope(scope);getRole(role);const worker=await identity(credential,scope,role,'queue.work');
    if(!['succeeded','failed'].includes(outcome)||typeof taskId!=='string'||typeof leaseId!=='string')throw Error('Invalid completion');
    if(evidenceSha256!==undefined&&(outcome!=='succeeded'||typeof evidenceSha256!=='string'||!/^[a-f0-9]{64}$/.test(evidenceSha256)))throw Error('Invalid evidence digest');
+   let fixtureBody;
+   if(fixtureProposal!==undefined){
+    if(fixtureProposalStorage!==true||outcome!=='succeeded'||fixtureProposal.role!==role||fixtureProposal.approval!==false)throw Error('Fixture storage denied');
+    const canonical={role,output:validateProposal(role,fixtureProposal.output),approval:false};
+    fixtureBody=JSON.stringify(canonical);
+    if(Buffer.byteLength(fixtureBody)>32768||createHash('sha256').update(fixtureBody).digest('hex')!==evidenceSha256)throw Error('Fixture evidence denied');
+   }
    return guarded(params,async client=>{
     await assertActive(client,params,role);
    const result=await client.query(`WITH task AS (UPDATE engineering_team_tasks SET state=CASE WHEN $8='failed' AND attempts<2 THEN 'queued' ELSE $8 END,worker_id=NULL,lease_id=NULL,lease_until=NULL WHERE product=$1 AND repository=$2 AND head_sha=$3 AND role=$4 AND worker_id=$5 AND id=$6 AND lease_id=$7 AND state='running' AND lease_until>clock_timestamp() RETURNING id,state), audit AS (INSERT INTO engineering_team_queue_audit(task_id,event) SELECT id,CASE WHEN state='queued' THEN 'retry' ELSE state END FROM task) SELECT state FROM task`,[...params,role,worker,taskId,leaseId,outcome]);
@@ -72,6 +80,7 @@ function createDurableQueue({pool,scopes,authenticate,leaseSeconds=60}={}){
     if(result.rows[0].state!=='succeeded')throw Error('Evidence completion denied');
     await client.query('INSERT INTO engineering_team_proposal_receipts(task_id,lease_id,evidence_sha256) VALUES ($1,$2,$3)',[taskId,leaseId,evidenceSha256]);
    }
+   if(fixtureBody!==undefined)await client.query('INSERT INTO engineering_team_fixture_proposals(task_id,body) VALUES ($1,$2)',[taskId,fixtureBody]);
    return result.rows[0].state;
    });
   },
