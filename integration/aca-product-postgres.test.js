@@ -78,6 +78,16 @@ try{
  assert.equal((await request("/tenant/profile",b.token)).body.profile.tenant_id,otherContext.tenantId);
  assert.deepEqual((await request("/tenant/requests",a.token)).body.requests.map(x=>String(x.id)),[String(id)]);
  assert.deepEqual((await request("/tenant/requests",b.token)).body.requests.map(x=>String(x.id)),[String(otherId)]);
+ const routingA=await request("/tenant/routing/status",a.token),routingB=await request("/tenant/routing/status",b.token);
+ assert.equal(routingA.status,200);assert.equal(routingB.status,200);
+ assert.deepEqual(routingA.body.routing.map(x=>x.phone_number),["+14165550123"]);
+ assert.deepEqual(routingB.body.routing.map(x=>x.phone_number),["+14165550124"]);
+ assert.equal((await request("/tenant/profile?tenant_id="+otherContext.tenantId,a.token)).body.profile.tenant_id,tenantId);
+ assert.equal((await request("/tenant/profile","invalid-token")).status,401);
+ let expiredCode;await issueLogin({query,email,sendMail:async mail=>{expiredCode=mail.text.match(/[a-f0-9]{64}/)[0];}});
+ assert.ok(expiredCode);
+ await pool.query("UPDATE aca_login_challenges SET expires_at=NOW()-INTERVAL '1 second' WHERE token_hash=$1",[crypto.createHash("sha256").update(expiredCode).digest("hex")]);
+ assert.equal((await request("/tenant/login/redeem",null,{token:expiredCode})).status,401);
  assert.equal((await request("/tenant/login/redeem",null,{token:a.code})).status,401);
  const forged=jwt.sign({tenant_id:otherContext.tenantId,sub:email,purpose:"verified_business"},secret,{algorithm:"HS256",issuer:"alphine-ai",audience:"aca-business",expiresIn:"1h"});
  assert.equal((await request("/tenant/profile",forged)).status,401);
