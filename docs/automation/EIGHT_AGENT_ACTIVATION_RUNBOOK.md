@@ -246,3 +246,30 @@ Trusted sandbox probe and Node CI passed at a776d4853c9d69a926aaff436868c2a605bc
 - Exact code/test head: bdd5754000399515be4f841efb9c81f33af5f843. Exact-head CI run 45403274490 passed: Node tests 189 total, 188 passed, 0 failed, 1 skipped; isolated PostgreSQL queue integration passed; trusted sandbox probe passed.
 - These tests strengthen regression evidence for findings already addressed in implementation; they do not substitute for independent security review. Five inline Copilot threads remain unresolved pending reviewer confirmation. Attempted to request Copilot directly, but GitHub rejected the request because the reviewer account is not a repository collaborator. PR #21's earlier Copilot review attempt was quota-blocked; no independent human/Codex signoff has been recorded.
 - PR #142 remains draft. No live agent dispatch, provider calls, merge, deployment, production DB changes, secret activation or additional spending.
+
+
+## Independent security assessment remediation batch — 2026-11-24
+
+Assessment source: user-provided independent security assessment. Its PR #142 findings were reviewed against the live draft head; the report's reviewed PR #142 SHA (17a6ecef870a2dd2df2891bb470fe299b37439ad) is older than the current draft head and is not treated as the current artifact.
+
+### Code-level hardening added in this batch
+- openaiTransport.js now refuses construction without both durable reservation and consumption functions. Before SDK invocation it requires a reservation explicitly marked executionAuthorized=true, bound to the canonical request digest and model, then requires successful single-use consumption of that exact binding. The existing providerReservation.js is explicitly offline-only and returns executionAuthorized=false, so it cannot authorize this transport. Fixture tests cover absent admission, offline reservation denial, mismatched/denied consumption, and the positive mock contract. No real provider was called.
+- Restricted observation now classifies every completed CI result other than success as ci_attention, including cancelled, skipped, stale, neutral and missing/unknown conclusions.
+- Governance alert counts are labelled repository-wide; the current schema has no head SHA on governance alerts, so the count is not represented as current-head-specific.
+- Restricted GitHub transport is pinned to one configured repository; requests that attempt to change repository scope are rejected.
+- The candidate-controlled sandbox job was removed from CI. It is not an independent security attestation; no sandbox job will be represented as trusted until a harness supplied by a protected revision is available. The previous sandbox smoke failure at run 45405331222 was due to the base revision not containing the candidate-only fixture; the later syntax failure in 45405646787 was corrected.
+- Earlier scope-race, incident-specific recovery, product-scoped CI receipt key and durable preparation-replay fixes remain in the branch, with their regression tests.
+
+### Exact-head validation
+- Current code/test head at this note: 3d6eafd47ac8ca4b227aeded8ef7d009956593fe.
+- CI run 45405863957 is in progress; no pass is claimed for this head yet.
+- PR #142 remains draft. No merge, deployment, live dispatch, provider request, production DB change, secret activation or additional spending occurred.
+
+### Still open — must not be inferred complete
+- PR #21 signing trust root and protected immutable deployment artifact; actual key custody, one-repository GitHub App permission proof and release controls.
+- Genuine independent reviewer identity and substantive security disposition bound to repository, PR, head and verified issue. Copilot quota/collaborator limitations are not approval.
+- PR #21 reviewer pagination/large-PR coverage, coherent CI workflow-run/attempt binding, database role privilege and RLS verification, and trusted-ref restriction for manual observer workflow.
+- Operational proof that the restricted observer has a dedicated single-repository read credential, SELECT-only scoped DB role if DB observation is enabled, no queue/provider/publication/deploy credentials, verified disable procedure and attributable credential-free audit history.
+- Trusted sandbox attestation from protected workflow/harness, pinned image and tested-patch provenance.
+- Provider-side spend ceiling, automatic reload disabled, actual pricing/token limits, reservation-to-dispatch enforcement in a separately accepted live adapter, multi-process stop/revocation tests and ambiguous-outcome reconciliation.
+- Independent acceptance of the exact fixed PR #142 SHA and separate owner approval remain mandatory before activation.
