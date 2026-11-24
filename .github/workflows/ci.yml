@@ -59,3 +59,14 @@ jobs:
 
       - name: Isolated product migration and onboarding acceptance
         run: node --test integration/aca-product-postgres.test.js
+  hosted-staging:
+    name: Hosted ACA staging acceptance
+    if: github.event_name == 'pull_request' && github.head_ref == 'aca-l1-integrated-routing-onboarding' && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: node integration/aca-hosted-acceptance.mjs
