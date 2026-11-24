@@ -34,3 +34,17 @@ Patch planner validates existing allowlisted JS file replacements against pinned
 
 ## Activation preparation checkpoint
 Cryptographic identity verification, durable approval records, GitHub read transport, developer patch adapter, trusted sandbox CI probe, monetary reservation ledger and inert runtime initialization are implemented. Trusted sandbox probe and Node CI passed at a776d48 run 45297144234. No generated code execution or draft publication transport yet. See EIGHT_AGENT_ACTIVATION_RUNBOOK.md for remaining finite gates. No production deployment, live provider requests, credentials or database changes.
+
+## Durable eight-agent restart-recovery checkpoint — 2026-11-24
+
+Exact prior baseline 5a6baa1 CI run 45328257276 passed, including Node tests, disposable PostgreSQL queue integration and trusted sandbox probe.
+
+The draft fixture runtime already composes the durable queue, workflow ledger, eight role-specific manager proposals and bounded change-preparation handoff. This batch closes a specific crash window rather than duplicating that integration:
+- Manager-only, scope-pinned inspection of a workflow step's durable task state and proposal-receipt presence.
+- Explicit resume of an existing workflow from its persisted next_step.
+- If a role task succeeded but the process stopped before ledger advancement, validate the durable receipt and advance the existing handoff without rerunning the role.
+- If a lease is still running/unknown, return needs-reconciliation and do not reclaim or replay it.
+- Terminal failed/cancelled tasks remain blocked for owner reconciliation.
+- Disposable PostgreSQL regression coverage simulates both the committed-receipt/pre-ledger crash window and an unresolved in-flight lease.
+
+Implementation commits: f1e5de7 (workflow-step inspection), 5c8144f (restart-aware fixture runtime), 4ee293a (PostgreSQL restart/reconciliation tests). Exact-head CI run 45328768523 (#776) was pending at documentation time. These are fixture-only controls; no live provider, scheduler, GitHub dispatch, production database migration, merge, deployment or activation. Independent reviewer #22 and all SDP-001 activation gates remain mandatory.
