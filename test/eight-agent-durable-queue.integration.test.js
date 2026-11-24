@@ -45,6 +45,20 @@ test('isolated PostgreSQL queue: concurrent claims, retries, restart, expiry and
  await pools[0].query('INSERT INTO engineering_team_stops(product,repository,actor_id) VALUES ($1,$2,$3)',[stopScope.product,stopScope.repository,'manager']);
  assert.equal(await stoppedAdmission({...event,scope:stopScope}),false);
 
+ const {createContinuationRuntime}=require('../src/automation/engineeringTeam/continuationRuntime');
+ const continuationTask=await q.enqueue({scope,role,credential:'manager'});
+ const continuationRun={id:456,run_attempt:1,workflow_id:42,repository:{full_name:scope.repository},head_sha:scope.sha,status:'completed',conclusion:'success'};
+ const continuationConfig={scope,workflowId:42,authenticate:async c=>identities.get(c),managerCredential:'manager',workerCredential:'w1',role,readRun:async()=>continuationRun,queue:q,manager:{createTask:()=>({id:'fixture'}),propose:async()=>({role,approval:false,output:{fixture:true}})},loadTask:async ({id})=>({id,...scope,subject:'fixture continuation'})};
+ const continuation=createContinuationRuntime({...continuationConfig,pool:pools[0]});
+ const drained=await continuation.onCompletion({runId:456,attempt:1});
+ assert.equal(drained.state,'drained');
+ assert.equal(drained.result.succeeded,1);
+ assert.equal(drained.result.reason,'idle');
+ assert.equal(continuation.executionAllowed(),false);
+ assert.equal((await createContinuationRuntime({...continuationConfig,pool:pools[1]}).onCompletion({runId:456,attempt:1})).state,'duplicate-or-denied');
+ assert.equal((await pools[0].query('SELECT state FROM engineering_team_tasks WHERE id=$1',[continuationTask])).rows[0].state,'succeeded');
+ continuation.stop();
+ assert.equal((await continuation.onCompletion({runId:456,attempt:1})).state,'stopped');
  const id=await q.enqueue({scope,role,credential:'manager'});
  const claims=await Promise.all([q.claim({scope,role,credential:'w1'}),q2.claim({scope,role,credential:'w2'})]);
  assert.equal(claims.filter(Boolean).length,1);
