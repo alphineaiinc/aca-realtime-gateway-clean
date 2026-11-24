@@ -77,3 +77,27 @@ test('restricted runtime composes only scoped GET and bounded SELECT observation
  assert.deepEqual(calls[2].args,[scope.product,scope.repository]);
  assert.match(calls[2].sql,/LIMIT 101/);
 });
+
+test('one-shot manager defaults disabled and rejects malformed configuration before network access',async()=>{
+ const {observeOnce}=require('../src/automation/engineeringTeam/restrictedManagerOnce');
+ let calls=0;const fetchImpl=async()=>{calls++;throw Error('unexpected network');};
+ await assert.rejects(observeOnce({fetchImpl}),/disabled/);
+ await assert.rejects(observeOnce({env:{ACA_RESTRICTED_MANAGER_ENABLED:'1'},fetchImpl}),/disabled/);
+ await assert.rejects(observeOnce({env:{ACA_RESTRICTED_MANAGER_ENABLED:'true',ACA_RESTRICTED_MANAGER_ISSUE:'1e2'},fetchImpl}),/Invalid issue/);
+ await assert.rejects(observeOnce({env:{ACA_RESTRICTED_MANAGER_ENABLED:'true',ACA_RESTRICTED_MANAGER_ISSUE:'118'},fetchImpl}),/Invalid GitHub configuration/);
+ assert.equal(calls,0);
+});
+test('one-shot manager observes once, never dispatches and never returns credentials',async()=>{
+ const {observeOnce}=require('../src/automation/engineeringTeam/restrictedManagerOnce');
+ const env={ACA_RESTRICTED_MANAGER_ENABLED:'true',ACA_RESTRICTED_MANAGER_ISSUE:String(issue),ACA_RESTRICTED_MANAGER_PRODUCT:scope.product,ACA_RESTRICTED_MANAGER_REPOSITORY:scope.repository,ACA_RESTRICTED_MANAGER_HEAD_SHA:scope.sha,ACA_RESTRICTED_MANAGER_GITHUB_READ_TOKEN:'private-fixture-token'};
+ const calls=[];
+ const report=await observeOnce({env,fetchImpl:async(url,options)=>{
+  calls.push({url,method:options.method});
+  return new Response(JSON.stringify(url.includes('/issues/')?{number:issue,state:'open',labels:[]}:{total_count:1,workflow_runs:[{id:1,name:'CI',status:'completed',conclusion:'success',head_sha:scope.sha}]}));
+ }});
+ denied(report);assert.equal(report.status,'observed');assert.equal(calls.length,2);
+ assert.ok(calls.every(c=>c.method==='GET'));
+ assert.ok(!JSON.stringify(report).includes(env.ACA_RESTRICTED_MANAGER_GITHUB_READ_TOKEN));
+ const failed=await observeOnce({env,fetchImpl:async()=>{throw Error('private-fixture-token');}});
+ denied(failed);assert.equal(failed.status,'unavailable');assert.ok(!JSON.stringify(failed).includes('private-fixture-token'));
+});
