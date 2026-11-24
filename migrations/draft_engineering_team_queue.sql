@@ -223,3 +223,19 @@ CREATE TABLE engineering_team_governance_acknowledgements (
  acknowledged_by text NOT NULL,
  acknowledged_at timestamptz NOT NULL DEFAULT clock_timestamp()
 );
+
+
+-- One-shot fixture preparation receipt. Started attempts are never replayed after restart.
+CREATE TABLE engineering_team_preparation_attempts (
+ workflow_id uuid PRIMARY KEY REFERENCES engineering_team_workflows(id),
+ product text NOT NULL,
+ repository text NOT NULL,
+ head_sha text NOT NULL CHECK(head_sha ~ '^[a-f0-9]{40}$'),
+ state text NOT NULL CHECK(state IN ('started','completed')),
+ result_json jsonb,
+ result_sha256 text CHECK(result_sha256 IS NULL OR result_sha256 ~ '^[a-f0-9]{64}$'),
+ started_at timestamptz NOT NULL DEFAULT clock_timestamp(),
+ completed_at timestamptz,
+ CHECK((state='started' AND result_json IS NULL AND result_sha256 IS NULL AND completed_at IS NULL) OR
+       (state='completed' AND result_json IS NOT NULL AND result_sha256 IS NOT NULL AND completed_at IS NOT NULL))
+);
