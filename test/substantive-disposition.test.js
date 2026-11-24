@@ -26,3 +26,10 @@ test("challenge replay and legacy approval-only envelopes cannot clear dispositi
  assert.equal(validateDisposition({envelope:signed,publicKey:keys.publicKey,expected:{...expected,challenge:"d".repeat(64)},now}),null);
  assert.equal(validateDisposition({envelope:{approved:true,reviewerId:expected.reviewerId,headSha:expected.headSha},publicKey:keys.publicKey,expected,now}),null);
 });
+
+test("verification boundary rejects private key objects and private PEM",()=>{
+ const signed=envelope();
+ assert.equal(check(signed,{publicKey:keys.privateKey}),null);
+ assert.equal(check(signed,{publicKey:keys.privateKey.export({format:"pem",type:"pkcs8"})}),null);
+ assert.equal(check(signed,{publicKey:keys.publicKey.export({format:"pem",type:"spki"})}).status,"passed");
+});
