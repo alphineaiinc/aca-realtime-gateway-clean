@@ -29,7 +29,7 @@ function createProviderReservation({pool,manifest,policy,authenticate,ceilings,r
   reviewEnvelope=structuredClone(reviewEnvelope);
   request=structuredClone(request);
   const actor=await authenticate(credential);
-  if(!actor||actor.permission!=='queue.manage'||actor.role!==undefined||actor.product!==scope.product||actor.repository!==scope.repository||actor.sha!==scope.sha||typeof approvalId!=='string'||! /^[a-f0-9-]{36}$/.test(approvalId))throw Error('Reservation denied');
+  if(!actor||actor.permission!=='queue.manage'||actor.role!==undefined||actor.product!==scope.product||actor.repository!==scope.repository||actor.sha!==scope.sha||typeof actor.id!=='string'||!/^[A-Za-z0-9_.-]{1,80}$/.test(actor.id)||typeof approvalId!=='string'||! /^[a-f0-9-]{36}$/.test(approvalId))throw Error('Reservation denied');
   const actorId=actor.id;
   const binding=await evidence(reviewEnvelope,request);
   const client=await pool.connect();let discard=false;
@@ -47,12 +47,12 @@ function createProviderReservation({pool,manifest,policy,authenticate,ceilings,r
    }
    const unresolved=await client.query(`SELECT 1 FROM engineering_team_provider_attempts a LEFT JOIN engineering_team_provider_outcomes o ON o.binding=a.binding WHERE a.product=$1 AND a.repository=$2 AND (o.binding IS NULL OR o.outcome<>'completed') LIMIT 1`,[scope.product,scope.repository]);
    if(unresolved.rowCount!==0)throw Error('Reservation denied: unresolved provider attempt');
-   const result=await client.query(`INSERT INTO engineering_team_provider_attempts(binding,approval_id,product,repository,head_sha,budget_id,model,reserved_microusd,cost_evidence_sha256)
- SELECT $1,a.id,a.product,a.repository,a.head_sha,$6,$7,$8,$9 FROM engineering_team_approval_requests a
- WHERE a.id=$2 AND a.product=$3 AND a.repository=$4 AND a.head_sha=$5 AND a.operation='provider.activate' AND a.evidence_sha256=$1 AND a.state='approved' AND a.expires_at>clock_timestamp()
+   const result=await client.query(`INSERT INTO engineering_team_provider_attempts(binding,approval_id,product,repository,head_sha,budget_id,model,reserved_microusd,cost_evidence_sha256,reserved_by)
+ SELECT $1,a.id,a.product,a.repository,a.head_sha,$6,$7,$8,$9,$10 FROM engineering_team_approval_requests a
+ WHERE a.id=$2 AND a.product=$3 AND a.repository=$4 AND a.head_sha=$5 AND a.operation='provider.activate' AND a.evidence_sha256=$1 AND a.state='approved' AND a.expires_at>clock_timestamp() AND a.requested_by=$10 AND a.decided_by<>$10
  AND NOT EXISTS(SELECT 1 FROM engineering_team_stops s WHERE s.product=a.product AND s.repository=a.repository)
  AND NOT EXISTS(SELECT 1 FROM engineering_team_quarantine q WHERE q.product=a.product AND q.repository=a.repository)
- ON CONFLICT DO NOTHING RETURNING binding`,[binding,approvalId,scope.product,scope.repository,scope.sha,pinned.budgetId,model,amount,costEvidenceSha256??null]);
+ ON CONFLICT DO NOTHING RETURNING binding`,[binding,approvalId,scope.product,scope.repository,scope.sha,pinned.budgetId,model,amount,costEvidenceSha256??null,actorId]);
    if(result.rowCount!==1)throw Error('Reservation denied');
    const budget=await client.query(`UPDATE engineering_team_spend_budgets SET reserved_calls=reserved_calls+1,reserved_microusd=reserved_microusd+$4
  WHERE product=$1 AND repository=$2 AND budget_id=$3 AND max_calls=$5 AND max_microusd=$6 AND reserved_calls<max_calls AND reserved_microusd+$4<=max_microusd RETURNING reserved_calls`,[scope.product,scope.repository,pinned.budgetId,amount,pinned.limits.maxCalls,pinned.limits.maxSpendMicrousd]);
