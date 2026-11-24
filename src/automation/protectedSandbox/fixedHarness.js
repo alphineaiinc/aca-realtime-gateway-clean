@@ -26,7 +26,7 @@ function createFixedSandboxHarness({image,harnessSha,execute=spawnSync}={}){
  const evidence=Object.freeze({harnessSha,image,fixtureSha256:digest(probe)});
  let used=false;
  const host=['--host','unix:///var/run/docker.sock'];
- const options=Object.freeze({encoding:'utf8',timeout:30000,maxBuffer:65536,env:Object.freeze({PATH:'/usr/bin:/bin',HOME:'/nonexistent'}),shell:false});
+ const options=Object.freeze({encoding:'utf8',timeout:30000,killSignal:'SIGKILL',maxBuffer:65536,env:Object.freeze({PATH:'/usr/bin:/bin',HOME:'/nonexistent'}),shell:false});
  return Object.freeze({async run(){
   if(used)throw Error('Harness consumed');
   used=true;
@@ -39,8 +39,10 @@ function createFixedSandboxHarness({image,harnessSha,execute=spawnSync}={}){
    try{cleanup=execute('/usr/bin/docker',[...host,'rm','-f',name],options);}
    catch{cleanup=null;}
   }
-  const passed=result?.status===0&&!result.error&&!result.signal&&result.stdout==='fixed-fixture-passed'&&cleanup?.status===0&&!cleanup.error&&!cleanup.signal;
-  return Object.freeze({...evidence,status:passed?'passed':'denied',provenance:'unreviewed-fixed-fixture-harness',executionAuthorized:false});
+  const cleanupConfirmed=cleanup?.status===0&&!cleanup.error&&!cleanup.signal;
+  const passed=result?.status===0&&!result.error&&!result.signal&&result.stdout==='fixed-fixture-passed'&&cleanupConfirmed;
+  const payload={...evidence,attemptId:name,status:passed?'passed':'denied',cleanupConfirmed,requiresReconciliation:!cleanupConfirmed,provenance:'unreviewed-fixed-fixture-harness',executionAuthorized:false};
+  return Object.freeze({...payload,reportSha256:digest(JSON.stringify(payload))});
  }});
 }
 module.exports={createFixedSandboxHarness};
