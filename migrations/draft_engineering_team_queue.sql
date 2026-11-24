@@ -171,7 +171,7 @@ CREATE TABLE engineering_team_ci_events (
  attempt integer NOT NULL CHECK(attempt>0),
  actor_id text NOT NULL,
  created_at timestamptz NOT NULL DEFAULT clock_timestamp(),
- PRIMARY KEY(repository,workflow_id,run_id,attempt)
+ PRIMARY KEY(product,repository,workflow_id,run_id,attempt)
 );
 
 -- Offline correction cycle admission: never replay after unknown outcomes.
