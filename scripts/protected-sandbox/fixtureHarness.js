@@ -17,7 +17,49 @@ function execute(image,mode){
  const call=(args,timeout=5000)=>spawnSync('/usr/bin/docker',args,{encoding:'utf8',timeout,maxBuffer:8192,env:{PATH:'/usr/bin:/bin',HOME:'/nonexistent',DOCKER_HOST:'unix:///var/run/docker.sock'}});
  const ok=r=>!r.error&&!r.signal&&r.status===0&&r.stderr==='';
  const created=call(args,15000);
- if(!ok(created)||!/^[a-f0-9]{64}\n?$/.test(created.stdout))throw Error('Create unresolved; reconcile '+name);
+ if(!ok(created)||!/^[a-f0-9]{64}\n?$/.test(created.stdout)){
+  // A timed-out create may still have reached the daemon. Never start it.
+  const removed=call(['rm','-f',name]);
+  const absent=call(['ps','-aq','--no-trunc','--filter','name=^/'+name+'
+ const id=created.stdout.trim();
+ let passed=false;
+ try{
+  const config=call(['inspect','--format','{{.HostConfig.ReadonlyRootfs}} {{.HostConfig.Memory}} {{.HostConfig.MemorySwap}} {{.HostConfig.NanoCpus}} {{.HostConfig.PidsLimit}}',id]);
+  if(!ok(config)||config.stdout.trim()!=='true 134217728 134217728 500000000 32')throw Error('Configuration denied');
+  const result=call(['start','-a',id],mode==='timeout'?2000:15000);
+  if(mode==='timeout'&&result.error?.code==='ETIMEDOUT'){
+   const running=call(['inspect','--format','{{.State.Running}} {{.State.Pid}}',id]);
+   if(!ok(running)||!/^true [1-9][0-9]*\n?$/.test(running.stdout))throw Error('Timeout start unverified');
+   throw Error('Fixed timeout observed');
+  }
+  if(!ok(result)||result.stdout!=='fixture-ok')throw Error('Fixture outcome denied');
+  const state=call(['inspect','--format','{{.State.Status}} {{.State.ExitCode}}',id]);
+  if(!ok(state)||state.stdout.trim()!=='exited 0')throw Error('Fixture state denied');
+  passed=true;
+ }finally{
+  const removed=call(['rm','-f',id]);
+  const absent=call(mode==='query-failure'?['ps','--invalid-fixed-fixture-option']:['ps','-aq','--no-trunc','--filter','id='+id]);
+  if(!ok(removed))throw Error('Removal unresolved; reconcile '+id);
+  if(mode==='query-failure'){
+   if(ok(absent)||absent.error||absent.signal||absent.status!==125||!absent.stderr.includes('unknown flag'))throw Error('Expected query fault unverified; reconcile '+id);
+   const reconciled=call(['ps','-aq','--no-trunc','--filter','id='+id]);
+   if(!ok(reconciled)||reconciled.stdout!=='')throw Error('Cleanup unresolved; reconcile '+id);
+   if(!passed)throw Error('Fixture outcome denied');
+   throw Error('Fixed query failure reconciled');
+  }
+  if(!ok(absent)||absent.stdout!=='')throw Error('Cleanup unresolved; reconcile '+id);
+ }
+ if(!passed)throw Error('Fixture outcome denied');
+ return Object.freeze({fixturePassed:true,probeSha256:createHash('sha256').update(probe).digest('hex'),image,executionAuthorized:false,attestation:false});
+}
+function run(image){return execute(image,'normal');}
+function runTimeoutFixture(){return execute(imagePin,'timeout');}
+function runFailedQueryFixture(){return execute(imagePin,'query-failure');}
+module.exports={plan,run,imagePin,runTimeoutFixture,runFailedQueryFixture};
+]);
+  // Even apparent absence cannot exclude a late daemon-side create.
+  throw Error('Create unresolved; reconcile '+name+'; removal='+ok(removed)+'; observedAbsent='+(ok(absent)&&absent.stdout===''));
+ }
  const id=created.stdout.trim();
  let passed=false;
  try{
