@@ -20,4 +20,23 @@ async function acquireUploadAdmission(client, tenantId, slots = 4) {
   // Caller rolls back immediately, including the acquired tenant lock.
   return false;
 }
-module.exports = { acquireUploadAdmission };
+// Own the transaction lifecycle. The callback must finish all protected work
+// before returning; it must not retain the client or start detached work.
+async function withUploadAdmission(pool, tenantId, work) {
+  if (!pool || typeof pool.connect !== 'function' || typeof work !== 'function') throw new TypeError('Invalid admission owner');
+  const client = await pool.connect();
+  let discard = false;
+  try {
+    await client.query('BEGIN');
+    if (!await acquireUploadAdmission(client, tenantId)) return { admitted: false };
+    return { admitted: true, result: await work() };
+  } catch (error) {
+    discard = true;
+    throw error;
+  } finally {
+    try { await client.query('ROLLBACK'); }
+    catch (error) { discard = true; throw error; }
+    finally { client.release(discard); }
+  }
+}
+module.exports = { acquireUploadAdmission, withUploadAdmission };
