@@ -248,8 +248,9 @@ test('isolated PostgreSQL queue: concurrent claims, retries, restart, expiry and
  const outcomes=pools.map(pool=>createProviderOutcome({pool,scope,authenticate:async c=>identities.get(c)}));
  const usage={inputTokens:10,outputTokens:5,actualMicrousd:100};
  await assert.rejects(outcomes[0].record({credential:'w1',binding:providerBinding,usage}),/Outcome denied/);
- await assert.rejects(outcomes[0].record({credential:'manager',binding:'f'.repeat(64),usage}),/Outcome denied/);
- const recorded=await Promise.allSettled(outcomes.map(o=>o.record({credential:'manager',binding:providerBinding,usage})));
+ await assert.rejects(outcomes[0].record({credential:'owner',binding:'f'.repeat(64),usage}),/Outcome denied/);
+ await assert.rejects(outcomes[0].record({credential:'manager',binding:providerBinding,usage}),/Outcome denied/);
+ const recorded=await Promise.allSettled(outcomes.map(o=>o.record({credential:'owner',binding:providerBinding,usage})));
  assert.equal(recorded.filter(x=>x.status==='fulfilled').length,1);
  assert.equal(recorded.find(x=>x.status==='fulfilled').value.outcome,'completed');
  assert.deepEqual((await pools[0].query('SELECT reserved_calls,reserved_microusd FROM engineering_team_spend_budgets WHERE budget_id=$1',[providerBudgetId])).rows[0],{reserved_calls:2,reserved_microusd:'800'});
@@ -277,7 +278,7 @@ test('isolated PostgreSQL queue: concurrent claims, retries, restart, expiry and
  await assert.rejects(ledger(pools[1]).readFixturePrior({credential:'manager',id:runtimeResult.workflowId}),/Workflow unavailable/);
  await assert.rejects(governanceSpend[0].reserve({model:'fixture'}),/Spend budget denied/);
  await assert.rejects(reviewed(pools[1]).reserve({credential:'manager',approvalId:excessApproval.id,reviewEnvelope:excessEnvelope}),/Reservation denied/);
- const unknown=await outcomes[1].record({credential:'manager',binding:reviewBinding});
+ const unknown=await outcomes[1].record({credential:'owner',binding:reviewBinding});
  assert.deepEqual(unknown,{outcome:'unknown',executionAuthorized:false});
  assert.equal((await pools[0].query('SELECT 1 FROM engineering_team_stops WHERE product=$1 AND repository=$2',[scope.product,scope.repository])).rowCount,1);
  await q2.stop({scope,credential:'manager'});
