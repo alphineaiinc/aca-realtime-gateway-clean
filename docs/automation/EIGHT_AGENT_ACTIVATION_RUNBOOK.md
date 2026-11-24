@@ -104,3 +104,11 @@ Trusted sandbox probe and Node CI passed at a776d4853c9d69a926aaff436868c2a605bc
 - CI #803 passed after that correction. The run exposes two successful jobs (Node tests and trusted sandbox); do not infer a separate disposable PostgreSQL job or CodeQL scan from this run. CI #801 remains the prior broad matrix baseline, not exact-head evidence.
 - PR #142 remains draft. No live agent dispatch, provider admission, merge, deployment, secret activation, production database mutation, or additional spending.
 - Next acceptance: run/verify the disposable PostgreSQL queue integration against this exact head, then continue integrated role handoffs and durable proposal/evidence verification. Keep all acceptance states distinct: implemented, unit-tested, integration-tested, independently reviewed, operationally accepted, and activated.
+
+
+### CI #803 log-level verification correction — 2026-11-24
+- Retrieved and inspected the complete Node job log for run #803, not just the job summary. The Node job ran both the standard Node suite and the isolated PostgreSQL queue integration as sequential test commands.
+- Standard Node suite: 167 tests, 166 passed, 0 failed, 1 skipped.
+- Isolated PostgreSQL queue integration: 1 test, 1 passed, 0 failed, 0 skipped. The deliberately rejected SQL writes in the fixture appear as expected PostgreSQL constraint/unique-violation log entries; the integration test itself passed.
+- Trusted engineering sandbox probe: passed; verified non-root, loopback-only, read-only root, no credentials/socket, no capabilities, seccomp and no-new-privileges. Patch fixture ran in a network-disabled, read-only container with resource limits.
+- Therefore CI #803 does include successful disposable PostgreSQL queue integration within the Node job; earlier note saying a separate PostgreSQL job was absent was too narrow. CodeQL and the additional Python/JavaScript/Actions analyses from CI #801 are still not evidenced by #803.
