@@ -916,6 +916,11 @@ const http = require("http"); // ✅ Needed so express-ws binds to the same serv
 const cors = require("cors");
 const bodyParser = require("body-parser");
 const app = express();
+// Global bounded ingress before parsers, authentication and expensive handlers.
+const { rateLimit: recognizedRateLimit } = require("express-rate-limit");
+const { ingressLimit: boundedIngress } = require("./src/security/ingressLimit");
+app.use(boundedIngress({max: 300, windowMs: 60000}));
+app.use(recognizedRateLimit({windowMs: 60000, limit: 300, standardHeaders: "draft-8", legacyHeaders: false, passOnStoreError: false}));
 
 // ✅ Story 12.8 — security headers + origin allowlist guard (fail-closed in prod)
 try {
