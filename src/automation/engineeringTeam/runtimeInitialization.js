@@ -5,6 +5,7 @@ const {createDurableQueue}=require('./durableQueue');
 const {createDurableApprovalPolicy}=require('./durableApproval');
 const {createSpendBudget}=require('./spendBudget');
 const {createQueuePolicyBridge}=require('./queuePolicyBridge');
+const {createPolicyBoundQueue}=require('./policyBoundQueue');
 const {createProviderOutcome}=require('./providerOutcome');
 const {createProviderReservation}=require('./providerReservation');
 const {createActivationReviewVerifier}=require('./activationReviewVerifier');
@@ -26,10 +27,12 @@ function initializeRuntime({config,pool,identity,ceilings,readQueueState,indepen
  const budget=createSpendBudget({pool,...manifest.scope,budgetId:manifest.budgetId,ceilings});
  const workflow=createWorkflowLedger({pool,scope:manifest.scope,authenticate});
  const policy=readQueueState===undefined?null:createQueuePolicyBridge({manifest,readQueueState});
+ // Never expose the raw durable queue: new admissions and claims require fresh policy evidence.
+ const admissionQueue=policy===null?null:createPolicyBoundQueue({queue,policy,scope:manifest.scope,issue:manifest.issue,manifestDigest:manifest.evidenceSha256});
  const reviewVerifier=independentReview===undefined?undefined:createActivationReviewVerifier({...independentReview,manifest});
  // Unreviewed initialization remains inert; runtime cannot expose an unreviewed reservation.
  const providerReservation=policy===null||reviewVerifier===undefined||costEnvelope===null?null:createProviderReservation({pool,manifest,policy,authenticate,ceilings,reviewVerifier,costEvidenceSha256:costEnvelope.evidenceSha256,prepareRequest:request=>prepareRequestEnvelope({manifest,costEnvelope,request})});
  const providerOutcome=providerReservation===null?null:createProviderOutcome({pool,scope:manifest.scope,authenticate,costEnvelope});
- return Object.freeze({providerOutcome,manifest,costEnvelope,queue,approvals,budget,workflow,policy,providerReservation,authenticate,status:'initialized-inert',executionAllowed:()=>false});
+ return Object.freeze({providerOutcome,manifest,costEnvelope,queue:admissionQueue,approvals,budget,workflow,policy,providerReservation,authenticate,status:'initialized-inert',executionAllowed:()=>false});
 }
 module.exports={initializeRuntime};
