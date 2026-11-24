@@ -12,7 +12,7 @@ test('initialization composes durable components without touching database or ac
  const runtime=initializeRuntime(opts);
  assert.equal(runtime.status,'initialized-inert');assert.equal(runtime.executionAllowed(),false);assert.equal(runtime.approvals.executionAllowed(),false);
  assert.equal(runtime.providerOutcome,null);
- assert.equal(typeof runtime.queue.claim,'function');assert.equal(typeof runtime.budget.reserve,'function');
+ assert.equal(runtime.queue,null);assert.equal(typeof runtime.budget.reserve,'function');
 });
 test('missing budget ceilings or transactional pool fails closed',()=>{
  assert.throws(()=>initializeRuntime({...opts,ceilings:{}}));
@@ -33,4 +33,20 @@ test('runtime reservation requires pinned independent reviewer configuration',()
  assert.equal(typeof runtime.providerOutcome.record,'function');
  assert.equal(runtime.executionAllowed(),false);
  assert.throws(()=>initializeRuntime({...opts,readQueueState,independentReview:{...independentReview,authorIds:['reviewer']}}));
+});
+
+test('runtime exposes no raw queue without current policy evidence',()=>{
+ const runtime=initializeRuntime({...opts,readQueueState:async()=>assert.fail('policy is evaluated only on admission')});
+ assert.equal(runtime.queue!==null,true);
+ assert.equal(runtime.queue.executionAllowed(),false);
+});
+test('runtime policy-bound queue denies a blocked issue before touching PostgreSQL',async()=>{
+ let reads=0;
+ const runtime=initializeRuntime({...opts,readQueueState:async()=>{reads++;return {
+  repository:scope.repository,headSha:scope.sha,
+  issue:{number:42,state:'open',isPullRequest:false,labels:[],assignees:[]},
+  activeIssueNumbers:[]
+ };}});
+ await assert.rejects(runtime.queue.enqueue({scope,role:'orchestrator',credential:'manager'}),/Queue policy denied/);
+ assert.equal(reads,1);
 });
