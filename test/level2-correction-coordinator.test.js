@@ -71,3 +71,16 @@ test("oversized or invalid untrusted notes deny correction proposals",()=>{
  const malformed=coordinateCorrection({evidence:evidence(),failureSummary:{commands:["deploy"]}});
  assert.equal(malformed.proposal,null);
 });
+
+test("denied malformed correction inputs consistently escalate without actionable proposal",()=>{
+ for(const ev of [evidence(),evidence({ciConclusion:"success",review:{headSha:head,status:"findings",findings:2,independent:true,source:"trusted_review"}})]){
+  for(const invalid of [{reviewNotes:["x".repeat(601)]},{reviewNotes:null},{failureSummary:{command:"deploy"}},{failureSummary:"x".repeat(1201)}]){
+   const result=coordinateCorrection({evidence:ev,...invalid});
+   assert.equal(result.proposal,null);
+   assert.equal(result.nextAction,"escalate_to_owner");
+   assert.equal(result.dispatched,false);
+   assert.equal(result.mergeAuthorized,false);
+   assert.equal(result.deployAuthorized,false);
+  }
+ }
+});
