@@ -17,3 +17,14 @@ test('missing budget ceilings or transactional pool fails closed',()=>{
  assert.throws(()=>initializeRuntime({...opts,ceilings:{}}));
  assert.throws(()=>initializeRuntime({...opts,pool:{query:async()=>{}}}));
 });
+
+test('runtime reservation requires pinned independent reviewer configuration',()=>{
+ const readQueueState=async()=>assert.fail('policy touched during initialization');
+ assert.equal(initializeRuntime({...opts,readQueueState}).providerReservation,null);
+ const {publicKey}=generateKeyPairSync('ed25519');
+ const independentReview={publicKey,reviewerId:'reviewer',authorIds:['author'],isRevoked:async()=>false};
+ const runtime=initializeRuntime({...opts,readQueueState,independentReview});
+ assert.equal(typeof runtime.providerReservation.reserve,'function');
+ assert.equal(runtime.executionAllowed(),false);
+ assert.throws(()=>initializeRuntime({...opts,readQueueState,independentReview:{...independentReview,authorIds:['reviewer']}}));
+});
