@@ -14,7 +14,7 @@ require("dotenv").config({ path: require("path").resolve(__dirname, "../../.env"
 // Initialize PostgreSQL pool (Render + Neon connection)
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
-  ssl: { rejectUnauthorized: false },
+  ssl: { rejectUnauthorized: true },
 });
 
 // ---------------------------------------------------------------------------
@@ -30,8 +30,12 @@ router.post("/public/signup", async (req, res) => {
   const jwtSecret = process.env.TENANT_JWT_SECRET;
   if (!jwtSecret) return res.status(503).json({ ok: false, error: "Authentication unavailable" });
 
+  let client;
+  let committed = false;
+  let discard = false;
   try {
-    const client = await pool.connect();
+    client = await pool.connect();
+    await client.query("BEGIN");
 
     // 1️⃣  Insert into master_tenants
     const insertTenant = `
@@ -65,9 +69,8 @@ router.post("/public/signup", async (req, res) => {
       [business_name, email, contact_number || ""]
     );
 
-    client.release();
-
-    console.log(`✅ Tenant created: ${tenant.email} (id=${tenant.id})`);
+    await client.query("COMMIT");
+    committed = true;
     res.json({
       ok: true,
       id: tenant.id,
@@ -79,8 +82,13 @@ router.post("/public/signup", async (req, res) => {
       source: "public",
     });
   } catch (err) {
+    if (client && !committed) {
+      try { await client.query("ROLLBACK"); } catch { discard = true; }
+    }
     console.error("Public signup failed");
     res.status(500).json({ ok: false, error: "Signup failed" });
+  } finally {
+    if (client) client.release(discard);
   }
 });
 
