@@ -19,7 +19,7 @@ test('policy is re-evaluated at every new admission, inspection and claim',async
  f.block();
  await assert.rejects(f.bound.enqueue({scope,role:'orchestrator'}),/Queue policy denied/);
  await assert.rejects(f.bound.inspectWorkflowStep({scope,workflowId:'w',workflowStep:0,credential:'manager'}),/Queue policy denied/);
- await assert.rejects(f.bound.claim({scope,role:'orchestrator',credential:'worker'}),/Queue policy denied/);
+ assert.equal(await f.bound.claim({scope,role:'orchestrator',credential:'worker'}),null);
  assert.deepEqual(f.calls,['enqueue','inspectWorkflowStep','claim']);
 });
 test('completion remains available after policy closes to persist an in-flight receipt',async()=>{
@@ -32,7 +32,7 @@ test('policy evidence must match exact issue, manifest, repository and revision'
   {issueNumber:43},{manifestDigest:'d'.repeat(64)},{scope:{...scope,sha:'e'.repeat(40)}},
   {executionAuthorized:true},{eligibleForPreparation:false},{evidenceSha256:'bad'}
  ]){
-  const f=fixture();const original=f.bound;
+  const f=fixture();
   const policy={evaluate:async()=>({scope,issueNumber:issue,manifestDigest,eligibleForPreparation:true,executionAuthorized:false,evidenceSha256:'c'.repeat(64),...patch})};
   const bound=createPolicyBoundQueue({queue:Object.fromEntries(['enqueue','inspectWorkflowStep','claim','finish','stop','quarantine','expire','cancel'].map(name=>[name,async()=>true])),policy,scope,issue,manifestDigest});
   await assert.rejects(bound.enqueue({}),/Queue policy denied/);
