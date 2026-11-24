@@ -4,6 +4,9 @@ const assert=require('node:assert/strict');
 const fs=require('node:fs');
 const path=require('node:path');
 const {Pool}=require('pg');
+const {createAgentManager}=require('../src/automation/engineeringTeam/manager');
+const {createQueueWorker}=require('../src/automation/engineeringTeam/queueWorker');
+const {contract}=require('../src/automation/engineeringTeam/contracts');
 const {createPublicationReservation}=require('../src/automation/engineeringTeam/publicationReservation');
 const {createWorkflowLedger}=require('../src/automation/engineeringTeam/workflowLedger');
 const {sequence}=require('../src/automation/engineeringTeam/offlineTeam');
@@ -92,6 +95,27 @@ test('isolated PostgreSQL queue: concurrent claims, retries, restart, expiry and
  }
  assert.equal((await ledger(pools[0]).status({credential:'manager',id:workflow.id})).next_step,8);
  await assert.rejects(ledger(pools[1]).status({credential:'w1',id:workflow.id}),/Workflow identity denied/);
+ const persistent=await ledger(pools[0]).create('manager');
+ const fixtureQueue=createDurableQueue({pool:pools[0],scopes:[scope],authenticate:async c=>identities.get(c),fixtureProposalStorage:true});
+ for(const [step,agentRole] of sequence.entries()){
+  const prior=await ledger(pools[1]).readFixturePrior({credential:'manager',id:persistent.id});
+  assert.equal(prior.length,step);
+  const adapters=Object.fromEntries(sequence.map(r=>[r,async ctx=>{
+   assert.equal(ctx.role.id,agentRole);
+   assert.deepEqual(ctx.prior.map(p=>p.role),sequence.slice(0,step));
+   return Object.fromEntries(contract(r).fields.map(field=>[field,['fixture '+r+' '+field]]));
+  }]));
+  const manager=createAgentManager({scopes:[scope],adapters,fixturePriorEnabled:true});
+  const taskId=await fixtureQueue.enqueue({scope,role:agentRole,credential:'manager'});
+  const worker=createQueueWorker({queue:fixtureQueue,manager,fixtureProposalStorage:true,loadTask:async ({id})=>({id,...scope,subject:'Disposable workflow fixture',fixturePrior:prior})});
+  const completed=await worker.runOnce({scope,role:agentRole,credential:'worker-'+step});
+  assert.equal(completed.state,'succeeded');
+  assert.equal(completed.taskId,taskId);
+  await ledger(pools[1]).advance({credential:'manager',id:persistent.id,step,taskId});
+ }
+ const prior=await ledger(pools[1]).readFixturePrior({credential:'manager',id:persistent.id});
+ assert.deepEqual(prior.map(p=>p.role),sequence);
+ await assert.rejects(ledger(pools[1]).readFixturePrior({credential:'w1',id:persistent.id}),/Workflow identity denied/);
  const publicationBinding='e'.repeat(64);
  const pub=await approval(pools[0]).request({scope,operation:'github.write',evidence:publicationBinding,credential:'manager'});
  const reserve=pool=>createPublicationReservation({pool,scope,authenticate:async c=>identities.get(c)});
