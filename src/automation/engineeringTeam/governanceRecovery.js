@@ -1,5 +1,5 @@
 'use strict';
-const {createHash}=require('node:crypto');
+const {createHash,randomUUID}=require('node:crypto');
 const {getRole}=require('./registry');
 const validDigest=v=>typeof v==='string'&&/^[a-f0-9]{64}$/.test(v);
 const validScope=s=>s&&typeof s.product==='string'&&/^[A-Za-z0-9][A-Za-z0-9_.-]{0,79}$/.test(s.product)&&typeof s.repository==='string'&&/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(s.repository)&&s.repository.length<=200&&typeof s.sha==='string'&&/^[a-f0-9]{40}$/.test(s.sha);
@@ -42,8 +42,8 @@ function createGovernanceRecovery({pool,scope,authenticate}={}){
    await client.query(action==='clear-stop'
     ?"INSERT INTO engineering_team_governance_alerts(id,product,repository,event_type,actor_id,approval_id) VALUES ($1,$2,$3,'stop.cleared',$4,$5)"
     :"INSERT INTO engineering_team_governance_alerts(id,product,repository,event_type,role,actor_id,approval_id) VALUES ($1,$2,$3,'quarantine.cleared',$4,$5,$6)",
-    action==='clear-stop'?[createHash('sha256').update(JSON.stringify([approvalId,'stop.cleared'])).digest('hex').slice(0,32).replace(/(.{8})(.{4})(.{4})(.{4})(.{12})/,'$1-$2-$3-$4-$5'),...params.slice(0,2),actorId,approvalId]
-    :[createHash('sha256').update(JSON.stringify([approvalId,'quarantine.cleared'])).digest('hex').slice(0,32).replace(/(.{8})(.{4})(.{4})(.{4})(.{12})/,'$1-$2-$3-$4-$5'),...params.slice(0,2),role,actorId,approvalId]);
+    action==='clear-stop'?[randomUUID(),...params.slice(0,2),actorId,approvalId]
+    :[randomUUID(),...params.slice(0,2),role,actorId,approvalId]);
    await client.query('COMMIT');
    return Object.freeze({action,role:role??null,recovered:true,executionAuthorized:false});
   }catch(e){try{await client.query('ROLLBACK');}catch{discard=true;}throw e;}
