@@ -2,6 +2,7 @@ const console=require("../voice/voiceLogger").operationalConsole;
 const {Pool}=require("pg");
 require("dotenv").config({path:require("path").resolve(__dirname,"../../.env")});
 const {connectionPolicy}=require("./connectionPolicy");
+console.log("DATABASE_URL configured:", Boolean(process.env.DATABASE_URL));
 const pool=new Pool({...connectionPolicy(process.env.DATABASE_URL),max:10,idleTimeoutMillis:30000,connectionTimeoutMillis:10000});
 (async()=>{
   let client;
