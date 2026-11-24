@@ -8,6 +8,8 @@
 // ===============================================
 const express = require("express");
 const router = express.Router();
+const ingressRateLimit = require('../security/ingressLimit').ingressLimit({ max: 30 });
+const sharedIpLimit = require('../middleware/postgresRateLimit').createPostgresRateLimiter({ pool: require('../db/pool'), scope: 'brain-ip', max: 30, ipBased: true });
 router.use(express.json()); // ✅ Ensure JSON body parsing for /brain routes
 
 const OpenAI = require("openai");
@@ -128,7 +130,7 @@ function deriveTenantIdFromJwt(decoded) {
   return n;
 }
 
-router.post("/query", async (req, res) => {
+router.post("/query", ingressRateLimit, sharedIpLimit, async (req, res) => {
   console.log("🟡 Story 2.9 adaptive tuning layer active");
 
   // ✅ Defensive: handle missing req.body safely
