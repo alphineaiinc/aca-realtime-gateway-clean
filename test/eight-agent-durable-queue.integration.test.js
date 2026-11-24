@@ -278,7 +278,29 @@ test('isolated PostgreSQL queue: concurrent claims, retries, restart, expiry and
  const breachBinding=await breachProvider.evidence();
  const breachApproval=await approval(pools[0]).request({scope,operation:'provider.activate',evidence:breachBinding,credential:'manager'});
  await approval(pools[1]).recordDecision({scope,id:breachApproval.id,binding:breachApproval.binding,decision:'approved',credential:'owner'});
+ await assert.rejects(breachProvider.reserve({credential:'manager',approvalId:breachApproval.id}),/unresolved provider attempt/);
+ // Reconcile the first fixture before admitting another attempt.
+ await outcomes[0].record({credential:'owner',binding:unknownBinding,usage:{inputTokens:10,outputTokens:5,actualMicrousd:100}});
  await breachProvider.reserve({credential:'manager',approvalId:breachApproval.id});
+ const stopQuery='SELECT 1 FROM engineering_team_stops WHERE product=$1 AND repository=$2';
+ const stopArgs=[scope.product,scope.repository];
+ assert.equal((await pools[0].query(stopQuery,stopArgs)).rowCount,0);
+ const breach=await outcomes[0].record({credential:'owner',binding:breachBinding,usage:{inputTokens:10,outputTokens:5,actualMicrousd:401}});
+ assert.deepEqual(breach,{outcome:'breach',executionAuthorized:false});
+ assert.equal((await pools[1].query(stopQuery,stopArgs)).rowCount,1);
+ assert.deepEqual((await pools[1].query('SELECT reserved_calls,reserved_microusd FROM engineering_team_spend_budgets WHERE budget_id=$1',[breachBudgetId])).rows[0],{reserved_calls:1,reserved_microusd:'400'});
+ // Reset only the disposable test fixture to isolate the unknown-outcome assertion.
+ await pools[0].query('DELETE FROM engineering_team_stops WHERE product=$1 AND repository=$2',stopArgs);
+ assert.equal((await pools[1].query(stopQuery,stopArgs)).rowCount,0);
+ const finalUnknownBudgetId=randomUUID();
+ const finalUnknownManifest=createActivationManifest({...providerManifest,budgetId:finalUnknownBudgetId});
+ const finalUnknownPolicy=createQueuePolicyBridge({manifest:finalUnknownManifest,readQueueState:async()=>({repository:scope.repository,headSha:scope.sha,issue:{number:42,state:'open',isPullRequest:false,labels:['aca:auto/docs-test'],assignees:[]},activeIssueNumbers:[]})});
+ const finalUnknownProvider=createProviderReservation({pool:pools[0],manifest:finalUnknownManifest,policy:finalUnknownPolicy,authenticate:async c=>identities.get(c),ceilings:{fixture:400}});
+ await pools[0].query('INSERT INTO engineering_team_spend_budgets(product,repository,budget_id,max_calls,max_microusd) VALUES ($1,$2,$3,8,1000)',[scope.product,scope.repository,finalUnknownBudgetId]);
+ const finalUnknownBinding=await finalUnknownProvider.evidence();
+ const finalUnknownApproval=await approval(pools[0]).request({scope,operation:'provider.activate',evidence:finalUnknownBinding,credential:'manager'});
+ await approval(pools[1]).recordDecision({scope,id:finalUnknownApproval.id,binding:finalUnknownApproval.binding,decision:'approved',credential:'owner'});
+ await finalUnknownProvider.reserve({credential:'manager',approvalId:finalUnknownApproval.id});
  const stoppedTask=await q.enqueue({scope,role,credential:'manager'});
  const running=await q.claim({scope,role,credential:'w1'});
  const governanceBudgetId=randomUUID();
@@ -303,17 +325,7 @@ test('isolated PostgreSQL queue: concurrent claims, retries, restart, expiry and
  await assert.rejects(ledger(pools[1]).readFixturePrior({credential:'manager',id:runtimeResult.workflowId}),/Workflow unavailable/);
  await assert.rejects(governanceSpend[0].reserve({model:'fixture'}),/Spend budget denied/);
  await assert.rejects(reviewed(pools[1]).reserve({credential:'manager',approvalId:excessApproval.id,reviewEnvelope:excessEnvelope}),/Reservation denied/);
- const stopQuery='SELECT 1 FROM engineering_team_stops WHERE product=$1 AND repository=$2';
- const stopArgs=[scope.product,scope.repository];
- assert.equal((await pools[0].query(stopQuery,stopArgs)).rowCount,0);
- const breach=await outcomes[0].record({credential:'owner',binding:breachBinding,usage:{inputTokens:10,outputTokens:5,actualMicrousd:401}});
- assert.deepEqual(breach,{outcome:'breach',executionAuthorized:false});
- assert.equal((await pools[1].query(stopQuery,stopArgs)).rowCount,1);
- assert.deepEqual((await pools[1].query('SELECT reserved_calls,reserved_microusd FROM engineering_team_spend_budgets WHERE budget_id=$1',[breachBudgetId])).rows[0],{reserved_calls:1,reserved_microusd:'400'});
- // Reset only the disposable test fixture to isolate the unknown-outcome assertion.
- await pools[0].query('DELETE FROM engineering_team_stops WHERE product=$1 AND repository=$2',stopArgs);
- assert.equal((await pools[1].query(stopQuery,stopArgs)).rowCount,0);
- const unknown=await outcomes[1].record({credential:'owner',binding:unknownBinding});
+ const unknown=await outcomes[1].record({credential:'owner',binding:finalUnknownBinding});
  assert.deepEqual(unknown,{outcome:'unknown',executionAuthorized:false});
  assert.equal((await pools[0].query(stopQuery,stopArgs)).rowCount,1);
  await q2.stop({scope,credential:'manager'});
