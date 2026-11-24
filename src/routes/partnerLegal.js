@@ -7,6 +7,7 @@ const fs = require("fs");
 
 const router = express.Router();
 const ingressRateLimit = require('../security/ingressLimit').ingressLimit({ max: 30 });
+const sharedIpLimit = require('../middleware/postgresRateLimit').createPostgresRateLimiter({ pool: require('../db/pool'), scope: 'partner-legal-ip', max: 30, ipBased: true });
 
 function authenticate(req, res, next) {
   try {
@@ -26,7 +27,7 @@ function authenticate(req, res, next) {
 }
 
 // Download current Partner Terms
-router.get("/partner/legal/download", ingressRateLimit, async (req, res) => {
+router.get("/partner/legal/download", ingressRateLimit, sharedIpLimit, async (req, res) => {
   try {
     const version = process.env.LEGAL_CURRENT_VERSION || "1.0";
     const pdfPath = await generatePartnerTermsPDF(version);
@@ -54,7 +55,7 @@ router.get("/partner/legal/download", ingressRateLimit, async (req, res) => {
 });
 
 // Record acceptance
-router.post("/partner/legal/accept", ingressRateLimit, authenticate, async (req, res) => {
+router.post("/partner/legal/accept", ingressRateLimit, sharedIpLimit, authenticate, async (req, res) => {
   try {
     const partner_id = req.user?.partner_id || null;
     if (!partner_id) {
@@ -62,8 +63,7 @@ router.post("/partner/legal/accept", ingressRateLimit, authenticate, async (req,
     }
 
     const version = process.env.LEGAL_CURRENT_VERSION || "1.0";
-    const forwardedFor = req.headers["x-forwarded-for"] || "";
-    const ip = String(forwardedFor).split(",")[0].trim() || req.socket.remoteAddress || "";
+    const ip = req.ip || req.socket.remoteAddress || "";
     const signature = crypto.randomBytes(16).toString("hex");
 
     await recordAcceptance(partner_id, version, ip, signature);
