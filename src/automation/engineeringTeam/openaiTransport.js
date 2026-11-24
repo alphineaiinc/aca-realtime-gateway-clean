@@ -12,7 +12,7 @@ function createOpenAITransport({client,models,authorize,maxCalls=8,maxOutputToke
   if(active||calls>=maxCalls)throw Error('Provider budget denied');
   active=true;
   try{
-   if(budget&&await budget.reserve()!==true)throw Error('Durable budget denied');
+   if(budget&&await budget.reserve({model:selected[request.role]})!==true)throw Error('Durable budget denied');
    calls++;
    const result=await client.responses.create({model:selected[request.role],instructions:request.instructions,input:request.input,store:false,max_output_tokens:maxOutputTokens,text:{format:{type:'json_schema',name:'engineering_proposal',strict:true,schema:request.schema}}},{timeout:timeoutMs,maxRetries:0});
    if(!Number.isSafeInteger(result?.usage?.input_tokens)||result.usage.input_tokens<0||!Number.isSafeInteger(result?.usage?.output_tokens)||result.usage.output_tokens<0)throw Error('Usage unavailable');
