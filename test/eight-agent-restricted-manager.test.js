@@ -123,3 +123,17 @@ test('restricted transport refuses cross-repository reads before network access 
  }
  assert.equal(calls,0);
 });
+
+test('restricted runtime isolates governance read failures and disabled entrypoint never accesses network',async()=>{
+ const {createRestrictedManagerRuntime}=require('../src/automation/engineeringTeam/restrictedManagerRuntime');
+ const {observeOnce}=require('../src/automation/engineeringTeam/restrictedManagerOnce');
+ let requests=0,queries=0;
+ const fetchImpl=async url=>{requests++;return new Response(JSON.stringify(url.includes('/issues/')?{number:issue,state:'open',labels:[]}:{total_count:1,workflow_runs:[{id:1,name:'CI',status:'completed',conclusion:'success',head_sha:scope.sha}]}));};
+ const runtime=createRestrictedManagerRuntime({scope,issue,githubToken:'fixture-token',fetchImpl,readOnlyPool:{query:async()=>{queries++;throw Error('private database failure');}}});
+ const report=await runtime.observe();
+ denied(report);assert.equal(report.status,'observed');assert.deepEqual(report.governance,{status:'unavailable'});
+ assert.equal(queries,1);assert.equal(requests,2);
+ assert.ok(!JSON.stringify(report).includes('private database failure'));
+ await assert.rejects(observeOnce({env:{ACA_RESTRICTED_MANAGER_ENABLED:'false'},fetchImpl}),/disabled/);
+ assert.equal(requests,2);
+});
