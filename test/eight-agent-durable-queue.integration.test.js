@@ -4,6 +4,8 @@ const assert=require('node:assert/strict');
 const fs=require('node:fs');
 const path=require('node:path');
 const {Pool}=require('pg');
+const {createWorkflowLedger}=require('../src/automation/engineeringTeam/workflowLedger');
+const {sequence}=require('../src/automation/engineeringTeam/offlineTeam');
 const {randomUUID}=require('node:crypto');
 const {createCallBudget}=require('../src/automation/engineeringTeam/callBudget');
 const {createSpendBudget}=require('../src/automation/engineeringTeam/spendBudget');
@@ -73,6 +75,22 @@ test('isolated PostgreSQL queue: concurrent claims, retries, restart, expiry and
  await assert.rejects(spend[1].reserve({model:'unknown'}),/Unknown model/);
  const balance=(await pools[1].query('SELECT reserved_calls,reserved_microusd FROM engineering_team_spend_budgets WHERE budget_id=$1',[spendId])).rows[0];
  assert.deepEqual(balance,{reserved_calls:2,reserved_microusd:'800'});
+ const ledger=pool=>createWorkflowLedger({pool,scope,authenticate:async c=>identities.get(c)});
+ const workflow=await ledger(pools[0]).create('manager');
+ await assert.rejects(ledger(pools[1]).advance({credential:'manager',id:workflow.id,step:0,taskId:evidenceTask}),/Handoff denied/);
+ for(const [step,agentRole] of sequence.entries()){
+  const credential='worker-'+step;
+  identities.set(credential,{...scope,id:credential,permission:'queue.work',role:agentRole});
+  const taskId=await q.enqueue({scope,role:agentRole,credential:'manager'});
+  const claimed=await q.claim({scope,role:agentRole,credential});
+  assert.equal(claimed.id,taskId);
+  await q.finish({scope,role:agentRole,credential,taskId,leaseId:claimed.lease_id,outcome:'succeeded',evidenceSha256:'d'.repeat(64)});
+  const advanced=await ledger(pools[1]).advance({credential:'manager',id:workflow.id,step,taskId});
+  assert.equal(advanced.next_step,step+1);
+  await assert.rejects(ledger(pools[0]).advance({credential:'manager',id:workflow.id,step,taskId}),/Handoff denied/);
+ }
+ assert.equal((await ledger(pools[0]).status({credential:'manager',id:workflow.id})).next_step,8);
+ await assert.rejects(ledger(pools[1]).status({credential:'w1',id:workflow.id}),/Workflow identity denied/);
  const stoppedTask=await q.enqueue({scope,role,credential:'manager'});
  const running=await q.claim({scope,role,credential:'w1'});
  await q2.quarantine({scope,role,credential:'manager'});
