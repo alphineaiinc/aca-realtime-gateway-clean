@@ -229,7 +229,7 @@ test('isolated PostgreSQL queue: concurrent claims, retries, restart, expiry and
  assert.equal((await ledger(pools[0]).status({credential:'manager',id:pausedWorkflow.id})).next_step,3);
  const resumedRoles=[];
  const resumedAdapters=Object.fromEntries(sequence.map(r=>[r,async ctx=>{
-  assert.deepEqual(ctx.prior.map(p=>p.role),sequence.slice(0,resumedRoles.length));
+  assert.deepEqual(ctx.prior.map(p=>p.role),sequence.slice(0,3+resumedRoles.length));
   resumedRoles.push(r);
   return Object.fromEntries(contract(r).fields.map(field=>[field,['resumed '+r+' '+field]]));
  }]));
