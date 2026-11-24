@@ -58,3 +58,11 @@ Implementation commits: f1e5de7 (workflow-step inspection), 5c8144f (restart-awa
 - Exact-head CI #803 (`45331756050`) completed successfully. The available job inventory shows Node tests and trusted engineering sandbox probe passed. A separate PostgreSQL job and CodeQL/dynamic analysis are not present in the returned job inventory; do not claim those checks passed at this exact head. Prior broad CI #801 remains a prior baseline only.
 - Remaining next batch: obtain exact-head disposable PostgreSQL queue integration evidence; then exercise sequential eight-role lifecycle, durable proposal handoffs and evidence digest/provenance checks. Continue developer → QA → independent security correction cycles only with genuine role separation and review evidence.
 - Status remains offline/draft foundation. No live provider calls, external dispatch, merge, deployment, production database changes, or added spend.
+
+
+### CI #803 log-level verification correction — 2026-11-24
+- Retrieved and inspected the complete Node job log for run #803, not just the job summary. The Node job ran both the standard Node suite and the isolated PostgreSQL queue integration as sequential test commands.
+- Standard Node suite: 167 tests, 166 passed, 0 failed, 1 skipped.
+- Isolated PostgreSQL queue integration: 1 test, 1 passed, 0 failed, 0 skipped. The deliberately rejected SQL writes in the fixture appear as expected PostgreSQL constraint/unique-violation log entries; the integration test itself passed.
+- Trusted engineering sandbox probe: passed; verified non-root, loopback-only, read-only root, no credentials/socket, no capabilities, seccomp and no-new-privileges. Patch fixture ran in a network-disabled, read-only container with resource limits.
+- Therefore CI #803 does include successful disposable PostgreSQL queue integration within the Node job; earlier note saying a separate PostgreSQL job was absent was too narrow. CodeQL and the additional Python/JavaScript/Actions analyses from CI #801 are still not evidenced by #803.
