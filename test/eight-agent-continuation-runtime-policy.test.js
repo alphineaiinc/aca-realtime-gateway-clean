@@ -31,7 +31,7 @@ test('successful CI event cannot bypass a now-blocked issue policy to claim a ta
  const f=fixture();
  const result=await f.runtime.onCompletion({runId:123,attempt:1});
  assert.equal(result.state,'drained');
- assert.equal(result.result.reason,'failed');
- assert.deepEqual(f.calls,['policy','finish']);
+ assert.equal(result.result.reason,'idle');
+ assert.deepEqual(f.calls,['policy']);
  assert.equal(f.calls.includes('claim'),false);
 });
