@@ -2,6 +2,7 @@
 const {randomUUID,createHash}=require('node:crypto');
 const {validateProposal}=require('./contracts');
 const {getRole}=require('./registry');
+const {sequence}=require('./offlineTeam');
 const scopeKey=s=>JSON.stringify([s.product,s.repository,s.sha]);
 const validScope=s=>s&&typeof s.product==='string'&&/^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,79}$/.test(s.product)&&typeof s.repository==='string'&&/^[a-zA-Z0-9_.-]+\/[a-zA-Z0-9_.-]+$/.test(s.repository)&&s.repository.length<=200&&typeof s.sha==='string'&&/^[a-f0-9]{40}$/.test(s.sha);
 function createDurableQueue({pool,scopes,authenticate,leaseSeconds=60,fixtureProposalStorage=false}={}){
@@ -44,20 +45,25 @@ function createDurableQueue({pool,scopes,authenticate,leaseSeconds=60,fixturePro
     return true;
    });
   },
-  async enqueue({scope,role,credential}){
+  async enqueue({scope,role,credential,workflowId,workflowStep}){
    const params=checkScope(scope);getRole(role);await identity(credential,scope,null,'queue.manage');
    return guarded(params,async client=>{
     await assertActive(client,params,role);
    const id=randomUUID();
-   const result=await client.query(`WITH task AS (INSERT INTO engineering_team_tasks(id,product,repository,head_sha,role) VALUES ($1,$2,$3,$4,$5) RETURNING id), audit AS (INSERT INTO engineering_team_queue_audit(task_id,event) SELECT id,'queued' FROM task) SELECT id FROM task`,[id,...params,role]);
+   if(workflowId!==undefined||workflowStep!==undefined){
+    if(fixtureProposalStorage!==true||typeof workflowId!=='string'||!Number.isSafeInteger(workflowStep)||sequence[workflowStep]!==role)throw Error('Workflow enqueue denied');
+    const w=await client.query('SELECT id FROM engineering_team_workflows WHERE id=$1 AND product=$2 AND repository=$3 AND head_sha=$4 AND next_step=$5 FOR UPDATE',[workflowId,...params,workflowStep]);
+    if(w.rowCount!==1)throw Error('Workflow enqueue denied');
+   }
+   const result=await client.query(`WITH task AS (INSERT INTO engineering_team_tasks(id,product,repository,head_sha,role,workflow_id,workflow_step) VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING id), audit AS (INSERT INTO engineering_team_queue_audit(task_id,event) SELECT id,'queued' FROM task) SELECT id FROM task`,[id,...params,role,workflowId??null,workflowStep??null]);
    if(result.rowCount!==1)throw Error('Queue insert failed');return id;
    });
   },
-  async claim({scope,role,credential}){
+  async claim({scope,role,credential,expectedTaskId}){
    const params=checkScope(scope);getRole(role);const worker=await identity(credential,scope,role,'queue.work');const lease=randomUUID();
    return guarded(params,async client=>{
     await assertActive(client,params,role);
-   const result=await client.query(`WITH candidate AS (SELECT id FROM engineering_team_tasks WHERE product=$1 AND repository=$2 AND head_sha=$3 AND role=$4 AND state='queued' AND attempts<2 ORDER BY created_at,id LIMIT 1 FOR UPDATE SKIP LOCKED), task AS (UPDATE engineering_team_tasks t SET state='running',attempts=attempts+1,worker_id=$5,lease_id=$6,lease_until=clock_timestamp()+make_interval(secs=>$7) FROM candidate c WHERE t.id=c.id RETURNING t.id,t.lease_id,t.attempts,t.lease_until), audit AS (INSERT INTO engineering_team_queue_audit(task_id,event) SELECT id,'claimed' FROM task) SELECT * FROM task`,[...params,role,worker,lease,leaseSeconds]);
+   const result=await client.query(`WITH candidate AS (SELECT id FROM engineering_team_tasks WHERE product=$1 AND repository=$2 AND head_sha=$3 AND role=$4 AND state='queued' AND attempts<2 AND (($8::uuid IS NULL AND workflow_id IS NULL) OR id=$8::uuid) ORDER BY created_at,id LIMIT 1 FOR UPDATE SKIP LOCKED), task AS (UPDATE engineering_team_tasks t SET state='running',attempts=attempts+1,worker_id=$5,lease_id=$6,lease_until=clock_timestamp()+make_interval(secs=>$7) FROM candidate c WHERE t.id=c.id RETURNING t.id,t.lease_id,t.attempts,t.lease_until), audit AS (INSERT INTO engineering_team_queue_audit(task_id,event) SELECT id,'claimed' FROM task) SELECT * FROM task`,[...params,role,worker,lease,leaseSeconds,expectedTaskId??null]);
    return result.rows[0]||null;
    });
   },
