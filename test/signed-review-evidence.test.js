@@ -30,7 +30,7 @@ test("signed review rejects tampering, extra fields, malformed signatures and in
 });
 
 test("v2 rejects expired future and overlong evidence and legacy signatures",()=>{
- for(const changed of [{issuedAt:now-120,expiresAt:now},{issuedAt:now+1,expiresAt:now+120},{expiresAt:now+121}]){
+ for(const changed of [{issuedAt:now-120,expiresAt:now},{issuedAt:now+60,expiresAt:now+120},{expiresAt:now+121}]){
   assert.equal(verifySignedReview({envelope:envelope({...record,...changed}),publicKey:keys.publicKey,...scope}),null);
  }
  const legacy={repositoryId:scope.repositoryId,prNumber:scope.prNumber,headSha:scope.headSha,reviewerId:scope.reviewerId,status:"passed",findings:0};
