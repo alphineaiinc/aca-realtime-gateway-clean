@@ -4,6 +4,7 @@ function createGitHubReadTransport({token,repository,fetchImpl=globalThis.fetch,
  if(typeof token!=='string'||!token||/[\r\n]/.test(token)||typeof repository!=='string'||! /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(repository)||repository.split('/').some(p=>p==='.'||p==='..')||typeof fetchImpl!=='function'||!Number.isSafeInteger(timeoutMs)||timeoutMs<1000||timeoutMs>30000)throw Error('Invalid GitHub configuration');
  const pinnedRepository=repository;
  function base(s){if(!s||s.repository!==pinnedRepository||! /^[a-f0-9]{40}$/.test(s.sha))throw Error('Repository scope denied');return 'https://api.github.com/repos/'+pinnedRepository;}
+ async function get(url){
   try{
    const response=await fetchImpl(url,{method:'GET',redirect:'error',signal:AbortSignal.timeout(timeoutMs),headers:{Authorization:'Bearer '+token,Accept:'application/vnd.github+json','X-GitHub-Api-Version':'2022-11-28'}});
    if(!response.ok||!response.body)throw Error('Read failed');
