@@ -121,6 +121,10 @@ CREATE TABLE engineering_team_publication_attempts (
  product text NOT NULL,
  repository text NOT NULL,
  base_sha text NOT NULL CHECK(base_sha ~ '^[a-f0-9]{40}$'),
+ request_evidence_sha256 text NOT NULL CHECK(request_evidence_sha256 ~ '^[a-f0-9]{64}$'),
+ base_branch text NOT NULL CHECK(base_branch ~ '^[A-Za-z0-9_-]+$'),
+ head_branch text NOT NULL CHECK(head_branch ~ '^aca-agent-draft-[a-f0-9]{16}$' AND head_branch<>base_branch),
+ head_sha text NOT NULL CHECK(head_sha ~ '^[a-f0-9]{40}$'),
  reserved_by text NOT NULL CHECK(reserved_by ~ '^[A-Za-z0-9_.-]{1,80}$'),
  created_at timestamptz NOT NULL DEFAULT clock_timestamp()
 );
