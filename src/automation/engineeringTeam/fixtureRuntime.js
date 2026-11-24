@@ -47,9 +47,14 @@ function createFixtureRuntime({scope,queue,ledger,adapters,preparation,authorize
    if(proposals.length!==8||proposals.some((p,i)=>p.role!==sequence[i]||p.approval!==false))throw Error('Team evidence incomplete');
    const teamDigest=digest(JSON.stringify(proposals));
    if(await authorize({scope:pinned,action:'change.simulate',teamDigest})!==true)return Object.freeze({state:'team-complete',workflowId,teamDigest,proposals,executionAuthorized:false,releaseApproved:false});
+   if(typeof ledger.beginPreparation!=='function'||typeof ledger.completePreparation!=='function')throw Error('Durable preparation ledger required');
+   const attempt=await ledger.beginPreparation({credential:managerCredential,id:workflowId});
+   if(attempt.state==='needs-reconciliation')return Object.freeze({state:'needs-reconciliation',workflowId,reason:'preparation-attempt-outcome-unknown',executionAuthorized:false,releaseApproved:false});
+   if(attempt.state==='completed')return Object.freeze({state:'completed',workflowId,teamDigest,proposals,change:attempt.result,changeEvidenceSha256:attempt.resultSha256,mode:'fixture-only',executionAuthorized:false,releaseApproved:false});
    const change=await preparation.prepare({role:developerRole,subject});
    if(change?.executionAuthorized!==false||change.releaseApproved!==false||change.plan?.scope?.sha!==pinned.sha||change.plan?.scope?.repository!==pinned.repository||change.plan?.scope?.product!==pinned.product)throw Error('Change evidence denied');
-   return Object.freeze({state:'completed',workflowId,teamDigest,proposals,change,mode:'fixture-only',executionAuthorized:false,releaseApproved:false});
+   await ledger.completePreparation({credential:managerCredential,id:workflowId,result:change});
+   return Object.freeze({state:'completed',workflowId,teamDigest,proposals,change,changeEvidenceSha256:digest(JSON.stringify(change)),mode:'fixture-only',executionAuthorized:false,releaseApproved:false});
   }finally{active=false;}
  }
  return Object.freeze({
