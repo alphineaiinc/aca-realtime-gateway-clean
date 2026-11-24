@@ -4,7 +4,7 @@ const assert=require("node:assert/strict");
 const {generateKeyPairSync}=require("node:crypto");
 const {matchingReview,signVerdict,equalBearer}=require("../src/automation/reviewerStagingServer");
 const {verifySignedReview}=require("../src/automation/signedReviewEvidence");
-const head="a".repeat(40),scope={repositoryId:9001,prNumber:21,issueNumber:20,headSha:head};
+const head="a".repeat(40),scope={repositoryId:9001,prNumber:21,issueNumber:20,headSha:head,challenge:"c".repeat(64)};
 const pr={number:21,state:"open",user:{id:111},head:{sha:head,repo:{id:9001}},base:{repo:{id:9001}}};
 const review={id:5,user:{id:222},state:"APPROVED",commit_id:head,submitted_at:"2026-11-20T18:00:00Z"};
 test("independent approval of exact PR head is required",()=>{
@@ -22,10 +22,10 @@ test("signs scope compatible with pinned Ed25519 verification",()=>{
  const pem=keys.privateKey.export({type:"pkcs8",format:"pem"});
  const envelope=signVerdict(scope,222,pem);
  const verified=verifySignedReview({envelope,publicKey:keys.publicKey,
- repositoryId:scope.repositoryId,prNumber:scope.prNumber,headSha:head,reviewerId:222});
+ ...scope,headSha:head,reviewerId:222});
  assert.equal(verified.status,"passed");
  assert.equal(verifySignedReview({envelope,publicKey:keys.publicKey,
- repositoryId:scope.repositoryId,prNumber:scope.prNumber,headSha:"b".repeat(40),reviewerId:222}),null);
+ ...scope,headSha:"b".repeat(40),reviewerId:222}),null);
 });
 test("endpoint authorization rejects absent and wrong bearer tokens",()=>{
  assert.equal(equalBearer("Bearer local-staging-secret","local-staging-secret"),true);
