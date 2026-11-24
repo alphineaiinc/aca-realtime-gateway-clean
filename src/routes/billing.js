@@ -7,29 +7,6 @@ const router = express.Router();
 
 
 // ---------------------------------------------------------------------
-// Simple in-memory rate limiter per partner for /pay (3 reqs / 10s)
-// ---------------------------------------------------------------------
-const RATE_WINDOW_MS = 10_000;
-const RATE_MAX = 3;
-const rateBucket = new Map(); // partner_id -> {count, resetAt}
-
-function rateLimit(req, res, next) {
-  const pid = req.partner_id || "anon";
-  const now = Date.now();
-  const bucket = rateBucket.get(pid) || { count: 0, resetAt: now + RATE_WINDOW_MS };
-  if (now > bucket.resetAt) {
-    bucket.count = 0;
-    bucket.resetAt = now + RATE_WINDOW_MS;
-  }
-  bucket.count += 1;
-  rateBucket.set(pid, bucket);
-  if (bucket.count > RATE_MAX) {
-    return res.status(429).json({ ok: false, error: "Rate limit exceeded. Try again shortly." });
-  }
-  next();
-}
-
-// ---------------------------------------------------------------------
 // Middleware: partner / tenant JWT auth
 // ---------------------------------------------------------------------
 function authenticate(req, res, next) {
@@ -96,10 +73,11 @@ router.post("/pay", authenticate, (req, res) => {
 // ---------------------------------------------------------------------
 router.get("/status/:id", authenticate, async (req, res) => {
   try {
-    const invoiceId = parseInt(req.params.id);
+    const invoiceId = Number(req.params.id);
+    if (!/^[1-9][0-9]*$/.test(req.params.id) || !Number.isSafeInteger(invoiceId)) return res.sendStatus(400);
     const result = await pool.query(
       `SELECT id, amount_usd, status, paid_at, payment_method,
-              payment_reference, generated_at, invoice_path
+              payment_reference, generated_at
          FROM billing_invoices
         WHERE id=$1 AND tenant_id=$2`,
       [invoiceId, req.tenant_id]
@@ -243,5 +221,16 @@ router.post("/email/:id", authenticate, (req, res) => {
 // ---------------------------------------------------------------------
 router.get("/download-all", authenticate, (req,res)=>{
   return res.status(503).json({ok:false,error:"private_invoice_storage_required"});
+});
+// Render an invoice copy from the authoritative tenant-scoped ledger, not a filesystem path.
+router.get("/document/:id", authenticate, async (req,res)=>{
+  if (!/^[1-9][0-9]*$/.test(req.params.id) || !Number.isSafeInteger(Number(req.params.id))) return res.sendStatus(400);
+  try {
+    const result=await pool.query("SELECT id, amount_usd, status, generated_at FROM billing_invoices WHERE id=$1 AND tenant_id=$2",[Number(req.params.id),req.tenant_id]);
+    if(result.rows.length!==1) return res.sendStatus(404);
+    const pdf=await require("../security/privateInvoiceDocument").renderInvoiceCopy(result.rows[0]);
+    res.set({"Content-Type":"application/pdf","Content-Disposition":'attachment; filename="invoice-'+req.params.id+'.pdf"',"Cache-Control":"private, no-store","X-Content-Type-Options":"nosniff"});
+    return res.send(pdf);
+  } catch { return res.status(503).json({ok:false,error:"invoice_document_unavailable"}); }
 });
 module.exports = router;
