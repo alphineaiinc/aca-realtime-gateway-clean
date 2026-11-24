@@ -7,6 +7,7 @@ CREATE TABLE aca_partner_reservations (
  partner_id integer NOT NULL REFERENCES aca_partner_funds(partner_id),
  request_id text NOT NULL,
  amount_cents bigint NOT NULL CHECK(amount_cents>0),
+ state text NOT NULL DEFAULT 'reserved' CHECK(state IN ('reserved','released','settled')),
  PRIMARY KEY(partner_id,request_id)
 );
 REVOKE ALL ON aca_partner_funds,aca_partner_reservations FROM PUBLIC;
