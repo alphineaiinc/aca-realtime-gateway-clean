@@ -601,6 +601,12 @@ test('isolated PostgreSQL queue: concurrent claims, retries, restart, expiry and
  assert.equal(alertRows.rows[1].approval_id,quarantineRequest.id);
  assert.equal(alertRows.rows[3].approval_id,stopRequest.id);
  assert.equal(alertRows.rows[4].approval_id,null);
+ const {createGovernanceAlertReader}=require('../src/automation/engineeringTeam/governanceAlertReader');
+ const alertReader=createGovernanceAlertReader({pool:pools[1],scope:recoveryScope,authenticate:recoveryAuth});
+ const visibleAlerts=await alertReader.list({credential:'recovery-manager',limit:10});
+ assert.equal(visibleAlerts.length,5);
+ assert.equal(visibleAlerts[0].event_type,'stop.created'); // unresolved stop is the newest journal event
+ assert.ok(visibleAlerts.every(x=>!Object.hasOwn(x,'evidence_sha256')&&!Object.hasOwn(x,'credential')));
  assert.equal(recoveryGate.executionAllowed(),false);
 
  // A real durable spend reservation is consumed even if policy is revoked before
