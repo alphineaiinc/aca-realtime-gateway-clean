@@ -985,69 +985,11 @@ function requireAdmin(req, res, next) {
   }
 }
 
-function createRateLimiter({ windowMs, max, keyFn }) {
-  const hits = new Map();
-
-  setInterval(() => {
-    const now = Date.now();
-    for (const [key, value] of hits.entries()) {
-      if (now - value.windowStart >= windowMs) {
-        hits.delete(key);
-      }
-    }
-  }, Math.max(30000, windowMs)).unref();
-
-  return function rateLimit(req, res, next) {
-    try {
-      const key = keyFn ? keyFn(req) : req.ip || "unknown";
-      const now = Date.now();
-
-      const existing = hits.get(key);
-      if (!existing || now - existing.windowStart >= windowMs) {
-        hits.set(key, { count: 1, windowStart: now });
-        return next();
-      }
-
-      existing.count += 1;
-
-      if (existing.count > max) {
-        return res.status(429).json({
-          ok: false,
-          error: "rate_limited",
-        });
-      }
-
-      return next();
-    } catch (err) {
-      console.warn("⚠️ rate limiter error:", err.message);
-      return next();
-    }
-  };
-}
-
-const publicRateLimit = createRateLimiter({
-  windowMs: 60 * 1000,
-  max: 20,
-  keyFn: (req) => req.ip || "unknown",
-});
-
-const demoRateLimit = createRateLimiter({
-  windowMs: 60 * 1000,
-  max: 10,
-  keyFn: (req) => {
-    const auth = req.headers.authorization || "";
-    return `${req.ip || "unknown"}:${auth.slice(0, 80)}`;
-  },
-});
-
-const authRateLimit = createRateLimiter({
-  windowMs: 60 * 1000,
-  max: 30,
-  keyFn: (req) => {
-    const auth = req.headers.authorization || "";
-    return `${req.ip || "unknown"}:${auth.slice(0, 80)}`;
-  },
-});
+// Bounded pre-authentication IP budgets; never key on unverified bearer text.
+const { ingressLimit: createIngressLimit } = require("./src/security/ingressLimit");
+const publicRateLimit = createIngressLimit({ windowMs: 60000, max: 20 });
+const demoRateLimit = createIngressLimit({ windowMs: 60000, max: 10 });
+const authRateLimit = createIngressLimit({ windowMs: 60000, max: 30 });
 
 // ✅ Story 12.5/12.6 — Create HTTP server EARLY so express-ws binds correctly
 const server = http.createServer(app);
