@@ -5,6 +5,7 @@ const fs=require('node:fs');
 const path=require('node:path');
 const {Pool}=require('pg');
 const {createDurableQueue}=require('../src/automation/engineeringTeam/durableQueue');
+const {createDurableApprovalPolicy}=require('../src/automation/engineeringTeam/durableApproval');
 test('isolated PostgreSQL queue: concurrent claims, retries, restart, expiry and cancellation',{skip:process.env.RUN_ENGINEERING_QUEUE_CI!=='1',timeout:30000},async t=>{
  const url=new URL(process.env.ENGINEERING_QUEUE_CI_DATABASE_URL);
  assert.equal(url.hostname,'127.0.0.1');assert.equal(url.pathname,'/aca_engineering_queue_ci');
@@ -44,6 +45,17 @@ test('isolated PostgreSQL queue: concurrent claims, retries, restart, expiry and
  const receipt=(await pools[1].query('SELECT lease_id,evidence_sha256 FROM engineering_team_proposal_receipts WHERE task_id=$1',[evidenceTask])).rows[0];
  assert.deepEqual(receipt,{lease_id:evidenceLease.lease_id,evidence_sha256:evidenceSha256});
  await assert.rejects(q.finish({scope,role,credential:'w1',taskId:evidenceTask,leaseId:evidenceLease.lease_id,outcome:'succeeded',evidenceSha256}),/Lease denied/);
+ identities.set('owner',{...scope,id:'owner',permission:'owner.approval'});
+ identities.set('self',{...scope,id:'manager',permission:'owner.approval'});
+ const approval=pool=>createDurableApprovalPolicy({pool,scopes:[scope],authenticate:async c=>identities.get(c)});
+ const req=await approval(pools[0]).request({scope,operation:'provider.activate',evidence:'c'.repeat(64),credential:'manager'});
+ const decision={scope,id:req.id,binding:req.binding,decision:'approved'};
+ await assert.rejects(approval(pools[1]).recordDecision({...decision,credential:'self'}),/Decision denied/);
+ await assert.rejects(approval(pools[1]).recordDecision({...decision,credential:'w1'}),/Identity denied/);
+ const decisions=await Promise.allSettled(pools.map(pool=>approval(pool).recordDecision({...decision,credential:'owner'})));
+ assert.equal(decisions.filter(x=>x.status==='fulfilled').length,1);
+ assert.equal(decisions.find(x=>x.status==='fulfilled').value.executionAuthorized,false);
+ assert.equal(approval(pools[1]).executionAllowed(),false);
  const stoppedTask=await q.enqueue({scope,role,credential:'manager'});
  const running=await q.claim({scope,role,credential:'w1'});
  await q2.quarantine({scope,role,credential:'manager'});
