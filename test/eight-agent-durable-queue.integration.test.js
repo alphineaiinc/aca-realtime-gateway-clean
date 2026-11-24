@@ -244,6 +244,15 @@ test('isolated PostgreSQL queue: concurrent claims, retries, restart, expiry and
  const mutationBound=createProviderReservation({pool:pools[0],manifest:providerManifest,policy:providerPolicy,authenticate:async c=>{mutableRequest.input='fixture';return identities.get(c);},ceilings:{fixture:400},reviewVerifier,prepareRequest:request=>({model:'fixture',executionAuthorized:false,evidenceSha256:digest(JSON.stringify(request))})});
  await assert.rejects(mutationBound.reserve({credential:'manager',approvalId:exactApproval.id,reviewEnvelope,request:mutableRequest}),/Reservation denied/);
  assert.equal((await pools[0].query('SELECT binding FROM engineering_team_provider_attempts WHERE binding=$1',[exactBinding])).rowCount,0);
+ const {createProviderOutcome}=require('../src/automation/engineeringTeam/providerOutcome');
+ const outcomes=pools.map(pool=>createProviderOutcome({pool,scope,authenticate:async c=>identities.get(c)}));
+ const usage={inputTokens:10,outputTokens:5,actualMicrousd:100};
+ await assert.rejects(outcomes[0].record({credential:'w1',binding:providerBinding,usage}),/Outcome denied/);
+ await assert.rejects(outcomes[0].record({credential:'manager',binding:'f'.repeat(64),usage}),/Outcome denied/);
+ const recorded=await Promise.allSettled(outcomes.map(o=>o.record({credential:'manager',binding:providerBinding,usage})));
+ assert.equal(recorded.filter(x=>x.status==='fulfilled').length,1);
+ assert.equal(recorded.find(x=>x.status==='fulfilled').value.outcome,'completed');
+ assert.deepEqual((await pools[0].query('SELECT reserved_calls,reserved_microusd FROM engineering_team_spend_budgets WHERE budget_id=$1',[providerBudgetId])).rows[0],{reserved_calls:2,reserved_microusd:'800'});
  const stoppedTask=await q.enqueue({scope,role,credential:'manager'});
  const running=await q.claim({scope,role,credential:'w1'});
  const governanceBudgetId=randomUUID();
@@ -268,6 +277,9 @@ test('isolated PostgreSQL queue: concurrent claims, retries, restart, expiry and
  await assert.rejects(ledger(pools[1]).readFixturePrior({credential:'manager',id:runtimeResult.workflowId}),/Workflow unavailable/);
  await assert.rejects(governanceSpend[0].reserve({model:'fixture'}),/Spend budget denied/);
  await assert.rejects(reviewed(pools[1]).reserve({credential:'manager',approvalId:excessApproval.id,reviewEnvelope:excessEnvelope}),/Reservation denied/);
+ const unknown=await outcomes[1].record({credential:'manager',binding:reviewBinding});
+ assert.deepEqual(unknown,{outcome:'unknown',executionAuthorized:false});
+ assert.equal((await pools[0].query('SELECT 1 FROM engineering_team_stops WHERE product=$1 AND repository=$2',[scope.product,scope.repository])).rowCount,1);
  await q2.stop({scope,credential:'manager'});
  // A newly constructed reservation adapter must still deny admission after a durable stop.
  await assert.rejects(reviewed(pools[0]).reserve({credential:'manager',approvalId:excessApproval.id,reviewEnvelope:excessEnvelope}),/Reservation denied/);
