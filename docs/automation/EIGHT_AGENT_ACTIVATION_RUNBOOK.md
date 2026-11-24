@@ -49,3 +49,7 @@ Trusted sandbox probe and Node CI passed at a776d4853c9d69a926aaff436868c2a605bc
 ## Provider failure containment checkpoint
 - Transport halts in-process after ambiguous reservation/provider outcomes, missing usage, incomplete output or output ceiling breach; actual attempt counts are preserved. Mock regression coverage at 55b87745d878b0cc58e0764ae6f5a65f4a6ac1dd; CI acceptance pending. No provider calls made.
 - Transactional reservation already binds approval, scope, review evidence and persistent call/spend limits. It remains offline-only; restart-safe halt, actual side-effect admission and billing reconciliation are not accepted. Do not enable live transport.
+
+## Durable governance containment
+- Scope stop and quarantine deny offline provider reservations across newly constructed adapters and database connections; regression at 743cb65248f38b9cf14f88774be28a0ad66d3001, acceptance pending.
+- Manual durable stop is not automatic crash containment. Before live admission, require a durable unresolved-attempt latch committed before external I/O, deny further admission until independent reconciliation, and never automatically refund or retry unknown outcomes. Existing offline reservations do not grant execution.
