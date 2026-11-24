@@ -170,3 +170,11 @@ CREATE TABLE engineering_team_ci_events (
  created_at timestamptz NOT NULL DEFAULT clock_timestamp(),
  PRIMARY KEY(repository,workflow_id,run_id,attempt)
 );
+
+-- Offline correction cycle admission: never replay after unknown outcomes.
+CREATE TABLE engineering_team_correction_cycles (
+ task_id uuid PRIMARY KEY REFERENCES engineering_team_tasks(id),
+ initial_digest text NOT NULL CHECK(initial_digest ~ '^[a-f0-9]{64}$'),
+ actor_id text NOT NULL,
+ created_at timestamptz NOT NULL DEFAULT clock_timestamp()
+);
