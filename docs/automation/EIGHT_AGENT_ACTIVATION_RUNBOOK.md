@@ -147,3 +147,14 @@ Trusted sandbox probe and Node CI passed at a776d4853c9d69a926aaff436868c2a605bc
 - Unit tests cover malformed evidence/target, missing approval, wrong identity, active lease and replay. CI #821 failed at syntax check due a duplicate test fixture identifier; renamed it and exact-head CI #822 passed. Earlier CI #819 exposed a test assertion calling executionAllowed on the queue rather than recovery gate; corrected and #820 passed before the final unresolved-provider assertion was added.
 - This is disposable PostgreSQL acceptance only. No production migration or database modification, live agent/provider execution, merge, deployment, secret activation or additional spend. The recovery approval is not approval for live activation.
 - Remaining: operational recovery playbook/notification, adversarial policy and multi-tenant scope checks, full independent security review (#22), and controlled operational acceptance.
+
+
+## Provider authorization and transactional spending boundary acceptance — 2026-11-24
+
+- Code/test head: `3b845f0d79c00e7e8746a9e93e7a74f3012464aa`; exact-head CI #826 (`45334968283`) passed. Preceding unit-level authorization recheck commit also passed CI #825 (`45334770684`).
+- CI #826 standard Node suite: 171 total, 170 passed, 0 failed, 1 skipped. Disposable PostgreSQL queue integration: 1 passed, 0 failed. Trusted sandbox and planned-patch fixture passed.
+- OpenAI transport now re-evaluates authorization after durable spend reservation and immediately before the external provider call. If policy is revoked after reservation, the provider is not called, provider call accounting remains zero, and the reservation remains consumed (no refund or automatic retry).
+- Added a PostgreSQL integration assertion using the real transactional spend-budget adapter: reserve one call/100 micro-USD, revoke authorization at the second check, verify zero provider calls and zero transport calls while the durable budget remains reserved at 1 call/100 micro-USD.
+- Existing exact-head integration coverage continues to exercise concurrent call/spend ceilings, provider approval and independent-review evidence binding, current queue policy, stop/quarantine denial, cost-evidence substitution rejection, usage assessment, unknown outcomes and breach-triggered persistent stop.
+- No live provider SDK client, real provider pricing verification, external provider call, production billing reconciliation, merge, deployment, secret activation, production DB modification or additional spend was performed. The SDK transport remains injected/mock-only; operational admission and independent security review remain separate gates.
+- Next: finalize adversarial multi-scope and emergency-stop notification/recovery evidence; then complete independent reviewer #22 and operational acceptance. Do not mark live agents activated based on offline CI.
