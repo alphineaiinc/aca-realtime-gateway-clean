@@ -13,3 +13,6 @@ Use #118 section F: Project Manager, Solution Architect, Backend Developer, Fron
 5. Later integrate existing queue/policy/reviewer components after exact-head dependency audit. Real provider-backed agents, durable state, independent security evidence and live activation are separate unchecked gates.
 
 Status: IN PROGRESS. Rollback: abandon isolated draft branch. No production runtime wiring.
+
+## Batch 2 — structured role contracts
+Foundation exact head 8e8ce6fe18c53cb631b576a5d1b257732c4e57bd passed CI run 45294951871. Eight role-specific contracts now require bounded arrays of text, reject extra fields and freeze accepted proposals. Trusted adapters are captured at manager construction, never supplied per request. Prior accepted proposals are task-local. This is a trusted in-process fixture boundary, not a sandbox or independent reviewer identity. Real model adapters, capability broker, persistence, cancellation of in-flight work and semantic verification remain pending. No live dispatch or provider use.
