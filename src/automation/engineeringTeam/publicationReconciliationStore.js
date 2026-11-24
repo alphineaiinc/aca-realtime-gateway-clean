@@ -4,8 +4,8 @@ const {reconcilePublication}=require('./publicationReconciliation');
 function digest(value){return createHash('sha256').update(JSON.stringify(value)).digest('hex');}
 // Offline only. Collector must authenticate GitHub observations independently.
 // A stored observation never releases a reservation or authorizes a retry/write.
-function createReconciliationStore({pool,authenticate,collect}={}){
- if(typeof pool?.connect!=='function'||typeof authenticate!=='function'||typeof collect!=='function')throw Error('Invalid reconciliation store');
+function createReconciliationStore({pool,authenticate,collect,verifyObservation}={}){
+ if(typeof pool?.connect!=='function'||typeof authenticate!=='function'||typeof collect!=='function'||typeof verifyObservation!=='function')throw Error('Invalid reconciliation store');
  return Object.freeze({async record({credential,binding}={}){
   if(typeof binding!=='string'||!/^[a-f0-9]{64}$/.test(binding))throw Error('Invalid binding');
   const actor=await authenticate(credential);
@@ -18,7 +18,7 @@ function createReconciliationStore({pool,authenticate,collect}={}){
     JOIN engineering_team_approval_requests a ON a.id=p.approval_id
     WHERE p.binding=$1 AND p.product=$2 AND p.repository=$3 AND p.reserved_by=$4
       AND a.requested_by=p.reserved_by AND a.product=p.product AND a.repository=p.repository
-      AND a.operation='github.write' AND a.state='approved'
+      AND a.operation='github.write' AND a.state='approved' AND a.binding=p.binding AND a.evidence_sha256=p.binding AND a.expires_at>clock_timestamp() AND a.decided_by<>a.requested_by
     FOR UPDATE OF p`,[binding,actor.product,actor.repository,actor.id]);
    if(reservation.rowCount!==1)throw Error('Reconciliation denied');
    const scope=reservation.rows[0];
@@ -31,7 +31,8 @@ function createReconciliationStore({pool,authenticate,collect}={}){
    }
    const requestScope=Object.freeze({binding,product:scope.product,repository:scope.repository,baseSha:scope.base_sha,headSha:scope.head_sha,requesterId:scope.requested_by,approvalId:scope.approval_id});
    const observation=await collect(requestScope);
-   if(!observation||observation.repository!==scope.repository||observation.baseSha!==scope.base_sha||observation.headSha!==scope.head_sha||observation.binding!==binding||observation.requesterId!==scope.requested_by)throw Error('Independent observation scope mismatch');
+   if(!observation||await verifyObservation(observation,requestScope)!==true)throw Error('Independent observation authentication failed');
+   if(observation.repository!==scope.repository||observation.baseSha!==scope.base_sha||observation.headSha!==scope.head_sha||observation.binding!==binding||observation.requesterId!==scope.requested_by)throw Error('Independent observation scope mismatch');
    const result=reconcilePublication({...observation,binding,repository:scope.repository,baseSha:scope.base_sha,headSha:scope.head_sha});
    const observationSha256=digest({requestScope,observation});
    await client.query(`INSERT INTO engineering_team_publication_reconciliation
