@@ -237,3 +237,12 @@ Trusted sandbox probe and Node CI passed at a776d4853c9d69a926aaff436868c2a605bc
 - Exact-head CI failure 45400545419 was caused by a stale PostgreSQL integration fixture calling recovery without the now-required incident ID. The fixture now reads the disposable incident IDs and binds them into evidence and recovery calls.
 - Exact head: d93e2397e390ca3a10a4c99be3e7eb91cd7bf057. CI run 45401717224 passed: Node tests (186 passed, 1 skipped), isolated PostgreSQL queue integration passed, trusted sandbox probe passed. This validates the current draft head's tests, not live execution or independent security clearance.
 - PR #21 Copilot review attempt failed due to insufficient reviewer quota. A Codex report has not been supplied or independently verified. Security gate #22 remains open; PR #142 remains draft. No live agents, provider admission, merge, deployment, production DB write, or additional spend is authorized.
+
+
+## Additional adversarial scope-race acceptance — 2026-11-24
+
+- Added owner-decision TOCTOU regression for durable approvals: caller mutates the allowed scope during asynchronous authentication; the identity check rejects before SQL executes.
+- Added policy-bound queue snapshot regression: caller-owned request scope and original configured scope are mutated while policy evaluation is pending; the underlying queue receives only the immutable configured scope snapshot.
+- Exact code/test head: bdd5754000399515be4f841efb9c81f33af5f843. Exact-head CI run 45403274490 passed: Node tests 189 total, 188 passed, 0 failed, 1 skipped; isolated PostgreSQL queue integration passed; trusted sandbox probe passed.
+- These tests strengthen regression evidence for findings already addressed in implementation; they do not substitute for independent security review. Four inline Copilot threads remain unresolved pending reviewer confirmation. Attempted to request Copilot directly, but GitHub rejected the request because the reviewer account is not a repository collaborator. PR #21's earlier Copilot review attempt was quota-blocked; no independent human/Codex signoff has been recorded.
+- PR #142 remains draft. No live agent dispatch, provider calls, merge, deployment, production DB changes, secret activation or additional spending.
