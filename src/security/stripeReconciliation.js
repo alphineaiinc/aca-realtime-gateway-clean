@@ -6,6 +6,7 @@ function createStripeReconciliation({ receipts, authorize }) {
   return {
     async list(actor, limit = 100) {
       if (await authorize(actor, 'stripe.receipts.read') !== true) throw new Error('Forbidden');
+      if (!Number.isSafeInteger(limit) || limit < 1 || limit > 500) throw new TypeError('Invalid reconciliation limit');
       return receipts.listUnresolved(limit);
     }
   };
