@@ -190,3 +190,12 @@ Implementation commits: f1e5de7 (workflow-step inspection), 5c8144f (restart-awa
 - Exact-head PostgreSQL integration initially failed because its test fixture omitted incidentId after the API was hardened. Updated the disposable integration fixture to read and bind incident IDs. Exact head d93e2397e390ca3a10a4c99be3e7eb91cd7bf057 passed CI run 45401717224: Node tests 186 passed/1 skipped, PostgreSQL integration passed, trusted sandbox passed.
 - Independent review acceptance is still outstanding: inline Copilot threads have not been formally cleared on the corrected head; PR #21 review failed because reviewer quota was exhausted; no Codex assessment report is available in the project record. Keep #22 open and PR #142 draft.
 - No live agent dispatch, provider calls, merge, deployment, production database modification, credential rotation or additional spending. Offline 8/8 remains distinct from live 0/8.
+
+
+## Additional adversarial scope-race acceptance — 2026-11-24
+
+- Added owner-decision TOCTOU regression for durable approvals: caller mutates the allowed scope during asynchronous authentication; the identity check rejects before SQL executes.
+- Added policy-bound queue snapshot regression: caller-owned request scope and original configured scope are mutated while policy evaluation is pending; the underlying queue receives only the immutable configured scope snapshot.
+- Exact code/test head: bdd5754000399515be4f841efb9c81f33af5f843. Exact-head CI run 45403274490 passed: Node tests 189 total, 188 passed, 0 failed, 1 skipped; isolated PostgreSQL queue integration passed; trusted sandbox probe passed.
+- These tests strengthen regression evidence for findings already addressed in implementation; they do not substitute for independent security review. Four inline Copilot threads remain unresolved pending reviewer confirmation. Attempted to request Copilot directly, but GitHub rejected the request because the reviewer account is not a repository collaborator. PR #21's earlier Copilot review attempt was quota-blocked; no independent human/Codex signoff has been recorded.
+- PR #142 remains draft. No live agent dispatch, provider calls, merge, deployment, production DB changes, secret activation or additional spending.
