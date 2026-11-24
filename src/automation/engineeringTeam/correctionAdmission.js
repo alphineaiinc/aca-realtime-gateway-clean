@@ -12,7 +12,7 @@ function createCorrectionAdmission({pool,scope,authenticate,credential}={}){
    await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))',[JSON.stringify([pinned.product,pinned.repository])]);
    const result=await client.query(`INSERT INTO engineering_team_correction_cycles(task_id,initial_digest,actor_id)
  SELECT t.id,$5,$6 FROM engineering_team_tasks t WHERE t.id=$1 AND t.product=$2 AND t.repository=$3 AND t.head_sha=$4 AND t.state='succeeded' AND t.role IN ('backend-developer','frontend-developer')
- AND EXISTS(SELECT 1 FROM engineering_team_proposal_receipts r WHERE r.task_id=t.id)
+ AND EXISTS(SELECT 1 FROM engineering_team_proposal_receipts r WHERE r.task_id=t.id AND r.evidence_sha256=$5)
  AND NOT EXISTS(SELECT 1 FROM engineering_team_stops s WHERE s.product=t.product AND s.repository=t.repository)
  AND NOT EXISTS(SELECT 1 FROM engineering_team_quarantine q WHERE q.product=t.product AND q.repository=t.repository AND q.role=t.role)
  ON CONFLICT DO NOTHING RETURNING task_id`,[taskId,pinned.product,pinned.repository,pinned.sha,initialDigest,actor.id]);
