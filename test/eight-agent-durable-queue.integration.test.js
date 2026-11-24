@@ -4,6 +4,8 @@ const assert=require('node:assert/strict');
 const fs=require('node:fs');
 const path=require('node:path');
 const {Pool}=require('pg');
+const {randomUUID}=require('node:crypto');
+const {createCallBudget}=require('../src/automation/engineeringTeam/callBudget');
 const {createDurableQueue}=require('../src/automation/engineeringTeam/durableQueue');
 const {createDurableApprovalPolicy}=require('../src/automation/engineeringTeam/durableApproval');
 test('isolated PostgreSQL queue: concurrent claims, retries, restart, expiry and cancellation',{skip:process.env.RUN_ENGINEERING_QUEUE_CI!=='1',timeout:30000},async t=>{
@@ -56,6 +58,12 @@ test('isolated PostgreSQL queue: concurrent claims, retries, restart, expiry and
  assert.equal(decisions.filter(x=>x.status==='fulfilled').length,1);
  assert.equal(decisions.find(x=>x.status==='fulfilled').value.executionAuthorized,false);
  assert.equal(approval(pools[1]).executionAllowed(),false);
+ const budgetId=randomUUID();
+ await pools[0].query('INSERT INTO engineering_team_call_budgets(product,repository,budget_id,max_calls) VALUES ($1,$2,$3,2)',[scope.product,scope.repository,budgetId]);
+ const budgets=pools.map(pool=>createCallBudget({pool,...scope,budgetId}));
+ const reservations=await Promise.allSettled([budgets[0].reserve(),budgets[1].reserve(),budgets[0].reserve()]);
+ assert.equal(reservations.filter(x=>x.status==='fulfilled').length,2);
+ await assert.rejects(createCallBudget({pool:pools[1],...scope,budgetId}).reserve(),/budget denied/);
  const stoppedTask=await q.enqueue({scope,role,credential:'manager'});
  const running=await q.claim({scope,role,credential:'w1'});
  await q2.quarantine({scope,role,credential:'manager'});
