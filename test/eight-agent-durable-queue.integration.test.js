@@ -130,6 +130,8 @@ test('isolated PostgreSQL queue: concurrent claims, retries, restart, expiry and
  const balance=(await pools[1].query('SELECT reserved_calls,reserved_microusd FROM engineering_team_spend_budgets WHERE budget_id=$1',[spendId])).rows[0];
  assert.deepEqual(balance,{reserved_calls:2,reserved_microusd:'800'});
  const ledger=pool=>createWorkflowLedger({pool,scope,authenticate:async c=>identities.get(c)});
+ await assert.rejects(ledger(pools[0]).create('manager',{subject:'partial input only'}),/Workflow input denied/);
+ await assert.rejects(pools[0].query('INSERT INTO engineering_team_workflows(id,product,repository,head_sha,subject) VALUES ($1,$2,$3,$4,$5)',[randomUUID(),...scope,'partial schema input']),/engineering_team_workflows_check/);
  const workflow=await ledger(pools[0]).create('manager');
  const fixtureQueue=createDurableQueue({pool:pools[0],scopes:[scope],authenticate:async c=>identities.get(c),fixtureProposalStorage:true});
  await assert.rejects(ledger(pools[1]).advance({credential:'manager',id:workflow.id,step:0,taskId:evidenceTask}),/Handoff denied/);
