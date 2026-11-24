@@ -393,6 +393,9 @@ test('isolated PostgreSQL queue: concurrent claims, retries, restart, expiry and
   assert.equal((await pools[1].query('SELECT count(*)::int AS n FROM engineering_team_provider_attempts WHERE budget_id=$1',[budgetId])).rows[0].n,1);
   const {createProviderOutcome}=require('../src/automation/engineeringTeam/providerOutcome');
   await createProviderOutcome({pool:pools[0],scope,authenticate:async c=>identities.get(c)}).record({credential:'owner',binding:requests[winner].binding,usage:{inputTokens:1,outputTokens:1,actualMicrousd:1}});
+  await assert.rejects(raceProvider(pools[1]).reserve({credential:'manager',approvalId:requests[1-winner].approvalId,request:requests[1-winner].request}),/Spend budget denied/);
+  assert.deepEqual((await pools[1].query('SELECT reserved_calls,reserved_microusd FROM engineering_team_spend_budgets WHERE budget_id=$1',[budgetId])).rows[0],{reserved_calls:1,reserved_microusd:'400'});
+  assert.equal((await pools[1].query('SELECT count(*)::int AS n FROM engineering_team_provider_attempts WHERE budget_id=$1',[budgetId])).rows[0].n,1);
  }
  await runProviderBudgetRace({tag:'call-cap',maxCalls:1,maxMicrousd:1000});
  await runProviderBudgetRace({tag:'spend-cap',maxCalls:8,maxMicrousd:400});
