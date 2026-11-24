@@ -45,7 +45,8 @@ function coordinateCorrection({evidence,reviewNotes=[],failureSummary=null}={}){
   state:decision.state,
   reasons:decision.reasons,
   proposal,
-  nextAction:mayRecommend?"human_approval_required_before_any_agent_dispatch":action,
+  nextAction:mayRecommend?"human_approval_required_before_any_agent_dispatch":
+    (["ci_failed","correction_needed"].includes(decision.state)?"escalate_to_owner":action),
   // Signed independent review and owner authorization never originate here.
   independentReviewGranted:false,
   manualDispatchRequired:true,
