@@ -13,8 +13,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          docker pull node:22-bookworm-slim
-          image="$(docker image inspect node:22-bookworm-slim --format '{{index .RepoDigests 0}}')"
+          image='node@sha256:be979e5523c76fa4d5ca4ebd3099078f220aa47ec39c48ad5b5df9314debd6eb'
+          docker pull "$image"
           [[ "$image" =~ ^node@sha256:[a-f0-9]{64}$ ]]
           echo "Observed image: $image"
           docker version --format '{{.Server.Version}}'
@@ -24,3 +24,14 @@ jobs:
           [[ "$result" == fixture-ok ]]
           [[ -z "$(docker ps -aq --filter "name=^/${name}$")" ]]
           echo 'Fixed fixture passed; executionAuthorized=false; attestation=false'
+          # Fixed benign sleeping process: verify configured limits and explicit cleanup.
+          docker run -d --name "$name" --pull=never --network=none --read-only --user=65534:65534 --cap-drop=ALL --security-opt=no-new-privileges --pids-limit=32 --memory=128m --memory-swap=128m --cpus=0.5 --tmpfs=/tmp:rw,noexec,nosuid,nodev,size=8m --entrypoint=node "$image" -e 'setTimeout(()=>{},60000)'
+          [[ "$(docker inspect --format '{{.HostConfig.Memory}} {{.HostConfig.MemorySwap}} {{.HostConfig.NanoCpus}} {{.HostConfig.PidsLimit}}' "$name")" == '134217728 134217728 500000000 32' ]]
+          set +e
+          timeout 2s docker wait "$name"
+          status=$?
+          set -e
+          [[ "$status" == 124 ]]
+          timeout 10s docker rm -f "$name"
+          [[ -z "$(docker ps -aq --filter "name=^/${name}$")" ]]
+          echo 'Configured resource limits and explicit timeout cleanup passed; attestation=false'
