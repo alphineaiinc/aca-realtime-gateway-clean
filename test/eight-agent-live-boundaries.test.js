@@ -8,7 +8,7 @@ const {roles}=require('../src/automation/engineeringTeam/registry');
 const {contract}=require('../src/automation/engineeringTeam/contracts');
 const scope={product:'aca',repository:'fixture/aca',sha:'a'.repeat(40)};
 test('GitHub transport uses fixed origin GET and pinned source revision',async()=>{
- const t=createGitHubReadTransport({token:'fixture',fetchImpl:async(url,options)=>{
+ const t=createGitHubReadTransport({token:'fixture',repository:scope.repository,fetchImpl:async(url,options)=>{
   assert.equal(url,'https://api.github.com/repos/fixture/aca/contents/src/example.js?ref='+scope.sha);
   assert.equal(options.method,'GET');assert.equal(options.redirect,'error');
   return new Response(JSON.stringify({type:'file',path:'src/example.js',encoding:'base64',size:3,content:'YWJj'}));
@@ -29,7 +29,7 @@ test('model receives approved evidence as data, not instructions',async()=>{
  await a[role]({role:roles[role],mode:'offline-proposal-only',task:scope,prior:[],tools:{read:async()=>({text:'UNTRUSTED_EVIDENCE'})}});
 });
 test('persistent reservation denial prevents provider call',async()=>{
- const t=createOpenAITransport({models:Object.fromEntries(Object.keys(roles).map(r=>[r,'fixture'])),authorize:async()=>true,budget:{reserve:async()=>{throw Error('exhausted');}},client:{responses:{create:async()=>assert.fail('provider called')}}});
+ const t=createOpenAITransport({models:Object.fromEntries(Object.keys(roles).map(r=>[r,'fixture'])),authorize:async()=>true,budget:{async reserve(){throw Error('exhausted');},async consume(){return false;}},client:{responses:{create:async()=>assert.fail('provider called')}}});
  await assert.rejects(t.generate({role:'devops',mode:'proposal-only',input:'{}',instructions:'fixture'}));
  assert.equal(t.usage().calls,0);
 });
