@@ -1,7 +1,7 @@
 "use strict";
 
 // Content-free diagnostics. Never serialize caller-controlled strings or objects.
-const numeric = new Set(["hopCount", "bytes", "chars", "elapsedMs", "holdMs", "mediaPacketCount", "payloadBytes", "base64Chars", "rms", "peak", "speechMs", "wordCount", "slotCount", "requiredSlotCount", "missingSlotCount", "statusCode"]);
+const numeric = new Set(["hopCount", "resolvedDistinct", "peerDistinct", "bytes", "chars", "elapsedMs", "holdMs", "mediaPacketCount", "payloadBytes", "base64Chars", "rms", "peak", "speechMs", "wordCount", "slotCount", "requiredSlotCount", "missingSlotCount", "statusCode"]);
 const booleans = new Set(["serviceMatches", "markerPresent", "resolvedIsMarker", "noTrustIsMarker", "hasAudio", "hasReply", "completed", "isProcessing", "isSpeaking", "accepted"]);
 const enums = {
   state: new Set(["idle", "greeting", "listening", "awaiting_end_of_turn", "processing", "ready_to_speak", "speaking", "awaiting_input", "task_in_progress", "ready_for_confirmation", "completed", "ended", "failed"]),
