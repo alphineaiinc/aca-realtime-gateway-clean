@@ -15,6 +15,9 @@ function createOpenAITransport({client,models,authorize,maxCalls=8,maxOutputToke
   active=true;
   try{
    if(budget&&await budget.reserve({model:selected[snapshot.role]})!==true)throw Error('Durable budget denied');
+   // Re-evaluate policy after the durable reservation and immediately before the external side effect.
+   // A revoked reservation remains consumed; it is never refunded or automatically retried.
+   if(await authorize(snapshot.role)!==true)throw Error('Provider authorization revoked');
    calls++;
    const result=await client.responses.create({model:selected[snapshot.role],instructions:snapshot.instructions,input:snapshot.input,store:false,max_output_tokens:maxOutputTokens,text:{format:{type:'json_schema',name:'engineering_proposal',strict:true,schema:snapshot.schema}}},{timeout:timeoutMs,maxRetries:0});
    if(!Number.isSafeInteger(result?.usage?.input_tokens)||result.usage.input_tokens<0||!Number.isSafeInteger(result?.usage?.output_tokens)||result.usage.output_tokens<0)throw Error('Usage unavailable');
