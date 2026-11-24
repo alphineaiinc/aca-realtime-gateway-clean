@@ -590,19 +590,21 @@ test('isolated PostgreSQL queue: concurrent claims, retries, restart, expiry and
  await recoveryQueue.quarantine({scope:recoveryScope,role:recoveryRole,credential:'recovery-manager'});
  await recoveryQueue.quarantine({scope:recoveryScope,role:recoveryRole,credential:'recovery-manager'}); // idempotent: no duplicate alert
  await assert.rejects(recoveryQueue.claim({scope:recoveryScope,role:recoveryRole,credential:'recovery-worker'}),/Governance denied/);
- const quarantineEvidence=recoveryGate.evidence({action:'clear-quarantine',role:recoveryRole});
+ const quarantineIncident=(await pools[0].query('SELECT incident_id FROM engineering_team_quarantine WHERE product=$1 AND repository=$2 AND role=$3',[recoveryScope.product,recoveryScope.repository,recoveryRole])).rows[0].incident_id;
+ const quarantineEvidence=recoveryGate.evidence({action:'clear-quarantine',role:recoveryRole,incidentId:quarantineIncident});
  const quarantineRequest=await recoveryApprovals.request({scope:recoveryScope,operation:'queue.recover',evidence:quarantineEvidence,credential:'recovery-manager'});
  await recoveryApprovals.recordDecision({scope:recoveryScope,id:quarantineRequest.id,binding:quarantineRequest.binding,decision:'approved',credential:'recovery-owner'});
- assert.deepEqual(await recoveryGate.recover({credential:'recovery-manager',approvalId:quarantineRequest.id,action:'clear-quarantine',role:recoveryRole,evidenceSha256:quarantineEvidence}),{action:'clear-quarantine',role:recoveryRole,recovered:true,executionAuthorized:false});
+ assert.deepEqual(await recoveryGate.recover({credential:'recovery-manager',approvalId:quarantineRequest.id,action:'clear-quarantine',role:recoveryRole,incidentId:quarantineIncident,evidenceSha256:quarantineEvidence}),{action:'clear-quarantine',role:recoveryRole,recovered:true,executionAuthorized:false});
  await assert.rejects(recoveryGate.recover({credential:'recovery-manager',approvalId:quarantineRequest.id,action:'clear-quarantine',role:recoveryRole,evidenceSha256:quarantineEvidence}),/already consumed/);
  const activeRecoveryLease=await recoveryQueue.claim({scope:recoveryScope,role:recoveryRole,credential:'recovery-worker',expectedTaskId:quarantineTask});
  const afterStopTask=await recoveryQueue.enqueue({scope:recoveryScope,role:recoveryRole,credential:'recovery-manager'});
  await recoveryQueue.stop({scope:recoveryScope,credential:'recovery-manager'});
  await recoveryQueue.stop({scope:recoveryScope,credential:'recovery-manager'}); // idempotent: no duplicate alert
- const stopEvidence=recoveryGate.evidence({action:'clear-stop'});
+ const stopIncident=(await pools[0].query('SELECT incident_id FROM engineering_team_stops WHERE product=$1 AND repository=$2',[recoveryScope.product,recoveryScope.repository])).rows[0].incident_id;
+ const stopEvidence=recoveryGate.evidence({action:'clear-stop',incidentId:stopIncident});
  const stopRequest=await recoveryApprovals.request({scope:recoveryScope,operation:'queue.recover',evidence:stopEvidence,credential:'recovery-manager'});
  await recoveryApprovals.recordDecision({scope:recoveryScope,id:stopRequest.id,binding:stopRequest.binding,decision:'approved',credential:'recovery-owner'});
- await assert.rejects(recoveryGate.recover({credential:'recovery-manager',approvalId:stopRequest.id,action:'clear-stop',evidenceSha256:stopEvidence}),/active lease/);
+ await assert.rejects(recoveryGate.recover({credential:'recovery-manager',approvalId:stopRequest.id,action:'clear-stop',incidentId:stopIncident,evidenceSha256:stopEvidence}),/active lease/);
  await recoveryQueue.cancel({scope:recoveryScope,credential:'recovery-manager',taskId:quarantineTask});
  assert.deepEqual(await recoveryGate.recover({credential:'recovery-manager',approvalId:stopRequest.id,action:'clear-stop',evidenceSha256:stopEvidence}),{action:'clear-stop',role:null,recovered:true,executionAuthorized:false});
  const resumedLease=await recoveryQueue.claim({scope:recoveryScope,role:recoveryRole,credential:'recovery-worker',expectedTaskId:afterStopTask});
@@ -615,10 +617,11 @@ test('isolated PostgreSQL queue: concurrent claims, retries, restart, expiry and
  await recoveryApprovals.recordDecision({scope:recoveryScope,id:providerApprovalRequest.id,binding:providerApprovalRequest.binding,decision:'approved',credential:'recovery-owner'});
  await pools[0].query('INSERT INTO engineering_team_provider_attempts(binding,approval_id,product,repository,head_sha,budget_id,model,reserved_microusd) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)',[recoveryProviderBinding,providerApprovalRequest.id,recoveryScope.product,recoveryScope.repository,recoveryScope.sha,unresolvedBudgetId,'fixture',1]);
  await recoveryQueue.stop({scope:recoveryScope,credential:'recovery-manager'});
- const unresolvedStopEvidence=recoveryGate.evidence({action:'clear-stop'});
+ const unresolvedStopIncident=(await pools[0].query('SELECT incident_id FROM engineering_team_stops WHERE product=$1 AND repository=$2',[recoveryScope.product,recoveryScope.repository])).rows[0].incident_id;
+ const unresolvedStopEvidence=recoveryGate.evidence({action:'clear-stop',incidentId:unresolvedStopIncident});
  const unresolvedStopRequest=await recoveryApprovals.request({scope:recoveryScope,operation:'queue.recover',evidence:unresolvedStopEvidence,credential:'recovery-manager'});
  await recoveryApprovals.recordDecision({scope:recoveryScope,id:unresolvedStopRequest.id,binding:unresolvedStopRequest.binding,decision:'approved',credential:'recovery-owner'});
- await assert.rejects(recoveryGate.recover({credential:'recovery-manager',approvalId:unresolvedStopRequest.id,action:'clear-stop',evidenceSha256:unresolvedStopEvidence}),/unresolved provider attempt/);
+ await assert.rejects(recoveryGate.recover({credential:'recovery-manager',approvalId:unresolvedStopRequest.id,action:'clear-stop',incidentId:unresolvedStopIncident,evidenceSha256:unresolvedStopEvidence}),/unresolved provider attempt/);
  assert.equal((await pools[1].query('SELECT count(*)::int AS n FROM engineering_team_stops WHERE product=$1 AND repository=$2',[recoveryScope.product,recoveryScope.repository])).rows[0].n,1);
  assert.equal((await pools[1].query('SELECT count(*)::int AS n FROM engineering_team_governance_recoveries WHERE product=$1 AND repository=$2',[recoveryScope.product,recoveryScope.repository])).rows[0].n,2);
  const alertRows=await pools[1].query('SELECT event_type,role,approval_id FROM engineering_team_governance_alerts WHERE product=$1 AND repository=$2 ORDER BY created_at,id',[recoveryScope.product,recoveryScope.repository]);
