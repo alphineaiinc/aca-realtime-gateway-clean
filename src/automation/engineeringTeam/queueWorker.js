@@ -5,9 +5,9 @@ const {validateProposal}=require('./contracts');
 // Runs one offline proposal. No worker polling, network, or privileged tools.
 function createQueueWorker({queue,manager,loadTask,fixtureProposalStorage=false}={}){
  if(!queue||typeof queue.claim!=='function'||typeof queue.finish!=='function'||!manager||typeof manager.createTask!=='function'||typeof manager.propose!=='function'||typeof loadTask!=='function')throw Error('Invalid worker configuration');
- return Object.freeze({async runOnce({scope,role,credential}){
+ return Object.freeze({async runOnce({scope,role,credential,expectedTaskId}){
   const def=getRole(role);
-  const lease=await queue.claim({scope,role,credential});
+  const lease=await queue.claim({scope,role,credential,...(expectedTaskId!==undefined?{expectedTaskId}:{})});
   if(!lease)return Object.freeze({state:'idle'});
   const completion={scope,role,credential,taskId:lease.id,leaseId:lease.lease_id};
   let proposal;
