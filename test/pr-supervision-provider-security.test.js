@@ -49,3 +49,14 @@ test("trusted review alone cannot bypass missing persistent history",async()=>{
  assert.notEqual(result.state,"ready_for_human_approval");
  assert.equal(result.mergeAuthorized,false);
 });
+
+test("observer refuses legacy provider without independent digest",async()=>{
+ let calls=0;
+ const result=await observe({...base,github:fixture(),trustedReviewerId:77,trustedReviewerPublicKey:"fixture",trustedReviewProvider:async()=>{calls++;return {};}});
+ assert.equal(calls,0);assert.notEqual(result.state,"ready_for_human_approval");
+});
+test("invalid independent digest prevents review request",async()=>{
+ let calls=0,digests=0;
+ const result=await observe({...base,github:fixture(),trustedReviewerId:77,trustedReviewerPublicKey:"fixture",trustedEvidenceDigestProvider:async()=>{digests++;return "invalid";},trustedReviewProvider:async()=>{calls++;return {};}});
+ assert.equal(digests,1);assert.equal(calls,0);assert.notEqual(result.state,"ready_for_human_approval");
+});
