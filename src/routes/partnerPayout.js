@@ -60,13 +60,13 @@ router.get("/partner/payouts", ingressRateLimit, authenticate, async (req, res) 
     let params = [];
 
     if (role === "admin") {
-      query = "SELECT * FROM partner_payouts ORDER BY requested_at DESC LIMIT 50";
+      query = "SELECT id, partner_id, amount, status, requested_at FROM partner_payouts ORDER BY requested_at DESC LIMIT 50";
     } else {
-      if (!partner_id) {
+      if (!Number.isSafeInteger(partner_id) || partner_id <= 0) {
         return res.status(403).json({ ok: false, error: "forbidden" });
       }
 
-      query = "SELECT * FROM partner_payouts WHERE partner_id=$1 ORDER BY requested_at DESC LIMIT 50";
+      query = "SELECT id, partner_id, amount, status, requested_at FROM partner_payouts WHERE partner_id=$1 ORDER BY requested_at DESC LIMIT 50";
       params = [partner_id];
     }
 
@@ -85,7 +85,7 @@ router.get("/partner/payouts", ingressRateLimit, authenticate, async (req, res) 
     res.json({ ok: true, payouts: result.rows });
 
   } catch (err) {
-    console.error("❌ payout history error:", err.message);
+    console.error("Payout history unavailable");
 
     recordEvent({
       tenant_id: null,
@@ -94,7 +94,7 @@ router.get("/partner/payouts", ingressRateLimit, authenticate, async (req, res) 
       quantity: 0,
       unit: "records",
       cost: 0,
-      meta: { error: err.message },
+      meta: {},
     });
 
     res.status(500).json({ ok: false, error: "internal_error" });
