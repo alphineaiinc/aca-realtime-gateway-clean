@@ -31,3 +31,17 @@ test('incomplete response and provider errors fail closed without raw errors',as
  await assert.rejects(t.generate({role:'devops',mode:'proposal-only',input:'{}',instructions:'fixture'}),/^Error: Provider request failed$/);
  assert.equal(t.usage().calls,1);
 });
+
+test('async admission cannot substitute role, input or schema',async()=>{
+ const request={role:'devops',mode:'proposal-only',input:'original',instructions:'fixture',schema:{type:'object'}};
+ const t=createOpenAITransport({models,authorize:async role=>{assert.equal(role,'devops');request.role='orchestrator';request.input='substituted';request.schema.type='string';return true;},client:{responses:{create:async payload=>{assert.equal(payload.input,'original');assert.equal(payload.text.format.schema.type,'object');return {status:'completed',usage:{input_tokens:1,output_tokens:1},output_text:'{}'};}}}});
+ assert.equal(await t.generate(request),'{}');
+});
+test('output usage breach prevents further provider calls',async()=>{
+ let calls=0;
+ const t=createOpenAITransport({models,maxOutputTokens:256,authorize:async()=>true,client:{responses:{create:async()=>{calls++;return {status:'completed',usage:{input_tokens:1,output_tokens:257},output_text:'{}'};}}}});
+ const request={role:'devops',mode:'proposal-only',input:'{}',instructions:'fixture'};
+ await assert.rejects(t.generate(request),/Provider request failed/);
+ await assert.rejects(t.generate(request),/budget/);
+ assert.equal(calls,1);
+});
