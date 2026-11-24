@@ -77,3 +77,12 @@ Trusted sandbox probe and Node CI passed at a776d4853c9d69a926aaff436868c2a605bc
 - All changes remain draft-only. No live provider, external dispatch, merge, deployment, production migration, or release authorization.
 
 - Follow-up hardening: the draft PostgreSQL workflow table now enforces that subject and developer_role are either both present or both absent; the integration suite checks both the application-level partial-input rejection and direct database constraint rejection. Commits: fab33dd and ce14eda. Exact-head validation is required; earlier runs do not validate these follow-up commits.
+
+## Policy-bound durable queue composition — 2026-11-24
+
+- Added a queue adapter that re-evaluates the existing safe issue policy at each task enqueue, workflow-step inspection and task claim. It binds the decision to the activation manifest digest, issue number, repository, commit SHA and policy version v1; it requires eligibleForPreparation=true and executionAuthorized=false.
+- Completion, stop, quarantine, expiry and cancellation remain available without a new admission decision. In particular, an in-flight worker can persist a completion receipt after the policy closes; this does not admit new work or grant execution authority.
+- Runtime initialization now exposes only the policy-bound queue when fresh issue-state evidence is configured. If no policy evidence reader is configured, the runtime exposes no queue interface rather than leaking the raw durable queue. Initialization remains inert and does not query the database.
+- Regression coverage verifies no raw queue without policy, blocked issue rejection before database access, repeated policy evaluation, and in-flight completion behavior.
+- Commits: d84d04a, df21b1d, 2051b72, 319ddc6, 823f83b, cf70046. CI #788 passed at the prior restart-recovery baseline. Exact-head validation for runtime integration and these tests is pending; CI #790 remained in progress and #792 was pending at checkpoint time.
+- Draft-only. No scheduler, live GitHub dispatch, provider execution, merge, deployment or production database migration is enabled.
