@@ -264,6 +264,7 @@ test('isolated PostgreSQL queue: concurrent claims, retries, restart, expiry and
  await assert.rejects(governanceSpend[0].reserve({model:'fixture'}),/Spend budget denied/);
  await q2.stop({scope,credential:'manager'});
  await assert.rejects(governanceSpend[1].reserve({model:'fixture'}),/Spend budget denied/);
+ assert.deepEqual((await pools[1].query('SELECT reserved_calls,reserved_microusd FROM engineering_team_spend_budgets WHERE budget_id=$1',[governanceBudgetId])).rows[0],{reserved_calls:1,reserved_microusd:'100'});
  await assert.rejects(make(pools[1]).enqueue({scope,role:'devops',credential:'manager'}),/Governance denied/);
  assert.equal(await q.cancel({scope,credential:'manager',taskId:stoppedTask}),true);
 });
