@@ -5,7 +5,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
 const source = fs.readFileSync(path.join(__dirname, '../src/routes/uploadKnowledge.js'), 'utf8');
-function harness({ tenantId = 'tenant-1', pdfText = 'Knowledge text', pdfError = null, uploadError = null, waitForEmbedding = null, disconnectBeforeParsing = false, rateLimitReject = false, disconnectDuringEmbedding = false } = {}) {
+function harness({ tenantId = 'tenant-1', pdfText = 'Knowledge text', pdfError = null, uploadError = null, waitForEmbedding = null, disconnectBeforeParsing = false, rateLimitReject = false, disconnectDuringEmbedding = false, failEmbeddingAt = 0, failWrite = false } = {}) {
   let currentResponse;
   let route, dbWrites = 0, embeddingCalls = 0, parserDestroyed = 0;
   class PDFParse {
@@ -22,9 +22,9 @@ function harness({ tenantId = 'tenant-1', pdfText = 'Knowledge text', pdfError =
     express: { Router: () => router }, multer,
     jsonwebtoken: { verify: (token) => { if (token !== 'valid') throw new Error('Invalid test token'); return { tenant_id: tenantId }; } },
     'pdf-parse': { PDFParse },
-    '../db/pool': { async query() { dbWrites++; } },
+    '../db/pool': { async query() { dbWrites++; if (failWrite) throw Error('fixture write failure'); } },
     '../middleware/postgresRateLimit': { createPostgresRateLimiter: () => (req, res, next) => rateLimitReject ? res.status(429).json({ ok: false, error: 'Rate limit exceeded' }) : next() },
-    '../brain/utils/embeddingManager': { async embedText() { embeddingCalls++; if (waitForEmbedding) await waitForEmbedding; if (disconnectDuringEmbedding) { currentResponse.destroyed = true; currentResponse.closeHandler?.(); } return [0.1, 0.2]; } },
+    '../brain/utils/embeddingManager': { async embedText() { embeddingCalls++; if (embeddingCalls === failEmbeddingAt) throw Error('fixture embedding failure'); if (waitForEmbedding) await waitForEmbedding; if (disconnectDuringEmbedding) { currentResponse.destroyed = true; currentResponse.closeHandler?.(); } return [0.1, 0.2]; } },
   };
   const context = { require(name) { if (!(name in mocks)) throw new Error('Unexpected import ' + name); return mocks[name]; }, module: { exports: {} }, Buffer, process: { env: { JWT_SECRET: 'test-only-secret' } }, console: { error() {} } };
   vm.runInNewContext(source, context, { filename: 'uploadKnowledge.js' });
@@ -153,3 +153,23 @@ test('shared upload quota denial happens before multipart parsing, embedding or 
  assert.notEqual(second.statusCode,429);
  assert.equal(h.stats().embeddingCalls,2);
  });
+
+test('multi-chunk upload uses one atomic database statement',async()=>{
+ const h=harness({pdfText:'x'.repeat(2500)});
+ const res=await h.request(Buffer.from('%PDF-1.7'));
+ assert.equal(res.body.chunks,3);
+ assert.deepEqual(h.stats(),{dbWrites:1,embeddingCalls:3,parserDestroyed:1});
+});
+test('later embedding failure prevents all knowledge writes',async()=>{
+ const h=harness({pdfText:'x'.repeat(2500),failEmbeddingAt:2});
+ const res=await h.request(Buffer.from('%PDF-1.7'));
+ assert.equal(res.statusCode,500);
+ assert.deepEqual(h.stats(),{dbWrites:0,embeddingCalls:2,parserDestroyed:1});
+});
+test('atomic insert failure returns generic error without success',async()=>{
+ const h=harness({pdfText:'x'.repeat(2500),failWrite:true});
+ const res=await h.request(Buffer.from('%PDF-1.7'));
+ assert.equal(res.statusCode,500);
+ assert.equal(res.body.error,'Upload processing failed');
+ assert.equal(h.stats().dbWrites,1);
+});
