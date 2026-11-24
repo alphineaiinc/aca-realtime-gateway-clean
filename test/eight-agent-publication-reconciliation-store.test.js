@@ -2,10 +2,13 @@
 const test=require('node:test');
 const assert=require('node:assert/strict');
 const {createReconciliationStore}=require('../src/automation/engineeringTeam/publicationReconciliationStore');
-const binding='a'.repeat(64),baseSha='b'.repeat(40),headSha='c'.repeat(40);
+const {publicationBinding}=require('../src/automation/engineeringTeam/publicationReservation');
+const {createHash}=require('node:crypto');
+const baseSha='b'.repeat(40),headSha='c'.repeat(40),headBranch='aca-agent-draft-'+'1'.repeat(16),evidenceSha256='a'.repeat(64);
+const binding=publicationBinding({evidenceSha256,repository:'fixture/aca',baseBranch:'main',headBranch,headSha});
 const actor={id:'manager-1',permission:'queue.manage',product:'aca',repository:'fixture/aca',sha:baseSha};
-const reservation={binding,approval_id:'approval-1',product:'aca',repository:'fixture/aca',base_sha:baseSha,reserved_by:'manager-1',requested_by:'manager-1',head_sha:headSha};
-const observation={binding,repository:'fixture/aca',baseSha,headSha,requesterId:'manager-1',baseBranch:'main',headBranch:'draft',complete:true,observations:[{number:7,body:'Evidence binding: '+binding,draft:true,state:'open',base:{repo:{full_name:'fixture/aca'},ref:'main',sha:baseSha},head:{repo:{full_name:'fixture/aca'},ref:'draft',sha:headSha}}]};
+const reservation={binding,approval_id:'approval-1',product:'aca',repository:'fixture/aca',base_sha:baseSha,reserved_by:'manager-1',requested_by:'manager-1',head_sha:headSha,base_branch:'main',head_branch:headBranch,request_evidence_sha256:evidenceSha256,approval_binding:createHash('sha256').update(JSON.stringify(['approval-1','aca','fixture/aca',baseSha,'github.write',binding])).digest('hex')};
+const observation={binding,repository:'fixture/aca',baseSha,headSha,requesterId:'manager-1',baseBranch:'main',headBranch,complete:true,observations:[{number:7,body:'Evidence binding: '+binding,draft:true,state:'open',base:{repo:{full_name:'fixture/aca'},ref:'main',sha:baseSha},head:{repo:{full_name:'fixture/aca'},ref:headBranch,sha:headSha}}]};
 function fixture({prior=[],mismatch=false,failInsert=false}={}){
  const calls=[];let inserted=null,released=false,discard=false;
  const client={async query(sql,args=[]){calls.push({sql,args});if(sql==='BEGIN'||sql==='COMMIT'||sql==='ROLLBACK')return {rowCount:0,rows:[]};
@@ -15,7 +18,7 @@ function fixture({prior=[],mismatch=false,failInsert=false}={}){
  throw Error('unexpected SQL '+sql);
  },release(value){released=true;discard=value===true;}};
  const pool={connect:async()=>client};
- const store=createReconciliationStore({pool,authenticate:async()=>actor,collect:async scope=>mismatch?{...observation,requesterId:'attacker'}:{...observation,...scope},verifyObservation:async()=>true,baseBranch:'main',headBranch:'draft'});
+ const store=createReconciliationStore({pool,authenticate:async()=>actor,collect:async scope=>mismatch?{...observation,requesterId:'attacker'}:{...observation,...scope},verifyObservation:async()=>true,baseBranch:'main',headBranch});
  return {store,calls,client,get inserted(){return inserted;},get released(){return released;},get discard(){return discard;}};
 }
 test('persists exact requester-bound observation once and never authorizes retry',async()=>{
@@ -36,13 +39,13 @@ test('database failure rolls back and connection is released',async()=>{
  assert.ok(f.calls.some(x=>x.sql==='ROLLBACK'));assert.equal(f.released,true);
 });
 test('invalid binding rejected before database access',async()=>{
- let connected=false;const store=createReconciliationStore({pool:{connect:async()=>{connected=true;}},authenticate:async()=>actor,collect:async()=>observation,verifyObservation:async()=>true,baseBranch:'main',headBranch:'draft'});
+ let connected=false;const store=createReconciliationStore({pool:{connect:async()=>{connected=true;}},authenticate:async()=>actor,collect:async()=>observation,verifyObservation:async()=>true,baseBranch:'main',headBranch});
  await assert.rejects(store.record({credential:'fixture',binding:'bad'}),/Invalid binding/);assert.equal(connected,false);
 });
 
 test('unauthenticated collector evidence is rejected and rolled back',async()=>{
  const f=fixture();
- const guarded=createReconciliationStore({pool:{connect:async()=>f.client},authenticate:async()=>actor,collect:async scope=>({...observation,...scope}),verifyObservation:async()=>false,baseBranch:'main',headBranch:'draft'});
+ const guarded=createReconciliationStore({pool:{connect:async()=>f.client},authenticate:async()=>actor,collect:async scope=>({...observation,...scope}),verifyObservation:async()=>false,baseBranch:'main',headBranch});
  await assert.rejects(guarded.record({credential:'fixture',binding}),/authentication failed/);
  assert.ok(f.calls.some(x=>x.sql==='ROLLBACK'));assert.equal(f.inserted,null);
 });
@@ -50,21 +53,21 @@ test('unauthenticated collector evidence is rejected and rolled back',async()=>{
 test('invalid requester identities deny before database access',async()=>{
  for(const patch of [{id:'bad id'},{product:''},{repository:''},{sha:'bad'},{role:'backend-developer'},{permission:'queue.read'}]){
   let connected=false;
-  const store=createReconciliationStore({pool:{connect:async()=>{connected=true;}},authenticate:async()=>({...actor,...patch}),collect:async()=>observation,verifyObservation:async()=>true,baseBranch:'main',headBranch:'draft'});
+  const store=createReconciliationStore({pool:{connect:async()=>{connected=true;}},authenticate:async()=>({...actor,...patch}),collect:async()=>observation,verifyObservation:async()=>true,baseBranch:'main',headBranch});
   await assert.rejects(store.record({credential:'fixture',binding}),/Reconciliation denied/);
   assert.equal(connected,false);
  }
 });
 test('requester mutation between authentication checks cannot change pinned identity',async()=>{
  const f=fixture();const mutable={...actor};let calls=0;
- const store=createReconciliationStore({pool:{connect:async()=>f.client},authenticate:async()=>{if(++calls===2)mutable.id='other-manager';return mutable;},collect:async()=>{throw Error('collection should not occur');},verifyObservation:async()=>true,baseBranch:'main',headBranch:'draft'});
+ const store=createReconciliationStore({pool:{connect:async()=>f.client},authenticate:async()=>{if(++calls===2)mutable.id='other-manager';return mutable;},collect:async()=>{throw Error('collection should not occur');},verifyObservation:async()=>true,baseBranch:'main',headBranch});
  await assert.rejects(store.record({credential:'fixture',binding}),/Reconciliation denied/);
  assert.ok(f.calls.some(x=>x.sql==='ROLLBACK'));assert.equal(f.inserted,null);
 });
 test('persistence boundary rejects either substituted branch even when verifier returns true',async()=>{
  for(const branch of ['baseBranch','headBranch']){
   const f=fixture();
-  const store=createReconciliationStore({pool:{connect:async()=>f.client},authenticate:async()=>actor,collect:async scope=>({...observation,...scope,[branch]:'substituted'}),verifyObservation:async()=>true,baseBranch:'main',headBranch:'draft'});
+  const store=createReconciliationStore({pool:{connect:async()=>f.client},authenticate:async()=>actor,collect:async scope=>({...observation,...scope,[branch]:'substituted'}),verifyObservation:async()=>true,baseBranch:'main',headBranch});
   await assert.rejects(store.record({credential:'fixture',binding}),/scope mismatch/);
   assert.ok(f.calls.some(x=>x.sql==='ROLLBACK'));assert.equal(f.inserted,null);
  }
