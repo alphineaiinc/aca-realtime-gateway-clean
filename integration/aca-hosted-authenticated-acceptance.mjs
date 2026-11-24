@@ -18,7 +18,13 @@ try{
   const r=await request("/tenant/profile?tenant_id="+ids[1-i],tokens[i]);
   assert.equal(r.status,200);assert.equal(Number(r.body.profile.tenant_id),ids[i]);
   const routing=await request("/tenant/routing/status",tokens[i]);assert.equal(routing.status,200);
+  assert.deepEqual(routing.body.routing,[]);
+  const requests=await request("/tenant/requests?tenant_id="+ids[1-i],tokens[i]);
+  assert.equal(requests.status,200);assert.deepEqual(requests.body.requests,[]);
+  // Missing multipart file exercises authenticated ingress without embeddings.
+  const upload=await fetch(origin+"/tenant/upload-knowledge",{method:"POST",redirect:"error",signal:AbortSignal.timeout(30000),headers:{Authorization:"Bearer "+tokens[i]},body:new FormData()});
+  assert.equal(upload.status,400);
  }
  const replay=await request("/tenant/login/redeem",null,{token:a});assert.equal(replay.status,401);
- console.log("Hosted positive acceptance: two distinct profiles, routing access and replay denial passed");
+ console.log("Hosted positive acceptance: two distinct profiles, empty scoped routing/requests, authenticated upload ingress and replay denial passed");
 }catch(e){console.error("Hosted positive acceptance failed:",e.name);process.exitCode=1;}
