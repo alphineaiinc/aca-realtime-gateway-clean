@@ -6,6 +6,7 @@ const crypto = require("crypto");
 const fs = require("fs");
 
 const router = express.Router();
+const ingressRateLimit = require('../security/ingressLimit').ingressLimit({ max: 30 });
 
 function authenticate(req, res, next) {
   try {
@@ -25,7 +26,7 @@ function authenticate(req, res, next) {
 }
 
 // Download current Partner Terms
-router.get("/partner/legal/download", async (req, res) => {
+router.get("/partner/legal/download", ingressRateLimit, async (req, res) => {
   try {
     const version = process.env.LEGAL_CURRENT_VERSION || "1.0";
     const pdfPath = await generatePartnerTermsPDF(version);
@@ -53,7 +54,7 @@ router.get("/partner/legal/download", async (req, res) => {
 });
 
 // Record acceptance
-router.post("/partner/legal/accept", authenticate, async (req, res) => {
+router.post("/partner/legal/accept", ingressRateLimit, authenticate, async (req, res) => {
   try {
     const partner_id = req.user?.partner_id || null;
     if (!partner_id) {
