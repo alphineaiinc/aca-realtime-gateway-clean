@@ -7,6 +7,7 @@ const {createSpendBudget}=require('./spendBudget');
 const {createQueuePolicyBridge}=require('./queuePolicyBridge');
 const {createProviderReservation}=require('./providerReservation');
 const {createActivationReviewVerifier}=require('./activationReviewVerifier');
+const {prepareRequestEnvelope}=require('./requestEnvelope');
 const {createCostEnvelope}=require('./costEnvelope');
 const {createWorkflowLedger}=require('./workflowLedger');
 // Initialization is deliberately inert: no provider clients, scheduler or
@@ -26,7 +27,7 @@ function initializeRuntime({config,pool,identity,ceilings,readQueueState,indepen
  const policy=readQueueState===undefined?null:createQueuePolicyBridge({manifest,readQueueState});
  const reviewVerifier=independentReview===undefined?undefined:createActivationReviewVerifier({...independentReview,manifest});
  // Unreviewed initialization remains inert; runtime cannot expose an unreviewed reservation.
- const providerReservation=policy===null||reviewVerifier===undefined||costEnvelope===null?null:createProviderReservation({pool,manifest,policy,authenticate,ceilings,reviewVerifier,costEvidenceSha256:costEnvelope.evidenceSha256});
+ const providerReservation=policy===null||reviewVerifier===undefined||costEnvelope===null?null:createProviderReservation({pool,manifest,policy,authenticate,ceilings,reviewVerifier,costEvidenceSha256:costEnvelope.evidenceSha256,prepareRequest:request=>prepareRequestEnvelope({manifest,costEnvelope,request})});
  return Object.freeze({manifest,costEnvelope,queue,approvals,budget,workflow,policy,providerReservation,authenticate,status:'initialized-inert',executionAllowed:()=>false});
 }
 module.exports={initializeRuntime};
