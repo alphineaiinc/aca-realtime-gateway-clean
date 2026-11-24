@@ -66,3 +66,12 @@ Trusted sandbox probe and Node CI passed at a776d4853c9d69a926aaff436868c2a605bc
 
 ## Durable cost evidence binding
 - Baseline e620207102634b017060e51a0409eb00bd32c58a passed CI 45319159675. Draft schema now persists exact cost evidence on reservations; reconciliation denies changed or omitted evidence, including same-budget substitution. Unbound fixture reservations remain fixture-only. New exact-head CI required; no live authorization.
+
+## Durable workflow input and restart binding — 2026-11-24
+
+- Draft workflow records now persist the original bounded subject and selected developer role at creation; manager-only readInput() retrieves them under the pinned product/repository/SHA scope.
+- Resume no longer accepts caller-supplied subject or developer-role values as authoritative. It loads the immutable workflow inputs from the ledger. The regression test deliberately supplies a substituted subject and asserts the original persisted value is used by the resumed agent team.
+- Consumed fixture runtime denial wording was aligned with the fail-closed contract.
+- Commits: a2a8baee (denial contract), 8fdf562 (draft schema fields), 8e98243 (ledger input binding/read), 56df7ac (runtime resume binding), 8672d66 and 2b405e4 (regression coverage), 1fb7150 (fresh preparation instance for simulated process restart).
+- CI run 45329165830 (#782) failed in the restart integration fixture because the test reused a one-shot change-preparation instance from the pre-restart process. The production contract intentionally consumes that preparation instance. The test now constructs a fresh instance for the simulated restarted process. Exact-head CI for 1fb7150: run 45329317352 (#783), in progress at documentation time; no pass claimed.
+- All changes remain draft-only. No live provider, external dispatch, merge, deployment, production migration, or release authorization.
