@@ -1,6 +1,6 @@
 'use strict';
 const {createHash,randomUUID}=require('node:crypto');
-const operations=Object.freeze(['provider.activate','github.write','agent.dispatch','merge','deploy','sign','secret.change','database.write']);
+const operations=Object.freeze(['provider.activate','github.write','agent.dispatch','merge','deploy','sign','secret.change','database.write','queue.recover']);
 const validScope=s=>s&&typeof s.product==='string'&&/^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,79}$/.test(s.product)&&typeof s.repository==='string'&&/^[a-zA-Z0-9_.-]+\/[a-zA-Z0-9_.-]+$/.test(s.repository)&&s.repository.length<=200&&typeof s.sha==='string'&&/^[a-f0-9]{40}$/.test(s.sha);
 function createApprovalPolicy({authenticate,clock=Date.now,ttlMs=900000}={}){
  if(typeof authenticate!=='function'||typeof clock!=='function'||!Number.isSafeInteger(ttlMs)||ttlMs<1000||ttlMs>900000)throw Error('Invalid approval configuration');
