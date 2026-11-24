@@ -46,3 +46,26 @@ test('unauthenticated collector evidence is rejected and rolled back',async()=>{
  await assert.rejects(guarded.record({credential:'fixture',binding}),/authentication failed/);
  assert.ok(f.calls.some(x=>x.sql==='ROLLBACK'));assert.equal(f.inserted,null);
 });
+
+test('invalid requester identities deny before database access',async()=>{
+ for(const patch of [{id:'bad id'},{product:''},{repository:''},{sha:'bad'},{role:'backend-developer'},{permission:'queue.read'}]){
+  let connected=false;
+  const store=createReconciliationStore({pool:{connect:async()=>{connected=true;}},authenticate:async()=>({...actor,...patch}),collect:async()=>observation,verifyObservation:async()=>true,baseBranch:'main',headBranch:'draft'});
+  await assert.rejects(store.record({credential:'fixture',binding}),/Reconciliation denied/);
+  assert.equal(connected,false);
+ }
+});
+test('requester mutation between authentication checks cannot change pinned identity',async()=>{
+ const f=fixture();const mutable={...actor};let calls=0;
+ const store=createReconciliationStore({pool:{connect:async()=>f.client},authenticate:async()=>{if(++calls===2)mutable.id='other-manager';return mutable;},collect:async()=>{throw Error('collection should not occur');},verifyObservation:async()=>true,baseBranch:'main',headBranch:'draft'});
+ await assert.rejects(store.record({credential:'fixture',binding}),/Reconciliation denied/);
+ assert.ok(f.calls.some(x=>x.sql==='ROLLBACK'));assert.equal(f.inserted,null);
+});
+test('persistence boundary rejects either substituted branch even when verifier returns true',async()=>{
+ for(const branch of ['baseBranch','headBranch']){
+  const f=fixture();
+  const store=createReconciliationStore({pool:{connect:async()=>f.client},authenticate:async()=>actor,collect:async scope=>({...observation,...scope,[branch]:'substituted'}),verifyObservation:async()=>true,baseBranch:'main',headBranch:'draft'});
+  await assert.rejects(store.record({credential:'fixture',binding}),/scope mismatch/);
+  assert.ok(f.calls.some(x=>x.sql==='ROLLBACK'));assert.equal(f.inserted,null);
+ }
+});
