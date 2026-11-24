@@ -23,3 +23,18 @@ test('governance alert reader denies wrong identity, cross-scope and invalid lim
  await assert.rejects(g.reader.list({credential:'manager'}),/identity denied/);
  assert.equal(f.calls.length,0);assert.equal(g.calls.length,0);
 });
+
+test('acknowledgement rechecks revoked identity after transactional lock',async()=>{
+ const queries=[];let checks=0;
+ const client={query:async sql=>{queries.push(sql);return {rowCount:1,rows:[]};},release(){}};
+ const reader=createGovernanceAlertReader({scope,pool:{query:client.query,connect:async()=>client},authenticate:async()=>++checks===1?{...scope,id:'manager',permission:'queue.manage'}:null});
+ await assert.rejects(reader.acknowledge({credential:'manager',alertId:'123e4567-e89b-12d3-a456-426614174000'}),/identity denied/);
+ assert.equal(queries.at(-1),'ROLLBACK');
+ assert.ok(!queries.some(q=>q.startsWith('INSERT')));
+});
+test('backlog and acknowledgement reject invalid parameters before database access',async()=>{
+ const f=fixture();
+ await assert.rejects(f.reader.backlog({credential:'manager',limit:0}),/Invalid alert limit/);
+ await assert.rejects(f.reader.acknowledge({credential:'manager',alertId:'invalid'}),/Invalid alert ID/);
+ assert.equal(f.calls.length,0);
+});
