@@ -1,8 +1,9 @@
 'use strict';
 const {getRole}=require('./registry');
 const {createHash}=require('node:crypto');
+const {validateProposal}=require('./contracts');
 // Runs one offline proposal. No worker polling, network, or privileged tools.
-function createQueueWorker({queue,manager,loadTask}={}){
+function createQueueWorker({queue,manager,loadTask,fixtureProposalStorage=false}={}){
  if(!queue||typeof queue.claim!=='function'||typeof queue.finish!=='function'||!manager||typeof manager.createTask!=='function'||typeof manager.propose!=='function'||typeof loadTask!=='function')throw Error('Invalid worker configuration');
  return Object.freeze({async runOnce({scope,role,credential}){
   const def=getRole(role);
@@ -21,8 +22,9 @@ function createQueueWorker({queue,manager,loadTask}={}){
    return Object.freeze({state,taskId:lease.id,releaseApproved:false});
   }
   // Only return proposal after current lease and governance are verified by queue.
-  const evidenceSha256=createHash('sha256').update(JSON.stringify(proposal)).digest('hex');
-  const state=await queue.finish({...completion,outcome:'succeeded',evidenceSha256});
+  const fixtureProposal=fixtureProposalStorage===true?{role,output:validateProposal(role,proposal.output),approval:false}:undefined;
+  const evidenceSha256=createHash('sha256').update(JSON.stringify(fixtureProposal??proposal)).digest('hex');
+  const state=await queue.finish({...completion,outcome:'succeeded',evidenceSha256,...(fixtureProposal?{fixtureProposal}:{})});
   if(state!=='succeeded')throw Error('Completion denied');
   return Object.freeze({state,taskId:lease.id,proposal,evidenceSha256,releaseApproved:false});
  }});
