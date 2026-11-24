@@ -8,7 +8,7 @@ async function reconcileOne(pool) {
   if(!rows.length){await client.query("COMMIT");return false;}
   const row=rows[0], invoice=row.payload?.data?.object;
   let outcome="unmatched";
-  if(row.payload?.livemode===true && invoice?.object==="invoice" && invoice.status==="paid" && invoice.paid===true && invoice.currency==="usd" && Number.isSafeInteger(invoice.amount_paid) && invoice.amount_paid>0 && typeof invoice.id==="string" && typeof invoice.customer==="string"){
+  if(row.payload?.livemode===true && !row.payload.account && invoice?.paid_out_of_band===false && invoice.amount_due===invoice.amount_paid && invoice.amount_remaining===0 && invoice?.object==="invoice" && invoice.status==="paid" && invoice.paid===true && invoice.currency==="usd" && Number.isSafeInteger(invoice.amount_paid) && invoice.amount_paid>0 && typeof invoice.id==="string" && typeof invoice.customer==="string"){
    const result=await client.query(
     "UPDATE public.billing_invoices i SET status='paid',paid_at=NOW(),payment_method='stripe',payment_reference=$1 FROM public.aca_stripe_invoice_bindings b WHERE b.stripe_invoice_id=$1 AND b.stripe_customer_id=$2 AND b.amount_cents=$3 AND b.livemode=$4 AND i.id=b.invoice_id AND i.tenant_id=b.tenant_id AND i.amount_usd*100=b.amount_cents AND i.status='unpaid' RETURNING i.id,i.tenant_id",
     [invoice.id,invoice.customer,invoice.amount_paid,row.payload.livemode===true]);
