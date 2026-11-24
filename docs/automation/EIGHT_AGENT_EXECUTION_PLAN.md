@@ -171,3 +171,13 @@ Implementation commits: f1e5de7 (workflow-step inspection), 5c8144f (restart-awa
 - Exact code/test head `26e85a555cf6814e2d2007bc5f4bf0195346114c` passed CI #859 (45390579652), including syntax, Node suite, disposable PostgreSQL integration and trusted sandbox.
 - Provider breach and unknown outcomes now journal newly created stops transactionally; duplicate stop creation does not duplicate alerts, and journal failure rolls back the outcome transaction. Integration checks stop denial across all eight roles.
 - Offline acceptance only. Independent review #22, external notification delivery and live activation remain outstanding.
+
+
+## Independent review remediation batch — 2026-11-24
+
+- Review evidence on PR #142 reported six unresolved findings: mutable-scope authorization races in durable approval and queue identity checks; caller-supplied scope forwarding in the policy facade; recovery approvals not bound to a specific stop/quarantine incident; CI receipt primary key omitting product; and fixture preparation replay after restart.
+- Draft branch remediation committed: capture the expected scope key before asynchronous authentication in durable approval/queue; pin the policy facade to its configured product/repository/SHA and reject cross-scope inputs; include product in the CI event admission primary key; bind recovery evidence, audit and deletion to a persisted incident UUID; persist one-shot fixture preparation state and result digest so completed preparation returns recorded evidence and unknown started attempts require reconciliation.
+- Added unit regression coverage for scope mutation during authentication, durable approval scope mutation and cross-product facade input. Extended the disposable PostgreSQL integration test to verify completed preparation survives a fresh runtime without replay.
+- Current code/test head: `f4a7126dcfc2e86f9136ee2edd7c8790d770def2`. Exact-head CI has NOT yet been observed for this head; do not mark these changes tested or accepted until CI executes and passes.
+- Recovery and preparation changes are development-only schema/code. The migration remains draft and must only be exercised in disposable CI. No production migration, live provider, agent dispatch, merge, deployment, credential change or additional spend.
+- Review findings remain open until independently re-reviewed against the corrected head. PR #21's Copilot review reported insufficient remaining quota; no successful independent reviewer clearance is established. Agent Manager remains not activated.
