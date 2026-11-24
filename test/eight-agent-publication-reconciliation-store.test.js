@@ -15,7 +15,7 @@ function fixture({prior=[],mismatch=false,failInsert=false}={}){
  throw Error('unexpected SQL '+sql);
  },release(value){released=true;discard=value===true;}};
  const pool={connect:async()=>client};
- const store=createReconciliationStore({pool,authenticate:async()=>actor,collect:async scope=>mismatch?{...observation,requesterId:'attacker'}:{...observation,...scope}});
+ const store=createReconciliationStore({pool,authenticate:async()=>actor,collect:async scope=>mismatch?{...observation,requesterId:'attacker'}:{...observation,...scope},verifyObservation:async()=>!mismatch});
  return {store,calls,client,get inserted(){return inserted;},get released(){return released;},get discard(){return discard;}};
 }
 test('persists exact requester-bound observation once and never authorizes retry',async()=>{
