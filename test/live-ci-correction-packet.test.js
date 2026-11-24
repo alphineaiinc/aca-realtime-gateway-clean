@@ -13,7 +13,7 @@ const pr={number:21,state:"open",draft:false,head:{sha:head,repo:{id:repoId}},
 const repo={id:repoId,full_name:"alphineaiinc/aca-realtime-gateway-clean"};
 function check(conclusion="failure"){return {name:"Node tests",status:"completed",conclusion,
  head_sha:head,app:{id:15368},
- check_suite:{workflow_run:{workflow_id:5503,head_sha:head,id:99}}};}
+ check_suite:{workflow_run:{workflow_id:5503,head_sha:head,id:99,run_attempt:1}}};}
 function mock({initial=pr,after=initial,repos=repo,runs=[check()],totalCount=runs.length,
  fail=null}={}){
  const calls=[];let prs=0;
