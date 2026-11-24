@@ -23,7 +23,7 @@ function createOpenAITransport({client,models,authorize,maxCalls=8,maxOutputToke
    if(result.status!=='completed'||typeof result.output_text!=='string')throw Error('Incomplete model response');
    return result.output_text;
   }catch{halted=true;throw Error('Provider request failed');}
-  finally{active=false,halted=false;}
+  finally{active=false;}
  }
  return Object.freeze({generate,usage:()=>Object.freeze({calls,inputTokens,outputTokens})});
 }
