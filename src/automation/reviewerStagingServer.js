@@ -25,10 +25,12 @@ function matchingReview({pr,reviews,scope,reviewerId}){
  return mine[0].state==="APPROVED"&&mine[0].commit_id===scope.headSha;
 }
 function signVerdict(scope,reviewerId,privateKey){
+ if(!positive(scope.issueNumber)||typeof scope.challenge!=="string"||!/^[a-f0-9]{64}$/.test(scope.challenge))throw Error("invalid_review_challenge");
+ const issuedAt=Math.floor(Date.now()/1000);
  const record={repositoryId:scope.repositoryId,prNumber:scope.prNumber,
-   headSha:scope.headSha,reviewerId,status:"passed",findings:0};
- const bytes=Buffer.from(JSON.stringify(["aca-review-v1",record.repositoryId,
-   record.prNumber,record.headSha,record.reviewerId,record.status,record.findings]));
+   headSha:scope.headSha,reviewerId,status:"passed",findings:0,issueNumber:scope.issueNumber,challenge:scope.challenge,issuedAt,expiresAt:issuedAt+120};
+ const bytes=Buffer.from(JSON.stringify(["aca-review-v2",record.repositoryId,
+   record.prNumber,record.headSha,record.reviewerId,record.status,record.findings,record.issueNumber,record.challenge,record.issuedAt,record.expiresAt]));
  const key=createPrivateKey(privateKey);
  if(key.asymmetricKeyType!=="ed25519")throw new Error("invalid_signing_key");
  return {record,signature:sign(null,bytes,key).toString("hex")};
@@ -86,7 +88,7 @@ function startServer(env=process.env,{githubTokenProvider=installationReadToken,
         !SHA.test(scope?.headSha||"")||
         parts.length!==2||!parts.every(x=>/^[A-Za-z0-9_.-]+$/.test(x)))
        return answer(503,{error:"reviewer_not_configured"});
-     if(req.url==="/review"&&(!positive(reviewerId)||
+     if(req.url==="/review"&&(typeof scope.challenge!=="string"||!/^[a-f0-9]{64}$/.test(scope.challenge)||!positive(reviewerId)||
          !env.ACA_REVIEW_GITHUB_APP_ID||!env.ACA_REVIEW_GITHUB_INSTALLATION_ID||
          !env.ACA_REVIEW_GITHUB_APP_PRIVATE_KEY_PATH||!env.ACA_REVIEW_PRIVATE_KEY))
        return answer(503,{error:"reviewer_not_configured"});
