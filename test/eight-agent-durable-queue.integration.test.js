@@ -561,6 +561,7 @@ test('isolated PostgreSQL queue: concurrent claims, retries, restart, expiry and
  const recoveryGate=createGovernanceRecovery({pool:pools[0],scope:recoveryScope,authenticate:recoveryAuth});
  const quarantineTask=await recoveryQueue.enqueue({scope:recoveryScope,role:recoveryRole,credential:'recovery-manager'});
  await recoveryQueue.quarantine({scope:recoveryScope,role:recoveryRole,credential:'recovery-manager'});
+ await recoveryQueue.quarantine({scope:recoveryScope,role:recoveryRole,credential:'recovery-manager'}); // idempotent: no duplicate alert
  await assert.rejects(recoveryQueue.claim({scope:recoveryScope,role:recoveryRole,credential:'recovery-worker'}),/Governance denied/);
  const quarantineEvidence=recoveryGate.evidence({action:'clear-quarantine',role:recoveryRole});
  const quarantineRequest=await recoveryApprovals.request({scope:recoveryScope,operation:'queue.recover',evidence:quarantineEvidence,credential:'recovery-manager'});
@@ -570,6 +571,7 @@ test('isolated PostgreSQL queue: concurrent claims, retries, restart, expiry and
  const activeRecoveryLease=await recoveryQueue.claim({scope:recoveryScope,role:recoveryRole,credential:'recovery-worker',expectedTaskId:quarantineTask});
  const afterStopTask=await recoveryQueue.enqueue({scope:recoveryScope,role:recoveryRole,credential:'recovery-manager'});
  await recoveryQueue.stop({scope:recoveryScope,credential:'recovery-manager'});
+ await recoveryQueue.stop({scope:recoveryScope,credential:'recovery-manager'}); // idempotent: no duplicate alert
  const stopEvidence=recoveryGate.evidence({action:'clear-stop'});
  const stopRequest=await recoveryApprovals.request({scope:recoveryScope,operation:'queue.recover',evidence:stopEvidence,credential:'recovery-manager'});
  await recoveryApprovals.recordDecision({scope:recoveryScope,id:stopRequest.id,binding:stopRequest.binding,decision:'approved',credential:'recovery-owner'});
@@ -592,6 +594,13 @@ test('isolated PostgreSQL queue: concurrent claims, retries, restart, expiry and
  await assert.rejects(recoveryGate.recover({credential:'recovery-manager',approvalId:unresolvedStopRequest.id,action:'clear-stop',evidenceSha256:unresolvedStopEvidence}),/unresolved provider attempt/);
  assert.equal((await pools[1].query('SELECT count(*)::int AS n FROM engineering_team_stops WHERE product=$1 AND repository=$2',[recoveryScope.product,recoveryScope.repository])).rows[0].n,1);
  assert.equal((await pools[1].query('SELECT count(*)::int AS n FROM engineering_team_governance_recoveries WHERE product=$1 AND repository=$2',[recoveryScope.product,recoveryScope.repository])).rows[0].n,2);
+ const alertRows=await pools[1].query('SELECT event_type,role,approval_id FROM engineering_team_governance_alerts WHERE product=$1 AND repository=$2 ORDER BY created_at,id',[recoveryScope.product,recoveryScope.repository]);
+ assert.deepEqual(alertRows.rows.map(x=>x.event_type),['quarantine.created','quarantine.cleared','stop.created','stop.cleared','stop.created']);
+ assert.equal(alertRows.rows[0].role,recoveryRole);
+ assert.equal(alertRows.rows[1].role,recoveryRole);
+ assert.equal(alertRows.rows[1].approval_id,quarantineRequest.id);
+ assert.equal(alertRows.rows[3].approval_id,stopRequest.id);
+ assert.equal(alertRows.rows[4].approval_id,null);
  assert.equal(recoveryGate.executionAllowed(),false);
 
  // A real durable spend reservation is consumed even if policy is revoked before
