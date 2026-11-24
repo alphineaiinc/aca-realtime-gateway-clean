@@ -117,6 +117,31 @@ test('isolated PostgreSQL queue: concurrent claims, retries, restart, expiry and
  assert.equal(correctionResults.filter(Boolean).length,1);
  assert.equal(await correctionAdmission(pools[1])(correctionInput),false);
  assert.equal((await pools[0].query('SELECT initial_digest FROM engineering_team_correction_cycles WHERE task_id=$1',[evidenceTask])).rows[0].initial_digest,evidenceSha256);
+ // Exercise the complete durable correction cycle against PostgreSQL, not a mocked admission adapter.
+ const {createPatchPlanner}=require('../src/automation/engineeringTeam/patchPlanner');
+ const {createDurableCorrectionRuntime}=require('../src/automation/engineeringTeam/durableCorrectionRuntime');
+ const correctionFiles=[{path:'src/correction-fixture.js',role:'backend-developer',text:'module.exports = 1;'}];
+ const correctionEdits=replacement=>[{path:correctionFiles[0].path,beforeSha256:digest(correctionFiles[0].text),replacement}];
+ const initialCorrectionPlan=createPatchPlanner({scope,files:correctionFiles}).plan({role:'backend-developer',edits:correctionEdits('module.exports = broken;')});
+ const correctionTask=await q.enqueue({scope,role:'backend-developer',credential:'manager'});
+ const correctionLease=await q.claim({scope,role:'backend-developer',credential:'w1'});
+ assert.equal(correctionLease.id,correctionTask);
+ await q.finish({scope,role:'backend-developer',credential:'w1',taskId:correctionTask,leaseId:correctionLease.lease_id,outcome:'succeeded',evidenceSha256:initialCorrectionPlan.evidenceSha256});
+ let correctionRuns=0,correctionProposals=0,correctionReviews=0;
+ const durableCorrection=createDurableCorrectionRuntime({pool:pools[0],scope,authenticate:async c=>identities.get(c),managerCredential:'manager',files:correctionFiles,role:'backend-developer',requiredChecks:['syntax','node-tests'],authorize:async()=>true,
+  proposeEdits:async()=>{correctionProposals++;return correctionEdits('module.exports = 2;');},
+  runIsolated:async({plan,checks,profile})=>{correctionRuns++;return {evidenceSha256:plan.evidenceSha256,profile,checks:checks.map(name=>({name,status:correctionRuns===1&&name==='node-tests'?'failed':'passed'}))};},
+  reviewCandidate:async({candidate})=>{correctionReviews++;return {role:'security-reviewer',disposition:'recommend-review',evidenceSha256:candidate.evidenceSha256};}});
+ const correctionResult=await durableCorrection.run({taskId:correctionTask,edits:correctionEdits('module.exports = broken;')});
+ assert.equal(correctionResult.state,'candidate-passed');
+ assert.equal(correctionResult.attempts,1);
+ assert.equal(correctionResult.review.role,'security-reviewer');
+ assert.equal(correctionResult.review.disposition,'recommend-review');
+ assert.equal(correctionResult.executionAuthorized,false);
+ assert.equal(correctionResult.releaseApproved,false);
+ assert.deepEqual({correctionRuns,correctionProposals,correctionReviews},{correctionRuns:2,correctionProposals:1,correctionReviews:1});
+ assert.equal((await pools[1].query('SELECT initial_digest FROM engineering_team_correction_cycles WHERE task_id=$1',[correctionTask])).rows[0].initial_digest,initialCorrectionPlan.evidenceSha256);
+ await assert.rejects(durableCorrection.run({taskId:correctionTask,edits:correctionEdits('module.exports = broken;')}),/Correction unavailable/);
  identities.set('owner',{...scope,id:'owner',permission:'owner.approval'});
  identities.set('self',{...scope,id:'manager',permission:'owner.approval'});
  const approval=pool=>createDurableApprovalPolicy({pool,scopes:[scope],authenticate:async c=>identities.get(c)});
