@@ -60,13 +60,19 @@ function createDurableQueue({pool,scopes,authenticate,leaseSeconds=60}={}){
    return result.rows[0]||null;
    });
   },
-  async finish({scope,role,credential,taskId,leaseId,outcome}){
+  async finish({scope,role,credential,taskId,leaseId,outcome,evidenceSha256}){
    const params=checkScope(scope);getRole(role);const worker=await identity(credential,scope,role,'queue.work');
    if(!['succeeded','failed'].includes(outcome)||typeof taskId!=='string'||typeof leaseId!=='string')throw Error('Invalid completion');
+   if(evidenceSha256!==undefined&&(outcome!=='succeeded'||typeof evidenceSha256!=='string'||!/^[a-f0-9]{64}$/.test(evidenceSha256)))throw Error('Invalid evidence digest');
    return guarded(params,async client=>{
     await assertActive(client,params,role);
    const result=await client.query(`WITH task AS (UPDATE engineering_team_tasks SET state=CASE WHEN $8='failed' AND attempts<2 THEN 'queued' ELSE $8 END,worker_id=NULL,lease_id=NULL,lease_until=NULL WHERE product=$1 AND repository=$2 AND head_sha=$3 AND role=$4 AND worker_id=$5 AND id=$6 AND lease_id=$7 AND state='running' AND lease_until>clock_timestamp() RETURNING id,state), audit AS (INSERT INTO engineering_team_queue_audit(task_id,event) SELECT id,CASE WHEN state='queued' THEN 'retry' ELSE state END FROM task) SELECT state FROM task`,[...params,role,worker,taskId,leaseId,outcome]);
-   if(result.rowCount!==1)throw Error('Lease denied');return result.rows[0].state;
+   if(result.rowCount!==1)throw Error('Lease denied');
+   if(evidenceSha256!==undefined){
+    if(result.rows[0].state!=='succeeded')throw Error('Evidence completion denied');
+    await client.query('INSERT INTO engineering_team_proposal_receipts(task_id,lease_id,evidence_sha256) VALUES ($1,$2,$3)',[taskId,leaseId,evidenceSha256]);
+   }
+   return result.rows[0].state;
    });
   },
   async expire({scope,credential}){
