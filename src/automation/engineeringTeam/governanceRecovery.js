@@ -8,12 +8,12 @@ function createGovernanceRecovery({pool,scope,authenticate}={}){
  const pinned=Object.freeze({product:scope.product,repository:scope.repository,sha:scope.sha});
  const params=[pinned.product,pinned.repository,pinned.sha];
  const recoveryOperations=Object.freeze(['clear-stop','clear-quarantine']);
- function evidence({action,role}={}){
-  if(!recoveryOperations.includes(action)||(action==='clear-stop'&&role!==undefined)||(action==='clear-quarantine'&&(typeof role!=='string'||!getRole(role))))throw Error('Invalid recovery evidence');
-  return createHash('sha256').update(JSON.stringify([pinned,action,role??null])).digest('hex');
+ function evidence({action,role,incidentId}={}){
+  if(!recoveryOperations.includes(action)||(action==='clear-stop'&&role!==undefined)||(action==='clear-quarantine'&&(typeof role!=='string'||!getRole(role)))||typeof incidentId!=='string'||! /^[a-f0-9-]{36}$/.test(incidentId))throw Error('Invalid recovery evidence');
+  return createHash('sha256').update(JSON.stringify([pinned,action,role??null,incidentId])).digest('hex');
  }
- async function recover({credential,approvalId,action,role,evidenceSha256}={}){
-  if(!recoveryOperations.includes(action)||(action==='clear-stop'&&role!==undefined)||(action==='clear-quarantine'&&(typeof role!=='string'||!getRole(role)))||!validDigest(evidenceSha256)||evidenceSha256!==evidence({action,role})||typeof approvalId!=='string'||! /^[a-f0-9-]{36}$/.test(approvalId))throw Error('Recovery denied');
+ async function recover({credential,approvalId,action,role,incidentId,evidenceSha256}={}){
+  if(!recoveryOperations.includes(action)||(action==='clear-stop'&&role!==undefined)||(action==='clear-quarantine'&&(typeof role!=='string'||!getRole(role)))||typeof incidentId!=='string'||! /^[a-f0-9-]{36}$/.test(incidentId)||!validDigest(evidenceSha256)||evidenceSha256!==evidence({action,role,incidentId})||typeof approvalId!=='string'||! /^[a-f0-9-]{36}$/.test(approvalId))throw Error('Recovery denied');
   const actor=await authenticate(credential);
   if(!actor||actor.permission!=='queue.manage'||actor.role!==undefined||actor.product!==pinned.product||actor.repository!==pinned.repository||actor.sha!==pinned.sha||typeof actor.id!=='string'||!/^[A-Za-z0-9_.-]{1,80}$/.test(actor.id))throw Error('Recovery identity denied');
   const actorId=actor.id;
@@ -27,17 +27,21 @@ function createGovernanceRecovery({pool,scope,authenticate}={}){
    if(approval.rowCount!==1)throw Error('Recovery approval denied');
    const expectedBinding=createHash('sha256').update(JSON.stringify([approvalId,...params,'queue.recover',evidenceSha256])).digest('hex');
    if(approval.rows[0].binding!==expectedBinding)throw Error('Recovery approval binding denied');
+   const target=action==='clear-stop'
+    ?await client.query('SELECT incident_id FROM engineering_team_stops WHERE product=$1 AND repository=$2 FOR UPDATE',params.slice(0,2))
+    :await client.query('SELECT incident_id FROM engineering_team_quarantine WHERE product=$1 AND repository=$2 AND role=$3 FOR UPDATE',[...params.slice(0,2),role]);
+   if(target.rowCount!==1||target.rows[0].incident_id!==incidentId)throw Error('Recovery incident mismatch');
    const active=await client.query(`SELECT 1 FROM engineering_team_tasks WHERE product=$1 AND repository=$2 AND state='running' ${action==='clear-quarantine'?'AND role=$3':''} LIMIT 1`,action==='clear-quarantine'?[...params.slice(0,2),role]:params.slice(0,2));
    if(active.rowCount!==0)throw Error('Recovery blocked: active lease requires reconciliation');
    if(action==='clear-stop'){
     const unresolved=await client.query("SELECT 1 FROM engineering_team_provider_attempts a LEFT JOIN engineering_team_provider_outcomes o ON o.binding=a.binding WHERE a.product=$1 AND a.repository=$2 AND (o.binding IS NULL OR o.outcome<>'completed') LIMIT 1",params.slice(0,2));
     if(unresolved.rowCount!==0)throw Error('Recovery blocked: unresolved provider attempt');
    }
-   const audit=await client.query("INSERT INTO engineering_team_governance_recoveries(approval_id,product,repository,head_sha,action,role,evidence_sha256,recovered_by) VALUES($1,$2,$3,$4,$5,$6,$7,$8) ON CONFLICT DO NOTHING RETURNING approval_id",[approvalId,...params,action,role??null,evidenceSha256,actorId]);
+   const audit=await client.query("INSERT INTO engineering_team_governance_recoveries(approval_id,product,repository,head_sha,action,role,incident_id,evidence_sha256,recovered_by) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9) ON CONFLICT DO NOTHING RETURNING approval_id",[approvalId,...params,action,role??null,incidentId,evidenceSha256,actorId]);
    if(audit.rowCount!==1)throw Error('Recovery approval already consumed');
    const removed=action==='clear-stop'
-    ?await client.query('DELETE FROM engineering_team_stops WHERE product=$1 AND repository=$2 RETURNING product',[...params.slice(0,2)])
-    :await client.query('DELETE FROM engineering_team_quarantine WHERE product=$1 AND repository=$2 AND role=$3 RETURNING role',[...params.slice(0,2),role]);
+    ?await client.query('DELETE FROM engineering_team_stops WHERE product=$1 AND repository=$2 AND incident_id=$3 RETURNING product',[...params.slice(0,2),incidentId])
+    :await client.query('DELETE FROM engineering_team_quarantine WHERE product=$1 AND repository=$2 AND role=$3 AND incident_id=$4 RETURNING role',[...params.slice(0,2),role,incidentId]);
    if(removed.rowCount!==1)throw Error('Recovery target unavailable');
    await client.query(action==='clear-stop'
     ?"INSERT INTO engineering_team_governance_alerts(id,product,repository,event_type,actor_id,approval_id) VALUES ($1,$2,$3,'stop.cleared',$4,$5)"
