@@ -2,15 +2,15 @@
 const test=require('node:test');
 const assert=require('node:assert/strict');
 const {generateKeyPairSync,createHash,sign}=require('node:crypto');
-const {verifyTeardownEvidence}=require('../scripts/protected-sandbox/authenticatedTeardownEvidence');
+const {verifyTeardownEvidence,faultNames}=require('../scripts/protected-sandbox/authenticatedTeardownEvidence');
 // Ephemeral synthetic keys and signatures in unit tests only.
 const expected={repositoryId:1,runId:2,runAttempt:3,headSha:'a'.repeat(40),workflowBlob:'b'.repeat(40),harnessBlob:'c'.repeat(40),imageManifest:'d'.repeat(64),publisherEvidence:'e'.repeat(64),runnerIdentityDigest:'f'.repeat(64)};
 const challenge='9'.repeat(64),now=1000;
 const keys=Object.fromEntries(['runner','publisher'].map(role=>[role,generateKeyPairSync('ed25519')]));
 const trust=Object.fromEntries(Object.entries(keys).map(([role,k])=>[role,{authority:role+'-control',publicKey:k.publicKey,fingerprint:createHash('sha256').update(k.publicKey.export({type:'spki',format:'der'})).digest('hex')}]));
 function envelope(role,patch={},key=keys[role].privateKey){
- const record={...expected,authority:trust[role].authority,challenge,issuedAt:990,expiresAt:1050,...(role==='runner'?{lifecycle:'destroyed',quarantineCleared:true,residualCount:0}:{provenanceVerified:true,sourceProtected:true}),...patch};
- return {record,signature:sign(null,Buffer.from(JSON.stringify(['alphine-sandbox-evidence-v1',role,...Object.values(record)])),key).toString('hex')};
+ const record={...expected,authority:trust[role].authority,challenge,issuedAt:990,expiresAt:1050,...(role==='runner'?{lifecycle:'destroyed',quarantineCleared:true,residualCount:0,faults:Object.fromEntries(faultNames.map(n=>[n,'denied-and-reconciled']))}:{provenanceVerified:true,sourceProtected:true}),...patch};
+ return {record,signature:sign(null,Buffer.from(JSON.stringify(['alphine-sandbox-evidence-v2',role,...Object.entries(record).map(([k,v])=>k==='faults'?faultNames.map(n=>v?.[n]):v)])),key).toString('hex')};
 }
 const check=(patch={})=>verifyTeardownEvidence({expected,challenge,now,trust,runner:envelope('runner'),publisher:envelope('publisher'),...patch});
 test('independent valid evidence is authenticated but never authorizes execution',()=>{
@@ -72,4 +72,9 @@ test('offline acceptance snapshots caller evidence and trust across asynchronous
 });
 test('offline acceptance denies invalid baseline and unauthenticated claims before key lookup',async()=>{
  for(const change of [input=>{input.evidence.faults.daemonUnavailable='unknown';},input=>{input.publisher.signature='0'.repeat(128);}]){const input=integrationInput();change(input);let calls=0;input.keyStatus=async()=>{calls++;return 'active';};const r=await assessAuthenticatedRuntimeEvidence(input);assert.equal(calls,0);assert.equal(r.authenticated,false);assert.equal(r.accepted,false);}
+});
+
+test('all five fault outcomes must be authenticated and complete',()=>{
+ for(const name of faultNames){const runner=envelope('runner');runner.record.faults[name]='unknown';assert.equal(check({runner}).authenticated,false);const faults={...envelope('runner').record.faults};delete faults[name];assert.equal(check({runner:envelope('runner',{faults})}).authenticated,false);}
+ const runner=envelope('runner');runner.record.faults.extra='denied-and-reconciled';assert.equal(check({runner}).authenticated,false);
 });
