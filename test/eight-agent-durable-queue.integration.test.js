@@ -513,6 +513,28 @@ test('isolated PostgreSQL queue: concurrent claims, retries, restart, expiry and
  const unknown=await outcomes[1].record({credential:'owner',binding:finalUnknownBinding});
  assert.deepEqual(unknown,{outcome:'unknown',executionAuthorized:false});
  assert.equal((await pools[0].query(stopQuery,stopArgs)).rowCount,1);
+ // A stop and unknown provider outcome in one repository must not block another tenant scope.
+ const isolatedScope={...scope,repository:'fixture/isolated'};
+ const isolatedIdentities=new Map([
+  ['isolated-manager',{...isolatedScope,id:'isolated-manager',permission:'queue.manage'}],
+  ['isolated-owner',{...isolatedScope,id:'isolated-owner',permission:'owner.approval'}]
+ ]);
+ const isolatedAuth=async c=>isolatedIdentities.get(c);
+ const isolatedApprovals=pool=>createDurableApprovalPolicy({pool,scopes:[isolatedScope],authenticate:isolatedAuth});
+ const isolatedBudgetId=randomUUID();
+ const isolatedManifest=createActivationManifest({...providerManifest,scope:isolatedScope,budgetId:isolatedBudgetId});
+ const isolatedPolicy=createQueuePolicyBridge({manifest:isolatedManifest,readQueueState:async()=>({repository:isolatedScope.repository,headSha:isolatedScope.sha,issue:{number:42,state:'open',isPullRequest:false,labels:['aca:auto/docs-test'],assignees:[]},activeIssueNumbers:[]})});
+ const isolatedProvider=pool=>createProviderReservation({pool,manifest:isolatedManifest,policy:isolatedPolicy,authenticate:isolatedAuth,ceilings:{fixture:400}});
+ await pools[0].query('INSERT INTO engineering_team_spend_budgets(product,repository,budget_id,max_calls,max_microusd) VALUES ($1,$2,$3,8,1000)',[isolatedScope.product,isolatedScope.repository,isolatedBudgetId]);
+ const isolatedBinding=await isolatedProvider(pools[0]).evidence();
+ const isolatedApproval=await isolatedApprovals(pools[0]).request({scope:isolatedScope,operation:'provider.activate',evidence:isolatedBinding,credential:'isolated-manager'});
+ await isolatedApprovals(pools[1]).recordDecision({scope:isolatedScope,id:isolatedApproval.id,binding:isolatedApproval.binding,decision:'approved',credential:'isolated-owner'});
+ assert.deepEqual(await isolatedProvider(pools[1]).reserve({credential:'isolated-manager',approvalId:isolatedApproval.id}),{binding:isolatedBinding,reserved:true,executionAuthorized:false});
+ const isolatedOutcome=createProviderOutcome({pool:pools[0],scope:isolatedScope,authenticate:isolatedAuth});
+ assert.deepEqual(await isolatedOutcome.record({credential:'isolated-owner',binding:isolatedBinding,usage:{inputTokens:1,outputTokens:1,actualMicrousd:1}}),{outcome:'completed',executionAuthorized:false});
+ assert.equal((await pools[1].query(stopQuery,stopArgs)).rowCount,1);
+ assert.equal((await pools[1].query('SELECT 1 FROM engineering_team_stops WHERE product=$1 AND repository=$2',[isolatedScope.product,isolatedScope.repository])).rowCount,0);
+ assert.deepEqual((await pools[1].query('SELECT reserved_calls,reserved_microusd FROM engineering_team_spend_budgets WHERE product=$1 AND repository=$2 AND budget_id=$3',[isolatedScope.product,isolatedScope.repository,isolatedBudgetId])).rows[0],{reserved_calls:1,reserved_microusd:'400'});
  await q2.stop({scope,credential:'manager'});
  // A newly constructed reservation adapter must still deny admission after a durable stop.
  await assert.rejects(reviewed(pools[0]).reserve({credential:'manager',approvalId:excessApproval.id,reviewEnvelope:excessEnvelope}),/Reservation denied/);
