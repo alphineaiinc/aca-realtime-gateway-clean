@@ -5,7 +5,8 @@ function createCorrectionRuntime({scope,files,role,requiredChecks,runIsolated,pr
  if(typeof admitCycle!=='function'||!['backend-developer','frontend-developer'].includes(role)||typeof runIsolated!=='function'||typeof proposeEdits!=='function'||!Array.isArray(requiredChecks)||!requiredChecks.length||requiredChecks.length>10||new Set(requiredChecks).size!==requiredChecks.length||requiredChecks.some(c=>typeof c!=='string'||!/^[a-z0-9-]{1,60}$/.test(c)))throw Error('Invalid correction runtime');
  const planner=createPatchPlanner({scope,files});
  const checks=Object.freeze([...requiredChecks]);
- const make=edits=>planner.plan({role,edits});
+ const candidates=new Map();
+ const make=edits=>{const plan=planner.plan({role,edits});candidates.set(plan.evidenceSha256,plan);return plan;};
  const loop=createCorrectionLoop({scope,authorize,maxAttempts,
   propose:async input=>make(await proposeEdits(input)),
   verify:async plan=>{
@@ -21,7 +22,13 @@ function createCorrectionRuntime({scope,files,role,requiredChecks,runIsolated,pr
   if(started||stopped)throw Error('Correction unavailable');
   const plan=make(edits);started=true;
   if(await admitCycle({taskId,initialDigest:plan.evidenceSha256})!==true||stopped)return Object.freeze({state:'denied',attempts:0,releaseApproved:false});
-  return loop.run({plan});
+  try{
+   const outcome=await loop.run({plan});
+   if(outcome.state!=='candidate-passed')return outcome;
+   const candidate=candidates.get(outcome.candidateDigest);
+   if(!candidate||stopped)return Object.freeze({state:'unknown',attempts:outcome.attempts,releaseApproved:false});
+   return Object.freeze({...outcome,candidate,reviewRequired:true,executionAuthorized:false});
+  }finally{candidates.clear();}
  },stop(){stopped=true;loop.stop();},executionAllowed:()=>false});
 }
 module.exports={createCorrectionRuntime};
