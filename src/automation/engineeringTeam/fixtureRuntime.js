@@ -53,7 +53,7 @@ function createFixtureRuntime({scope,queue,ledger,adapters,preparation,authorize
  }
  return Object.freeze({
   async run(input={}){
-   if(created)throw Error('Fixture runtime consumed');
+   if(created)throw Error('Fixture runtime denied: consumed');
    if(!input.managerCredential||!input.subject)throw Error('Fixture runtime denied');
    created=true;
    const workflow=await ledger.create(input.managerCredential);
