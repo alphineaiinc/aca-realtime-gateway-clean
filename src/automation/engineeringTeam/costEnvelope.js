@@ -18,6 +18,16 @@ function createCostEnvelope({manifest,prices,maxInputTokens}={}){
  }
  const worst=Math.max(...Object.values(ceilings));
  if(BigInt(worst)*BigInt(pinned.limits.maxCalls)>BigInt(pinned.limits.maxSpendMicrousd))throw Error('Aggregate cost envelope exceeds budget');
- return Object.freeze({ceilings:Object.freeze(ceilings),maxInputTokens,maxOutputTokens:pinned.limits.maxOutputTokens,evidenceSha256:digest(JSON.stringify([pinned.evidenceSha256,maxInputTokens,entries])),executionAuthorized:false});
+ // Derive usage cost from the pinned rates, never from a caller-supplied price.
+ function assessUsage(model,usage){
+  const entry=entries.find(e=>e[0]===model);
+  if(!entry||!usage||![usage.inputTokens,usage.outputTokens].every(x=>Number.isSafeInteger(x)&&x>=0))throw Error('Usage denied');
+  const {inputTokens,outputTokens}=usage;
+  const amount=(BigInt(inputTokens)*BigInt(entry[1])+BigInt(outputTokens)*BigInt(entry[2])+999999n)/1000000n;
+  if(amount>BigInt(Number.MAX_SAFE_INTEGER))throw Error('Usage cost overflow');
+  const actualMicrousd=Number(amount);
+  return Object.freeze({inputTokens,outputTokens,actualMicrousd,breach:inputTokens>maxInputTokens||outputTokens>pinned.limits.maxOutputTokens||actualMicrousd>entry[3],executionAuthorized:false});
+ }
+ return Object.freeze({assessUsage,ceilings:Object.freeze(ceilings),maxInputTokens,maxOutputTokens:pinned.limits.maxOutputTokens,evidenceSha256:digest(JSON.stringify([pinned.evidenceSha256,maxInputTokens,entries])),executionAuthorized:false});
 }
 module.exports={createCostEnvelope};

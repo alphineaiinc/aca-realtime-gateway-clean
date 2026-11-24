@@ -53,3 +53,7 @@ Trusted sandbox probe and Node CI passed at a776d4853c9d69a926aaff436868c2a605bc
 ## Durable governance containment
 - Scope stop and quarantine deny offline provider reservations across newly constructed adapters and database connections; regression at 743cb65248f38b9cf14f88774be28a0ad66d3001, acceptance pending.
 - Manual durable stop is not automatic crash containment. Before live admission, require a durable unresolved-attempt latch committed before external I/O, deny further admission until independent reconciliation, and never automatically refund or retry unknown outcomes. Existing offline reservations do not grant execution.
+
+## Verified containment and cost assessment
+- Exact head 02ad38fa291b60535621a231bda8b5c18fca71cf, CI 45317425975: 125 Node tests plus separate PostgreSQL integration passed; trusted sandbox passed. Persistent unresolved/breach admission guard and owner-only fixture reconciliation verified.
+- Pinned-rate usage assessment now computes rounded integer micro-USD and detects token ceiling breaches independently of monetary ceiling. This is offline arithmetic, not authenticated provider billing or live admission. New exact-head CI required.

@@ -16,3 +16,14 @@ test('cost envelope rounds up and binds model pricing to exact manifest',()=>{
 test('cost envelope denies missing pricing, invalid bounds and aggregate overspend',()=>{
  for(const changes of [{prices:{}},{maxInputTokens:0},{prices:{fixture:{input:1.5,output:2}}},{prices:{fixture:{input:2000000,output:200000}}},{manifest:{...manifest,evidenceSha256:'f'.repeat(64)}}])assert.throws(()=>createCostEnvelope({...opts,...changes}));
 });
+
+test('usage assessment pins rates, rounds up and detects token breaches even below monetary ceiling',()=>{
+ const prices={fixture:{input:100000,output:200000}};
+ const e=createCostEnvelope({...opts,prices});
+ prices.fixture.input=1;
+ assert.deepEqual(e.assessUsage('fixture',{inputTokens:10,outputTokens:1,actualMicrousd:0}),{inputTokens:10,outputTokens:1,actualMicrousd:2,breach:false,executionAuthorized:false});
+ assert.equal(e.assessUsage('fixture',{inputTokens:1001,outputTokens:0}).breach,true);
+ assert.equal(e.assessUsage('fixture',{inputTokens:0,outputTokens:257}).breach,true);
+ for(const u of [{inputTokens:-1,outputTokens:0},{inputTokens:1.5,outputTokens:0},{inputTokens:0}])assert.throws(()=>e.assessUsage('fixture',u));
+ assert.throws(()=>e.assessUsage('unknown',{inputTokens:1,outputTokens:1}));
+});
