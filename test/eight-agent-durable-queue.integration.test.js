@@ -745,7 +745,7 @@ test('isolated PostgreSQL queue: concurrent claims, retries, restart, expiry and
  await pools[0].query(`INSERT INTO engineering_team_publication_attempts(binding,approval_id,product,repository,base_sha,reserved_by)
   VALUES ($1,$2,$3,$4,$5,$6)`,[publicationBinding,publicationApproval,publicationScope.product,publicationScope.repository,publicationScope.sha,publicationIdentity.id]);
  const publicationObservation={binding:publicationBinding,repository:publicationScope.repository,baseSha:publicationScope.sha,headSha:publicationHead,requesterId:publicationIdentity.id,baseBranch:'main',headBranch:'draft',complete:true,observations:[{number:77,body:'Evidence binding: '+publicationBinding,draft:true,state:'open',base:{repo:{full_name:publicationScope.repository},ref:'main',sha:publicationScope.sha},head:{repo:{full_name:publicationScope.repository},ref:'draft',sha:publicationHead}}]};
- const publicationStore=createReconciliationStore({pool:pools[0],authenticate:publicationAuth,collect:async scope=>({...publicationObservation,...scope})});
+ const publicationStore=createReconciliationStore({pool:pools[0],authenticate:publicationAuth,collect:async scope=>({...publicationObservation,...scope}),verifyObservation:async()=>true});
  const publicationResult=await publicationStore.record({credential:'publication-manager',binding:publicationBinding});
  assert.equal(publicationResult.state,'observed-draft');
  assert.equal(publicationResult.number,77);
