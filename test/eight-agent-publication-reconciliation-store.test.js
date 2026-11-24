@@ -36,7 +36,7 @@ test('database failure rolls back and connection is released',async()=>{
  assert.ok(f.calls.some(x=>x.sql==='ROLLBACK'));assert.equal(f.released,true);
 });
 test('invalid binding rejected before database access',async()=>{
- let connected=false;const store=createReconciliationStore({pool:{connect:async()=>{connected=true;}},authenticate:async()=>actor,collect:async()=>observation,verifyObservation:async()=>true});
+ let connected=false;const store=createReconciliationStore({pool:{connect:async()=>{connected=true;}},authenticate:async()=>actor,collect:async()=>observation,verifyObservation:async()=>true,baseBranch:'main',headBranch:'draft'});
  await assert.rejects(store.record({credential:'fixture',binding:'bad'}),/Invalid binding/);assert.equal(connected,false);
 });
 
