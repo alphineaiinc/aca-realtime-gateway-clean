@@ -27,6 +27,8 @@ try {
 }
 
 const router = express.Router();
+const ingressRateLimit = require('../security/ingressLimit').ingressLimit({ max: 30 });
+const sharedIpLimit = require('../middleware/postgresRateLimit').createPostgresRateLimiter({ pool: require('../db/pool'), scope: 'chat-stream-ip', max: 30, ipBased: true });
 
 // ✅ Story 12.8 — cap JSON body size for this router (prevents abuse)
 try {
@@ -167,7 +169,7 @@ function* chunkText(text, chunkSize = 18) {
 // ---------------------------------------------------------------------------
 // POST /api/chat/session/clear
 // ---------------------------------------------------------------------------
-router.post("/chat/session/clear", authenticate, (req, res) => {
+router.post("/chat/session/clear", ingressRateLimit, sharedIpLimit, authenticate, (req, res) => {
   try {
     const tenant_id = req.tenant_id;
     const session_id = (req.body && req.body.session_id) ? String(req.body.session_id) : "web";
@@ -186,7 +188,7 @@ router.post("/chat/session/clear", authenticate, (req, res) => {
 // ---------------------------------------------------------------------------
 // POST /api/chat/stream
 // ---------------------------------------------------------------------------
-router.post("/chat/stream", authenticate, async (req, res) => {
+router.post("/chat/stream", ingressRateLimit, sharedIpLimit, authenticate, async (req, res) => {
   const tenant_id = req.tenant_id;
 
   // SSE headers (anti-buffer)
