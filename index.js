@@ -926,6 +926,10 @@ const ordinaryIngress = boundedIngress({max: 300, windowMs: 60000});
 const twilioIngress = boundedIngress({max: 300, windowMs: 60000});
 const stripeIngress = boundedIngress({max: 300, windowMs: 60000});
 const ingressBudgets = {ordinary:ordinaryIngress,twilio:twilioIngress,stripe:stripeIngress};
+// Independent process-local emergency ceilings; do not depend on forwarded identity.
+// Keep existing per-IP budgets and isolate provider classes.
+const aggregateIngressBudgets = Object.fromEntries(["ordinary","twilio","stripe"].map(kind=>[kind,boundedIngress({max: 3000, windowMs: 60000, globalBudget:true})]));
+app.use((req,res,next)=>aggregateIngressBudgets[ingressClass(req)](req,res,next));
 app.use((req,res,next)=>ingressBudgets[ingressClass(req)](req,res,next));
 app.use(recognizedRateLimit({windowMs: 60000, limit: 300, standardHeaders: "draft-8", legacyHeaders: false, passOnStoreError: false, keyGenerator: req => (ingressClass(req)+":")+require("express-rate-limit").ipKeyGenerator(req.ip)}));
 
