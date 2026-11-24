@@ -51,7 +51,7 @@ test('metadata-only GitHub transport omits issue body and uses GET with redirect
  const transport=createGitHubReadTransport({token:'fixture-token',repository:scope.repository,fetchImpl:async(url,options)=>{
   requests.push({url,options});return new Response(JSON.stringify({number:issue,state:'open',labels:[{name:'aca:auto/blocked'}],body:'x'.repeat(20000)}));
  }});
- const r=await transport.readIssueStatus({...scope,issue});\n await assert.rejects(transport.readIssueStatus({...scope,repository:'other/repo',issue}),/GitHub read failed/);
+ const r=await transport.readIssueStatus({...scope,issue});\n await assert.rejects(transport.readIssueStatus({...scope,repository:'other/repo',issue}),/Repository scope denied/);
  assert.deepEqual(r,{repository:scope.repository,issue,state:'open',labels:['aca:auto/blocked']});
  assert.equal(requests[0].url,'https://api.github.com/repos/fixture/aca/issues/118');
  assert.equal(requests[0].options.method,'GET');assert.equal(requests[0].options.redirect,'error');
