@@ -13,7 +13,7 @@ function createPolicyBoundQueue({queue,policy,scope,issue,manifestDigest}={}){
  return Object.freeze({
   async enqueue(input){await admit();return queue.enqueue(input);},
   async inspectWorkflowStep(input){await admit();return queue.inspectWorkflowStep(input);},
-  async claim(input){await admit();return queue.claim(input);},
+  async claim(input){try{await admit();}catch{return null;}return queue.claim(input);},
   finish:input=>queue.finish(input),
   stop:input=>queue.stop(input),
   quarantine:input=>queue.quarantine(input),
