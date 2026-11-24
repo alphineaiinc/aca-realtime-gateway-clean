@@ -16,3 +16,6 @@ Status: IN PROGRESS. Rollback: abandon isolated draft branch. No production runt
 
 ## Batch 2 — structured role contracts
 Foundation exact head 8e8ce6fe18c53cb631b576a5d1b257732c4e57bd passed CI run 45294951871. Eight role-specific contracts now require bounded arrays of text, reject extra fields and freeze accepted proposals. Trusted adapters are captured at manager construction, never supplied per request. Prior accepted proposals are task-local. This is a trusted in-process fixture boundary, not a sandbox or independent reviewer identity. Real model adapters, capability broker, persistence, cancellation of in-flight work and semantic verification remain pending. No live dispatch or provider use.
+
+## Batch 3 — scoped evidence broker
+Offline fixture-only broker grants role-specific issue/source/CI reads. Immutable repository/product/SHA scope, explicit fixture file inventory, bounded reads, session revocation and manager decision audit. No live GitHub API integration, shell, file writes, secrets or dispatch. In-process adapters are trusted code, not an isolation sandbox; source fixture contents must be pre-reviewed and secret-free. Next: durable manager state and authenticated worker identity, then live read-only adapter under applicable authorization.
