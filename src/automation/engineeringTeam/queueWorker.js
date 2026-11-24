@@ -14,7 +14,7 @@ function createQueueWorker({queue,manager,loadTask,fixtureProposalStorage=false}
   try{
    const input=await loadTask(Object.freeze({id:lease.id,scope:Object.freeze({...scope}),role}));
    if(!input||input.id!==lease.id||input.product!==scope.product||input.repository!==scope.repository||input.sha!==scope.sha||typeof input.subject!=='string')throw Error('Task binding denied');
-   const task=manager.createTask({product:scope.product,repository:scope.repository,sha:scope.sha,subject:input.subject});
+   const task=manager.createTask({product:scope.product,repository:scope.repository,sha:scope.sha,subject:input.subject,...(fixtureProposalStorage===true&&input.fixturePrior!==undefined?{fixturePrior:input.fixturePrior}:{})});
    proposal=await manager.propose({taskId:task.id,role,action:def.action});
    if(proposal.role!==role||proposal.approval!==false)throw Error('Proposal denied');
   }catch{
