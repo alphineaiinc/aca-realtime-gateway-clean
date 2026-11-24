@@ -32,7 +32,13 @@ test('restricted manager classifies closed blocked failed and partial evidence',
   const r=await fixture(opts).manager.observe();denied(r);assert.equal(r.attention,attention);
  }
 });
-test('restricted manager flags cancelled and unknown completed CI outcomes for attention',async()=>{\n for(const conclusion of ['cancelled','stale','skipped','neutral',null,'unknown']){\n  const r=await fixture({runs:[{id:1,name:'CI',status:'completed',conclusion,head_sha:scope.sha}]}).manager.observe();\n  denied(r);assert.equal(r.attention,'ci_attention');\n }\n});\ntest('restricted manager flags cancelled and unknown completed CI outcomes for attention',async()=>{\n for(const conclusion of ['cancelled','stale','skipped','neutral',null,'unknown']){\n  const r=await fixture({runs:[{id:1,name:'CI',status:'completed',conclusion,head_sha:scope.sha}]}).manager.observe();\n  denied(r);assert.equal(r.attention,'ci_attention');\n }\n});\ntest('restricted manager rejects scope substitution duplicate runs and malformed evidence',async()=>{
+test('restricted manager flags cancelled and unknown completed CI outcomes for attention',async()=>{
+ for(const conclusion of ['cancelled','stale','skipped','neutral',null,'unknown']){
+  const r=await fixture({runs:[{id:1,name:'CI',status:'completed',conclusion,head_sha:scope.sha}]}).manager.observe();
+  denied(r);assert.equal(r.attention,'ci_attention');
+ }
+});
+test('restricted manager rejects scope substitution duplicate runs and malformed evidence',async()=>{
  const run={id:1,name:'CI',status:'completed',conclusion:'success',head_sha:scope.sha};
  for(const opts of [{issueScope:'other/repo'},{ciScope:'b'.repeat(40)},{runs:[run,run]},{runs:[{...run,head_sha:'b'.repeat(40)}]},{state:'unknown'},{total:0}]){
   const r=await fixture(opts).manager.observe();denied(r);assert.equal(r.status,'unavailable');
