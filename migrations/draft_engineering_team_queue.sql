@@ -69,3 +69,13 @@ CREATE TABLE engineering_team_approval_requests (
  CHECK(expires_at>created_at)
 );
 CREATE INDEX engineering_team_approval_scope_idx ON engineering_team_approval_requests(product,repository,head_sha,state);
+
+-- Nonrefundable call reservations survive crashes; no automatic reset.
+CREATE TABLE engineering_team_call_budgets (
+ product text NOT NULL,
+ repository text NOT NULL,
+ budget_id uuid NOT NULL,
+ max_calls integer NOT NULL CHECK(max_calls BETWEEN 1 AND 64),
+ reserved_calls integer NOT NULL DEFAULT 0 CHECK(reserved_calls>=0 AND reserved_calls<=max_calls),
+ PRIMARY KEY(product,repository,budget_id)
+);
