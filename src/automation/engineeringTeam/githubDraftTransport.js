@@ -23,6 +23,12 @@ function createGitHubDraftTransport({token,repository,baseBranch,fetchImpl=globa
   // The service must atomically consume an exact binding and enforce independent
   // acceptance and governance; no default implementation or live wiring exists.
   if(await admit(Object.freeze({binding,repository,baseBranch,headBranch,headSha,baseSha:request.scope.sha,evidenceSha256:request.evidenceSha256}))!==true)throw Error('Publication admission denied');
+  // Admission may take time; recheck both refs before the irreversible POST.
+  // GitHub does not offer atomic SHA-conditional PR creation; protected refs
+  // and independent reconciliation remain mandatory before live enablement.
+  const freshBase=await call('/git/ref/heads/'+baseBranch,'GET');
+  const freshHead=await call('/git/ref/heads/'+headBranch,'GET');
+  if(freshBase.object?.sha!==request.scope.sha||freshHead.object?.sha!==headSha)throw Error('Revision changed after admission; reconcile reservation');
   try{
    const pr=await call('/pulls','POST',{title:'Engineering draft '+binding.slice(0,16),body:'Evidence binding: '+binding,head:headBranch,base:baseBranch,draft:true,maintainer_can_modify:false});
    if(pr.draft!==true||pr.base?.sha!==request.scope.sha||pr.head?.sha!==headSha||!Number.isSafeInteger(pr.number)||pr.number<1)throw Error('Unexpected publication result');
