@@ -61,6 +61,9 @@ test("isolated commercial pricing, replay and concurrent invoice acceptance",asy
  const client=await pool.connect();
  try{
  await client.query("SET ROLE aca_financial_meter");
+ const restrictedEvent={tenantId:2,eventId:"CA_restricted",kind:"voice_seconds",quantity:60,occurredAt:new Date("2020-02-15T00:00:00Z")};
+ assert.deepEqual(await recordUsage(client,restrictedEvent),{stored:true});
+ assert.deepEqual(await recordUsage(client,restrictedEvent),{stored:false});
  await assert.rejects(client.query("INSERT INTO public.aca_period_pricing VALUES(2,'2020-01-01',60,500)"),/permission denied/);
  await assert.rejects(client.query("TRUNCATE public.analytics_events"),/permission denied/);
  await assert.rejects(client.query("UPDATE public.analytics_events SET quantity=999"),/permission denied/);
@@ -68,6 +71,14 @@ test("isolated commercial pricing, replay and concurrent invoice acceptance",asy
  await client.query("SET ROLE aca_financial_pricer");
  await client.query("INSERT INTO public.aca_period_pricing VALUES(2,'2020-01-01',60,500)");
  await assert.rejects(client.query("INSERT INTO public.aca_billable_usage_keys VALUES(2,'forbidden','voice_seconds')"),/permission denied/);
+ await client.query("RESET ROLE");
+ await client.query("INSERT INTO public.aca_period_pricing VALUES(2,'2020-02-01',60,500)");
+ await client.query("SET ROLE aca_financial_closer");
+ const restrictedInvoice=await invoiceClosedMonth({connect:async()=>({query:client.query.bind(client),release(){}})},{tenantId:2,year:2020,month:2,minuteRateCents:60,tokenRateMicros:500});
+ assert.equal(Number(restrictedInvoice.amount_usd),0.6);
+ await client.query("RESET ROLE");
+ await client.query("SET ROLE aca_financial_meter");
+ assert.deepEqual(await recordUsage(client,{...restrictedEvent,eventId:"CA_restricted_late"}),{stored:false,reconciliation:true,queued:true});
  await client.query("RESET ROLE");
  await client.query("SET ROLE aca_financial_closer");
  await assert.rejects(client.query("UPDATE public.aca_period_pricing SET minute_rate_cents=1"),/permission denied/);
