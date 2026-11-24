@@ -15,7 +15,7 @@ function execute(image,mode){
  const name='alphine-fixture-'+randomUUID();
  args.splice(1,0,'--name',name);
  const call=(args,timeout=5000)=>spawnSync('/usr/bin/docker',args,{encoding:'utf8',timeout,maxBuffer:8192,env:{PATH:'/usr/bin:/bin',HOME:'/nonexistent',DOCKER_HOST:'unix:///var/run/docker.sock'}});
- const ok=r=>!r.error&&!r.signal&&r.status===0&&r.stderr==='';
+ const ok=r=>Boolean(r)&&!r.error&&!r.signal&&r.status===0&&r.stderr==='';
  const created=call(args,15000);
  if(!ok(created)||!/^[a-f0-9]{64}\n?$/.test(created.stdout)){
   const removed=call(['rm','-f',name]);
@@ -40,7 +40,12 @@ function execute(image,mode){
  }finally{
   const removed=call(['rm','-f',id]);
   const absent=call(mode==='query-failure'?['ps','--invalid-fixed-fixture-option']:['ps','-aq','--no-trunc','--filter','id='+id]);
-  if(!ok(removed))throw Error('Removal unresolved; reconcile '+id);
+  if(!ok(removed)){
+   // Best effort only: an ambiguous removal must never become acceptance.
+   call(['rm','-f',id]);
+   call(['ps','-aq','--no-trunc','--filter','id='+id]);
+   throw Error('Removal unresolved; reconcile '+id);
+  }
   if(mode==='query-failure'){
    if(ok(absent)||absent.error||absent.signal||absent.status!==125||!absent.stderr.includes('unknown flag'))throw Error('Expected query fault unverified; reconcile '+id);
    const reconciled=call(['ps','-aq','--no-trunc','--filter','id='+id]);
@@ -48,7 +53,11 @@ function execute(image,mode){
    if(!passed)throw Error('Fixture outcome denied');
    throw Error('Fixed query failure reconciled');
   }
-  if(!ok(absent)||absent.stdout!=='')throw Error('Cleanup unresolved; reconcile '+id);
+  if(!ok(absent)||absent.stdout!==''){
+   call(['rm','-f',id]);
+   call(['ps','-aq','--no-trunc','--filter','id='+id]);
+   throw Error('Cleanup unresolved; reconcile '+id);
+  }
  }
  if(!passed)throw Error('Fixture outcome denied');
  return Object.freeze({fixturePassed:true,probeSha256:createHash('sha256').update(probe).digest('hex'),image,executionAuthorized:false,attestation:false});
