@@ -45,3 +45,10 @@ test('rejects next-page indication, duplicate PR numbers and oversized response'
  const b=createGitHubPublicationEvidenceBoundary({collectFetch:async()=>make(),verifyFetch:async()=>response([pr]),collectToken:async()=>'collector-token-long-enough',verifyToken:async()=>'verifier-token-long-enough'});await assert.rejects(b.collect(scope),pattern);
  }
 });
+
+test('conflicting binding claim cannot be discarded by reconciliation',async()=>{
+ const {reconcilePublication}=require('../src/automation/engineeringTeam/publicationReconciliation');
+ const conflict={...pr,number:14,body:'prefix Evidence binding: '+scope.binding,head:{...pr.head,ref:'different-branch'}};
+ const b=createGitHubPublicationEvidenceBoundary({collectFetch:async()=>response([pr,conflict]),verifyFetch:async()=>response([pr,conflict]),collectToken:async()=>'collector-token-long-enough',verifyToken:async()=>'verifier-token-long-enough'});
+ const evidence=await b.collect(scope);assert.equal(await b.verify(evidence,scope),true);const result=reconcilePublication(evidence);assert.equal(result.state,'unresolved');assert.equal(result.retryAuthorized,false);assert.equal(result.executionAuthorized,false);
+});
