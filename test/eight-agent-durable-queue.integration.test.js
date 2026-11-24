@@ -689,4 +689,37 @@ test('isolated PostgreSQL queue: concurrent claims, retries, restart, expiry and
  assert.equal(await productQueue.finish({scope:productBScope,role:'backend-developer',credential:'product-b-worker',taskId:productBTask,leaseId:productBLease.lease_id,outcome:'succeeded'}),'succeeded');
  assert.equal((await pools[1].query('SELECT state FROM engineering_team_tasks WHERE id=$1',[productATask])).rows[0].state,'queued');
  assert.equal((await pools[1].query('SELECT state FROM engineering_team_tasks WHERE id=$1',[productBTask])).rows[0].state,'succeeded');
+
+ // Disposable CI privilege proof: a non-login observer role can read only
+ // governance rows in its fixed product/repository and cannot mutate anything.
+ const observer=await pools[0].connect();
+ try {
+  await observer.query('BEGIN');
+  await observer.query('CREATE ROLE aca_ci_restricted_observer NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT');
+  await observer.query('GRANT USAGE ON SCHEMA public TO aca_ci_restricted_observer');
+  await observer.query('GRANT SELECT (id,product,repository) ON engineering_team_governance_alerts TO aca_ci_restricted_observer');
+  await observer.query('GRANT SELECT (alert_id) ON engineering_team_governance_acknowledgements TO aca_ci_restricted_observer');
+  await observer.query('ALTER TABLE engineering_team_governance_alerts ENABLE ROW LEVEL SECURITY');
+  await observer.query('ALTER TABLE engineering_team_governance_acknowledgements ENABLE ROW LEVEL SECURITY');
+  await observer.query("CREATE POLICY ci_observer_alert_scope ON engineering_team_governance_alerts FOR SELECT TO aca_ci_restricted_observer USING (product='aca' AND repository='fixture/recovery')");
+  await observer.query("CREATE POLICY ci_observer_ack_scope ON engineering_team_governance_acknowledgements FOR SELECT TO aca_ci_restricted_observer USING (EXISTS (SELECT 1 FROM engineering_team_governance_alerts a WHERE a.id=alert_id))");
+  await observer.query('SET LOCAL ROLE aca_ci_restricted_observer');
+  const {createRestrictedManagerRuntime}=require('../src/automation/engineeringTeam/restrictedManagerRuntime');
+  const runtime=createRestrictedManagerRuntime({scope:recoveryScope,issue:118,githubToken:'fixture-only-token',fetchImpl:async url=>new Response(JSON.stringify(url.includes('/issues/')?{number:118,state:'open',labels:[]}:{total_count:1,workflow_runs:[{id:1,name:'CI',status:'completed',conclusion:'success',head_sha:recoveryScope.sha}]})),readOnlyPool:observer});
+  const report=await runtime.observe();
+  assert.equal(report.status,'observed');
+  assert.deepEqual(report.governance,{status:'observed',scope:'repository-wide',pending:4,partial:false});
+  assert.equal(report.executionAuthorized,false);
+  assert.equal(report.writeAuthorized,false);
+  assert.equal((await observer.query('SELECT count(*)::int AS n FROM engineering_team_governance_alerts WHERE repository=$1',[productAScope.repository])).rows[0].n,0);
+  for(const sql of ['SELECT * FROM engineering_team_tasks','SELECT actor_id FROM engineering_team_governance_alerts','DELETE FROM engineering_team_governance_alerts','UPDATE engineering_team_governance_acknowledgements SET alert_id=alert_id']){
+   await observer.query('SAVEPOINT denied_operation');
+   await assert.rejects(observer.query(sql),e=>e.code==='42501');
+   await observer.query('ROLLBACK TO SAVEPOINT denied_operation');
+   await observer.query('RELEASE SAVEPOINT denied_operation');
+  }
+ } finally {
+  await observer.query('ROLLBACK');
+  observer.release();
+ }
 });
