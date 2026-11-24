@@ -34,7 +34,7 @@ test('database errors propagate to caller for rollback',async()=>{
 
 function owned(results,{failRollback=false}={}) {
  const calls=[];
- const client={async query(sql){calls.push(sql);if(sql==='ROLLBACK'&&failRollback)throw Error('rollback failed');return {rows:[{acquired:results.shift()}]};},release(discard){calls.push(['release',discard]);}};
+ const client={async query(sql){calls.push(sql);if(sql==='ROLLBACK'&&failRollback)throw Error('rollback failed');return {rows:sql.includes('pg_try_advisory_xact_lock')?[{acquired:results.shift()}]:[]};},release(discard){calls.push(['release',discard]);}};
  return {calls,pool:{async connect(){return client;}}};
 }
 test('denied admission rolls back and never invokes work',async()=>{
