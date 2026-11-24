@@ -44,6 +44,10 @@ function startServer(env=process.env,{githubTokenProvider=installationReadToken,
  const parts=repoName.split("/");
  const reviewerId=Number(env.ACA_REVIEWER_ID);
  const repositoryId=Number(env.ACA_REVIEW_REPOSITORY_ID);
+ // Single shared bearer principal; bounded process-local admission. Protected ingress
+ // must independently enforce distributed limits before live activation.
+ let activeRequests=0,windowStart=0,windowCount=0;
+ const maxConcurrent=2,maxPerMinute=30;
  async function github(path){
    const token=await githubTokenProvider({
      appId:Number(env.ACA_REVIEW_GITHUB_APP_ID),
@@ -65,6 +69,13 @@ function startServer(env=process.env,{githubTokenProvider=installationReadToken,
    if(req.method!=="POST"||!["/review","/triage"].includes(req.url))return answer(404,{error:"not_found"});
    if(!equalBearer(req.headers.authorization,env.ACA_REVIEW_API_TOKEN))
      return answer(401,{error:"unauthorized"});
+   const now=performance.now();
+   if(now-windowStart>=60000){windowStart=now;windowCount=0;}
+   if(activeRequests>=maxConcurrent||windowCount>=maxPerMinute){
+     res.setHeader("Retry-After","60");
+     return answer(429,{error:"reviewer_busy"});
+   }
+   activeRequests++;windowCount++;
    let body="";
    try{
      for await(const chunk of req){body+=chunk.toString("utf8");
@@ -109,6 +120,7 @@ function startServer(env=process.env,{githubTokenProvider=installationReadToken,
      return answer(200,signVerdict(scope,reviewerId,
        env.ACA_REVIEW_PRIVATE_KEY.replace(/\\n/g,String.fromCharCode(10))));
    }catch{return answer(503,{error:"review_evidence_unavailable"});}
+   finally{activeRequests--;}
  });
  // One-shot, read-only startup check. Never emit keys, JWTs, tokens or GitHub responses.
  // This diagnostic cannot authorize signing, merging or agent dispatch.
