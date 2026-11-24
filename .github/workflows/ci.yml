@@ -55,16 +55,17 @@ jobs:
         run: node --test test/eight-agent-durable-queue.integration.test.js
 
   engineering-sandbox-probe:
-    name: Engineering sandbox probe (trusted fixture only)
+    name: Base-pinned sandbox smoke (not independent attestation)
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@v4
         with:
+          ref: ${{ github.event.pull_request.base.sha || github.sha }}
           persist-credentials: false
       - name: Run trusted fixture without network or credentials
         run: |
-          docker pull node:22-bookworm-slim
+          docker pull node:22.23.5-bookworm-slim@sha256:47725aca53d3295ec2d3be8f62726599b3033cc262edc2c7e429909b3ac599fc
           timeout --kill-after=5s 40s docker run --rm --name aca-sandbox-fixture \
             --network none --read-only --user 65534:65534 \
             --cap-drop ALL --security-opt no-new-privileges \
