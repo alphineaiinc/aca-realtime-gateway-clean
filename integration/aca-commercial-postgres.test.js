@@ -7,7 +7,7 @@ test("isolated commercial pricing, replay and concurrent invoice acceptance",asy
  const pool=new Pool({connectionString:"postgres://onboarding_test:onboarding_test_only@127.0.0.1:5432/aca_commercial_ci",options:"-c timezone=UTC"});
  try{
  await pool.query("CREATE TABLE public.master_tenants(id integer PRIMARY KEY); INSERT INTO public.master_tenants VALUES(1),(2); CREATE TABLE public.analytics_events(id bigserial PRIMARY KEY,tenant_id integer,event_type text,quantity numeric,unit text,meta jsonb,created_at timestamp DEFAULT NOW()); CREATE TABLE public.billing_invoices(id serial PRIMARY KEY,tenant_id integer,usage_minutes numeric,ai_tokens integer,amount_usd numeric,status text,period_start timestamp,period_end timestamp)");
- for(const name of ["016_billable_usage_keys.sql","017_invoice_periods.sql","draft_aca_usage_identity.sql","draft_aca_period_pricing.sql"])await pool.query(fs.readFileSync("migrations/"+name,"utf8"));
+ for(const name of ["016_billable_usage_keys.sql","017_invoice_periods.sql","draft_aca_usage_identity.sql","draft_aca_period_pricing.sql","draft_aca_usage_closure_guard.sql"])await pool.query(fs.readFileSync("migrations/"+name,"utf8"));
  const event={tenantId:1,eventId:"CA_fixture",kind:"voice_seconds",quantity:60};
  assert.deepEqual(await recordUsage(pool,event),{stored:true});
  assert.deepEqual(await recordUsage(pool,event),{stored:false});
@@ -25,5 +25,6 @@ test("isolated commercial pricing, replay and concurrent invoice acceptance",asy
  assert.equal(Number(results.find(Boolean).amount_usd),0.6);
  assert.equal((await pool.query("SELECT count(*)::int AS n FROM public.billing_invoices")).rows[0].n,1);
  assert.equal(await invoiceClosedMonth(pool,{...input,tenantId:2}),null);
+ await assert.rejects(pool.query("INSERT INTO public.analytics_events(tenant_id,event_type,quantity,unit,created_at) VALUES(1,'ACA_VERIFIED_USAGE',1,'voice_seconds','2020-01-20')"),/USAGE_PERIOD_CLOSED/);
  }finally{await pool.end();}
 });
