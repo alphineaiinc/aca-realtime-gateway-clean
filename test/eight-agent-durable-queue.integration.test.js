@@ -653,8 +653,8 @@ test('isolated PostgreSQL queue: concurrent claims, retries, restart, expiry and
  assert.ok(visibleAlerts.every(x=>!Object.hasOwn(x,'evidence_sha256')&&!Object.hasOwn(x,'credential')));
  assert.equal(recoveryGate.executionAllowed(),false);
 
- // A real durable spend reservation is consumed even if policy is revoked before
- // the external provider call; the provider must not be contacted.
+ // A spend-only reservation is deliberately not a request-bound dispatch receipt;
+ // the SDK adapter must reject it before any provider call.
  const boundaryScope={...scope,repository:'fixture/provider-boundary'},boundaryBudgetId=randomUUID();
  await pools[0].query('INSERT INTO engineering_team_spend_budgets(product,repository,budget_id,max_calls,max_microusd) VALUES ($1,$2,$3,1,100)',[boundaryScope.product,boundaryScope.repository,boundaryBudgetId]);
  const boundaryBudget=createSpendBudget({pool:pools[0],...boundaryScope,budgetId:boundaryBudgetId,ceilings:{fixture:100}});
@@ -663,7 +663,7 @@ test('isolated PostgreSQL queue: concurrent claims, retries, restart, expiry and
  const boundaryModels=Object.fromEntries(sequence.map(r=>[r,'fixture']));
  const boundaryTransport=createOpenAITransport({models:boundaryModels,authorize:async()=>++boundaryAuthorizations===1,budget:boundaryBudget,client:{responses:{create:async()=>{boundaryProviderCalls++;return {status:'completed',usage:{input_tokens:1,output_tokens:1},output_text:'{}'};}}}});
  await assert.rejects(boundaryTransport.generate({role:'orchestrator',mode:'proposal-only',input:'{}',instructions:'fixture',schema:{type:'object'}}),/^Error: Provider request failed$/);
- assert.equal(boundaryAuthorizations,2);
+ assert.equal(boundaryAuthorizations,1);
  assert.equal(boundaryProviderCalls,0);
  assert.deepEqual(boundaryTransport.usage(),{calls:0,inputTokens:0,outputTokens:0});
  assert.deepEqual((await pools[1].query('SELECT reserved_calls,reserved_microusd FROM engineering_team_spend_budgets WHERE budget_id=$1',[boundaryBudgetId])).rows[0],{reserved_calls:1,reserved_microusd:'100'});
