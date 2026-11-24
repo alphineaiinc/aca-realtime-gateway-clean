@@ -64,6 +64,16 @@ test('isolated PostgreSQL queue: concurrent claims, retries, restart, expiry and
  assert.equal(continuation.executionAllowed(),false);
  assert.equal((await createContinuationRuntime({...continuationConfig,pool:pools[1]}).onCompletion({runId:456,attempt:1})).state,'duplicate-or-denied');
  assert.equal((await pools[0].query('SELECT state FROM engineering_team_tasks WHERE id=$1',[continuationTask])).rows[0].state,'succeeded');
+ // A successful CI receipt must not override a subsequently closed issue policy.
+ const blockedTask=await q.enqueue({scope,role,credential:'manager'});
+ const blockedRun={...continuationRun,id:457};
+ const blockedPolicy={evaluate:async()=>({scope,issueNumber:42,manifestDigest:'c'.repeat(64),policyVersion:'v1',eligibleForPreparation:false,executionAuthorized:false,evidenceSha256:'e'.repeat(64)})};
+ const blockedRuntime=createContinuationRuntime({...continuationConfig,pool:pools[0],readRun:async()=>blockedRun,policy:blockedPolicy,manager:{createTask:()=>({id:'must-not-create'}),propose:async()=>assert.fail('blocked policy must not propose')},loadTask:async()=>assert.fail('blocked policy must not load task')});
+ const blockedResult=await blockedRuntime.onCompletion({runId:457,attempt:1});
+ assert.equal(blockedResult.state,'drained');
+ assert.equal(blockedResult.result.reason,'idle');
+ assert.equal((await pools[0].query('SELECT state FROM engineering_team_tasks WHERE id=$1',[blockedTask])).rows[0].state,'queued');
+ assert.equal(blockedRuntime.executionAllowed(),false);
  continuation.stop();
  assert.equal((await continuation.onCompletion({runId:456,attempt:1})).state,'stopped');
  const id=await q.enqueue({scope,role,credential:'manager'});
