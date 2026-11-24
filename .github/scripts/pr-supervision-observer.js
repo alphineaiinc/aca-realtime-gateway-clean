@@ -9,6 +9,7 @@ const {evaluatePrSupervision} = require("../../src/automation/prSupervisionPolic
 const {ALLOWLIST_LABEL, LABELS} = require("../../src/automation/safeQueuePolicy");
 const {verifyClosingIssueLink} = require("../../src/automation/verifiedPrLink");
 const {readCorrectionHistory} = require("../../src/automation/postgresCorrectionHistoryReader");
+const {randomBytes} = require("node:crypto");
 const {verifySignedReview} = require("../../src/automation/signedReviewEvidence");
 const {verifiedRequiredChecks} = require("../../src/automation/verifiedCiEvidence");
 const {bindChecksToWorkflowRuns} = require("../../src/automation/ciWorkflowRunBinding");
@@ -96,11 +97,12 @@ async function observe({github, owner, repo, prNumber, issueNumber,
   if (trustedHead && trustedLink && typeof trustedReviewProvider === "function" &&
       validNumber(trustedReviewerId) && trustedReviewerPublicKey) {
     try {
+      const challenge=randomBytes(32).toString("hex");
       const evidence = await trustedReviewProvider({repositoryId:repository.id,
-        issueNumber,prNumber,headSha});
+        issueNumber,prNumber,headSha,challenge});
       review = verifySignedReview({envelope:evidence,
         publicKey:trustedReviewerPublicKey,repositoryId:repository.id,
-        reviewerId:trustedReviewerId,prNumber,headSha});
+        reviewerId:trustedReviewerId,prNumber,headSha,issueNumber,challenge});
     } catch { review = null; }
   }
   return evaluatePrSupervision({
