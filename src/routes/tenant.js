@@ -2,6 +2,8 @@
 const express = require("express");
 const jwt = require("jsonwebtoken");
 const router = express.Router();
+const ingressRateLimit=require("../security/ingressLimit").ingressLimit({max:60});
+
 const pool = require("../db/pool");
 const requestWindows = new Map();
 function requestLimit(req,res,next) {
@@ -16,7 +18,7 @@ function requestLimit(req,res,next) {
 // ---------------------------------------------------------------------------
 // POST /tenant/provision (secured via header API key)
 // ---------------------------------------------------------------------------
-router.post("/provision", requestLimit, async (req,res) => {
+router.post("/provision", ingressRateLimit, requestLimit, async (req,res) => {
   const crypto = require("node:crypto");
   const expected = Buffer.from(process.env.PROVISION_API_KEY || "");
   const actual = Buffer.from(String(req.headers["x-api-key"] || ""));
@@ -32,14 +34,14 @@ router.post("/provision", requestLimit, async (req,res) => {
 // ---------------------------------------------------------------------------
 // POST /tenant/login
 // ---------------------------------------------------------------------------
-router.post("/login", (_req, res) => {
+router.post("/login", ingressRateLimit, (_req, res) => {
   return res.status(403).json({ok:false,error:"Verified login required"});
 });
 
 // ---------------------------------------------------------------------------
 // GET /tenant/profile (JWT required)
 // ---------------------------------------------------------------------------
-router.get("/profile", requestLimit, verifiedBusiness, async (req, res) => {
+router.get("/profile", ingressRateLimit, requestLimit, verifiedBusiness, async (req, res) => {
   try {
     const tenantId = req.verifiedTenantId;
 
@@ -68,12 +70,12 @@ function loginLimit(req,res,next){
  if(v.count>=5||(!loginWindows.has(key)&&loginWindows.size>=10000))return res.status(429).json({ok:false,error:"Try again later"});
  v.count++;loginWindows.set(key,v);next();
 }
-router.post("/login/start",loginLimit,async(req,res)=>{
+router.post("/login/start", ingressRateLimit, loginLimit,async(req,res)=>{
  if(process.env.ACA_VERIFIED_LOGIN_ENABLED!=="true")return res.status(503).json({ok:false,error:"Login unavailable"});
  try{await issueLogin({query:(...a)=>pool.query(...a),email:req.body?.email,sendMail:createSmtpSender()});}catch{}
  return res.status(202).json({ok:true,message:"If eligible, a sign-in code will be sent."});
 });
-router.post("/login/redeem",loginLimit,async(req,res)=>{
+router.post("/login/redeem", ingressRateLimit, loginLimit,async(req,res)=>{
  res.set("Cache-Control","no-store");
  if(process.env.ACA_VERIFIED_LOGIN_ENABLED!=="true")return res.status(503).json({ok:false,error:"Login unavailable"});
  try{
@@ -94,7 +96,7 @@ async function verifiedBusiness(req,res,next){
  req.verifiedTenantId=claims.tenant_id;next();
  }catch{return res.status(401).json({ok:false,error:"unauthorized"});}
 }
-router.get("/requests",loginLimit,verifiedBusiness,async(req,res)=>{
+router.get("/requests", ingressRateLimit, loginLimit,verifiedBusiness,async(req,res)=>{
  try{
  const {rows}=await pool.query("SELECT id,workflow_id,intent,details,created_at FROM public.aca_customer_requests WHERE tenant_id=$1 ORDER BY id DESC LIMIT 100",[req.verifiedTenantId]);
  res.set("Cache-Control","no-store");return res.json({ok:true,requests:rows});
@@ -102,7 +104,7 @@ router.get("/requests",loginLimit,verifiedBusiness,async(req,res)=>{
 });
 
 // Owner-authorized onboarding only; disabled until staging acceptance.
-router.post("/onboarding/start",loginLimit,async(req,res)=>{
+router.post("/onboarding/start", ingressRateLimit, loginLimit,async(req,res)=>{
  if(process.env.ACA_ONBOARDING_ENABLED!=="true")return res.status(503).json({ok:false,error:"Onboarding unavailable"});
  const crypto=require("node:crypto"),expected=Buffer.from(process.env.PROVISION_API_KEY||""),actual=Buffer.from(String(req.headers["x-api-key"]||""));
  if(!expected.length||actual.length!==expected.length||!crypto.timingSafeEqual(actual,expected))return res.status(401).json({ok:false,error:"unauthorized"});
@@ -114,7 +116,7 @@ router.post("/onboarding/start",loginLimit,async(req,res)=>{
  return res.status(202).json({ok:true});
  }catch{return res.status(400).json({ok:false,error:"Onboarding request unsuccessful"});}
 });
-router.post("/onboarding/redeem",loginLimit,async(req,res)=>{
+router.post("/onboarding/redeem", ingressRateLimit, loginLimit,async(req,res)=>{
  if(process.env.ACA_ONBOARDING_ENABLED!=="true")return res.status(503).json({ok:false,error:"Onboarding unavailable"});
  try{
  const result=await require("../security/provisionVerifiedBusiness").provisionVerifiedBusiness({pool,token:req.body?.token,email:req.body?.email,businessName:req.body?.business_name});
@@ -122,7 +124,7 @@ router.post("/onboarding/redeem",loginLimit,async(req,res)=>{
  }catch{}
  return res.status(400).json({ok:false,error:"Invalid or expired onboarding request"});
 });
-router.post("/routing/prepare",requestLimit,async(req,res)=>{
+router.post("/routing/prepare", ingressRateLimit, requestLimit,async(req,res)=>{
  if(process.env.ACA_ONBOARDING_ENABLED!=="true")return res.status(503).json({ok:false,error:"Configuration unavailable"});
  const crypto=require("node:crypto"),expected=Buffer.from(process.env.PROVISION_API_KEY||""),actual=Buffer.from(String(req.headers["x-api-key"]||""));
  if(!expected.length||actual.length!==expected.length||!crypto.timingSafeEqual(actual,expected))return res.status(401).json({ok:false,error:"unauthorized"});
@@ -131,7 +133,7 @@ router.post("/routing/prepare",requestLimit,async(req,res)=>{
  return res.status(201).json({ok:true,...result});
  }catch{return res.status(400).json({ok:false,error:"Configuration unsuccessful"});}
 });
-router.get("/routing/status",requestLimit,verifiedBusiness,async(req,res)=>{
+router.get("/routing/status", ingressRateLimit, requestLimit,verifiedBusiness,async(req,res)=>{
  res.set("Cache-Control","no-store");
  try{
  const {rows}=await pool.query("SELECT c.workflow_id,c.workflow_version,c.is_active AS workflow_active,n.phone_number,n.is_active AS number_active FROM public.tenant_workflow_configs c LEFT JOIN public.tenant_phone_numbers n ON n.tenant_id=c.tenant_id WHERE c.tenant_id=$1 ORDER BY n.phone_number",[req.verifiedTenantId]);

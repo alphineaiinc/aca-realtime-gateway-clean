@@ -3,6 +3,8 @@ const express=require("express");
 const path=require("path");
 const jwt=require("jsonwebtoken");
 const router=express.Router();
+const ingressRateLimit=require("../security/ingressLimit").ingressLimit({max:30});
+
 function requireDashboardAdmin(req,res,next){
   res.set("Cache-Control","no-store");
   try {
@@ -14,8 +16,8 @@ function requireDashboardAdmin(req,res,next){
   } catch {return res.status(401).json({ok:false,error:"unauthorized"});}
 }
 router.use(requireDashboardAdmin);
-router.get("/",(req,res)=>res.sendFile(path.join(__dirname,"../../public/dashboard/index.html")));
+router.get("/", ingressRateLimit, (req,res)=>res.sendFile(path.join(__dirname,"../../public/dashboard/index.html")));
 // Raw caller logs and host diagnostics are intentionally not exposed.
-router.get("/data",(req,res)=>res.json({entries:[],rawLogsAvailable:false}));
-router.get("/brain-status",(req,res)=>res.status(503).json({ok:false,error:"diagnostics_unavailable"}));
+router.get("/data", ingressRateLimit, (req,res)=>res.json({entries:[],rawLogsAvailable:false}));
+router.get("/brain-status", ingressRateLimit, (req,res)=>res.status(503).json({ok:false,error:"diagnostics_unavailable"}));
 module.exports=router;

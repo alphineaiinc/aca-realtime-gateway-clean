@@ -11,6 +11,8 @@ const pool = require("../db/pool");
 const { recordEvent } = require("../analytics/eventCollector.js");
 
 const router = express.Router();
+const ingressRateLimit=require("../security/ingressLimit").ingressLimit({max:30});
+
 
 // -----------------------------
 // 🔐 Strict Auth Middleware
@@ -44,12 +46,12 @@ function requireAdmin(req, res, next) {
 // ============================================================
 // POST /api/partner/payout
 // ============================================================
-router.post("/partner/payout", authenticate, requireAdmin, (_req,res)=>res.status(503).json({ok:false,error:"Verified payout settlement unavailable"}));
+router.post("/partner/payout", ingressRateLimit, authenticate, requireAdmin, (_req,res)=>res.status(503).json({ok:false,error:"Verified payout settlement unavailable"}));
 
 // ============================================================
 // GET /api/partner/payouts
 // ============================================================
-router.get("/partner/payouts", authenticate, async (req, res) => {
+router.get("/partner/payouts", ingressRateLimit, authenticate, async (req, res) => {
   try {
     const role = String(req.user?.role || "").toLowerCase();
     const partner_id = req.user.partner_id;

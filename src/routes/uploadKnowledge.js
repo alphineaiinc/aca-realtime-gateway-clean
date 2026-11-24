@@ -7,6 +7,8 @@ const pool = require("../db/pool");
 const { embedText } = require("../brain/utils/embeddingManager");
 
 const router = express.Router();
+const ingressRateLimit=require("../security/ingressLimit").ingressLimit({max:20});
+
 const requestWindows = new Map();
 function requestLimit(req,res,next) {
   const now=Date.now(),key=String(req.ip||"unknown");
@@ -109,7 +111,7 @@ function acceptPdfUpload(req, res, next) {
   });
 }
 
-router.post("/tenant/upload-knowledge", requestLimit, authenticate, reserveUpload, acceptPdfUpload, async (req, res) => {
+router.post("/tenant/upload-knowledge", ingressRateLimit, requestLimit, authenticate, reserveUpload, acceptPdfUpload, async (req, res) => {
   try {
   if (!req.file) {
     return res.status(400).json({ ok: false, error: "File missing" });

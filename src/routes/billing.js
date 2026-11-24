@@ -9,6 +9,8 @@ const path = require("path");
 const archiver = require("archiver");   // ensure available
 
 const router = express.Router();
+const ingressRateLimit=require("../security/ingressLimit").ingressLimit({max:60});
+
 
 
 // ---------------------------------------------------------------------
@@ -55,12 +57,12 @@ async function authenticate(req, res, next) {
 // ---------------------------------------------------------------------
 // POST /api/billing/generate – create invoice
 // ---------------------------------------------------------------------
-router.post("/generate", authenticate, rateLimit, (_req,res)=>res.status(503).json({ok:false,error:"Trusted usage invoicing unavailable"}));
+router.post("/generate", ingressRateLimit, authenticate, rateLimit, (_req,res)=>res.status(503).json({ok:false,error:"Trusted usage invoicing unavailable"}));
 
 // ---------------------------------------------------------------------
 // GET /api/billing/history – list invoices
 // ---------------------------------------------------------------------
-router.get("/history", authenticate, rateLimit, async (req, res) => {
+router.get("/history", ingressRateLimit, authenticate, rateLimit, async (req, res) => {
   try {
     const { status, from, to } = req.query;
     const where = ["tenant_id = $1"];
@@ -91,12 +93,12 @@ router.get("/history", authenticate, rateLimit, async (req, res) => {
 // POST /api/billing/pay – mark invoice paid (rate-limited)
 // ---------------------------------------------------------------------
 // Payment state may only be changed by verified payment-provider webhooks.
-router.post("/pay", authenticate, rateLimit, (_req,res) => res.status(410).json({ok:false,error:"Direct payment marking is disabled; use the configured payment provider."}));
+router.post("/pay", ingressRateLimit, authenticate, rateLimit, (_req,res) => res.status(410).json({ok:false,error:"Direct payment marking is disabled; use the configured payment provider."}));
 
 // ---------------------------------------------------------------------
 // GET /api/billing/status/:id – single invoice
 // ---------------------------------------------------------------------
-router.get("/status/:id", authenticate, rateLimit, async (req, res) => {
+router.get("/status/:id", ingressRateLimit, authenticate, rateLimit, async (req, res) => {
   try {
     const invoiceId = parseInt(req.params.id);
     const result = await pool.query(
@@ -118,7 +120,7 @@ router.get("/status/:id", authenticate, rateLimit, async (req, res) => {
 // ---------------------------------------------------------------------
 // GET /api/billing/stats – totals + monthly series
 // ---------------------------------------------------------------------
-router.get("/stats", authenticate, rateLimit, async (req, res) => {
+router.get("/stats", ingressRateLimit, authenticate, rateLimit, async (req, res) => {
   try {
     const totals = await pool.query(
       `SELECT
@@ -160,7 +162,7 @@ router.get("/stats", authenticate, rateLimit, async (req, res) => {
 // ---------------------------------------------------------------------
 // GET /api/billing/summary – alias for /stats (Story 11.7)
 // ---------------------------------------------------------------------
-router.get("/summary", authenticate, rateLimit, async (req, res) => {
+router.get("/summary", ingressRateLimit, authenticate, rateLimit, async (req, res) => {
   try {
     const totals = await pool.query(
       `SELECT
@@ -202,7 +204,7 @@ router.get("/summary", authenticate, rateLimit, async (req, res) => {
 // ---------------------------------------------------------------------
 // GET /api/billing/export – CSV export of invoices for tenant
 // ---------------------------------------------------------------------
-router.get("/export", authenticate, rateLimit, async (req, res) => {
+router.get("/export", ingressRateLimit, authenticate, rateLimit, async (req, res) => {
   try {
     const result = await pool.query(
       `SELECT id, tenant_id, partner_id, amount_usd, status, payment_method,
@@ -236,12 +238,12 @@ router.get("/export", authenticate, rateLimit, async (req, res) => {
 // ---------------------------------------------------------------------
 // POST /api/billing/email/:id – mock email sender
 // ---------------------------------------------------------------------
-router.post("/email/:id", authenticate, rateLimit, (_req,res)=>res.status(503).json({ok:false,error:"Verified invoice email unavailable"}));
+router.post("/email/:id", ingressRateLimit, authenticate, rateLimit, (_req,res)=>res.status(503).json({ok:false,error:"Verified invoice email unavailable"}));
 
 // ---------------------------------------------------------------------
 // GET /api/billing/download-all  –  returns ZIP of all invoices for tenant
 // ---------------------------------------------------------------------
-router.get("/download-all", authenticate, rateLimit, async (req, res) => {
+router.get("/download-all", ingressRateLimit, authenticate, rateLimit, async (req, res) => {
   try {
     const invoiceDir = path.join(__dirname, "../../public/invoices", String(req.tenant_id));
     if (!fs.existsSync(invoiceDir)) {

@@ -1,9 +1,11 @@
 "use strict";
 const express=require("express");
 const router=express.Router();
+const ingressRateLimit=require("../security/ingressLimit").ingressLimit({max:120});
+
 const Stripe=require("stripe");
 const pool=require("../db/pool");
-router.post("/webhook", express.raw({ type: "application/json" }), async(req,res)=>{
+router.post("/webhook", ingressRateLimit, express.raw({ type: "application/json" }), async(req,res)=>{
  if(process.env.ACA_STRIPE_WEBHOOK_ENABLED!=="true" || !process.env.STRIPE_WEBHOOK_SECRET) return res.status(503).json({received:false});
  let event;
  try {
