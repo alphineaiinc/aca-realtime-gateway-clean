@@ -48,7 +48,8 @@ test('isolated PostgreSQL queue: concurrent claims, retries, restart, expiry and
  const {createContinuationRuntime}=require('../src/automation/engineeringTeam/continuationRuntime');
  const continuationTask=await q.enqueue({scope,role,credential:'manager'});
  const continuationRun={id:456,run_attempt:1,workflow_id:42,repository:{full_name:scope.repository},head_sha:scope.sha,status:'completed',conclusion:'success'};
- const continuationConfig={scope,workflowId:42,authenticate:async c=>identities.get(c),managerCredential:'manager',workerCredential:'w1',role,readRun:async()=>continuationRun,queue:q,manager:{createTask:()=>({id:'fixture'}),propose:async()=>({role,approval:false,output:{fixture:true}})},loadTask:async ({id})=>({id,...scope,subject:'fixture continuation'})};
+ const continuationPolicy={evaluate:async()=>({scope,issueNumber:42,manifestDigest:'c'.repeat(64),policyVersion:'v1',eligibleForPreparation:true,executionAuthorized:false,evidenceSha256:'d'.repeat(64)})};
+ const continuationConfig={scope,workflowId:42,authenticate:async c=>identities.get(c),managerCredential:'manager',workerCredential:'w1',role,readRun:async()=>continuationRun,queue:q,policy:continuationPolicy,issue:42,manifestDigest:'c'.repeat(64),manager:{createTask:()=>({id:'fixture'}),propose:async()=>({role,approval:false,output:{fixture:true}})},loadTask:async ({id})=>({id,...scope,subject:'fixture continuation'})};
  const continuation=createContinuationRuntime({...continuationConfig,pool:pools[0]});
  const {createCiCompletionEvent}=require('../src/automation/engineeringTeam/ciCompletionEvent');
  const {createHmac}=require('node:crypto');
