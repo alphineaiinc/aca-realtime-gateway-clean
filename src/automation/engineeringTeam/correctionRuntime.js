@@ -1,8 +1,8 @@
 'use strict';
 const {createPatchPlanner}=require('./patchPlanner');
 const {createCorrectionLoop}=require('./correctionLoop');
-function createCorrectionRuntime({scope,files,role,requiredChecks,runIsolated,proposeEdits,authorize,admitCycle,maxAttempts=2}={}){
- if(typeof admitCycle!=='function'||!['backend-developer','frontend-developer'].includes(role)||typeof runIsolated!=='function'||typeof proposeEdits!=='function'||!Array.isArray(requiredChecks)||!requiredChecks.length||requiredChecks.length>10||new Set(requiredChecks).size!==requiredChecks.length||requiredChecks.some(c=>typeof c!=='string'||!/^[a-z0-9-]{1,60}$/.test(c)))throw Error('Invalid correction runtime');
+function createCorrectionRuntime({scope,files,role,requiredChecks,runIsolated,proposeEdits,authorize,admitCycle,reviewCandidate,maxAttempts=2}={}){
+ if(typeof admitCycle!=='function'||typeof reviewCandidate!=='function'||!['backend-developer','frontend-developer'].includes(role)||typeof runIsolated!=='function'||typeof proposeEdits!=='function'||!Array.isArray(requiredChecks)||!requiredChecks.length||requiredChecks.length>10||new Set(requiredChecks).size!==requiredChecks.length||requiredChecks.some(c=>typeof c!=='string'||!/^[a-z0-9-]{1,60}$/.test(c)))throw Error('Invalid correction runtime');
  const planner=createPatchPlanner({scope,files});
  const checks=Object.freeze([...requiredChecks]);
  const candidates=new Map();
@@ -27,7 +27,9 @@ function createCorrectionRuntime({scope,files,role,requiredChecks,runIsolated,pr
    if(outcome.state!=='candidate-passed')return outcome;
    const candidate=candidates.get(outcome.candidateDigest);
    if(!candidate||stopped)return Object.freeze({state:'unknown',attempts:outcome.attempts,releaseApproved:false});
-   return Object.freeze({...outcome,candidate,reviewRequired:true,executionAuthorized:false});
+   const review=await reviewCandidate(Object.freeze({candidate,scope,mode:'offline-review-only'}));
+   if(stopped||!review||review.role!=='security-reviewer'||review.disposition!=='recommend-review'||review.evidenceSha256!==candidate.evidenceSha256)return Object.freeze({state:'review-blocked',attempts:outcome.attempts,releaseApproved:false,executionAuthorized:false});
+   return Object.freeze({...outcome,candidate,review:Object.freeze({role:review.role,disposition:review.disposition,evidenceSha256:review.evidenceSha256}),reviewRequired:false,executionAuthorized:false});
   }finally{candidates.clear();}
  },stop(){stopped=true;loop.stop();},executionAllowed:()=>false});
 }
