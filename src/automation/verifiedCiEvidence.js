@@ -10,7 +10,7 @@ function verifiedRequiredChecks({runs,totalCount,headSha,requiredNames,trustedAp
  !Number.isSafeInteger(trustedAppId)||trustedAppId<=0||
  !Number.isSafeInteger(trustedWorkflowId)||trustedWorkflowId<=0||
  typeof headSha!=="string"||!/^[a-f0-9]{40}$/.test(headSha))return null;
- const result=[];
+ const result=[];\n let commonRun=null,commonAttempt=null;
  for(const name of requiredNames){
    const matching=runs.filter(x=>x?.name===name);
    if(matching.length!==1)return null;
