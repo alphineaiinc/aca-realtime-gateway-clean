@@ -26,7 +26,8 @@ function authenticateAdmin(req, res, next) {
   }
 }
 
-router.get("/env", ingressRateLimit, authenticateAdmin, (req, res) => {
+const recognizedLimit = require("express-rate-limit").rateLimit({windowMs:60000,limit:30,passOnStoreError:false});
+router.get("/env", ingressRateLimit, recognizedLimit, authenticateAdmin, (req, res) => {
   try {
     // Only show presence, not full values
     res.json({
