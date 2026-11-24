@@ -595,7 +595,7 @@ test('isolated PostgreSQL queue: concurrent claims, retries, restart, expiry and
  const quarantineRequest=await recoveryApprovals.request({scope:recoveryScope,operation:'queue.recover',evidence:quarantineEvidence,credential:'recovery-manager'});
  await recoveryApprovals.recordDecision({scope:recoveryScope,id:quarantineRequest.id,binding:quarantineRequest.binding,decision:'approved',credential:'recovery-owner'});
  assert.deepEqual(await recoveryGate.recover({credential:'recovery-manager',approvalId:quarantineRequest.id,action:'clear-quarantine',role:recoveryRole,incidentId:quarantineIncident,evidenceSha256:quarantineEvidence}),{action:'clear-quarantine',role:recoveryRole,recovered:true,executionAuthorized:false});
- await assert.rejects(recoveryGate.recover({credential:'recovery-manager',approvalId:quarantineRequest.id,action:'clear-quarantine',role:recoveryRole,evidenceSha256:quarantineEvidence}),/already consumed/);
+ await assert.rejects(recoveryGate.recover({credential:'recovery-manager',approvalId:quarantineRequest.id,action:'clear-quarantine',role:recoveryRole,incidentId:quarantineIncident,evidenceSha256:quarantineEvidence}),/already consumed/);
  const activeRecoveryLease=await recoveryQueue.claim({scope:recoveryScope,role:recoveryRole,credential:'recovery-worker',expectedTaskId:quarantineTask});
  const afterStopTask=await recoveryQueue.enqueue({scope:recoveryScope,role:recoveryRole,credential:'recovery-manager'});
  await recoveryQueue.stop({scope:recoveryScope,credential:'recovery-manager'});
@@ -606,7 +606,7 @@ test('isolated PostgreSQL queue: concurrent claims, retries, restart, expiry and
  await recoveryApprovals.recordDecision({scope:recoveryScope,id:stopRequest.id,binding:stopRequest.binding,decision:'approved',credential:'recovery-owner'});
  await assert.rejects(recoveryGate.recover({credential:'recovery-manager',approvalId:stopRequest.id,action:'clear-stop',incidentId:stopIncident,evidenceSha256:stopEvidence}),/active lease/);
  await recoveryQueue.cancel({scope:recoveryScope,credential:'recovery-manager',taskId:quarantineTask});
- assert.deepEqual(await recoveryGate.recover({credential:'recovery-manager',approvalId:stopRequest.id,action:'clear-stop',evidenceSha256:stopEvidence}),{action:'clear-stop',role:null,recovered:true,executionAuthorized:false});
+ assert.deepEqual(await recoveryGate.recover({credential:'recovery-manager',approvalId:stopRequest.id,action:'clear-stop',incidentId:stopIncident,evidenceSha256:stopEvidence}),{action:'clear-stop',role:null,recovered:true,executionAuthorized:false});
  const resumedLease=await recoveryQueue.claim({scope:recoveryScope,role:recoveryRole,credential:'recovery-worker',expectedTaskId:afterStopTask});
  assert.equal(resumedLease.id,afterStopTask);
  assert.equal(await recoveryQueue.finish({scope:recoveryScope,role:recoveryRole,credential:'recovery-worker',taskId:afterStopTask,leaseId:resumedLease.lease_id,outcome:'succeeded'}),'succeeded');
