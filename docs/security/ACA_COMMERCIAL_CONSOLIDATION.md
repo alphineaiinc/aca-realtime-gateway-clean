@@ -1,0 +1,6 @@
+# Commercial consolidation gate
+Compared PR 147 head 4951e928657ea7c4ab5865c3557b375fe563d2a4, PR 141 head b78905dbddc77f32044c1db8e9039aa80f1e3dc7, PR 125 head 46b534a2031b82dd50a496ae6eb30dbc8cbcd34f.
+PR 141 already has billableUsage.js, closedMonthInvoice.js, stripeInvoiceBinding.js, migrations 016/017 and billing notification worker. Do not activate both invoice writers or apply overlapping draft ledgers independently.
+Proposed integration: preserve integrated branch and existing data contracts; port stronger immutable pricing, globally unique provider evidence, serialized closure and reservation safeguards after schema reconciliation. Existing usage keys are tenant-scoped and closure uses analytics created_at; verify attribution, late evidence and provider completeness before invoicing.
+Shared PR 125/147 files: index.js, CI workflow, billing.js, partnerLeaderboard.js, partnerPayout.js. Shared PR 141/147 files additionally include stripeWebhook.js and stripe-reconciliation.test.js. Resolve semantically, not by overwriting entire files. Keep legacy payment/payout mutations disabled.
+No merge or migration performed. Single authoritative ledger, provider evidence, role isolation, full combined CI and independent acceptance required before activation.

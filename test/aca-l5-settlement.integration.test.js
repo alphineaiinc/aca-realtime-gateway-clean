@@ -1,0 +1,21 @@
+const test=require('node:test');
+const assert=require('node:assert/strict');
+const {Pool}=require('pg');
+const {createStripeInvoiceSettlementStore}=require('../src/security/stripeInvoiceSettlementStore');
+test('concurrent settlement updates exactly one disposable invoice',{skip:process.env.RUN_STRIPE_RECEIPT_CI!=='1'},async t=>{
+ const url=process.env.STRIPE_RECEIPT_CI_URL;
+ const parsed=new URL(url);
+ assert.equal(parsed.hostname,'127.0.0.1');assert.equal(parsed.pathname,'/aca_stripe_ci');
+ const pool=new Pool({connectionString:url});t.after(()=>pool.end());
+ await pool.query('CREATE TABLE billing_invoices (id bigint PRIMARY KEY,tenant_id bigint,amount_usd numeric(12,2),status text,paid_at timestamptz,payment_method text,payment_reference text)');
+ await pool.query(require('node:fs').readFileSync('migrations/draft_aca_invoice_settlement.sql','utf8'));
+ await pool.query("INSERT INTO billing_invoices VALUES (1,7,10,'unpaid',NULL,NULL,NULL),(2,8,10,'unpaid',NULL,NULL,NULL)");
+ await pool.query("INSERT INTO aca_stripe_invoice_mapping (stripe_invoice_id,stripe_customer_id,invoice_id,tenant_id,amount_cents,currency,live_mode) VALUES ('in_fixture','cus_fixture',1,7,1000,'usd',true)");
+ const store=createStripeInvoiceSettlementStore(pool);
+ const f={stripeInvoiceId:'in_fixture',stripeCustomerId:'cus_fixture',amountCents:1000,currency:'usd',eventId:'evt_fixture',liveMode:true};
+ assert.equal(await store.settle({...f,amountCents:999}),'rejected');
+ const outcomes=await Promise.all(Array.from({length:12},()=>store.settle(f)));
+ assert.equal(outcomes.filter(x=>x==='settled').length,1);
+ assert.equal(outcomes.filter(x=>x==='duplicate').length,11);
+ assert.deepEqual((await pool.query('SELECT status FROM billing_invoices ORDER BY id')).rows,[{status:'paid'},{status:'unpaid'}]);
+});

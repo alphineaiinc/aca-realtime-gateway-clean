@@ -1320,6 +1320,14 @@ app.use("/api/stripe", require("./src/routes/stripeWebhook"));
 
 // also expose everything under /public normally
 const staticDir = path.resolve(__dirname, "public");
+// Invoice documents must never be served by the public static root.
+app.use((req,res,next)=>{
+  let pathname;
+  try { pathname=decodeURIComponent(req.path).replace(/\\/g,'/'); }
+  catch { return res.sendStatus(400); }
+  if (/(^|\/)invoices(\/|$)/i.test(pathname)) return res.sendStatus(404);
+  next();
+});
 app.use(express.static(staticDir));
 console.log("✅ Static assets served from absolute path:", staticDir);
 
