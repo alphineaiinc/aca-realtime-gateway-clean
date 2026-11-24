@@ -93,3 +93,14 @@ Trusted sandbox probe and Node CI passed at a776d4853c9d69a926aaff436868c2a605bc
 - Updated the policy-bound claim boundary to return no lease on any policy evaluation/eligibility failure. This is fail-closed: the durable queue's claim method is not called, no worker task is loaded, and no proposal is generated. Enqueue and workflow-step inspection continue to throw on denied policy.
 - Regression now asserts the successful CI completion event results in a clean idle drain, with only the policy evaluated and no durable claim, finish, task load or proposal call.
 - Commits: 90cda10, cf795ee. CI #796 failed before this correction; exact-head CI for the correction is required and has not yet passed.
+
+
+## Exact-head authorization-revocation acceptance — 2026-11-24
+
+- Exact head: `905fdcb94aca9f295df6c31a42dda6d20eae20e8`.
+- CI run #803 (`45331756050`) completed successfully. The returned workflow job inventory reports Node tests and the trusted engineering sandbox probe both successful. This is exact-head evidence for those two jobs; it does not independently establish a separate PostgreSQL integration job, CodeQL run, or the full multi-analysis matrix from CI #801.
+- The policy-revocation regression itself passed in run #802: after a successful CI event receipt, current policy closure yields an idle drain, leaves the task queued, and invokes neither task loader nor agent proposal. Run #802 later failed in a subsequent queue-concurrency assertion because the intentionally queued fixture task remained available.
+- Commit `905fdcb94aca9f295df6c31a42dda6d20eae20e8` adds explicit manager-authorized cancellation after the queued-state assertions and verifies the terminal cancelled state, isolating the later concurrency fixture.
+- CI #803 passed after that correction. The run exposes two successful jobs (Node tests and trusted sandbox); do not infer a separate disposable PostgreSQL job or CodeQL scan from this run. CI #801 remains the prior broad matrix baseline, not exact-head evidence.
+- PR #142 remains draft. No live agent dispatch, provider admission, merge, deployment, secret activation, production database mutation, or additional spending.
+- Next acceptance: run/verify the disposable PostgreSQL queue integration against this exact head, then continue integrated role handoffs and durable proposal/evidence verification. Keep all acceptance states distinct: implemented, unit-tested, integration-tested, independently reviewed, operationally accepted, and activated.
