@@ -57,6 +57,19 @@ test("observer refuses legacy provider without independent digest",async()=>{
 });
 test("invalid independent digest prevents review request",async()=>{
  let calls=0,digests=0;
- const result=await observe({...base,github:fixture(),trustedReviewerId:77,trustedReviewerPublicKey:"fixture",trustedEvidenceDigestProvider:async()=>{digests++;return "invalid";},trustedReviewProvider:async()=>{calls++;return {};}});
+ const result=await observe({...base,github:fixture(),trustedReviewerId:77,trustedReviewerPublicKey:"fixture",trustedKeyStatusProvider:async()=>"active",trustedEvidenceDigestProvider:async()=>{digests++;return "invalid";},trustedReviewProvider:async()=>{calls++;return {};}});
  assert.equal(digests,1);assert.equal(calls,0);assert.notEqual(result.state,"ready_for_human_approval");
+});
+
+test("revoked or unavailable reviewer key prevents provider call",async()=>{
+ for(const status of ["revoked",null]){
+ let calls=0;
+ const result=await observe({...base,github:fixture(),trustedReviewerId:77,trustedReviewerPublicKey:"fixture",trustedEvidenceDigestProvider:async()=>"b".repeat(64),trustedKeyStatusProvider:async()=>status,trustedReviewProvider:async()=>{calls++;return {};}});
+ assert.equal(calls,0);assert.notEqual(result.state,"ready_for_human_approval");
+ }
+});
+test("key revoked during review is rechecked",async()=>{
+ let checks=0,calls=0;
+ const result=await observe({...base,github:fixture(),trustedReviewerId:77,trustedReviewerPublicKey:"fixture",trustedEvidenceDigestProvider:async()=>"b".repeat(64),trustedKeyStatusProvider:async()=>++checks===1?"active":"revoked",trustedReviewProvider:async()=>{calls++;return {};}});
+ assert.equal(checks,2);assert.equal(calls,1);assert.notEqual(result.state,"ready_for_human_approval");
 });
