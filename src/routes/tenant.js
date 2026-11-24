@@ -120,4 +120,20 @@ router.post("/onboarding/redeem",loginLimit,async(req,res)=>{
  }catch{}
  return res.status(400).json({ok:false,error:"Invalid or expired onboarding request"});
 });
+router.post("/routing/prepare",requestLimit,async(req,res)=>{
+ if(process.env.ACA_ONBOARDING_ENABLED!=="true")return res.status(503).json({ok:false,error:"Configuration unavailable"});
+ const crypto=require("node:crypto"),expected=Buffer.from(process.env.PROVISION_API_KEY||""),actual=Buffer.from(String(req.headers["x-api-key"]||""));
+ if(!expected.length||actual.length!==expected.length||!crypto.timingSafeEqual(actual,expected))return res.status(401).json({ok:false,error:"unauthorized"});
+ try{
+ const result=await require("../security/prepareRouting").prepareRouting(pool,{tenantId:req.body?.tenant_id,workflowId:req.body?.workflow_id,phoneNumber:req.body?.phone_number});
+ return res.status(201).json({ok:true,...result});
+ }catch{return res.status(400).json({ok:false,error:"Configuration unsuccessful"});}
+});
+router.get("/routing/status",requestLimit,verifiedBusiness,async(req,res)=>{
+ res.set("Cache-Control","no-store");
+ try{
+ const {rows}=await pool.query("SELECT c.workflow_id,c.workflow_version,c.is_active AS workflow_active,n.phone_number,n.is_active AS number_active FROM public.tenant_workflow_configs c LEFT JOIN public.tenant_phone_numbers n ON n.tenant_id=c.tenant_id WHERE c.tenant_id=$1 ORDER BY n.phone_number",[req.verifiedTenantId]);
+ return res.json({ok:true,routing:rows});
+ }catch{return res.status(500).json({ok:false,error:"internal_error"});}
+});
 module.exports = router;
