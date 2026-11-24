@@ -25,4 +25,34 @@ test('disposable PostgreSQL attestation receipts survive independent connections
  assert.ok(results.every(r=>r.executionAuthorized===false));
  assert.equal((await make(pools[1]).inspect({report,signature})).status,'denied');
  assert.deepEqual((await pools[1].query('SELECT attempt_id,report_sha256 FROM sandbox_fixture_receipts')).rows,[{attempt_id:expected.attemptId,report_sha256:report.reportSha256}]);
+ // Validate the minimum privileges needed by the real receipt adapter.
+ // The role and its grants are transaction-local to this disposable test.
+ const client=await pools[0].connect();
+ try{
+  await client.query('BEGIN');
+  await client.query('CREATE ROLE aca_ci_sandbox_receipt_writer NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT');
+  await client.query('REVOKE ALL ON sandbox_fixture_receipts FROM PUBLIC');
+  await client.query('GRANT USAGE ON SCHEMA public TO aca_ci_sandbox_receipt_writer');
+  await client.query('GRANT INSERT (attempt_id,harness_sha,image,fixture_sha256,report_sha256), SELECT (attempt_id) ON sandbox_fixture_receipts TO aca_ci_sandbox_receipt_writer');
+  await client.query('SET LOCAL ROLE aca_ci_sandbox_receipt_writer');
+  const second={...expected,attemptId:'aca-fixture-12345678-1234-4234-8234-123456789abd'};
+  const consume=createFixtureReceiptStore({pool:client,expected:second});
+  assert.equal(await consume({...second,reportSha256:'d'.repeat(64)}),true);
+  assert.equal(await consume({...second,reportSha256:'d'.repeat(64)}),false);
+  for(const sql of [
+   'SELECT report_sha256 FROM sandbox_fixture_receipts',
+   'UPDATE sandbox_fixture_receipts SET report_sha256=repeat(\'e\',64)',
+   'DELETE FROM sandbox_fixture_receipts',
+   'TRUNCATE sandbox_fixture_receipts',
+   'ALTER TABLE sandbox_fixture_receipts DROP CONSTRAINT sandbox_fixture_receipts_pkey'
+  ]){
+   await client.query('SAVEPOINT denied_operation');
+   await assert.rejects(client.query(sql),e=>e.code==='42501');
+   await client.query('ROLLBACK TO SAVEPOINT denied_operation');
+   await client.query('RELEASE SAVEPOINT denied_operation');
+  }
+ }finally{
+  try{await client.query('ROLLBACK');}finally{client.release();}
+ }
+
 });
