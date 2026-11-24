@@ -16,3 +16,7 @@ Image: node@sha256:be979e5523c76fa4d5ca4ebd3099078f220aa47ec39c48ad5b5df9314debd
 2. Establish a trusted execution boundary outside candidate control; verify exact harness bytes before execution.
 3. Verify fail-closed outcomes, bounded cleanup and residual absence; exercise bounded resource enforcement in disposable isolation.
 4. Bind evidence to immutable inputs, run identity, test inventory and result; independent reviewer verifies all gates before any activation decision.
+
+
+### SEC-11–13 source acceptance checkpoint
+The active `.github/workflows/protected-fixed-fixture.yml` remains a permissionless, manually dispatched denial-only hold. A new regression test asserts it has no push, pull-request or workflow-run trigger, no write or OIDC permissions, and continues to exit non-zero pending independent acceptance. The proposed runtime workflow remains separate and inactive. Existing harness tests cover ambiguous create, timeout, ambiguous removal, failed state query, residual container, and secondary cleanup attempts; policy tests require exact source/image/runner/run-attempt scope, all fault outcomes, teardown and quarantine disposition, and fail closed without independent authentication. No runner teardown, image-publisher provenance or production runtime acceptance is claimed by these source tests.
