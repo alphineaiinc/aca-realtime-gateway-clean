@@ -4,6 +4,7 @@ const assert=require('node:assert/strict');
 const fs=require('node:fs');
 const path=require('node:path');
 const {Pool}=require('pg');
+const {createPublicationReservation}=require('../src/automation/engineeringTeam/publicationReservation');
 const {createWorkflowLedger}=require('../src/automation/engineeringTeam/workflowLedger');
 const {sequence}=require('../src/automation/engineeringTeam/offlineTeam');
 const {randomUUID}=require('node:crypto');
@@ -91,6 +92,18 @@ test('isolated PostgreSQL queue: concurrent claims, retries, restart, expiry and
  }
  assert.equal((await ledger(pools[0]).status({credential:'manager',id:workflow.id})).next_step,8);
  await assert.rejects(ledger(pools[1]).status({credential:'w1',id:workflow.id}),/Workflow identity denied/);
+ const publicationBinding='e'.repeat(64);
+ const pub=await approval(pools[0]).request({scope,operation:'github.write',evidence:publicationBinding,credential:'manager'});
+ const reserve=pool=>createPublicationReservation({pool,scope,authenticate:async c=>identities.get(c)});
+ const reservation={credential:'manager',approvalId:pub.id,binding:publicationBinding};
+ await assert.rejects(reserve(pools[0]).reserve(reservation),/Reservation denied/);
+ await approval(pools[1]).recordDecision({scope,id:pub.id,binding:pub.binding,decision:'approved',credential:'owner'});
+ await assert.rejects(reserve(pools[1]).reserve({...reservation,binding:'f'.repeat(64)}),/Reservation denied/);
+ await assert.rejects(reserve(pools[1]).reserve({...reservation,credential:'w1'}),/Reservation denied/);
+ const attempts=await Promise.allSettled(pools.map(pool=>reserve(pool).reserve(reservation)));
+ assert.equal(attempts.filter(x=>x.status==='fulfilled').length,1);
+ assert.equal(attempts.find(x=>x.status==='fulfilled').value.executionAuthorized,false);
+ await assert.rejects(reserve(pools[1]).reserve(reservation),/Reservation denied/);
  const stoppedTask=await q.enqueue({scope,role,credential:'manager'});
  const running=await q.claim({scope,role,credential:'w1'});
  await q2.quarantine({scope,role,credential:'manager'});
