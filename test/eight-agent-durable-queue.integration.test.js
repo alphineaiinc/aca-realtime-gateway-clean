@@ -336,6 +336,12 @@ test('isolated PostgreSQL queue: concurrent claims, retries, restart, expiry and
  assert.deepEqual((await pools[1].query('SELECT reserved_calls,reserved_microusd FROM engineering_team_spend_budgets WHERE budget_id=$1',[providerBudgetId])).rows[0],{reserved_calls:0,reserved_microusd:'0'});
  // Restore only the disposable approval fixture for the existing concurrency test.
  await pools[0].query("UPDATE engineering_team_approval_requests SET expires_at=clock_timestamp()+interval '5 minutes' WHERE id=$1",[providerApproval.id]);
+ // A different authenticated manager with the identical scope cannot consume this approval.
+ identities.set('other-manager',{...scope,id:'other-manager',permission:'queue.manage'});
+ await assert.rejects(provider(pools[1]).reserve({...providerInput,credential:'other-manager'}),/Reservation denied/);
+ assert.equal((await pools[0].query('SELECT binding FROM engineering_team_provider_attempts WHERE binding=$1',[providerBinding])).rowCount,0);
+ assert.deepEqual((await pools[1].query('SELECT reserved_calls,reserved_microusd FROM engineering_team_spend_budgets WHERE budget_id=$1',[providerBudgetId])).rows[0],{reserved_calls:0,reserved_microusd:'0'});
+ identities.delete('other-manager');
  let providerIdentityChecks=0;
  const revokedProvider=createProviderReservation({pool:pools[1],manifest:providerManifest,policy:providerPolicy,authenticate:async c=>++providerIdentityChecks===1?identities.get(c):null,ceilings:{fixture:400}});
  await assert.rejects(revokedProvider.reserve(providerInput),/Reservation denied/);
@@ -346,6 +352,7 @@ test('isolated PostgreSQL queue: concurrent claims, retries, restart, expiry and
  const providerResults=await Promise.allSettled(pools.map(pool=>provider(pool).reserve(providerInput)));
  assert.equal(providerResults.filter(x=>x.status==='fulfilled').length,1);
  assert.equal(providerResults.find(x=>x.status==='fulfilled').value.executionAuthorized,false);
+ assert.deepEqual((await pools[1].query('SELECT reserved_by FROM engineering_team_provider_attempts WHERE binding=$1',[providerBinding])).rows,[{reserved_by:'manager'}]);
  assert.deepEqual((await pools[0].query('SELECT reserved_calls,reserved_microusd FROM engineering_team_spend_budgets WHERE budget_id=$1',[providerBudgetId])).rows[0],{reserved_calls:1,reserved_microusd:'400'});
  await assert.rejects(provider(pools[1]).reserve(providerInput),/Reservation denied/);
 
@@ -615,7 +622,7 @@ test('isolated PostgreSQL queue: concurrent claims, retries, restart, expiry and
  await pools[0].query('INSERT INTO engineering_team_spend_budgets(product,repository,budget_id,max_calls,max_microusd) VALUES ($1,$2,$3,1,10)',[recoveryScope.product,recoveryScope.repository,unresolvedBudgetId]);
  const providerApprovalRequest=await recoveryApprovals.request({scope:recoveryScope,operation:'provider.activate',evidence:providerApprovalEvidence,credential:'recovery-manager'});
  await recoveryApprovals.recordDecision({scope:recoveryScope,id:providerApprovalRequest.id,binding:providerApprovalRequest.binding,decision:'approved',credential:'recovery-owner'});
- await pools[0].query('INSERT INTO engineering_team_provider_attempts(binding,approval_id,product,repository,head_sha,budget_id,model,reserved_microusd) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)',[recoveryProviderBinding,providerApprovalRequest.id,recoveryScope.product,recoveryScope.repository,recoveryScope.sha,unresolvedBudgetId,'fixture',1]);
+ await pools[0].query('INSERT INTO engineering_team_provider_attempts(binding,approval_id,product,repository,head_sha,budget_id,model,reserved_microusd,reserved_by) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)',[recoveryProviderBinding,providerApprovalRequest.id,recoveryScope.product,recoveryScope.repository,recoveryScope.sha,unresolvedBudgetId,'fixture',1,'recovery-manager']);
  await recoveryQueue.stop({scope:recoveryScope,credential:'recovery-manager'});
  const unresolvedStopIncident=(await pools[0].query('SELECT incident_id FROM engineering_team_stops WHERE product=$1 AND repository=$2',[recoveryScope.product,recoveryScope.repository])).rows[0].incident_id;
  const unresolvedStopEvidence=recoveryGate.evidence({action:'clear-stop',incidentId:unresolvedStopIncident});
