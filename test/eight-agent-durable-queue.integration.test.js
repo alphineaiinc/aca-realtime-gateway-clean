@@ -245,6 +245,18 @@ test('isolated PostgreSQL queue: concurrent claims, retries, restart, expiry and
  await pools[0].query('INSERT INTO engineering_team_spend_budgets(product,repository,budget_id,max_calls,max_microusd) VALUES ($1,$2,$3,8,1000)',[scope.product,scope.repository,governanceBudgetId]);
  const governanceSpend=pools.map(pool=>createSpendBudget({pool,...scope,budgetId:governanceBudgetId,ceilings:{fixture:100}}));
  await governanceSpend[0].reserve({model:'fixture'});
+ // Hold the same governance lock on a separate connection and commit a quarantine
+ // before the waiting spend reservation can evaluate its predicates.
+ const guard=await pools[1].connect();
+ try{
+  await guard.query('BEGIN');
+  await guard.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))',[JSON.stringify([scope.product,scope.repository])]);
+  await guard.query('INSERT INTO engineering_team_quarantine(product,repository,role,actor_id) VALUES ($1,$2,$3,$4)',[scope.product,scope.repository,role,'manager']);
+  const pending=governanceSpend[0].reserve({model:'fixture'});
+  const denied=assert.rejects(pending,/Spend budget denied/);
+  await guard.query('COMMIT');
+  await denied;
+ }finally{await guard.query('ROLLBACK');guard.release();}
  await q2.quarantine({scope,role,credential:'manager'});
  await assert.rejects(make(pools[0]).finish({scope,role,credential:'w1',taskId:stoppedTask,leaseId:running.lease_id,outcome:'succeeded'}),/Governance denied/);
  await assert.rejects(q.claim({scope,role,credential:'w2'}),/Governance denied/);
