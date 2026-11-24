@@ -79,3 +79,15 @@ CREATE TABLE engineering_team_call_budgets (
  reserved_calls integer NOT NULL DEFAULT 0 CHECK(reserved_calls>=0 AND reserved_calls<=max_calls),
  PRIMARY KEY(product,repository,budget_id)
 );
+
+-- Operator-provisioned conservative per-call ceilings; no automatic refunds.
+CREATE TABLE engineering_team_spend_budgets (
+ product text NOT NULL,
+ repository text NOT NULL,
+ budget_id uuid NOT NULL,
+ max_microusd bigint NOT NULL CHECK(max_microusd BETWEEN 1 AND 10000000),
+ reserved_microusd bigint NOT NULL DEFAULT 0 CHECK(reserved_microusd BETWEEN 0 AND max_microusd),
+ max_calls integer NOT NULL CHECK(max_calls BETWEEN 1 AND 64),
+ reserved_calls integer NOT NULL DEFAULT 0 CHECK(reserved_calls BETWEEN 0 AND max_calls),
+ PRIMARY KEY(product,repository,budget_id)
+);
