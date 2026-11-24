@@ -165,3 +165,9 @@ Implementation commits: f1e5de7 (workflow-step inspection), 5c8144f (restart-awa
 - CI #852 caught an escaped-slash syntax defect in the new reader; fixed. CI #853 then exposed a stale unit-test expectation after the new alert insert; updated assertions. Exact-head CI #854 passed all checks.
 - Important boundary: this is a durable alert journal and operator read API, not an external notification delivery service. No email/Slack/webhook dispatch is enabled or claimed. No production migrations, live provider/agent activation, merge/deploy, secrets, production DB changes or additional spend.
 - Independent security reviewer #22 remains HOLD; PR #21 has no submitted review. Offline acceptance does not satisfy the independent review gate.
+
+
+## Batch 8 verified provider stop alert acceptance — 2026-11-24
+- Exact code/test head `26e85a555cf6814e2d2007bc5f4bf0195346114c` passed CI #859 (45390579652), including syntax, Node suite, disposable PostgreSQL integration and trusted sandbox.
+- Provider breach and unknown outcomes now journal newly created stops transactionally; duplicate stop creation does not duplicate alerts, and journal failure rolls back the outcome transaction. Integration checks stop denial across all eight roles.
+- Offline acceptance only. Independent review #22, external notification delivery and live activation remain outstanding.
