@@ -21,5 +21,5 @@ test('agent failure stops downstream handoffs',async()=>{
 test('stop prevents subsequent workflow and overlapping run is denied',async()=>{
  let release;const wait=new Promise(r=>{release=r;});const {workflow}=setup({orchestrator:async()=>{await wait;return fixture('orchestrator');}});
  const run=workflow.run(input);await assert.rejects(workflow.run(input),/unavailable/);workflow.stop();release();
- assert.equal((await run).state,'stopped');assert.equal((await workflow.run(input)).state,'stopped');
+ assert.equal((await run).state,'stopped');await assert.rejects(workflow.run(input),/unavailable/);
 });
