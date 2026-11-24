@@ -4,6 +4,9 @@ on:
     types: [opened, reopened, synchronize, ready_for_review, converted_to_draft, closed]
   pull_request_review:
     types: [submitted, dismissed]
+  workflow_run:
+    workflows: ['ACA CI']
+    types: [completed]
   schedule:
     - cron: '17 * * * *'
   workflow_dispatch:
@@ -38,5 +41,6 @@ jobs:
             const targeted = ['pull_request','pull_request_review'].includes(context.eventName);
             const prNumber = targeted ? Number(process.env.ACA_PR_NUMBER) : null;
             if (targeted && (!Number.isSafeInteger(prNumber) || prNumber < 1)) throw new Error('invalid_pr_number');
+            // CI completion is only a wake-up; never consume its artifacts, SHA or verdict.
             const decisions = await reconcile({github,owner:context.repo.owner,repo:context.repo.repo,prNumber});
             for (const decision of decisions) core.info(JSON.stringify(decision));
