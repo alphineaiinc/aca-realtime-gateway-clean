@@ -4,6 +4,9 @@ const assert=require('node:assert/strict');
 const fs=require('node:fs');
 const path=require('node:path');
 const {Pool}=require('pg');
+const {createFixtureRuntime}=require('../src/automation/engineeringTeam/fixtureRuntime');
+const {createChangePreparation}=require('../src/automation/engineeringTeam/changePreparation');
+const {digest}=require('../src/automation/engineeringTeam/patchPlanner');
 const {createAgentManager}=require('../src/automation/engineeringTeam/manager');
 const {createQueueWorker}=require('../src/automation/engineeringTeam/queueWorker');
 const {contract}=require('../src/automation/engineeringTeam/contracts');
@@ -116,6 +119,26 @@ test('isolated PostgreSQL queue: concurrent claims, retries, restart, expiry and
  const prior=await ledger(pools[1]).readFixturePrior({credential:'manager',id:persistent.id});
  assert.deepEqual(prior.map(p=>p.role),sequence);
  await assert.rejects(ledger(pools[1]).readFixturePrior({credential:'w1',id:persistent.id}),/Workflow identity denied/);
+ const runtimeCalls=[];
+ const runtimeFiles=[{path:'src/example.js',role:'backend-developer',text:'module.exports=1;'}];
+ const runtimeAdapters=Object.fromEntries(sequence.map((r,i)=>[r,async ctx=>{
+  assert.deepEqual(ctx.prior.map(p=>p.role),sequence.slice(0,i));
+  runtimeCalls.push(r);
+  return Object.fromEntries(contract(r).fields.map(field=>[field,['fixture '+r+' '+field]]));
+ }]));
+ const runtimePreparation=createChangePreparation({scope,files:runtimeFiles,requiredChecks:['fixture'],authorize:async()=>true,
+ generate:async()=>JSON.stringify({edits:[{path:runtimeFiles[0].path,beforeSha256:digest(runtimeFiles[0].text),replacement:'module.exports=2;'}]}),
+ runIsolated:async x=>({evidenceSha256:x.plan.evidenceSha256,profile:x.profile,checks:[{name:'fixture',status:'passed'}]}),
+ reviewPatch:async x=>({role:'security-reviewer',disposition:'recommend-review',evidenceSha256:x.plan.evidenceSha256})});
+ const runtime=createFixtureRuntime({scope,queue:fixtureQueue,ledger:ledger(pools[1]),adapters:runtimeAdapters,preparation:runtimePreparation,authorize:async()=>true});
+ const runtimeInput={subject:'Disposable runtime fixture',developerRole:'backend-developer',managerCredential:'manager',workerCredentials:Object.fromEntries(sequence.map((r,i)=>[r,'worker-'+i]))};
+ const runtimeResult=await runtime.run(runtimeInput);
+ assert.deepEqual(runtimeCalls,sequence);
+ assert.equal(runtimeResult.change.request.patchDigest,runtimeResult.change.plan.evidenceSha256);
+ assert.equal(runtimeResult.executionAuthorized,false);
+ assert.equal(runtimeResult.releaseApproved,false);
+ assert.equal((await ledger(pools[0]).status({credential:'manager',id:runtimeResult.workflowId})).next_step,8);
+ await assert.rejects(runtime.run(runtimeInput),/Fixture runtime denied/);
  const publicationBinding='e'.repeat(64);
  const pub=await approval(pools[0]).request({scope,operation:'github.write',evidence:publicationBinding,credential:'manager'});
  const reserve=pool=>createPublicationReservation({pool,scope,authenticate:async c=>identities.get(c)});
