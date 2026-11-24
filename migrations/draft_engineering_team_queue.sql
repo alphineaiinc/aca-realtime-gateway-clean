@@ -181,3 +181,17 @@ CREATE TABLE engineering_team_correction_cycles (
  actor_id text NOT NULL,
  created_at timestamptz NOT NULL DEFAULT clock_timestamp()
 );
+
+-- Owner-approved, single-use governance recovery audit. Recovery never grants execution.
+CREATE TABLE engineering_team_governance_recoveries (
+ approval_id uuid PRIMARY KEY REFERENCES engineering_team_approval_requests(id),
+ product text NOT NULL,
+ repository text NOT NULL,
+ head_sha text NOT NULL CHECK(head_sha ~ '^[a-f0-9]{40}$'),
+ action text NOT NULL CHECK(action IN ('clear-stop','clear-quarantine')),
+ role text CHECK(role IS NULL OR role IN ('orchestrator','project-manager','solution-architect','backend-developer','frontend-developer','qa-testing','security-reviewer','devops')),
+ evidence_sha256 text NOT NULL CHECK(evidence_sha256 ~ '^[a-f0-9]{64}$'),
+ recovered_by text NOT NULL,
+ created_at timestamptz NOT NULL DEFAULT clock_timestamp(),
+ CHECK((action='clear-stop' AND role IS NULL) OR (action='clear-quarantine' AND role IS NOT NULL))
+);
