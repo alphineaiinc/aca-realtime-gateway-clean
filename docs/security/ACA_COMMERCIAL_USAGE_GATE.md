@@ -1,0 +1,4 @@
+# Commercial usage release gate
+The existing analytics eventCollector exports collectEvent, which returns stored:false. It is not an authoritative billing meter. Do not generate invoices from client-provided minutes, tokens, prices or this no-op collector.
+Before activation: identify durable provider usage records, establish tenant attribution, deduplicate source identifiers, reconcile billable units and versioned prices, close billing periods atomically, and test replay and tenant isolation.
+Trusted invoice mapping service is internal only. It requires a separately verified tenant-to-Stripe-customer binding and restricted provisioning identity. No public route or live provider call is authorized by this draft. Existing ledger is USD-only. Keep settlement activation disabled until mapping authorization, provider compatibility and integrated acceptance pass.
