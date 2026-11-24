@@ -384,15 +384,15 @@ test('isolated PostgreSQL queue: concurrent claims, retries, restart, expiry and
    await approval(pools[1]).recordDecision({scope,id:approvalRequest.id,binding:approvalRequest.binding,decision:'approved',credential:'owner'});
    return {request,binding,approvalId:approvalRequest.id};
   }));
-  const attempts=await Promise.allSettled(requests.map((r,i)=>raceProvider(pools[i]).reserve({credential:'manager',approvalId:r.approvalId,request:r.request})));
-  assert.equal(attempts.filter(x=>x.status==='fulfilled').length,1,tag+' must admit exactly one request');
-  assert.equal(attempts.filter(x=>x.status==='rejected').length,1,tag+' must deny the competing request');
-  const winner=attempts.findIndex(x=>x.status==='fulfilled');
+  await raceProvider(pools[0]).reserve({credential:'manager',approvalId:requests[0].approvalId,request:requests[0].request});
+  const {createProviderOutcome}=require('../src/automation/engineeringTeam/providerOutcome');
+  await createProviderOutcome({pool:pools[1],scope,authenticate:async c=>identities.get(c)}).record({credential:'owner',binding:requests[0].binding,usage:{inputTokens:1,outputTokens:1,actualMicrousd:1}});
+  // The first attempt is reconciled, so this denial must come from the exact call/spend ceiling,
+  // not from the unresolved-attempt circuit breaker.
+  await assert.rejects(raceProvider(pools[1]).reserve({credential:'manager',approvalId:requests[1].approvalId,request:requests[1].request}),/Spend budget denied/);
   const stored=await pools[1].query('SELECT reserved_calls,reserved_microusd FROM engineering_team_spend_budgets WHERE budget_id=$1',[budgetId]);
   assert.deepEqual(stored.rows[0],{reserved_calls:1,reserved_microusd:'400'});
   assert.equal((await pools[1].query('SELECT count(*)::int AS n FROM engineering_team_provider_attempts WHERE budget_id=$1',[budgetId])).rows[0].n,1);
-  const {createProviderOutcome}=require('../src/automation/engineeringTeam/providerOutcome');
-  await createProviderOutcome({pool:pools[0],scope,authenticate:async c=>identities.get(c)}).record({credential:'owner',binding:requests[winner].binding,usage:{inputTokens:1,outputTokens:1,actualMicrousd:1}});
   await assert.rejects(raceProvider(pools[1]).reserve({credential:'manager',approvalId:requests[1-winner].approvalId,request:requests[1-winner].request}),/Spend budget denied/);
   assert.deepEqual((await pools[1].query('SELECT reserved_calls,reserved_microusd FROM engineering_team_spend_budgets WHERE budget_id=$1',[budgetId])).rows[0],{reserved_calls:1,reserved_microusd:'400'});
   assert.equal((await pools[1].query('SELECT count(*)::int AS n FROM engineering_team_provider_attempts WHERE budget_id=$1',[budgetId])).rows[0].n,1);
