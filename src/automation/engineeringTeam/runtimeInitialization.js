@@ -12,6 +12,7 @@ const {createActivationReviewVerifier}=require('./activationReviewVerifier');
 const {prepareRequestEnvelope}=require('./requestEnvelope');
 const {createCostEnvelope}=require('./costEnvelope');
 const {createWorkflowLedger}=require('./workflowLedger');
+const {createGovernanceAlertReader}=require('./governanceAlertReader');
 // Initialization is deliberately inert: no provider clients, scheduler or
 // external writes are created. Real execution requires separate acceptance.
 function initializeRuntime({config,pool,identity,ceilings,readQueueState,independentReview,costConfig}={}){
@@ -26,6 +27,7 @@ function initializeRuntime({config,pool,identity,ceilings,readQueueState,indepen
  const approvals=createDurableApprovalPolicy({pool,scopes,authenticate});
  const budget=createSpendBudget({pool,...manifest.scope,budgetId:manifest.budgetId,ceilings});
  const workflow=createWorkflowLedger({pool,scope:manifest.scope,authenticate});
+ const governanceAlerts=createGovernanceAlertReader({pool,scope:manifest.scope,authenticate});
  const policy=readQueueState===undefined?null:createQueuePolicyBridge({manifest,readQueueState});
  // Never expose the raw durable queue: new admissions and claims require fresh policy evidence.
  const admissionQueue=policy===null?null:createPolicyBoundQueue({queue,policy,scope:manifest.scope,issue:manifest.issue,manifestDigest:manifest.evidenceSha256});
@@ -33,6 +35,6 @@ function initializeRuntime({config,pool,identity,ceilings,readQueueState,indepen
  // Unreviewed initialization remains inert; runtime cannot expose an unreviewed reservation.
  const providerReservation=policy===null||reviewVerifier===undefined||costEnvelope===null?null:createProviderReservation({pool,manifest,policy,authenticate,ceilings,reviewVerifier,costEvidenceSha256:costEnvelope.evidenceSha256,prepareRequest:request=>prepareRequestEnvelope({manifest,costEnvelope,request})});
  const providerOutcome=providerReservation===null?null:createProviderOutcome({pool,scope:manifest.scope,authenticate,costEnvelope});
- return Object.freeze({providerOutcome,manifest,costEnvelope,queue:admissionQueue,approvals,budget,workflow,policy,providerReservation,authenticate,status:'initialized-inert',executionAllowed:()=>false});
+ return Object.freeze({providerOutcome,manifest,costEnvelope,queue:admissionQueue,approvals,budget,workflow,governanceAlerts,policy,providerReservation,authenticate,status:'initialized-inert',executionAllowed:()=>false});
 }
 module.exports={initializeRuntime};
