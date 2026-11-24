@@ -24,3 +24,19 @@ test("staging HTTP service fails closed without reviewer secrets",async()=>{
   assert.equal(wrongPath.status,404);
  }finally{await new Promise((resolve,reject)=>srv.close(err=>err?reject(err):resolve()));}
 });
+
+test("authenticated reviewer request budget rejects excess requests without affecting health",async()=>{
+ const token="fixture-token-"+"x".repeat(36);
+ const srv=startServer({PORT:"0",ACA_REVIEW_API_TOKEN:token});
+ try{
+  if(!srv.listening)await once(srv,"listening");
+  const url="http://127.0.0.1:"+srv.address().port;
+  const req={method:"POST",headers:{Authorization:"Bearer "+token,"Content-Type":"application/json"},body:"{}"};
+  for(let i=0;i<30;i++){const r=await fetch(url+"/review",req);assert.equal(r.status,503);await r.json();}
+  const denied=await fetch(url+"/review",req);
+  assert.equal(denied.status,429);
+  assert.equal(denied.headers.get("retry-after"),"60");
+  assert.equal((await denied.json()).error,"reviewer_busy");
+  assert.equal((await fetch(url+"/health")).status,200);
+ }finally{await new Promise((resolve,reject)=>srv.close(err=>err?reject(err):resolve()));}
+});
