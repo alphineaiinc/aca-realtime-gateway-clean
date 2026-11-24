@@ -76,6 +76,33 @@ function createWorkflowLedger({pool,scope,authenticate}={}){
     return Object.freeze({role:row.role,output:validateProposal(row.role,parsed.output),approval:false});
    }));
   },
+  async beginPreparation({credential,id}){
+   await auth(credential);
+   return guarded(async client=>{
+    const workflow=await client.query('SELECT next_step FROM engineering_team_workflows WHERE id=$1 AND product=$2 AND repository=$3 AND head_sha=$4 FOR UPDATE',[id,...params]);
+    if(workflow.rowCount!==1||workflow.rows[0].next_step!==8)throw Error('Preparation requires completed team workflow');
+    const inserted=await client.query("INSERT INTO engineering_team_preparation_attempts(workflow_id,product,repository,head_sha,state) VALUES($1,$2,$3,$4,'started') ON CONFLICT DO NOTHING RETURNING workflow_id",[id,...params]);
+    if(inserted.rowCount===1)return Object.freeze({state:'started',workflowId:id});
+    const prior=await client.query('SELECT state,result_json,result_sha256 FROM engineering_team_preparation_attempts WHERE workflow_id=$1 AND product=$2 AND repository=$3 AND head_sha=$4 FOR UPDATE',[id,...params]);
+    if(prior.rowCount!==1)throw Error('Preparation attempt unavailable');
+    if(prior.rows[0].state==='started')return Object.freeze({state:'needs-reconciliation',workflowId:id});
+    const serialized=JSON.stringify(prior.rows[0].result_json);
+    if(createHash('sha256').update(serialized).digest('hex')!==prior.rows[0].result_sha256)throw Error('Preparation evidence integrity failure');
+    return Object.freeze({state:'completed',workflowId:id,result:prior.rows[0].result_json,resultSha256:prior.rows[0].result_sha256});
+   });
+  },
+  async completePreparation({credential,id,result}){
+   await auth(credential);
+   if(!result||typeof result!=='object'||Array.isArray(result))throw Error('Invalid preparation result');
+   const serialized=JSON.stringify(result);
+   if(typeof serialized!=='string'||Buffer.byteLength(serialized)>131072)throw Error('Preparation result exceeds fixture limit');
+   const resultSha256=createHash('sha256').update(serialized).digest('hex');
+   return guarded(async client=>{
+    const updated=await client.query("UPDATE engineering_team_preparation_attempts SET state='completed',result_json=$5::jsonb,result_sha256=$6,completed_at=clock_timestamp() WHERE workflow_id=$1 AND product=$2 AND repository=$3 AND head_sha=$4 AND state='started' RETURNING workflow_id",[id,...params,serialized,resultSha256]);
+    if(updated.rowCount!==1)throw Error('Preparation completion denied');
+    return Object.freeze({state:'completed',workflowId:id,resultSha256});
+   });
+  },
   async status({credential,id}){
    await auth(credential);
    const result=await pool.query('SELECT id,next_step FROM engineering_team_workflows WHERE id=$1 AND product=$2 AND repository=$3 AND head_sha=$4',[id,...params]);
