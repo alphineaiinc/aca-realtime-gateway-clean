@@ -14,6 +14,13 @@ test("isolated commercial pricing, replay and concurrent invoice acceptance",asy
  await assert.rejects(recordUsage(pool,{...event,tenantId:2}),/CONFLICTING_USAGE_EVIDENCE/);
  await assert.rejects(recordUsage(pool,{...event,quantity:61}),/CONFLICTING_USAGE_EVIDENCE/);
  await pool.query("UPDATE public.analytics_events SET created_at='2020-01-15'");
+ await pool.query(fs.readFileSync("migrations/draft_aca_usage_immutability.sql","utf8"));
+ await assert.rejects(pool.query("UPDATE public.analytics_events SET quantity=999"),/IMMUTABLE_VERIFIED_USAGE/);
+ await assert.rejects(pool.query("DELETE FROM public.analytics_events"),/IMMUTABLE_VERIFIED_USAGE/);
+ await assert.rejects(pool.query("DELETE FROM public.aca_billable_usage_keys"),/IMMUTABLE_USAGE_KEY/);
+ await pool.query("INSERT INTO public.analytics_events(tenant_id,event_type,quantity) VALUES(1,'ordinary',1)");
+ await assert.rejects(pool.query("UPDATE public.analytics_events SET event_type='ACA_VERIFIED_USAGE' WHERE event_type='ordinary'"),/IMMUTABLE_VERIFIED_USAGE/);
+ await pool.query("DELETE FROM public.analytics_events WHERE event_type='ordinary'");
  const input={tenantId:1,year:2020,month:1,minuteRateCents:60,tokenRateMicros:500};
  assert.equal(await invoiceClosedMonth(pool,input),null);
  await pool.query("INSERT INTO public.aca_period_pricing VALUES(1,'2020-01-01',60,500)");
