@@ -226,3 +226,13 @@ Assessment source: user-provided independent security assessment. Its PR #142 fi
 - Trusted sandbox attestation from protected workflow/harness, pinned image and tested-patch provenance.
 - Provider-side spend ceiling, automatic reload disabled, actual pricing/token limits, reservation-to-dispatch enforcement in a separately accepted live adapter, multi-process stop/revocation tests and ambiguous-outcome reconciliation.
 - Independent acceptance of the exact fixed PR #142 SHA and separate owner approval remain mandatory before activation.
+
+
+## Exact-head acceptance update — 2026-11-24
+
+- Superseding the earlier pending checkpoint: PR #142 exact head `1607ed198cb060837b0eb118a31bb8bdb9621478` passed ACA CI run `45407240203`.
+- Node suite: 194 total, 193 passed, 0 failed, 1 skipped. Isolated PostgreSQL queue integration passed.
+- PR #142 remains draft/open. Five original inline review threads remain unresolved pending independent confirmation; the CI receipt product-key finding is the one resolved thread.
+- PR #21 exact head `8e96ad2a67c559f84ab166538ab6bb05f1137878` passed its three associated CI runs: `45406657995`, `45406657657`, `45406657804`. GitHub review records still contain only a quota-blocked Copilot COMMENTED notice, not an independent approval.
+- Restricted observation remains disabled. Candidate-controlled sandbox CI was removed pending a protected harness. PR #21 signer trust root, key custody, substantive security disposition, DB role/credential verification, provider-side spend cap and deployment isolation remain unaccepted.
+- No merge, deployment, secret activation, production DB change, live agent dispatch or real provider call.
