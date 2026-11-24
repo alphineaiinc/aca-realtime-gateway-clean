@@ -2,6 +2,7 @@
 const test=require('node:test');
 const assert=require('node:assert/strict');
 const {createDurableQueue}=require('../src/automation/engineeringTeam/durableQueue');
+const {createDurableApprovalPolicy}=require('../src/automation/engineeringTeam/durableApproval');
 const scope={product:'aca',repository:'fixture/aca',sha:'a'.repeat(40)};
 const role='backend-developer';
 function setup(){
@@ -61,4 +62,15 @@ test('persistent governance mutations require manager credentials',async()=>{
  assert.match(queries[2].sql,/engineering_team_stops/);
  assert.match(queries[3].sql,/engineering_team_governance_alerts/);
  assert.match(queries[3].sql,/stop.created/);
+});
+
+test('scope mutation during asynchronous authentication cannot change the authenticated queue scope',async()=>{
+ const mutable={...scope};
+ const queue=createDurableQueue({pool:{query:async()=>({rowCount:1,rows:[{}]}),connect:async()=>({query:async sql=>sql==='BEGIN'||sql==='COMMIT'?{rowCount:0,rows:[]}:sql.startsWith('SELECT pg_advisory')?{rowCount:0,rows:[]}:sql.startsWith('SELECT EXISTS')?{rowCount:1,rows:[{blocked:false}]}:{rowCount:1,rows:[{id:'task'}]},release(){}})},scopes:[mutable],authenticate:async()=>{mutable.product='product-b';return {id:'attacker',product:'product-b',repository:scope.repository,sha:scope.sha,permission:'queue.manage'};}});
+ await assert.rejects(queue.enqueue({scope:mutable,role,credential:'credential'}),/Identity denied/);
+});
+test('durable approval rejects scope mutation during asynchronous authentication',async()=>{
+ const mutable={...scope};
+ const approval=createDurableApprovalPolicy({pool:{query:async()=>({rowCount:1,rows:[{id:'approval'}]})},scopes:[mutable],authenticate:async()=>{mutable.product='product-b';return {id:'attacker',product:'product-b',repository:scope.repository,sha:scope.sha,permission:'queue.manage'};}});
+ await assert.rejects(approval.request({scope:mutable,operation:'provider.activate',evidence:'a'.repeat(64),credential:'credential'}),/Identity denied/);
 });
