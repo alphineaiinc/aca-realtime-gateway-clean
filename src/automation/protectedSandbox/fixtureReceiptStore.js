@@ -19,6 +19,16 @@ function createFixtureReceiptStore({pool,expected}={}){
    return outcome(result.rowCount===0?'duplicate':'unknown');
   }catch{return outcome('unknown');}
  }
- return Object.freeze({consumeReceipt});
+ // Reconciliation is read-only, using a separately scoped reader session.
+ // Missing evidence is not proof that a previously ambiguous write failed.
+ async function reconcileReceipt(receipt,reader){
+  const params=parameters(receipt);
+  if(!params||typeof reader?.query!=='function')return outcome('denied');
+  try{
+   const result=await reader.query('SELECT EXISTS(SELECT 1 FROM sandbox_fixture_receipts WHERE attempt_id=$1 AND harness_sha=$2 AND image=$3 AND fixture_sha256=$4 AND report_sha256=$5) AS matched',params);
+   return outcome(result.rows?.length===1&&result.rows[0].matched===true?'confirmed-present':'unknown');
+  }catch{return outcome('unknown');}
+ }
+ return Object.freeze({consumeReceipt,reconcileReceipt});
 }
 module.exports={createFixtureReceiptStore};
