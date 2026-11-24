@@ -741,7 +741,7 @@ test('isolated PostgreSQL queue: concurrent claims, retries, restart, expiry and
  await pools[0].query(`INSERT INTO engineering_team_approval_requests
   (id,product,repository,head_sha,operation,evidence_sha256,binding,requested_by,state,created_at,expires_at,decided_by,decided_at)
   VALUES ($1,$2,$3,$4,'github.write',$5,$6,$7,'approved',clock_timestamp(),clock_timestamp()+interval '10 minutes','independent-owner',clock_timestamp())`,
- [reconApproval,reconScope.product,reconScope.repository,reconHead,'d'.repeat(64),reconBinding,reconIdentity.id]);
+ [reconApproval,reconScope.product,reconScope.repository,reconHead,reconBinding,reconBinding,reconIdentity.id]);
  await pools[0].query(`INSERT INTO engineering_team_publication_attempts(binding,approval_id,product,repository,base_sha,reserved_by)
   VALUES ($1,$2,$3,$4,$5,$6)`,[reconBinding,reconApproval,reconScope.product,reconScope.repository,reconScope.sha,reconIdentity.id]);
  const reconObservation={binding:reconBinding,repository:reconScope.repository,baseSha:reconScope.sha,headSha:reconHead,requesterId:reconIdentity.id,baseBranch:'main',headBranch:'draft',complete:true,observations:[{number:77,body:'Evidence binding: '+reconBinding,draft:true,state:'open',base:{repo:{full_name:reconScope.repository},ref:'main',sha:reconScope.sha},head:{repo:{full_name:reconScope.repository},ref:'draft',sha:reconHead}}]};
