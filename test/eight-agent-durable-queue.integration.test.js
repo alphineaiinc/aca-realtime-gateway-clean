@@ -763,4 +763,25 @@ test('isolated PostgreSQL queue: concurrent claims, retries, restart, expiry and
  await assert.rejects(pools[0].query('UPDATE engineering_team_publication_reconciliation SET state=state WHERE binding=$1',[reconBinding]),e=>e.code==='P0001');
  await assert.rejects(pools[0].query('DELETE FROM engineering_team_publication_reconciliation WHERE binding=$1',[reconBinding]),e=>e.code==='P0001');
 
+ // A second reservation proves failed independent verification rolls back the
+ // transaction and leaves no durable reconciliation row.
+ const rollbackBinding='f'.repeat(64),rollbackApproval=randomUUID();
+ await pools[0].query(`INSERT INTO engineering_team_approval_requests
+  (id,product,repository,head_sha,operation,evidence_sha256,binding,requested_by,state,created_at,expires_at,decided_by,decided_at)
+  VALUES ($1,$2,$3,$4,'github.write',$5,$6,$7,'approved',clock_timestamp(),clock_timestamp()+interval '10 minutes','independent-owner',clock_timestamp())`,
+ [rollbackApproval,reconScope.product,reconScope.repository,reconHead,rollbackBinding,rollbackBinding,reconIdentity.id]);
+ await pools[0].query(`INSERT INTO engineering_team_publication_attempts(binding,approval_id,product,repository,base_sha,reserved_by)
+  VALUES ($1,$2,$3,$4,$5,$6)`,[rollbackBinding,rollbackApproval,reconScope.product,reconScope.repository,reconScope.sha,reconIdentity.id]);
+ const tamperedPr={...githubPr,head:{...githubPr.head,sha:'d'.repeat(40)}};
+ const rollbackBoundary=createGitHubPublicationEvidenceBoundary({
+  collectFetch:async()=>({status:200,json:async()=>[githubPr]}),
+  verifyFetch:async()=>({status:200,json:async()=>[tamperedPr]}),
+  collectToken:async()=>'disposable-collector-read-token',
+  verifyToken:async()=>'disposable-independent-read-token'
+ });
+ const rollbackStore=createReconciliationStore({pool:pools[0],authenticate:reconAuth,collect:rollbackBoundary.collect,verifyObservation:rollbackBoundary.verify,baseBranch:'main',headBranch:'draft'});
+ await assert.rejects(rollbackStore.record({credential:'publication-manager',binding:rollbackBinding}),/authentication failed/);
+ assert.equal((await pools[1].query('SELECT count(*)::int AS n FROM engineering_team_publication_reconciliation WHERE binding=$1',[rollbackBinding])).rows[0].n,0);
+
+
 });
