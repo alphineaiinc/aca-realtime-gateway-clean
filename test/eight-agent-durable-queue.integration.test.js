@@ -40,6 +40,11 @@ test('isolated PostgreSQL queue: concurrent claims, retries, restart, expiry and
  assert.equal(admissions.filter(Boolean).length,1);
  assert.equal(await admission(pools[1])(event),false);
  assert.equal(await admission(pools[1])({...event,attempt:2}),true);
+ // Same repository/run/attempt under a different product must have an independent receipt.
+ const secondProduct={...scope,product:'aca-secondary'};
+ identities.set('manager-b',{...secondProduct,id:'manager-b',permission:'queue.manage'});
+ const secondProductAdmission=createCiEventAdmission({pool:pools[0],scope:secondProduct,workflowId:42,authenticate:async c=>identities.get(c),credential:'manager-b'});
+ assert.equal(await secondProductAdmission({scope:secondProduct,workflowId:42,runId:123,attempt:1}),true);
  const stopScope={...scope,repository:'fixture/stopped'};
  const stoppedAdmission=createCiEventAdmission({pool:pools[0],scope:stopScope,workflowId:42,authenticate:async()=>({...stopScope,id:'manager',permission:'queue.manage'}),credential:'fixture'});
  await pools[0].query('INSERT INTO engineering_team_stops(product,repository,actor_id) VALUES ($1,$2,$3)',[stopScope.product,stopScope.repository,'manager']);
