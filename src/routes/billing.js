@@ -2,9 +2,6 @@
 const express = require("express");
 const jwt = require("jsonwebtoken");
 const pool = require("../db/pool");
-const fs = require("fs");
-const path = require("path");
-const archiver = require("archiver");   // ensure available
 
 const router = express.Router();
 
@@ -74,7 +71,7 @@ router.get("/history", authenticate, async (req, res) => {
     if (to)   { where.push(`generated_at <  $${p++}`); params.push(new Date(to)); }
 
     const result = await pool.query(
-      `SELECT id, amount_usd, status, generated_at, invoice_path 
+      `SELECT id, amount_usd, status, generated_at 
          FROM billing_invoices 
         WHERE ${where.join(" AND ")}
         ORDER BY id DESC`,
@@ -102,7 +99,7 @@ router.get("/status/:id", authenticate, async (req, res) => {
     const invoiceId = parseInt(req.params.id);
     const result = await pool.query(
       `SELECT id, amount_usd, status, paid_at, payment_method,
-              payment_reference, notes, generated_at, invoice_path
+              payment_reference, generated_at, invoice_path
          FROM billing_invoices
         WHERE id=$1 AND tenant_id=$2`,
       [invoiceId, req.tenant_id]
@@ -207,18 +204,20 @@ router.get("/export", authenticate, async (req, res) => {
   try {
     const result = await pool.query(
       `SELECT id, tenant_id, partner_id, amount_usd, status, payment_method,
-              payment_reference, generated_at, paid_at, invoice_path
+              payment_reference, generated_at, paid_at
          FROM billing_invoices
         WHERE tenant_id = $1
         ORDER BY id DESC`,
       [req.tenant_id]
     );
     const rows = result.rows;
-    const header = ["id","tenant_id","partner_id","amount_usd","status","payment_method","payment_reference","generated_at","paid_at","invoice_path"];
+    const header = ["id","tenant_id","partner_id","amount_usd","status","payment_method","payment_reference","generated_at","paid_at"];
     const csv = [
       header.join(","),
       ...rows.map(r => header.map(k => {
-        const v = r[k] == null ? "" : String(r[k]).replace(/"/g,'""');
+        let raw = r[k] == null ? "" : String(r[k]);
+        if (/^[\s\u0000-\u001f]*[=+\-@]/.test(raw) || /^[\t\r\n]/.test(raw)) raw = "'" + raw;
+        const v = raw.replace(/"/g,'""');
         return `"${v}"`;
       }).join(","))
     ].join("\n");
@@ -242,34 +241,7 @@ router.post("/email/:id", authenticate, (req, res) => {
 // ---------------------------------------------------------------------
 // GET /api/billing/download-all  –  returns ZIP of all invoices for tenant
 // ---------------------------------------------------------------------
-router.get("/download-all", authenticate, async (req, res) => {
-  try {
-    const invoiceDir = path.join(__dirname, "../../public/invoices", String(req.tenant_id));
-    if (!fs.existsSync(invoiceDir)) {
-      fs.mkdirSync(invoiceDir, { recursive: true });
-      return res.status(404).json({ ok:false, error:"No invoices found for this tenant" });
-    }
-
-    const zipName = `invoices_tenant_${req.tenant_id}_${Date.now()}.zip`;
-    console.log("[billing/download-all] Streaming ZIP for tenant", req.tenant_id);
-
-    res.setHeader("Content-Type", "application/zip");
-    res.setHeader("Content-Disposition", `attachment; filename=\"${zipName}\"`);
-
-    const archive = archiver("zip", { zlib: { level: 9 } });
-    archive.on("error", (err) => {
-      console.error("[billing/download-all] archive error:");
-      res.status(500).end();
-    });
-
-    archive.pipe(res);
-    archive.directory(invoiceDir, false);
-    await archive.finalize();
-  } catch (err) {
-    console.error("[billing/download-all]");
-    res.status(500).json({ ok:false, error: "billing_unavailable" });
-  }
+router.get("/download-all", authenticate, (req,res)=>{
+  return res.status(503).json({ok:false,error:"private_invoice_storage_required"});
 });
-
-
 module.exports = router;
