@@ -124,3 +124,14 @@ Trusted sandbox probe and Node CI passed at a776d4853c9d69a926aaff436868c2a605bc
 - Earlier CI #803 exact-head policy-revocation regression remains passing. This batch extends sequential handoff acceptance and durable evidence tamper detection.
 - Draft-only fixture acceptance. It does not validate live provider execution, real model output quality, live GitHub writes, independent security review, deployment isolation, or operational activation. No merge, deployment, secret activation, production database change, live dispatch or additional spend.
 - Next: complete developer → QA → security-review correction-cycle acceptance against exact-head evidence, then transactional spend/provider-admission and emergency-stop/quarantine recovery gates. Preserve independent reviewer #22.
+
+
+## Durable developer → QA → security correction-cycle acceptance — 2026-11-24
+
+- Code/test head: `39a0044e06d940137b1db97d9da48bd2c9dc6a4b`; exact-head CI #812 (`45333437808`) passed.
+- Standard Node suite: 167 total, 166 passed, 0 failed, 1 skipped. Disposable PostgreSQL queue integration: 1 passed, 0 failed. Trusted sandbox probe and trusted planned-patch fixture passed.
+- Added end-to-end disposable PostgreSQL acceptance for durable correction admission: a succeeded backend-developer task and its exact proposal receipt digest are admitted into the correction-cycle ledger; isolated verification reports a repairable Node-test failure; bounded developer correction produces a new pinned patch; isolated retest passes; security-review role returns a recommendation bound to the corrected candidate digest.
+- Assertions verify exactly two isolated test runs, one correction proposal, one security-review recommendation, durable initial digest persistence, one-shot runtime consumption, and no release/execution authorization.
+- CI #811 initially failed only because the test expected the wrong one-shot error wording (`Correction unavailable` vs actual `Correction runtime consumed`). The assertion now checks the stable consumed contract; no runtime implementation change was needed. Exact-head CI #812 passed.
+- This is offline test-adapter and disposable PostgreSQL evidence only. The security role output is a recommendation fixture, not an independent security audit or GitHub approval. No live model/provider execution, privileged GitHub write, merge, deployment, secret activation, production DB mutation or additional spend.
+- Next acceptance: transactional spending/provider admission at real side-effect boundaries, then emergency stop/quarantine/recovery and adversarial policy checks. Independent reviewer #22 remains an external release gate.
