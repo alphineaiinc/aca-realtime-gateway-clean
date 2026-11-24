@@ -77,35 +77,7 @@ router.get("/partner/leaderboard", authenticate, async (req, res) => {
 });
 
 // --- POST /partner/payouts/request  body: { amount, method } ---
-router.post("/partner/payouts/request", authenticate, async (req, res) => {
-  try {
-    const partnerId = req.auth?.partner_id;
-    if (!partnerId) return res.status(400).json({ ok: false, error: "No partner_id in token" });
-
-    const amount = Number(req.body?.amount || 0);
-    const method = String(req.body?.method || "unspecified").slice(0, 50);
-    if (amount <= 0) return res.status(400).json({ ok: false, error: "Invalid amount" });
-
-    // Simple threshold (e.g., $50 minimum)
-    if (amount < 50) return res.status(400).json({ ok: false, error: "Minimum payout is 50" });
-
-    const encMethod = encrypt(method);
-
-    const { rows } = await pool.query(
-      `INSERT INTO partner_payouts (partner_id, amount, payout_method_enc)
-       VALUES ($1, $2, $3)
-       RETURNING id, status, requested_at`,
-      [partnerId, amount, encMethod]
-    );
-
-    audit(`PAYOUT_REQUEST partner_id=${partnerId} amount=${amount}`);
-
-    return res.json({ ok: true, payout: rows[0] });
-  } catch (err) {
-    console.error("payout request error:", err);
-    return res.status(500).json({ ok: false, error: "Server error" });
-  }
-});
+router.post("/partner/payouts/request", authenticate, (req,res)=>res.status(503).json({ok:false,error:"verified_balance_required"}));
 
 // --- GET /partner/payouts/admin?status=pending (admin only) ---
 router.get("/partner/payouts/admin", authenticate, requireAdmin, async (req, res) => {
@@ -127,40 +99,6 @@ router.get("/partner/payouts/admin", authenticate, requireAdmin, async (req, res
 });
 
 // --- POST /partner/payouts/admin/decision  body: { id, action, payout_reference } ---
-router.post("/partner/payouts/admin/decision", authenticate, requireAdmin, async (req, res) => {
-  try {
-    const id = Number(req.body?.id);
-    const action = String(req.body?.action || "").toLowerCase(); // approve|reject|paid
-    const payoutRef = String(req.body?.payout_reference || "").slice(0, 100);
-    if (!["approve", "reject", "paid"].includes(action)) {
-      return res.status(400).json({ ok: false, error: "Invalid action" });
-    }
-    const encRef = payoutRef ? encrypt(payoutRef) : null;
-
-    let newStatus = "pending";
-    if (action === "approve") newStatus = "approved";
-    if (action === "reject") newStatus = "rejected";
-    if (action === "paid") newStatus = "paid";
-
-    const { rows } = await pool.query(
-      `UPDATE partner_payouts
-         SET status = $1,
-             approved_at = CASE WHEN $1 IN ('approved','rejected','paid') THEN CURRENT_TIMESTAMP ELSE approved_at END,
-             approved_by = $2,
-             payout_reference_enc = COALESCE($3, payout_reference_enc)
-       WHERE id = $4
-       RETURNING id, partner_id, amount, status, requested_at, approved_at`,
-      [newStatus, req.auth.sub || 0, encRef, id]
-    );
-
-    if (!rows[0]) return res.status(404).json({ ok: false, error: "Payout not found" });
-    audit(`PAYOUT_DECISION id=${id} action=${action} by=${req.auth.sub || "system"}`);
-
-    return res.json({ ok: true, payout: rows[0] });
-  } catch (err) {
-    console.error("payout decision error:", err);
-    return res.status(500).json({ ok: false, error: "Server error" });
-  }
-});
+router.post("/partner/payouts/admin/decision", authenticate, requireAdmin, (req,res)=>res.status(503).json({ok:false,error:"verified_settlement_required"}));
 
 module.exports = router;
