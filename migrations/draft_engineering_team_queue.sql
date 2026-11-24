@@ -126,3 +126,6 @@ CREATE TABLE engineering_team_fixture_proposals (
  body text NOT NULL CHECK(octet_length(body) BETWEEN 1 AND 32768),
  created_at timestamptz NOT NULL DEFAULT clock_timestamp()
 );
+
+-- Bind each fixture task to its workflow before execution, not after completion.
+ALTER TABLE engineering_team_tasks ADD COLUMN workflow_id uuid REFERENCES engineering_team_workflows(id), ADD COLUMN workflow_step integer CHECK(workflow_step BETWEEN 0 AND 7), ADD CHECK((workflow_id IS NULL)=(workflow_step IS NULL)), ADD UNIQUE(workflow_id,workflow_step);
