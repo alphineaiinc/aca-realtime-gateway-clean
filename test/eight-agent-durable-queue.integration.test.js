@@ -269,15 +269,16 @@ test('isolated PostgreSQL queue: concurrent claims, retries, restart, expiry and
  const unknownApproval=await approval(pools[0]).request({scope,operation:'provider.activate',evidence:unknownBinding,credential:'manager'});
  await approval(pools[1]).recordDecision({scope,id:unknownApproval.id,binding:unknownApproval.binding,decision:'approved',credential:'owner'});
  await unknownProvider.reserve({credential:'manager',approvalId:unknownApproval.id});
- // Reserve a third fixture with a distinct approved binding and fresh budget.
+ // Exercise the complete reservation path for the breach fixture.
  const breachBudgetId=randomUUID();
- const breachManifest=createActivationManifest({scope,models:Object.fromEntries(sequence.map(r=>[r,'fixture'])),budgetId:breachBudgetId,paths:['src/example.js'],issue:42,runnerImage:'node@sha256:'+'a'.repeat(64),limits:{maxCalls:8,maxOutputTokens:256,maxSpendMicrousd:1000}});
+ const breachManifest=createActivationManifest({...providerManifest,budgetId:breachBudgetId});
+ const breachPolicy=createQueuePolicyBridge({manifest:breachManifest,readQueueState:async()=>({repository:scope.repository,headSha:scope.sha,issue:{number:42,state:'open',isPullRequest:false,labels:['aca:auto/docs-test'],assignees:[]},activeIssueNumbers:[]})});
+ const breachProvider=createProviderReservation({pool:pools[0],manifest:breachManifest,policy:breachPolicy,authenticate:async c=>identities.get(c),ceilings:{fixture:400}});
  await pools[0].query('INSERT INTO engineering_team_spend_budgets(product,repository,budget_id,max_calls,max_microusd) VALUES ($1,$2,$3,8,1000)',[scope.product,scope.repository,breachBudgetId]);
- // Reuse the already approved reservation fixture via a distinct database-only attempt.
- const breachBinding=digest('fixture-breach-'+breachBudgetId);
+ const breachBinding=await breachProvider.evidence();
  const breachApproval=await approval(pools[0]).request({scope,operation:'provider.activate',evidence:breachBinding,credential:'manager'});
  await approval(pools[1]).recordDecision({scope,id:breachApproval.id,binding:breachApproval.binding,decision:'approved',credential:'owner'});
- await pools[0].query('INSERT INTO engineering_team_provider_attempts(binding,approval_id,product,repository,head_sha,budget_id,model,reserved_microusd) VALUES($1,$2,$3,$4,$5,$6,$7,$8)',[breachBinding,breachApproval.id,scope.product,scope.repository,scope.sha,breachManifest.budgetId,'fixture',400]);
+ await breachProvider.reserve({credential:'manager',approvalId:breachApproval.id});
  const stoppedTask=await q.enqueue({scope,role,credential:'manager'});
  const running=await q.claim({scope,role,credential:'w1'});
  const governanceBudgetId=randomUUID();
@@ -302,11 +303,19 @@ test('isolated PostgreSQL queue: concurrent claims, retries, restart, expiry and
  await assert.rejects(ledger(pools[1]).readFixturePrior({credential:'manager',id:runtimeResult.workflowId}),/Workflow unavailable/);
  await assert.rejects(governanceSpend[0].reserve({model:'fixture'}),/Spend budget denied/);
  await assert.rejects(reviewed(pools[1]).reserve({credential:'manager',approvalId:excessApproval.id,reviewEnvelope:excessEnvelope}),/Reservation denied/);
- const unknown=await outcomes[1].record({credential:'owner',binding:unknownBinding});
- assert.deepEqual(unknown,{outcome:'unknown',executionAuthorized:false});
- assert.equal((await pools[0].query('SELECT 1 FROM engineering_team_stops WHERE product=$1 AND repository=$2',[scope.product,scope.repository])).rowCount,1);
+ const stopQuery='SELECT 1 FROM engineering_team_stops WHERE product=$1 AND repository=$2';
+ const stopArgs=[scope.product,scope.repository];
+ assert.equal((await pools[0].query(stopQuery,stopArgs)).rowCount,0);
  const breach=await outcomes[0].record({credential:'owner',binding:breachBinding,usage:{inputTokens:10,outputTokens:5,actualMicrousd:401}});
  assert.deepEqual(breach,{outcome:'breach',executionAuthorized:false});
+ assert.equal((await pools[1].query(stopQuery,stopArgs)).rowCount,1);
+ assert.deepEqual((await pools[1].query('SELECT reserved_calls,reserved_microusd FROM engineering_team_spend_budgets WHERE budget_id=$1',[breachBudgetId])).rows[0],{reserved_calls:1,reserved_microusd:'400'});
+ // Reset only the disposable test fixture to isolate the unknown-outcome assertion.
+ await pools[0].query('DELETE FROM engineering_team_stops WHERE product=$1 AND repository=$2',stopArgs);
+ assert.equal((await pools[1].query(stopQuery,stopArgs)).rowCount,0);
+ const unknown=await outcomes[1].record({credential:'owner',binding:unknownBinding});
+ assert.deepEqual(unknown,{outcome:'unknown',executionAuthorized:false});
+ assert.equal((await pools[0].query(stopQuery,stopArgs)).rowCount,1);
  await q2.stop({scope,credential:'manager'});
  // A newly constructed reservation adapter must still deny admission after a durable stop.
  await assert.rejects(reviewed(pools[0]).reserve({credential:'manager',approvalId:excessApproval.id,reviewEnvelope:excessEnvelope}),/Reservation denied/);
