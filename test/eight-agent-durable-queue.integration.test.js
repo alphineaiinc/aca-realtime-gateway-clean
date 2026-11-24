@@ -329,33 +329,6 @@ test('isolated PostgreSQL queue: concurrent claims, retries, restart, expiry and
  assert.deepEqual((await pools[0].query('SELECT reserved_calls,reserved_microusd FROM engineering_team_spend_budgets WHERE budget_id=$1',[providerBudgetId])).rows[0],{reserved_calls:1,reserved_microusd:'400'});
  await assert.rejects(provider(pools[1]).reserve(providerInput),/Reservation denied/);
 
- // Distinct approved requests race against both independent durable budget ceilings.
- async function runProviderBudgetRace({tag,maxCalls,maxMicrousd}){
-  const budgetId=randomUUID();
-  const raceManifest=createActivationManifest({...providerManifest,budgetId,limits:{...providerManifest.limits,maxSpendMicrousd:maxMicrousd}});
-  const racePolicy=createQueuePolicyBridge({manifest:raceManifest,readQueueState:async()=>({repository:scope.repository,headSha:scope.sha,issue:{number:42,state:'open',isPullRequest:false,labels:['aca:auto/docs-test'],assignees:[]},activeIssueNumbers:[]})});
-  const raceProvider=pool=>createProviderReservation({pool,manifest:raceManifest,policy:racePolicy,authenticate:async c=>identities.get(c),ceilings:{fixture:400},prepareRequest:request=>({model:'fixture',executionAuthorized:false,evidenceSha256:digest(JSON.stringify([tag,request]))})});
-  await pools[0].query('INSERT INTO engineering_team_spend_budgets(product,repository,budget_id,max_calls,max_microusd) VALUES ($1,$2,$3,$4,$5)',[scope.product,scope.repository,budgetId,maxCalls,maxMicrousd]);
-  const requests=await Promise.all(['request-a','request-b'].map(async label=>{
-   const request={label};
-   const binding=await raceProvider(pools[0]).evidence(undefined,request);
-   const approvalRequest=await approval(pools[0]).request({scope,operation:'provider.activate',evidence:binding,credential:'manager'});
-   await approval(pools[1]).recordDecision({scope,id:approvalRequest.id,binding:approvalRequest.binding,decision:'approved',credential:'owner'});
-   return {request,binding,approvalId:approvalRequest.id};
-  }));
-  const attempts=await Promise.allSettled(requests.map((r,i)=>raceProvider(pools[i]).reserve({credential:'manager',approvalId:r.approvalId,request:r.request})));
-  assert.equal(attempts.filter(x=>x.status==='fulfilled').length,1,tag+' must admit exactly one request');
-  assert.equal(attempts.filter(x=>x.status==='rejected').length,1,tag+' must deny the competing request');
-  const winner=attempts.findIndex(x=>x.status==='fulfilled');
-  const stored=await pools[1].query('SELECT reserved_calls,reserved_microusd FROM engineering_team_spend_budgets WHERE budget_id=$1',[budgetId]);
-  assert.deepEqual(stored.rows[0],{reserved_calls:1,reserved_microusd:'400'});
-  assert.equal((await pools[1].query('SELECT count(*)::int AS n FROM engineering_team_provider_attempts WHERE budget_id=$1',[budgetId])).rows[0].n,1);
-  const {createProviderOutcome}=require('../src/automation/engineeringTeam/providerOutcome');
-  await createProviderOutcome({pool:pools[0],scope,authenticate:async c=>identities.get(c)}).record({credential:'owner',binding:requests[winner].binding,usage:{inputTokens:1,outputTokens:1,actualMicrousd:1}});
- }
- await runProviderBudgetRace({tag:'call-cap',maxCalls:1,maxMicrousd:1000});
- await runProviderBudgetRace({tag:'spend-cap',maxCalls:8,maxMicrousd:400});
-
  // Review-bound reservation uses disposable keys and the same transactional budget.
  const {generateKeyPairSync,sign}=require('node:crypto');
  const {createActivationReviewVerifier}=require('../src/automation/engineeringTeam/activationReviewVerifier');
@@ -397,6 +370,33 @@ test('isolated PostgreSQL queue: concurrent claims, retries, restart, expiry and
  const recorded=await Promise.allSettled(outcomes.map(o=>o.record({credential:'owner',binding:providerBinding,usage})));
  assert.equal(recorded.filter(x=>x.status==='fulfilled').length,1);
  assert.equal(recorded.find(x=>x.status==='fulfilled').value.outcome,'completed');
+ // Distinct approved requests race against both independent durable budget ceilings.
+ async function runProviderBudgetRace({tag,maxCalls,maxMicrousd}){
+  const budgetId=randomUUID();
+  const raceManifest=createActivationManifest({...providerManifest,budgetId,limits:{...providerManifest.limits,maxSpendMicrousd:maxMicrousd}});
+  const racePolicy=createQueuePolicyBridge({manifest:raceManifest,readQueueState:async()=>({repository:scope.repository,headSha:scope.sha,issue:{number:42,state:'open',isPullRequest:false,labels:['aca:auto/docs-test'],assignees:[]},activeIssueNumbers:[]})});
+  const raceProvider=pool=>createProviderReservation({pool,manifest:raceManifest,policy:racePolicy,authenticate:async c=>identities.get(c),ceilings:{fixture:400},prepareRequest:request=>({model:'fixture',executionAuthorized:false,evidenceSha256:digest(JSON.stringify([tag,request]))})});
+  await pools[0].query('INSERT INTO engineering_team_spend_budgets(product,repository,budget_id,max_calls,max_microusd) VALUES ($1,$2,$3,$4,$5)',[scope.product,scope.repository,budgetId,maxCalls,maxMicrousd]);
+  const requests=await Promise.all(['request-a','request-b'].map(async label=>{
+   const request={label};
+   const binding=await raceProvider(pools[0]).evidence(undefined,request);
+   const approvalRequest=await approval(pools[0]).request({scope,operation:'provider.activate',evidence:binding,credential:'manager'});
+   await approval(pools[1]).recordDecision({scope,id:approvalRequest.id,binding:approvalRequest.binding,decision:'approved',credential:'owner'});
+   return {request,binding,approvalId:approvalRequest.id};
+  }));
+  const attempts=await Promise.allSettled(requests.map((r,i)=>raceProvider(pools[i]).reserve({credential:'manager',approvalId:r.approvalId,request:r.request})));
+  assert.equal(attempts.filter(x=>x.status==='fulfilled').length,1,tag+' must admit exactly one request');
+  assert.equal(attempts.filter(x=>x.status==='rejected').length,1,tag+' must deny the competing request');
+  const winner=attempts.findIndex(x=>x.status==='fulfilled');
+  const stored=await pools[1].query('SELECT reserved_calls,reserved_microusd FROM engineering_team_spend_budgets WHERE budget_id=$1',[budgetId]);
+  assert.deepEqual(stored.rows[0],{reserved_calls:1,reserved_microusd:'400'});
+  assert.equal((await pools[1].query('SELECT count(*)::int AS n FROM engineering_team_provider_attempts WHERE budget_id=$1',[budgetId])).rows[0].n,1);
+  const {createProviderOutcome}=require('../src/automation/engineeringTeam/providerOutcome');
+  await createProviderOutcome({pool:pools[0],scope,authenticate:async c=>identities.get(c)}).record({credential:'owner',binding:requests[winner].binding,usage:{inputTokens:1,outputTokens:1,actualMicrousd:1}});
+ }
+ await runProviderBudgetRace({tag:'call-cap',maxCalls:1,maxMicrousd:1000});
+ await runProviderBudgetRace({tag:'spend-cap',maxCalls:8,maxMicrousd:400});
+
  assert.deepEqual((await pools[0].query('SELECT reserved_calls,reserved_microusd FROM engineering_team_spend_budgets WHERE budget_id=$1',[providerBudgetId])).rows[0],{reserved_calls:1,reserved_microusd:'400'});
  const reviewResults=await Promise.allSettled(pools.map(pool=>reviewed(pool).reserve(reviewInput)));
  assert.equal(reviewResults.filter(x=>x.status==='fulfilled').length,1);
