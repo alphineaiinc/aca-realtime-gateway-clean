@@ -1,6 +1,6 @@
 'use strict';
 // Trusted host configuration only. Fixed HTTPS origin; no model-supplied URL.
-function createGitHubReadTransport({token,fetchImpl=globalThis.fetch,timeoutMs=10000}={}){
+function createGitHubReadTransport({token,repository,fetchImpl=globalThis.fetch,timeoutMs=10000}={}){
  if(typeof token!=='string'||!token||/[\r\n]/.test(token)||typeof fetchImpl!=='function'||!Number.isSafeInteger(timeoutMs)||timeoutMs<1000||timeoutMs>30000)throw Error('Invalid GitHub configuration');
  function base(s){if(!s||typeof s.repository!=='string'||! /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(s.repository)||! /^[a-f0-9]{40}$/.test(s.sha)||s.repository.split('/').some(p=>p==='.'||p==='..'))throw Error('Invalid repository scope');return 'https://api.github.com/repos/'+s.repository;}
  async function get(url){
