@@ -6,7 +6,7 @@ const {verifiedRequiredChecks}=require("../src/automation/verifiedCiEvidence");
 const sha="a".repeat(40),names=["Node tests","PostgreSQL ledger integration"];
 const checks=names.map(name=>({name,head_sha:sha,status:"completed",conclusion:"success",
  app:{id:123},check_suite:{id:88}}));
-const workflowRuns=[{id:55,workflow_id:999,head_sha:sha,check_suite_id:88}];
+const workflowRuns=[{id:55,workflow_id:999,head_sha:sha,check_suite_id:88,run_attempt:1}];
 const args={checks,workflowRuns,headSha:sha,trustedWorkflowId:999};
 const verify=bound=>verifiedRequiredChecks({runs:bound,totalCount:2,headSha:sha,
  requiredNames:names,trustedAppId:123,trustedWorkflowId:999});
