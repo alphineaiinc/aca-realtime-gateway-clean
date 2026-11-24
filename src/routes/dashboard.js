@@ -15,9 +15,9 @@ function requireDashboardAdmin(req,res,next){
     next();
   } catch {return res.status(401).json({ok:false,error:"unauthorized"});}
 }
-router.use(requireDashboardAdmin);
-router.get("/", ingressRateLimit, (req,res)=>res.sendFile(path.join(__dirname,"../../public/dashboard/index.html")));
+router.use(ingressRateLimit, requireDashboardAdmin);
+router.get("/", (req,res)=>res.sendFile(path.join(__dirname,"../../public/dashboard/index.html")));
 // Raw caller logs and host diagnostics are intentionally not exposed.
-router.get("/data", ingressRateLimit, (req,res)=>res.json({entries:[],rawLogsAvailable:false}));
-router.get("/brain-status", ingressRateLimit, (req,res)=>res.status(503).json({ok:false,error:"diagnostics_unavailable"}));
+router.get("/data", (req,res)=>res.json({entries:[],rawLogsAvailable:false}));
+router.get("/brain-status", (req,res)=>res.status(503).json({ok:false,error:"diagnostics_unavailable"}));
 module.exports=router;

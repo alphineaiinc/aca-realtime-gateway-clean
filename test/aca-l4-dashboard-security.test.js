@@ -17,4 +17,6 @@ test("dashboard denies unauthorized access and never returns raw logs",async t=>
  const response=await fetch(base+"/data",{headers:headers("admin")});
  assert.equal(response.status,200);assert.deepEqual(await response.json(),{entries:[],rawLogsAvailable:false});
  assert.equal((await fetch(base+"/brain-status",{headers:headers("admin")})).status,503);
+ for(let i=0;i<22;i++) assert.equal((await fetch(base+"/data")).status,401);
+ assert.equal((await fetch(base+"/data")).status,429);
 });

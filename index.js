@@ -1291,7 +1291,7 @@ console.log("✅ .well-known bound to:", wellKnownAbsolute);
 // also expose everything under /public normally
 const staticDir = path.resolve(__dirname, "public");
 // Invoice files are private; never serve them through the public static roots.
-app.use("/invoices", (_req,res)=>res.sendStatus(404));
+app.use(require("./src/security/privateStaticGuard"));
 app.use(express.static(staticDir));
 console.log("✅ Static assets served from absolute path:", staticDir);
 
