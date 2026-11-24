@@ -1,0 +1,33 @@
+name: ACA SEC09 dependency evidence
+on:
+  pull_request:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  lock:
+    if: github.head_ref == 'aca-product-commercial-consolidation' && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Generate dependency evidence
+        run: |
+          npm install --package-lock-only --ignore-scripts --no-audit --no-fund --save-exact express-rate-limit@8.2.1
+          npm ci --ignore-scripts --no-audit --no-fund
+          node -e 'if(typeof require("express-rate-limit").rateLimit!=="function")process.exit(1)'
+          git diff -- package.json package-lock.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: aca-sec09-dependency-lock
+          path: |
+            package.json
+            package-lock.json
+          retention-days: 1
+          if-no-files-found: error
