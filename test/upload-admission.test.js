@@ -1,7 +1,7 @@
 'use strict';
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { acquireUploadAdmission } = require('../src/security/uploadAdmission');
+const { acquireUploadAdmission, withUploadAdmission } = require('../src/security/uploadAdmission');
 function client(results) {
  const calls=[];
  return {calls,async query(sql,args){calls.push({sql,args});return {rows:[{acquired:results.shift()}]};}};
@@ -30,4 +30,25 @@ test('invalid identity and capacity fail before database access',async()=>{
 });
 test('database errors propagate to caller for rollback',async()=>{
  await assert.rejects(acquireUploadAdmission({async query(){throw Error('unavailable');}},'tenant-a'),/unavailable/);
+});
+
+function owned(results,{failRollback=false}={}) {
+ const calls=[];
+ const client={async query(sql){calls.push(sql);if(sql==='ROLLBACK'&&failRollback)throw Error('rollback failed');return {rows:[{acquired:results.shift()}]};},release(discard){calls.push(['release',discard]);}};
+ return {calls,pool:{async connect(){return client;}}};
+}
+test('denied admission rolls back and never invokes work',async()=>{
+ const h=owned([false]);
+ assert.deepEqual(await withUploadAdmission(h.pool,'tenant-a',()=>assert.fail('work executed')),{admitted:false});
+ assert.equal(h.calls[0],'BEGIN');assert.equal(h.calls.at(-2),'ROLLBACK');assert.deepEqual(h.calls.at(-1),['release',false]);
+});
+test('work exception rolls back and discards client',async()=>{
+ const h=owned([true,true]);
+ await assert.rejects(withUploadAdmission(h.pool,'tenant-a',()=>{throw Error('work failed');}),/work failed/);
+ assert.equal(h.calls.at(-2),'ROLLBACK');assert.deepEqual(h.calls.at(-1),['release',true]);
+});
+test('rollback failure discards connection and does not report success',async()=>{
+ const h=owned([true,true],{failRollback:true});
+ await assert.rejects(withUploadAdmission(h.pool,'tenant-a',()=>42),/rollback failed/);
+ assert.deepEqual(h.calls.at(-1),['release',true]);
 });
