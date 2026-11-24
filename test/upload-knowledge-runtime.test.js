@@ -5,7 +5,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
 const source = fs.readFileSync(path.join(__dirname, '../src/routes/uploadKnowledge.js'), 'utf8');
-function harness({ tenantId = 'tenant-1', pdfText = 'Knowledge text', pdfError = null, uploadError = null, waitForEmbedding = null, disconnectBeforeParsing = false, rateLimitReject = false, disconnectDuringEmbedding = false, failEmbeddingAt = 0, failWrite = false } = {}) {
+function harness({ tenantId = 'tenant-1', pdfText = 'Knowledge text', pdfError = null, uploadError = null, waitForEmbedding = null, disconnectBeforeParsing = false, rateLimitReject = false, disconnectDuringEmbedding = false, failEmbeddingAt = 0, failWrite = false, demo = false, distributed = false, admissionDenied = false, admissionAborted = false } = {}) {
   let currentResponse;
   let route, dbWrites = 0, embeddingCalls = 0, parserDestroyed = 0;
   class PDFParse {
@@ -20,13 +20,14 @@ function harness({ tenantId = 'tenant-1', pdfText = 'Knowledge text', pdfError =
   const router = { post(name, ...handlers) { route = { name, handlers }; } };
   const mocks = {
     express: { Router: () => router }, multer,
-    jsonwebtoken: { verify: (token) => { if (token !== 'valid') throw new Error('Invalid test token'); return { tenant_id: tenantId }; } },
+    jsonwebtoken: { verify: (token) => { if (token !== 'valid') throw new Error('Invalid test token'); return { tenant_id: tenantId, demo }; } },
     'pdf-parse': { PDFParse },
+    '../security/uploadAdmission': { async withUploadAdmission(pool, tenant, work) { if (admissionDenied) return {admitted:false}; return {admitted:true,result:await work({aborted:admissionAborted})}; } },
     '../db/pool': { async query() { dbWrites++; if (failWrite) throw Error('fixture write failure'); } },
     '../middleware/postgresRateLimit': { createPostgresRateLimiter: () => (req, res, next) => rateLimitReject ? res.status(429).json({ ok: false, error: 'Rate limit exceeded' }) : next() },
     '../brain/utils/embeddingManager': { async embedText() { embeddingCalls++; if (embeddingCalls === failEmbeddingAt) throw Error('fixture embedding failure'); if (waitForEmbedding) await waitForEmbedding; if (disconnectDuringEmbedding) { currentResponse.destroyed = true; currentResponse.closeHandler?.(); } return [0.1, 0.2]; } },
   };
-  const context = { require(name) { if (!(name in mocks)) throw new Error('Unexpected import ' + name); return mocks[name]; }, module: { exports: {} }, Buffer, process: { env: { JWT_SECRET: 'test-only-secret' } }, console: { error() {} } };
+  const context = { require(name) { if (!(name in mocks)) throw new Error('Unexpected import ' + name); return mocks[name]; }, module: { exports: {} }, Buffer, process: { env: { JWT_SECRET: 'test-only-secret', ACA_DISTRIBUTED_UPLOAD_ADMISSION: distributed ? '1' : '0' } }, console: { error() {} } };
   vm.runInNewContext(source, context, { filename: 'uploadKnowledge.js' });
   async function request(buffer, token = 'Bearer valid') {
     const req = { headers: { authorization: token }, file: buffer == null ? undefined : { buffer, originalname: 'doc.pdf' } };
@@ -173,3 +174,7 @@ test('atomic insert failure returns generic error without success',async()=>{
  assert.equal(res.body.error,'Upload processing failed');
  assert.equal(h.stats().dbWrites,1);
 });
+
+test('demo credentials cannot upload knowledge',async()=>{const h=harness({demo:true});assert.equal((await h.request(Buffer.from('%PDF-1.7'))).statusCode,401);assert.equal(h.stats().embeddingCalls,0);});
+test('distributed denial prevents embeddings and writes',async()=>{const h=harness({distributed:true,admissionDenied:true});assert.equal((await h.request(Buffer.from('%PDF-1.7'))).statusCode,429);assert.equal(h.stats().embeddingCalls,0);assert.equal(h.stats().dbWrites,0);});
+test('distributed admission allows atomic persistence',async()=>{const h=harness({distributed:true,pdfText:'x'.repeat(2500)});assert.equal((await h.request(Buffer.from('%PDF-1.7'))).body.chunks,3);assert.equal(h.stats().dbWrites,1);});
