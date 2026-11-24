@@ -227,3 +227,13 @@ Trusted sandbox probe and Node CI passed at a776d4853c9d69a926aaff436868c2a605bc
 - Current code/test head: `f4a7126dcfc2e86f9136ee2edd7c8790d770def2`. Exact-head CI has NOT yet been observed for this head; do not mark these changes tested or accepted until CI executes and passes.
 - Recovery and preparation changes are development-only schema/code. The migration remains draft and must only be exercised in disposable CI. No production migration, live provider, agent dispatch, merge, deployment, credential change or additional spend.
 - Review findings remain open until independently re-reviewed against the corrected head. PR #21's Copilot review reported insufficient remaining quota; no successful independent reviewer clearance is established. Agent Manager remains not activated.
+
+
+## Security review remediation and exact-head CI — 2026-11-24
+
+- Copilot's review of PR #142 identified six issues: mutable-scope identity comparisons in durable approvals and queue authentication; recovery approvals not bound to a specific incident; policy-bound queue forwarding caller-controlled scope; CI event admission key missing product; and fixture preparation replay after restart.
+- Subsequent implementation commits on the PR branch now capture expected scope before authentication, bind recovery evidence and deletion to immutable incident IDs, pin and validate facade scope before policy evaluation/queue forwarding, include product in the CI receipt primary key, and persist one-shot preparation attempts/results with unknown attempts requiring reconciliation.
+- The original review threads remain formally unresolved until the reviewer rechecks the corrected exact head. Do not count implementation alone as independent acceptance.
+- Exact-head CI failure 45400545419 was caused by a stale PostgreSQL integration fixture calling recovery without the now-required incident ID. The fixture now reads the disposable incident IDs and binds them into evidence and recovery calls.
+- Exact head: d93e2397e390ca3a10a4c99be3e7eb91cd7bf057. CI run 45401717224 passed: Node tests (186 passed, 1 skipped), isolated PostgreSQL queue integration passed, trusted sandbox probe passed. This validates the current draft head's tests, not live execution or independent security clearance.
+- PR #21 Copilot review attempt failed due to insufficient reviewer quota. A Codex report has not been supplied or independently verified. Security gate #22 remains open; PR #142 remains draft. No live agents, provider admission, merge, deployment, production DB write, or additional spend is authorized.
