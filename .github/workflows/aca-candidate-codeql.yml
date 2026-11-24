@@ -1,0 +1,50 @@
+name: ACA candidate CodeQL evidence
+on:
+  pull_request:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  analyze:
+    if: github.head_ref == 'aca-product-commercial-consolidation' && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - name: Record exact candidate
+        run: git rev-parse HEAD
+      - uses: github/codeql-action/init@v4
+        with:
+          languages: javascript-typescript
+          queries: security-extended
+          build-mode: none
+      - uses: github/codeql-action/analyze@v4
+        with:
+          upload: never
+          output: codeql-results
+      - name: Summarize findings without source snippets
+        run: |
+          python3 - <<'PY'
+          import json, pathlib
+          files = list(pathlib.Path('codeql-results').glob('*.sarif'))
+          if not files:
+              raise SystemExit('Missing SARIF evidence')
+          count = 0
+          for file in files:
+              for run in json.loads(file.read_text())['runs']:
+                  for result in run.get('results', []):
+                      count += 1
+                      for loc in result.get('locations', []):
+                          p = loc.get('physicalLocation', {})
+                          print(json.dumps({'rule': result.get('ruleId'), 'level': result.get('level'), 'path': p.get('artifactLocation', {}).get('uri'), 'line': p.get('region', {}).get('startLine')}))
+          print('Total findings:', count)
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: aca-candidate-codeql-sarif
+          path: codeql-results/*.sarif
+          retention-days: 1
+          if-no-files-found: error
