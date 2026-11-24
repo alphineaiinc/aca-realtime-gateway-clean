@@ -38,3 +38,26 @@ test("service append rejects stale head, actor mismatch and unauthorized role",a
   {...claim,actorId:999},context),/unverified_correction_service_actor/);
  await assert.rejects(serviceAppendCorrection(client("postgres"),claim,context),/unauthorized_automation_db_role/);
 });
+
+test("all ledger operations retain authorized input snapshots during asynchronous role check",async()=>{
+ for(const operation of ["read","initialize","append"]){
+  const input={...scope,actorId:123,priorHeadSha:"a".repeat(40),resultingHeadSha:head,eventId:"00000000-0000-4000-8000-000000000001",failureFingerprint:"ci:failure"};
+  const ctx={...context};const params=[];
+  const c=client("aca_automation_"+({read:"reader",initialize:"initializer",append:"writer"}[operation]));
+  const original=c.query.bind(c);
+  c.query=async(sql,args)=>{
+   if(sql.startsWith("SELECT current_user AS role_name")){
+    await Promise.resolve();
+    Object.assign(input,{repositoryId:999,issueNumber:999,prNumber:999,actorId:999,resultingHeadSha:"c".repeat(40),failureFingerprint:"changed:failure"});
+    Object.assign(ctx,{repositoryId:999,actorId:999,headSha:"c".repeat(40)});
+   }else if(args){params.push([...args]);}
+   return original(sql,args);
+  };
+  if(operation==="read")await serviceReadHistory(c,input,ctx);
+  if(operation==="initialize")assert.equal((await serviceInitializeLedger(c,input,ctx)).verifiedHeadSha,head);
+  if(operation==="append")assert.equal((await serviceAppendCorrection(c,input,ctx)).attempts,1);
+  assert.ok(params.length>0);
+  for(const p of params)assert.deepEqual(p.slice(0,3),[111,20,21]);
+  if(operation==="append")assert.deepEqual(params.find(p=>p.length===9).slice(6),[head,"ci:failure",123]);
+ }
+});
