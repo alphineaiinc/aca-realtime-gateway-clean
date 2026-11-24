@@ -153,3 +153,15 @@ Implementation commits: f1e5de7 (workflow-step inspection), 5c8144f (restart-awa
 - Assertions verify repository A's stop remains present, repository B has no stop, and repository B's reserved counters are isolated at 1 call / 400 micro-USD. This exercises repository-level isolation in provider reservation, approval, outcome and stop predicates.
 - Combined with the preceding cross-product queue isolation acceptance and provider cap exhaustion coverage, this strengthens offline tenant/repository separation. It does not prove production multi-tenant auth configuration or deployment isolation.
 - No production runtime/schema change, live provider call, merge, deployment, secret activation, production database change or additional spend. Independent reviewer #22 remains HOLD.
+
+
+## Durable governance alert journal and scoped operator read access — 2026-11-24
+
+- Code/test head: `85e8437eca46e8d87189127d672fad355fd10c84`; exact-head CI #854 (`45337115366`) passed.
+- Standard Node suite: 173 total, 172 passed, 0 failed, 1 skipped. JavaScript syntax check passed. Disposable PostgreSQL 17 queue integration: 1 passed, 0 failed. Trusted engineering sandbox probe passed.
+- Added `engineering_team_governance_alerts`, a durable, metadata-only journal written in the same transaction as stop/quarantine creation and owner-approved recovery. Duplicate idempotent stop/quarantine requests do not create duplicate alert rows. Failed recovery (active lease or unresolved provider attempt) does not emit a cleared event.
+- Added a read-only governance alert reader, scoped to the exact configured product/repository/SHA and queue-manager identity, with a bounded 1–100 result limit. Runtime initialization exposes the reader but remains inert and grants no execution authority.
+- PostgreSQL acceptance verifies stop/quarantine created and cleared events, approval ID linkage, idempotency, no false clear event on failed recovery, and scoped retrieval without evidence digests or credentials. Unit tests verify authorization and bounded query behavior.
+- CI #852 caught an escaped-slash syntax defect in the new reader; fixed. CI #853 then exposed a stale unit-test expectation after the new alert insert; updated assertions. Exact-head CI #854 passed all checks.
+- Important boundary: this is a durable alert journal and operator read API, not an external notification delivery service. No email/Slack/webhook dispatch is enabled or claimed. No production migrations, live provider/agent activation, merge/deploy, secrets, production DB changes or additional spend.
+- Independent security reviewer #22 remains HOLD; PR #21 has no submitted review. Offline acceptance does not satisfy the independent review gate.
