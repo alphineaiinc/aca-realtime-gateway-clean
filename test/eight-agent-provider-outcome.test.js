@@ -47,3 +47,40 @@ test('provider stop journal is idempotent and atomic',async()=>{
  await assert.rejects(failed.service.record({credential:'owner',binding,usage:{inputTokens:1001,outputTokens:0}}),/alert fixture failure/);
  assert.equal(failed.queries.at(-1).sql,'ROLLBACK');
 });
+
+const {createOpenAITransport}=require('../src/automation/engineeringTeam/openaiTransport');
+const {digest}=require('../src/automation/engineeringTeam/patchPlanner');
+const providerRoles=['orchestrator','project-manager','solution-architect','backend-developer','frontend-developer','qa-testing','security-reviewer','devops'];
+const providerModels=Object.fromEntries(providerRoles.map(r=>[r,'fixture-model']));
+const providerRequest={role:'orchestrator',mode:'proposal-only',input:'fixture',instructions:'fixture',schema:{type:'object'}};
+const providerRequestDigest=digest(JSON.stringify({role:providerRequest.role,mode:providerRequest.mode,input:providerRequest.input,instructions:providerRequest.instructions,schema:providerRequest.schema,model:providerModels[providerRequest.role]}));
+function providerClient(calls){return {responses:{create:async(...args)=>{calls.push(args);return {status:'completed',output_text:'{}',usage:{input_tokens:1,output_tokens:1}};}}};}
+test('OpenAI transport refuses configuration without request-bound reserve and consume',()=>{
+ assert.throws(()=>createOpenAITransport({client:providerClient([]),models:providerModels,authorize:async()=>true}),/Request-bound dispatch admission required/);
+ assert.throws(()=>createOpenAITransport({client:providerClient([]),models:providerModels,authorize:async()=>true,budget:{reserve:async()=>true}}),/Request-bound dispatch admission required/);
+});
+test('offline provider reservation cannot authorize a paid SDK invocation',async()=>{
+ const calls=[];
+ const transport=createOpenAITransport({client:providerClient(calls),models:providerModels,authorize:async()=>true,budget:{reserve:async()=>({reserved:true,executionAuthorized:false,requestDigest:providerRequestDigest,binding:'b'.repeat(64)}),consume:async()=>true}});
+ await assert.rejects(transport.generate(providerRequest),/Provider request failed/);
+ assert.equal(calls.length,0);assert.equal(transport.usage().calls,0);
+});
+test('request-bound dispatch reservation is consumed before provider side effect',async()=>{
+ const calls=[],admissions=[];
+ const transport=createOpenAITransport({client:providerClient(calls),models:providerModels,authorize:async()=>true,budget:{
+  reserve:async value=>{admissions.push(['reserve',value]);return {executionAuthorized:true,requestDigest:value.requestDigest,binding:'b'.repeat(64)};},
+  consume:async value=>{admissions.push(['consume',value]);return true;}
+ }});
+ assert.equal(await transport.generate(providerRequest),'{}');
+ assert.equal(calls.length,1);assert.equal(admissions.length,2);
+ assert.equal(admissions[0][0],'reserve');assert.equal(admissions[1][0],'consume');
+ assert.equal(admissions[0][1].requestDigest,admissions[1][1].requestDigest);
+});
+test('provider SDK is not called when durable reservation consumption is denied',async()=>{
+ const calls=[];
+ const transport=createOpenAITransport({client:providerClient(calls),models:providerModels,authorize:async()=>true,budget:{
+  reserve:async value=>({executionAuthorized:true,requestDigest:value.requestDigest,binding:'c'.repeat(64)}),consume:async()=>false
+ }});
+ await assert.rejects(transport.generate(providerRequest),/Provider request failed/);
+ assert.equal(calls.length,0);
+});
