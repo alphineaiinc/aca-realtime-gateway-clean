@@ -56,5 +56,9 @@ test('persistent governance mutations require manager credentials',async()=>{
  await queue.quarantine({scope,role,credential:'manager'});
  await queue.stop({scope,credential:'manager'});
  assert.match(queries[0].sql,/engineering_team_quarantine/);
- assert.match(queries[1].sql,/engineering_team_stops/);
+ assert.match(queries[1].sql,/engineering_team_governance_alerts/);
+ assert.match(queries[1].sql,/quarantine.created/);
+ assert.match(queries[2].sql,/engineering_team_stops/);
+ assert.match(queries[3].sql,/engineering_team_governance_alerts/);
+ assert.match(queries[3].sql,/stop.created/);
 });
