@@ -37,4 +37,12 @@ test('isolated PostgreSQL queue: concurrent claims, retries, restart, expiry and
  assert.equal(await q.claim({scope,role,credential:'w1'}),null);
  const audit=(await pools[0].query('SELECT event FROM engineering_team_queue_audit WHERE task_id=$1 ORDER BY id',[id])).rows.map(r=>r.event);
  assert.deepEqual(audit,['queued','claimed','retry','claimed','failed']);
+ const stoppedTask=await q.enqueue({scope,role,credential:'manager'});
+ const running=await q.claim({scope,role,credential:'w1'});
+ await q2.quarantine({scope,role,credential:'manager'});
+ await assert.rejects(make(pools[0]).finish({scope,role,credential:'w1',taskId:stoppedTask,leaseId:running.lease_id,outcome:'succeeded'}),/Governance denied/);
+ await assert.rejects(q.claim({scope,role,credential:'w2'}),/Governance denied/);
+ await q2.stop({scope,credential:'manager'});
+ await assert.rejects(make(pools[1]).enqueue({scope,role:'devops',credential:'manager'}),/Governance denied/);
+ assert.equal(await q.cancel({scope,credential:'manager',taskId:stoppedTask}),true);
 });
