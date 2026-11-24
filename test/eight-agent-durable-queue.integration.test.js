@@ -245,7 +245,9 @@ test('isolated PostgreSQL queue: concurrent claims, retries, restart, expiry and
  await assert.rejects(make(pools[0]).finish({scope,role,credential:'w1',taskId:stoppedTask,leaseId:running.lease_id,outcome:'succeeded'}),/Governance denied/);
  await assert.rejects(q.claim({scope,role,credential:'w2'}),/Governance denied/);
  await assert.rejects(ledger(pools[1]).readFixturePrior({credential:'manager',id:runtimeResult.workflowId}),/Workflow unavailable/);
+ await assert.rejects(spend[0].reserve({model:'fixture'}),/Spend budget denied/);
  await q2.stop({scope,credential:'manager'});
+ await assert.rejects(spend[1].reserve({model:'fixture'}),/Spend budget denied/);
  await assert.rejects(make(pools[1]).enqueue({scope,role:'devops',credential:'manager'}),/Governance denied/);
  assert.equal(await q.cancel({scope,credential:'manager',taskId:stoppedTask}),true);
 });
