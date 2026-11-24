@@ -1,6 +1,6 @@
 # Alphine AI — Phase 2 Standard Development Procedure (SDP-001)
 
-**Version:** 1.0 (proposed)  
+**Version:** 1.1 (proposed)  
 **Scope:** Every remaining Phase 2 checklist item in issue #118 and related work in the Alphine AI automated engineering platform, regardless of repository or product.  
 **Authority:** Owner approvals and higher-priority safety/security restrictions always override this procedure.  
 **Status:** Development-stage procedure; adoption in `main` requires normal PR approval/merge. Until then use the draft version as the working checklist, not as an enforced GitHub branch rule.
@@ -80,3 +80,6 @@ Immediately stop the affected operation on: potential production impact; tenant 
 
 ## Change control
 Any exception or revision to SDP-001 must be documented with rationale, risk, owner authorization when needed, and version increment. A conversational instruction to 'proceed' never waives safety or release gates. All future Phase 2 items should link this document and use its item record.
+
+## Mandatory daily delivery reporting and scope freeze
+Use docs/MASTER_PROJECT_COMPLETION_PLAN.md as the fixed 44-item acceptance baseline. Proceed means execute the next coherent authorized batch in dependency order, record actual evidence and retain the denominator. No new requirements without owner-approved change control; defects stay under existing IDs. At the owner's Goodnight message, close the day's working session with a consolidated America/Toronto calendar-day report: executive summary, start/end accepted and implementation-evidence counts and percentages, percentage-point deltas, permanent IDs newly accepted or advanced, actual commits/tests/CI, phase-wise status, blockers and decisions, additional CAD spending, remaining effort forecast and next day's batch. Distinguish verified daily changes from unknown baseline history; do not fabricate deltas or equate code with acceptance. Good morning resumes the last checkpoint; Status reports the master baseline. Include a Proceed control in conversational development reports while work remains. This is reporting only, not authorization for protected operations or background execution.
