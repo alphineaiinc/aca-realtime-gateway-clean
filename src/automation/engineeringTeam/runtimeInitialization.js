@@ -5,6 +5,7 @@ const {createDurableQueue}=require('./durableQueue');
 const {createDurableApprovalPolicy}=require('./durableApproval');
 const {createSpendBudget}=require('./spendBudget');
 const {createQueuePolicyBridge}=require('./queuePolicyBridge');
+const {createProviderReservation}=require('./providerReservation');
 const {createWorkflowLedger}=require('./workflowLedger');
 // Initialization is deliberately inert: no provider clients, scheduler or
 // external writes are created. Real execution requires separate acceptance.
@@ -19,6 +20,7 @@ function initializeRuntime({config,pool,identity,ceilings,readQueueState}={}){
  const budget=createSpendBudget({pool,...manifest.scope,budgetId:manifest.budgetId,ceilings});
  const workflow=createWorkflowLedger({pool,scope:manifest.scope,authenticate});
  const policy=readQueueState===undefined?null:createQueuePolicyBridge({manifest,readQueueState});
- return Object.freeze({manifest,queue,approvals,budget,workflow,policy,authenticate,status:'initialized-inert',executionAllowed:()=>false});
+ const providerReservation=policy===null?null:createProviderReservation({pool,manifest,policy,authenticate,ceilings});
+ return Object.freeze({manifest,queue,approvals,budget,workflow,policy,providerReservation,authenticate,status:'initialized-inert',executionAllowed:()=>false});
 }
 module.exports={initializeRuntime};
