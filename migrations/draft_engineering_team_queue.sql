@@ -25,6 +25,7 @@ CREATE TABLE engineering_team_queue_audit (
 
 -- Scope-wide stop applies across commit revisions. No automatic resume.
 CREATE TABLE engineering_team_stops (
+ incident_id uuid NOT NULL DEFAULT gen_random_uuid(),
  product text NOT NULL,
  repository text NOT NULL,
  actor_id text NOT NULL,
@@ -32,6 +33,7 @@ CREATE TABLE engineering_team_stops (
  PRIMARY KEY(product,repository)
 );
 CREATE TABLE engineering_team_quarantine (
+ incident_id uuid NOT NULL DEFAULT gen_random_uuid(),
  product text NOT NULL,
  repository text NOT NULL,
  role text NOT NULL CHECK (role IN ('orchestrator','project-manager','solution-architect','backend-developer','frontend-developer','qa-testing','security-reviewer','devops')),
@@ -189,6 +191,7 @@ CREATE TABLE engineering_team_governance_recoveries (
  repository text NOT NULL,
  head_sha text NOT NULL CHECK(head_sha ~ '^[a-f0-9]{40}$'),
  action text NOT NULL CHECK(action IN ('clear-stop','clear-quarantine')),
+ incident_id uuid NOT NULL,
  role text CHECK(role IS NULL OR role IN ('orchestrator','project-manager','solution-architect','backend-developer','frontend-developer','qa-testing','security-reviewer','devops')),
  evidence_sha256 text NOT NULL CHECK(evidence_sha256 ~ '^[a-f0-9]{64}$'),
  recovered_by text NOT NULL,
