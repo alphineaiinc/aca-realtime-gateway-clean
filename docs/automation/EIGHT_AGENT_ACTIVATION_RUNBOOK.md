@@ -112,3 +112,15 @@ Trusted sandbox probe and Node CI passed at a776d4853c9d69a926aaff436868c2a605bc
 - Isolated PostgreSQL queue integration: 1 test, 1 passed, 0 failed, 0 skipped. The deliberately rejected SQL writes in the fixture appear as expected PostgreSQL constraint/unique-violation log entries; the integration test itself passed.
 - Trusted engineering sandbox probe: passed; verified non-root, loopback-only, read-only root, no credentials/socket, no capabilities, seccomp and no-new-privileges. Patch fixture ran in a network-disabled, read-only container with resource limits.
 - Therefore CI #803 does include successful disposable PostgreSQL queue integration within the Node job; earlier note saying a separate PostgreSQL job was absent was too narrow. CodeQL and the additional Python/JavaScript/Actions analyses from CI #801 are still not evidenced by #803.
+
+
+## Eight-agent sequential workflow and durable evidence acceptance — 2026-11-24
+
+- Code/test head: `08a684235bc0af32dac9174b6a634bf04c91c72f`; exact-head CI #809 (`45333026293`) passed.
+- Standard Node suite: 167 total, 166 passed, 0 failed, 1 skipped. Disposable PostgreSQL queue integration: 1 passed, 0 failed. Trusted sandbox probe and trusted planned-patch fixture: passed.
+- Added PostgreSQL integration coverage proving that a role-level policy closure pauses the durable workflow at the current next_step, and that a fresh runtime after policy reopening resumes only the remaining roles. The final workflow reaches next_step 8; already completed role handoffs are not replayed.
+- Added evidence-integrity coverage that mutates a persisted fixture proposal body after its handoff and verifies manager-only readFixturePrior rejects the altered body because its SHA-256 no longer matches the durable proposal receipt.
+- CI #808 initially failed in the new resume fixture because it reused a one-shot change-preparation instance consumed by the earlier workflow. The test now creates a fresh preparation instance to model a process restart. This is a test-fixture correction, not a production runtime behavior change.
+- Earlier CI #803 exact-head policy-revocation regression remains passing. This batch extends sequential handoff acceptance and durable evidence tamper detection.
+- Draft-only fixture acceptance. It does not validate live provider execution, real model output quality, live GitHub writes, independent security review, deployment isolation, or operational activation. No merge, deployment, secret activation, production database change, live dispatch or additional spend.
+- Next: complete developer → QA → security-review correction-cycle acceptance against exact-head evidence, then transactional spend/provider-admission and emergency-stop/quarantine recovery gates. Preserve independent reviewer #22.
