@@ -301,3 +301,6 @@ The draft migration adds `engineering_team_publication_reconciliation`, keyed to
 - Exact-head CI and PostgreSQL integration remain required. No migration has been applied; no production data, credentials, merge, deployment, signing or agent dispatch is authorized.
 
 - Reconciliation store construction pins `baseBranch` and `headBranch` explicitly; those values are passed into both collection and independent verification scope. Do not infer branch names from untrusted provider observations.
+
+### SEC-09 PostgreSQL integration acceptance update
+The disposable PostgreSQL integration now wires `createGitHubPublicationEvidenceBoundary().collect` and `.verify` directly into `createReconciliationStore`; the acceptance path no longer supplies a verifier stub. Distinct read-only transport functions and token-provider interfaces are used. The test proves successful durable recording, idempotent replay, append-only UPDATE/DELETE rejection, and transaction rollback with zero persisted rows when the independent verifier observes a changed head revision. Test tokens are synthetic fixtures only and are not credentials. This validates code-path wiring and disposable-database behavior, not independent custody of operational identities or a live GitHub credential deployment.
