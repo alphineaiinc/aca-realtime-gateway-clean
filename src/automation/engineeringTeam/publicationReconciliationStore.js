@@ -4,8 +4,8 @@ const {reconcilePublication}=require('./publicationReconciliation');
 function digest(value){return createHash('sha256').update(JSON.stringify(value)).digest('hex');}
 // Offline only. Collector must authenticate GitHub observations independently.
 // A stored observation never releases a reservation or authorizes a retry/write.
-function createReconciliationStore({pool,authenticate,collect,verifyObservation}={}){
- if(typeof pool?.connect!=='function'||typeof authenticate!=='function'||typeof collect!=='function'||typeof verifyObservation!=='function')throw Error('Invalid reconciliation store');
+function createReconciliationStore({pool,authenticate,collect,verifyObservation,baseBranch,headBranch}={}){
+ if(typeof pool?.connect!=='function'||typeof authenticate!=='function'||typeof collect!=='function'||typeof verifyObservation!=='function'||typeof baseBranch!=='string'||!baseBranch||typeof headBranch!=='string'||!headBranch)throw Error('Invalid reconciliation store');
  return Object.freeze({async record({credential,binding}={}){
   if(typeof binding!=='string'||!/^[a-f0-9]{64}$/.test(binding))throw Error('Invalid binding');
   const actor=await authenticate(credential);
@@ -29,7 +29,7 @@ function createReconciliationStore({pool,authenticate,collect,verifyObservation}
     await client.query('COMMIT');
     return Object.freeze({binding,state:prior.rows[0].state,number:prior.rows[0].pr_number,retryAuthorized:false,executionAuthorized:false,replayed:true});
    }
-   const requestScope=Object.freeze({binding,product:scope.product,repository:scope.repository,baseSha:scope.base_sha,headSha:scope.head_sha,requesterId:scope.requested_by,approvalId:scope.approval_id});
+   const requestScope=Object.freeze({binding,product:scope.product,repository:scope.repository,baseSha:scope.base_sha,headSha:scope.head_sha,baseBranch,headBranch,requesterId:scope.requested_by,approvalId:scope.approval_id});
    const observation=await collect(requestScope);
    if(!observation||await verifyObservation(observation,requestScope)!==true)throw Error('Independent observation authentication failed');
    if(observation.repository!==scope.repository||observation.baseSha!==scope.base_sha||observation.headSha!==scope.head_sha||observation.binding!==binding||observation.requesterId!==scope.requested_by)throw Error('Independent observation scope mismatch');
