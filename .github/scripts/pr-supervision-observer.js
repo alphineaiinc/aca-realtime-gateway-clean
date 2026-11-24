@@ -32,7 +32,7 @@ function normalizeCheck(run, sha) {
 }
 async function observe({github, owner, repo, prNumber, issueNumber,
   authenticatedLedgerClient, trustedReviewProvider, trustedReviewerId,
-  trustedCiAppId, trustedCiWorkflowId, trustedReviewerPublicKey, trustedEvidenceDigestProvider}) {
+  trustedCiAppId, trustedCiWorkflowId, trustedReviewerPublicKey, trustedEvidenceDigestProvider, trustedKeyStatusProvider}) {
   if (!github?.rest || !owner || !repo || !validNumber(prNumber) || !validNumber(issueNumber)) {
     throw new Error("invalid_observer_arguments");
   }
@@ -95,13 +95,16 @@ async function observe({github, owner, repo, prNumber, issueNumber,
   }
   let review = null;
   if (trustedHead && trustedLink && typeof trustedReviewProvider === "function" &&
-      validNumber(trustedReviewerId) && trustedReviewerPublicKey && typeof trustedEvidenceDigestProvider === "function") {
+      validNumber(trustedReviewerId) && trustedReviewerPublicKey && typeof trustedEvidenceDigestProvider === "function" && typeof trustedKeyStatusProvider === "function") {
     try {
       const challenge=randomBytes(32).toString("hex");
       const scope = Object.freeze({repositoryId:repository.id, issueNumber,prNumber,headSha,challenge});
       const evidenceSha256 = await trustedEvidenceDigestProvider(scope);
       if (typeof evidenceSha256 !== "string" || !/^[a-f0-9]{64}$/.test(evidenceSha256)) throw Error("Missing independent digest");
+      const keyScope = Object.freeze({...scope,reviewerId:trustedReviewerId,publicKey:trustedReviewerPublicKey});
+      if (await trustedKeyStatusProvider(keyScope) !== 'active') throw Error('Reviewer key unavailable or revoked');
       const evidence = await trustedReviewProvider(scope);
+      if (await trustedKeyStatusProvider(keyScope) !== 'active') throw Error('Reviewer key unavailable or revoked');
       const disposition = validateDisposition({envelope:evidence,publicKey:trustedReviewerPublicKey,
         expected:{...scope,reviewerId:trustedReviewerId,evidenceSha256}});
       if (disposition) review = Object.freeze({headSha,status:disposition.status,findings:disposition.findings,independent:true,source:"trusted_review"});
