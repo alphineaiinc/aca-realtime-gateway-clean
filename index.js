@@ -1098,39 +1098,8 @@ app.use("/api/stripe", require("./src/routes/stripeWebhook"));
 
 app.use(express.json({ limit: "1mb" }));
 
-app.post("/api/gpt/chat", async (req, res) => {
-  try {
-    const result = await handleConversationTurn({
-      sessionId: req.body?.session_id,
-      message: req.body?.message,
-      channel: "chat",
-      tenantBusinessType: req.body?.tenant_business_type || null,
-      tenantId: 1,
-      locale: "en-US",
-    });
-
-    if (!result.ok) {
-      return res.status(400).json(result);
-    }
-
-    return res.status(200).json({
-      ok: true,
-      reply: result.reply,
-      session_id: result.session_id,
-      source: result.source,
-      scenario: result.scenario,
-      tenant_business_type: result.tenant_business_type,
-      business_type: result.business_type,
-      context: result.context,
-    });
-  } catch (err) {
-    console.error("❌ /api/gpt/chat error:", err);
-    return res.status(500).json({
-      ok: false,
-      error: "Internal server error",
-    });
-  }
-});
+// Public marketplace chat must not use a real tenant's knowledge or session.
+app.post("/api/gpt/chat", (_req,res)=>res.status(503).json({ok:false,error:"Marketplace chat unavailable pending isolated demo configuration"}));
 
 // ✅ Initialize express-ws so WebSocket routes actually work
 try {
@@ -1321,6 +1290,8 @@ console.log("✅ .well-known bound to:", wellKnownAbsolute);
 
 // also expose everything under /public normally
 const staticDir = path.resolve(__dirname, "public");
+// Invoice files are private; never serve them through the public static roots.
+app.use("/invoices", (_req,res)=>res.sendStatus(404));
 app.use(express.static(staticDir));
 console.log("✅ Static assets served from absolute path:", staticDir);
 
