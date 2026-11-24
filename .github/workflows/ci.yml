@@ -14,6 +14,20 @@ jobs:
     name: Node tests
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: aca_ci
+          POSTGRES_PASSWORD: disposable-ci-only
+          POSTGRES_DB: aca_sandbox_receipt_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U aca_ci -d aca_sandbox_receipt_ci"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -34,3 +48,8 @@ jobs:
           else
             node --test test/*.test.js
           fi
+      - name: Disposable sandbox receipt PostgreSQL integration
+        env:
+          RUN_SANDBOX_RECEIPT_CI: '1'
+          SANDBOX_RECEIPT_CI_DATABASE_URL: postgresql://aca_ci:disposable-ci-only@127.0.0.1:5432/aca_sandbox_receipt_ci
+        run: node --test test/protected-sandbox-receipts.integration.test.js
