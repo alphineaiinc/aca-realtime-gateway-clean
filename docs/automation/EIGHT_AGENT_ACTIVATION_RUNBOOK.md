@@ -57,3 +57,7 @@ Trusted sandbox probe and Node CI passed at a776d4853c9d69a926aaff436868c2a605bc
 ## Verified containment and cost assessment
 - Exact head 02ad38fa291b60535621a231bda8b5c18fca71cf, CI 45317425975: 125 Node tests plus separate PostgreSQL integration passed; trusted sandbox passed. Persistent unresolved/breach admission guard and owner-only fixture reconciliation verified.
 - Pinned-rate usage assessment now computes rounded integer micro-USD and detects token ceiling breaches independently of monetary ceiling. This is offline arithmetic, not authenticated provider billing or live admission. New exact-head CI required.
+
+## Cost-bound reconciliation checkpoint
+- CI 45317871030 passed at 88d04972363597375bf0d845509972211b2b66b4. Outcome assessment integrated in inert runtime.
+- Follow-up binds assessment to exact budget and tests cross-budget denial and token-only breach with derived cost in disposable PostgreSQL. Independent provider billing and live admission remain open.

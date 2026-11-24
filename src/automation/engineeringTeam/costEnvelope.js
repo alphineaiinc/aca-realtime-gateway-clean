@@ -28,6 +28,6 @@ function createCostEnvelope({manifest,prices,maxInputTokens}={}){
   const actualMicrousd=Number(amount);
   return Object.freeze({inputTokens,outputTokens,actualMicrousd,breach:inputTokens>maxInputTokens||outputTokens>pinned.limits.maxOutputTokens||actualMicrousd>entry[3],executionAuthorized:false});
  }
- return Object.freeze({assessUsage,ceilings:Object.freeze(ceilings),maxInputTokens,maxOutputTokens:pinned.limits.maxOutputTokens,evidenceSha256:digest(JSON.stringify([pinned.evidenceSha256,maxInputTokens,entries])),executionAuthorized:false});
+ return Object.freeze({budgetId:pinned.budgetId,assessUsage,ceilings:Object.freeze(ceilings),maxInputTokens,maxOutputTokens:pinned.limits.maxOutputTokens,evidenceSha256:digest(JSON.stringify([pinned.evidenceSha256,maxInputTokens,entries])),executionAuthorized:false});
 }
 module.exports={createCostEnvelope};

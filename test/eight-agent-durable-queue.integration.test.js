@@ -285,7 +285,12 @@ test('isolated PostgreSQL queue: concurrent claims, retries, restart, expiry and
  const stopQuery='SELECT 1 FROM engineering_team_stops WHERE product=$1 AND repository=$2';
  const stopArgs=[scope.product,scope.repository];
  assert.equal((await pools[0].query(stopQuery,stopArgs)).rowCount,0);
- const breach=await outcomes[0].record({credential:'owner',binding:breachBinding,usage:{inputTokens:10,outputTokens:5,actualMicrousd:401}});
+ const {createCostEnvelope}=require('../src/automation/engineeringTeam/costEnvelope');
+ const costBound=createProviderOutcome({pool:pools[0],scope,authenticate:async c=>identities.get(c),costEnvelope:createCostEnvelope({manifest:breachManifest,maxInputTokens:100,prices:{fixture:{input:100000,output:200000}}})});
+ const wrongBudget=createProviderOutcome({pool:pools[1],scope,authenticate:async c=>identities.get(c),costEnvelope:createCostEnvelope({manifest:unknownManifest,maxInputTokens:100,prices:{fixture:{input:100000,output:200000}}})});
+ await assert.rejects(wrongBudget.record({credential:'owner',binding:breachBinding,usage:{inputTokens:101,outputTokens:0}}),/Outcome budget denied/);
+ const breach=await costBound.record({credential:'owner',binding:breachBinding,usage:{inputTokens:101,outputTokens:0,actualMicrousd:0}});
+ assert.equal((await pools[0].query('SELECT actual_microusd FROM engineering_team_provider_outcomes WHERE binding=$1',[breachBinding])).rows[0].actual_microusd,'11');
  assert.deepEqual(breach,{outcome:'breach',executionAuthorized:false});
  assert.equal((await pools[1].query(stopQuery,stopArgs)).rowCount,1);
  assert.deepEqual((await pools[1].query('SELECT reserved_calls,reserved_microusd FROM engineering_team_spend_budgets WHERE budget_id=$1',[breachBudgetId])).rows[0],{reserved_calls:1,reserved_microusd:'400'});
