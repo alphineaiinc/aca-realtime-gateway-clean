@@ -1,6 +1,7 @@
 // Manual execution only; never run against production or log credentials.
 import {randomBytes,createHash} from 'node:crypto';
 import {spawnSync} from 'node:child_process';
+import {fileURLToPath} from 'node:url';
 import pg from 'pg';
 const url=process.env.ACA_STAGING_ACCEPTANCE_DATABASE_URL;
 if(!url||process.env.ACA_STAGING_ACCEPTANCE_CONFIRM!=='aca_product_staging')throw Error('Explicit staging configuration required');
@@ -25,7 +26,7 @@ try{
   }
   await client.query('COMMIT');
  }catch(e){await client.query('ROLLBACK');throw e;}finally{client.release();}
- const result=spawnSync(process.execPath,[new URL('./aca-hosted-authenticated-acceptance.mjs',import.meta.url).pathname],{env:{PATH:process.env.PATH,ACA_ACCEPTANCE_CODE_A:codes[0],ACA_ACCEPTANCE_CODE_B:codes[1],ACA_ACCEPTANCE_TENANT_A:String(ids[0]),ACA_ACCEPTANCE_TENANT_B:String(ids[1])},stdio:'inherit',timeout:180000});
+ const result=spawnSync(process.execPath,[fileURLToPath(new URL('./aca-hosted-authenticated-acceptance.mjs',import.meta.url))],{env:{PATH:process.env.PATH,ACA_ACCEPTANCE_CODE_A:codes[0],ACA_ACCEPTANCE_CODE_B:codes[1],ACA_ACCEPTANCE_TENANT_A:String(ids[0]),ACA_ACCEPTANCE_TENANT_B:String(ids[1])},stdio:'inherit',timeout:180000});
  if(result.status!==0)throw Error('Hosted acceptance failed');
 }catch{console.error('Staging acceptance unsuccessful');process.exitCode=1;}
 finally{
