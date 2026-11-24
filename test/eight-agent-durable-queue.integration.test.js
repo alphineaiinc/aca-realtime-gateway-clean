@@ -267,7 +267,12 @@ test('isolated PostgreSQL queue: concurrent claims, retries, restart, expiry and
  await assert.rejects(q.claim({scope,role,credential:'w2'}),/Governance denied/);
  await assert.rejects(ledger(pools[1]).readFixturePrior({credential:'manager',id:runtimeResult.workflowId}),/Workflow unavailable/);
  await assert.rejects(governanceSpend[0].reserve({model:'fixture'}),/Spend budget denied/);
+ await assert.rejects(reviewed(pools[1]).reserve({credential:'manager',approvalId:excessApproval.id,reviewEnvelope:excessEnvelope}),/Reservation denied/);
  await q2.stop({scope,credential:'manager'});
+ // A newly constructed reservation adapter must still deny admission after a durable stop.
+ await assert.rejects(reviewed(pools[0]).reserve({credential:'manager',approvalId:excessApproval.id,reviewEnvelope:excessEnvelope}),/Reservation denied/);
+ assert.equal((await pools[1].query('SELECT binding FROM engineering_team_provider_attempts WHERE binding=$1',[excessBinding])).rowCount,0);
+ assert.deepEqual((await pools[1].query('SELECT reserved_calls,reserved_microusd FROM engineering_team_spend_budgets WHERE budget_id=$1',[providerBudgetId])).rows[0],{reserved_calls:2,reserved_microusd:'800'});
  await assert.rejects(governanceSpend[1].reserve({model:'fixture'}),/Spend budget denied/);
  assert.deepEqual((await pools[1].query('SELECT reserved_calls,reserved_microusd FROM engineering_team_spend_budgets WHERE budget_id=$1',[governanceBudgetId])).rows[0],{reserved_calls:1,reserved_microusd:'100'});
  await assert.rejects(make(pools[1]).enqueue({scope,role:'devops',credential:'manager'}),/Governance denied/);
