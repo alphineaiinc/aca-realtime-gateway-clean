@@ -6,7 +6,7 @@ const scope={product:'aca',repository:'fixture/aca',sha:'a'.repeat(40)};
 const issue=42,manifestDigest='b'.repeat(64);
 function fixture(){
  let eligible=true,calls=[];
- const policy={async evaluate(){return {scope,issueNumber:issue,manifestDigest,eligibleForPreparation:eligible,executionAuthorized:false,evidenceSha256:'c'.repeat(64)}}};
+ const policy={async evaluate(){return {scope,issueNumber:issue,manifestDigest,policyVersion:'v1',eligibleForPreparation:eligible,executionAuthorized:false,evidenceSha256:'c'.repeat(64)}}};
  const queue=Object.fromEntries(['enqueue','inspectWorkflowStep','claim','finish','stop','quarantine','expire','cancel'].map(name=>[name,async input=>{calls.push(name);return name==='inspectWorkflowStep'?null:name==='claim'?null:true}]));
  return {bound:createPolicyBoundQueue({queue,policy,scope,issue,manifestDigest}),calls,block(){eligible=false}};
 }
