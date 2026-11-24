@@ -42,3 +42,14 @@ No merges, deployments, database migrations, credential provisioning, signing, p
 - PR #146 head `ae83005234886637b90ef8e4f6397eac521e6012`: added a workflow regression test asserting the active protected sandbox workflow remains manually dispatched, permissionless and denial-only; updated sandbox acceptance evidence documentation. Proposed runtime workflow remains inactive.
 - PR #142 remains at `bc592afdea87dde99ae292d20b63a9f3e079175b` for this handoff update; its exact-head CI run #1076 [45471678963](https://github.com/alphineaiinc/aca-realtime-gateway-clean/actions/runs/45471678963) passed.
 - These are source-level checks only. They do not establish independent signer custody, actual identity separation, protected publisher provenance, runner teardown/quarantine, or operational runtime acceptance. Independent review remains HOLD.
+
+
+## Latest coordinated verification and SEC-09 append-only correction
+
+- PR #21 revision `b9592ac3aa6b131e32850c7bf036a380e11c3497`: ACA CI #1079, observer #576 and staging smoke #46 completed successfully.
+- PR #146 revision `ae83005234886637b90ef8e4f6397eac521e6012`: ACA CI #1080 completed successfully.
+- PR #142 revision `d05e79677bb28718a4a092a801a6f889334307d1`: ACA CI #1081 completed successfully, including Node tests and disposable PostgreSQL integration.
+- Follow-up SEC-09 commits add a statement-level PostgreSQL `BEFORE TRUNCATE` trigger for the append-only reconciliation table and an integration assertion that UPDATE, DELETE and TRUNCATE are rejected with SQLSTATE `P0001`. These changes are committed as source and tests only; migration is not applied. Exact-head CI for the new follow-up revision is pending.
+- The source-level SEC-08 and SEC-11–13 additions remain as recorded above. No independent signer custody, operational key ownership, privileged database role isolation, trusted image publisher provenance, or external runner teardown acceptance is established by CI.
+
+**Disposition remains HOLD.** All listed CI results are scoped to their exact revisions. New SEC-09 changes require fresh CI before acceptance. No merge, deployment, migration, credential provisioning, signing, production change or agent dispatch occurred. Additional spend: CAD $0.
