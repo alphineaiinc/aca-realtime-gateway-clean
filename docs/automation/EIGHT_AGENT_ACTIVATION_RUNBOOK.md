@@ -61,3 +61,5 @@ Trusted sandbox probe and Node CI passed at a776d4853c9d69a926aaff436868c2a605bc
 ## Cost-bound reconciliation checkpoint
 - CI 45317871030 passed at 88d04972363597375bf0d845509972211b2b66b4. Outcome assessment integrated in inert runtime.
 - Follow-up binds assessment to exact budget and tests cross-budget denial and token-only breach with derived cost in disposable PostgreSQL. Independent provider billing and live admission remain open.
+
+- Request preparation now requires exact manifest digest and budget identity from the cost envelope and an own positive model ceiling. Offline only; provider tokenizer and billing verification remain required.
