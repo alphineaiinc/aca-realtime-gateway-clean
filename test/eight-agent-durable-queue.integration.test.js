@@ -745,7 +745,7 @@ test('isolated PostgreSQL queue: concurrent claims, retries, restart, expiry and
  await pools[0].query(`INSERT INTO engineering_team_publication_attempts(binding,approval_id,product,repository,base_sha,reserved_by)
   VALUES ($1,$2,$3,$4,$5,$6)`,[reconBinding,reconApproval,reconScope.product,reconScope.repository,reconScope.sha,reconIdentity.id]);
  const reconObservation={binding:reconBinding,repository:reconScope.repository,baseSha:reconScope.sha,headSha:reconHead,requesterId:reconIdentity.id,baseBranch:'main',headBranch:'draft',complete:true,observations:[{number:77,body:'Evidence binding: '+reconBinding,draft:true,state:'open',base:{repo:{full_name:reconScope.repository},ref:'main',sha:reconScope.sha},head:{repo:{full_name:reconScope.repository},ref:'draft',sha:reconHead}}]};
- const reconStore=createReconciliationStore({pool:pools[0],authenticate:reconAuth,collect:async scope=>({...reconObservation,...scope}),verifyObservation:async()=>true});
+ const reconStore=createReconciliationStore({pool:pools[0],authenticate:reconAuth,collect:async scope=>({...reconObservation,...scope}),verifyObservation:async()=>true,baseBranch:'main',headBranch:'draft'});
  const reconResult=await reconStore.record({credential:'publication-manager',binding:reconBinding});
  assert.equal(reconResult.state,'observed-draft');
  assert.equal(reconResult.number,77);
