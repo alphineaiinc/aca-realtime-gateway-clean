@@ -300,6 +300,12 @@ test('isolated PostgreSQL queue: concurrent claims, retries, restart, expiry and
  const finalUnknownBinding=await finalUnknownProvider.evidence();
  const finalUnknownApproval=await approval(pools[0]).request({scope,operation:'provider.activate',evidence:finalUnknownBinding,credential:'manager'});
  await approval(pools[1]).recordDecision({scope,id:finalUnknownApproval.id,binding:finalUnknownApproval.binding,decision:'approved',credential:'owner'});
+ // Clearing the disposable stop alone must not bypass the persistent breach.
+ await assert.rejects(finalUnknownProvider.reserve({credential:'manager',approvalId:finalUnknownApproval.id}),/unresolved provider attempt/);
+ // Remove the synthetic breach fixture only in this disposable database to
+ // exercise the independent unknown-outcome path. No runtime reset API exists.
+ await pools[0].query('DELETE FROM engineering_team_provider_outcomes WHERE binding=$1',[breachBinding]);
+ await pools[0].query('DELETE FROM engineering_team_provider_attempts WHERE binding=$1',[breachBinding]);
  await finalUnknownProvider.reserve({credential:'manager',approvalId:finalUnknownApproval.id});
  const stoppedTask=await q.enqueue({scope,role,credential:'manager'});
  const running=await q.claim({scope,role,credential:'w1'});
