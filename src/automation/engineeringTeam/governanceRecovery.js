@@ -1,8 +1,7 @@
 'use strict';
 const {createHash}=require('node:crypto');
 const {getRole}=require('./registry');
-const {operations}=require('./approvalPolicy');
-const {validDigest}=(()=>({validDigest:v=>typeof v==='string'&&/^[a-f0-9]{64}$/.test(v)}))();
+const validDigest=v=>typeof v==='string'&&/^[a-f0-9]{64}$/.test(v);
 const validScope=s=>s&&typeof s.product==='string'&&/^[A-Za-z0-9][A-Za-z0-9_.-]{0,79}$/.test(s.product)&&typeof s.repository==='string'&&/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(s.repository)&&s.repository.length<=200&&typeof s.sha==='string'&&/^[a-f0-9]{40}$/.test(s.sha);
 function createGovernanceRecovery({pool,scope,authenticate}={}){
  if(typeof pool?.connect!=='function'||typeof authenticate!=='function'||!validScope(scope))throw Error('Invalid governance recovery');
