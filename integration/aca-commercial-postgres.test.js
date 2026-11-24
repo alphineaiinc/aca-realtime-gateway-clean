@@ -46,6 +46,17 @@ test("isolated commercial pricing, replay and concurrent invoice acceptance",asy
  await assert.rejects(queueLateUsage(pool,{...late,tenantId:2}),/CONFLICTING_LATE_USAGE/);
  await assert.rejects(queueLateUsage(pool,{...late,quantity:16}),/CONFLICTING_LATE_USAGE/);
  assert.equal((await pool.query("SELECT count(*)::int AS n FROM public.billing_invoices")).rows[0].n,1);
+ await pool.query("CREATE TABLE public.aca_stripe_event_inbox(event_id text PRIMARY KEY)");
+ await pool.query(fs.readFileSync("migrations/014_stripe_invoice_reconciliation.sql","utf8"));
+ await pool.query(fs.readFileSync("migrations/draft_aca_stripe_customer_identity.sql","utf8"));
+ const {bindInvoice}=require("../src/brain/stripeInvoiceBinding");
+ const binding={invoiceId:results.find(Boolean).id,tenantId:1,stripeInvoiceId:"in_fixture",stripeCustomerId:"cus_fixture",amountCents:60,livemode:true};
+ await assert.rejects(bindInvoice(pool,binding),/BINDING_REJECTED/);
+ await pool.query("INSERT INTO public.aca_stripe_customer_identity VALUES(2,'cus_other',true),(1,'cus_fixture',true)");
+ await assert.rejects(bindInvoice(pool,{...binding,stripeCustomerId:"cus_other"}),/BINDING_REJECTED/);
+ await assert.rejects(bindInvoice(pool,{...binding,livemode:false}),/BINDING_REJECTED/);
+ assert.equal((await bindInvoice(pool,binding)).invoice_id,binding.invoiceId);
+ await assert.rejects(pool.query("INSERT INTO public.aca_stripe_customer_identity VALUES(2,'cus_fixture',true)"));
  await pool.query(fs.readFileSync("migrations/draft_aca_financial_roles.sql","utf8"));
  const client=await pool.connect();
  try{
