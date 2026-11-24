@@ -101,6 +101,7 @@ CREATE TABLE engineering_team_workflows (
  next_step integer NOT NULL DEFAULT 0 CHECK(next_step BETWEEN 0 AND 8),
  subject text CHECK(subject IS NULL OR length(subject) BETWEEN 1 AND 2000),
  developer_role text CHECK(developer_role IS NULL OR developer_role IN ('backend-developer','frontend-developer')),
+ CHECK((subject IS NULL)=(developer_role IS NULL)),
  created_at timestamptz NOT NULL DEFAULT clock_timestamp()
 );
 CREATE TABLE engineering_team_handoffs (
