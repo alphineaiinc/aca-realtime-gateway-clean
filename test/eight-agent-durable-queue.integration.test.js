@@ -491,4 +491,41 @@ test('isolated PostgreSQL queue: concurrent claims, retries, restart, expiry and
  assert.deepEqual((await pools[1].query('SELECT reserved_calls,reserved_microusd FROM engineering_team_spend_budgets WHERE budget_id=$1',[governanceBudgetId])).rows[0],{reserved_calls:1,reserved_microusd:'100'});
  await assert.rejects(make(pools[1]).enqueue({scope,role:'devops',credential:'manager'}),/Governance denied/);
  assert.equal(await q.cancel({scope,credential:'manager',taskId:stoppedTask}),true);
+
+ // Recovery requires a distinct owner approval, exact evidence, no active lease,
+ // and a single-use audit record. Exercise on an isolated disposable repository scope.
+ const recoveryScope={...scope,repository:'fixture/recovery'};
+ const recoveryRole='qa-testing';
+ const recoveryIdentities=new Map([
+  ['recovery-manager',{...recoveryScope,id:'recovery-manager',permission:'queue.manage'}],
+  ['recovery-owner',{...recoveryScope,id:'recovery-owner',permission:'owner.approval'}],
+  ['recovery-worker',{...recoveryScope,id:'recovery-worker',role:recoveryRole,permission:'queue.work'}]
+ ]);
+ const recoveryAuth=async c=>recoveryIdentities.get(c);
+ const recoveryQueue=createDurableQueue({pool:pools[0],scopes:[recoveryScope],authenticate:recoveryAuth});
+ const recoveryApprovals=createDurableApprovalPolicy({pool:pools[0],scopes:[recoveryScope],authenticate:recoveryAuth});
+ const {createGovernanceRecovery}=require('../src/automation/engineeringTeam/governanceRecovery');
+ const recoveryGate=createGovernanceRecovery({pool:pools[0],scope:recoveryScope,authenticate:recoveryAuth});
+ const quarantineTask=await recoveryQueue.enqueue({scope:recoveryScope,role:recoveryRole,credential:'recovery-manager'});
+ await recoveryQueue.quarantine({scope:recoveryScope,role:recoveryRole,credential:'recovery-manager'});
+ await assert.rejects(recoveryQueue.claim({scope:recoveryScope,role:recoveryRole,credential:'recovery-worker'}),/Governance denied/);
+ const quarantineEvidence=recoveryGate.evidence({action:'clear-quarantine',role:recoveryRole});
+ const quarantineRequest=await recoveryApprovals.request({scope:recoveryScope,operation:'queue.recover',evidence:quarantineEvidence,credential:'recovery-manager'});
+ await recoveryApprovals.recordDecision({scope:recoveryScope,id:quarantineRequest.id,binding:quarantineRequest.binding,decision:'approved',credential:'recovery-owner'});
+ assert.deepEqual(await recoveryGate.recover({credential:'recovery-manager',approvalId:quarantineRequest.id,action:'clear-quarantine',role:recoveryRole,evidenceSha256:quarantineEvidence}),{action:'clear-quarantine',role:recoveryRole,recovered:true,executionAuthorized:false});
+ await assert.rejects(recoveryGate.recover({credential:'recovery-manager',approvalId:quarantineRequest.id,action:'clear-quarantine',role:recoveryRole,evidenceSha256:quarantineEvidence}),/already consumed/);
+ const activeRecoveryLease=await recoveryQueue.claim({scope:recoveryScope,role:recoveryRole,credential:'recovery-worker',expectedTaskId:quarantineTask});
+ const afterStopTask=await recoveryQueue.enqueue({scope:recoveryScope,role:recoveryRole,credential:'recovery-manager'});
+ await recoveryQueue.stop({scope:recoveryScope,credential:'recovery-manager'});
+ const stopEvidence=recoveryGate.evidence({action:'clear-stop'});
+ const stopRequest=await recoveryApprovals.request({scope:recoveryScope,operation:'queue.recover',evidence:stopEvidence,credential:'recovery-manager'});
+ await recoveryApprovals.recordDecision({scope:recoveryScope,id:stopRequest.id,binding:stopRequest.binding,decision:'approved',credential:'recovery-owner'});
+ await assert.rejects(recoveryGate.recover({credential:'recovery-manager',approvalId:stopRequest.id,action:'clear-stop',evidenceSha256:stopEvidence}),/active lease/);
+ await recoveryQueue.cancel({scope:recoveryScope,credential:'recovery-manager',taskId:quarantineTask});
+ assert.deepEqual(await recoveryGate.recover({credential:'recovery-manager',approvalId:stopRequest.id,action:'clear-stop',evidenceSha256:stopEvidence}),{action:'clear-stop',role:null,recovered:true,executionAuthorized:false});
+ const resumedLease=await recoveryQueue.claim({scope:recoveryScope,role:recoveryRole,credential:'recovery-worker',expectedTaskId:afterStopTask});
+ assert.equal(resumedLease.id,afterStopTask);
+ assert.equal(await recoveryQueue.finish({scope:recoveryScope,role:recoveryRole,credential:'recovery-worker',taskId:afterStopTask,leaseId:resumedLease.lease_id,outcome:'succeeded'}),'succeeded');
+ assert.equal((await pools[1].query('SELECT count(*)::int AS n FROM engineering_team_governance_recoveries WHERE product=$1 AND repository=$2',[recoveryScope.product,recoveryScope.repository])).rows[0].n,2);
+ assert.equal(recoveryQueue.executionAllowed(),false);
 });
