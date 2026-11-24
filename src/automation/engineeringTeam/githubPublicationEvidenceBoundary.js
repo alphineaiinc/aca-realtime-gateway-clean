@@ -27,7 +27,7 @@ function createGitHubPublicationEvidenceBoundary({collectFetch,verifyFetch,colle
   },
   async verify(observation,scope){
    validateScope(scope);
-   if(!observation||observation.binding!==scope.binding||observation.repository!==scope.repository||observation.baseSha!==scope.baseSha||observation.headSha!==scope.headSha||observation.requesterId!==scope.requesterId||observation.complete!==true||!Array.isArray(observation.observations)||!safeEqual(observation.collectorDigest,sha({...observation,collectorDigest:undefined})))return false;
+   if(!observation||observation.binding!==scope.binding||observation.repository!==scope.repository||observation.baseBranch!==scope.baseBranch||observation.headBranch!==scope.headBranch||observation.baseSha!==scope.baseSha||observation.headSha!==scope.headSha||observation.requesterId!==scope.requesterId||observation.complete!==true||!Array.isArray(observation.observations)||!safeEqual(observation.collectorDigest,sha({...observation,collectorDigest:undefined})))return false;
    const token=await verifyToken();if(typeof token!=='string'||token.length<20)return false;
    const rows=await readAll({fetchImpl:verifyFetch,token,scope});
    return safeEqual(sha(rows),sha(observation.observations));
