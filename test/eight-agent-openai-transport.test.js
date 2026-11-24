@@ -63,6 +63,16 @@ test('ambiguous provider outcomes halt the instance and preserve actual attempt 
   assert.equal(t.usage().calls,1);
  }
 });
+test('authorization revoked after durable reservation blocks the provider side effect',async()=>{
+ let authorizationCalls=0,reservations=0,providerCalls=0;
+ const t=createOpenAITransport({models,authorize:async()=>++authorizationCalls===1,budget:{reserve:async()=>{reservations++;return true;}},client:{responses:{create:async()=>{providerCalls++;return {status:'completed',usage:{input_tokens:1,output_tokens:1},output_text:'{}'};}}}});
+ const request={role:'devops',mode:'proposal-only',input:'{}',instructions:'fixture'};
+ await assert.rejects(t.generate(request),/^Error: Provider request failed$/);
+ assert.equal(authorizationCalls,2);
+ assert.equal(reservations,1);
+ assert.equal(providerCalls,0);
+ assert.deepEqual(t.usage(),{calls:0,inputTokens:0,outputTokens:0});
+});
 test('ambiguous durable reservation never reaches provider or retries',async()=>{
  let reservations=0;
  const t=createOpenAITransport({models,authorize:async()=>true,budget:{reserve:async()=>{reservations++;throw Error('unknown commit outcome');}},client:{responses:{create:async()=>assert.fail('provider called')}}});
