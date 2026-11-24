@@ -8,8 +8,9 @@ function plan(image){
  if(image!==imagePin)throw Error('Reviewed pinned image required');
  return ['create','--platform=linux/amd64','--pull=never','--network=none','--read-only','--user=65534:65534','--cap-drop=ALL','--security-opt=no-new-privileges','--pids-limit=32','--memory=128m','--memory-swap=128m','--cpus=0.5','--tmpfs=/tmp:rw,noexec,nosuid,nodev,size=8m','--entrypoint=node',image,'-e',probe];
 }
-function run(image){
+function execute(image,mode){
  const args=plan(image);
+ if(mode==='timeout')args[args.length-1]='setTimeout(()=>{},60000)';
  if(require('node:os').platform()!=='linux'||require('node:os').arch()!=='x64')throw Error('Reviewed runner platform required');
  const name='alphine-fixture-'+randomUUID();
  args.splice(1,0,'--name',name);
@@ -22,17 +23,21 @@ function run(image){
  try{
   const config=call(['inspect','--format','{{.HostConfig.ReadonlyRootfs}} {{.HostConfig.Memory}} {{.HostConfig.MemorySwap}} {{.HostConfig.NanoCpus}} {{.HostConfig.PidsLimit}}',id]);
   if(!ok(config)||config.stdout.trim()!=='true 134217728 134217728 500000000 32')throw Error('Configuration denied');
-  const result=call(['start','-a',id],15000);
+  const result=call(['start','-a',id],mode==='timeout'?2000:15000);
+  if(mode==='timeout'&&result.error?.code==='ETIMEDOUT')throw Error('Fixed timeout observed');
   if(!ok(result)||result.stdout!=='fixture-ok')throw Error('Fixture outcome denied');
   const state=call(['inspect','--format','{{.State.Status}} {{.State.ExitCode}}',id]);
   if(!ok(state)||state.stdout.trim()!=='exited 0')throw Error('Fixture state denied');
   passed=true;
  }finally{
   const removed=call(['rm','-f',id]);
-  const absent=call(['ps','-aq','--no-trunc','--filter','id='+id]);
+  const absent=call(mode==='query-failure'?['ps','--invalid-fixed-fixture-option']:['ps','-aq','--no-trunc','--filter','id='+id]);
   if(!ok(removed)||!ok(absent)||absent.stdout!=='')throw Error('Cleanup unresolved; reconcile '+id);
  }
  if(!passed)throw Error('Fixture outcome denied');
  return Object.freeze({fixturePassed:true,probeSha256:createHash('sha256').update(probe).digest('hex'),image,executionAuthorized:false,attestation:false});
 }
-module.exports={plan,run,imagePin};
+function run(image){return execute(image,'normal');}
+function runTimeoutFixture(){return execute(imagePin,'timeout');}
+function runFailedQueryFixture(){return execute(imagePin,'query-failure');}
+module.exports={plan,run,imagePin,runTimeoutFixture,runFailedQueryFixture};

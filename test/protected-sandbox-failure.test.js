@@ -37,3 +37,12 @@ test('unreviewed image rejected before Docker',()=>{
 test('writable root configuration rejected and removed',()=>{
  const {api,calls}=harness([good(id),good('false 134217728 134217728 500000000 32'),good(id),good('')]);assert.throws(()=>api.run(api.imagePin),/Configuration denied/);assert.equal(calls.length,4);
 });
+
+test('fixed timeout fixture uses bounded start and denies acceptance',()=>{
+ const {api,calls}=harness([sequence()[0],sequence()[1],{error:{code:'ETIMEDOUT'}},good(id),good('')]);
+ assert.throws(()=>api.runTimeoutFixture(),/Fixed timeout observed/);assert.equal(calls[2].options.timeout,2000);assert.equal(calls[3].args.join(' '),'rm -f '+id);
+});
+test('fixed failed query fixture denies acceptance after removal',()=>{
+ const s=sequence();s[5]={status:125,stdout:'',stderr:'unknown flag'};
+ const {api,calls}=harness(s);assert.throws(()=>api.runFailedQueryFixture(),/Cleanup unresolved/);assert.equal(calls[5].args.join(' '),'ps --invalid-fixed-fixture-option');
+});
