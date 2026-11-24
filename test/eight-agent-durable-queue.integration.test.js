@@ -239,6 +239,11 @@ test('isolated PostgreSQL queue: concurrent claims, retries, restart, expiry and
  await approval(pools[1]).recordDecision({scope,id:exactApproval.id,binding:exactApproval.binding,decision:'approved',credential:'owner'});
  await assert.rejects(requestBound.reserve({credential:'manager',approvalId:exactApproval.id,reviewEnvelope,request:{input:'substitution'}}),/Reservation denied/);
  assert.equal((await pools[0].query('SELECT binding FROM engineering_team_provider_attempts WHERE binding=$1',[exactBinding])).rowCount,0);
+ // Caller mutation during asynchronous authentication must not substitute approved evidence.
+ const mutableRequest={input:'substitution'};
+ const mutationBound=createProviderReservation({pool:pools[0],manifest:providerManifest,policy:providerPolicy,authenticate:async c=>{mutableRequest.input='fixture';return identities.get(c);},ceilings:{fixture:400},reviewVerifier,prepareRequest:request=>({model:'fixture',executionAuthorized:false,evidenceSha256:digest(JSON.stringify(request))})});
+ await assert.rejects(mutationBound.reserve({credential:'manager',approvalId:exactApproval.id,reviewEnvelope,request:mutableRequest}),/Reservation denied/);
+ assert.equal((await pools[0].query('SELECT binding FROM engineering_team_provider_attempts WHERE binding=$1',[exactBinding])).rowCount,0);
  const stoppedTask=await q.enqueue({scope,role,credential:'manager'});
  const running=await q.claim({scope,role,credential:'w1'});
  const governanceBudgetId=randomUUID();
