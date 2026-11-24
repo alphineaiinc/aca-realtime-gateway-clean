@@ -32,7 +32,7 @@ test('restricted manager classifies closed blocked failed and partial evidence',
   const r=await fixture(opts).manager.observe();denied(r);assert.equal(r.attention,attention);
  }
 });
-test('restricted manager rejects scope substitution duplicate runs and malformed evidence',async()=>{
+test('restricted manager flags cancelled and unknown completed CI outcomes for attention',async()=>{\n for(const conclusion of ['cancelled','stale','skipped','neutral',null,'unknown']){\n  const r=await fixture({runs:[{id:1,name:'CI',status:'completed',conclusion,head_sha:scope.sha}]}).manager.observe();\n  denied(r);assert.equal(r.attention,'ci_attention');\n }\n});\ntest('restricted manager rejects scope substitution duplicate runs and malformed evidence',async()=>{
  const run={id:1,name:'CI',status:'completed',conclusion:'success',head_sha:scope.sha};
  for(const opts of [{issueScope:'other/repo'},{ciScope:'b'.repeat(40)},{runs:[run,run]},{runs:[{...run,head_sha:'b'.repeat(40)}]},{state:'unknown'},{total:0}]){
   const r=await fixture(opts).manager.observe();denied(r);assert.equal(r.status,'unavailable');
@@ -40,7 +40,7 @@ test('restricted manager rejects scope substitution duplicate runs and malformed
 });
 test('governance reporting is scoped bounded and read-only; failures are explicit',async()=>{
  const r=await fixture({readAlertSummary:async s=>({...s,pending:2,partial:false,secret:'never report'})}).manager.observe();
- assert.deepEqual(r.governance,{status:'observed',pending:2,partial:false});denied(r);
+ assert.deepEqual(r.governance,{status:'observed',scope:'repository-wide',pending:2,partial:false});denied(r);
  for(const readAlertSummary of [async s=>({...s,product:'other',pending:1,partial:false}),async s=>({...s,pending:101,partial:true}),async()=>{throw Error('fixture secret');}]){
   const x=await fixture({readAlertSummary}).manager.observe();
   assert.equal(x.status,'observed');assert.deepEqual(x.governance,{status:'unavailable'});denied(x);
@@ -70,7 +70,7 @@ test('restricted runtime composes only scoped GET and bounded SELECT observation
  const report=await runtime.observe();
  denied(report);
  assert.equal(report.status,'observed');
- assert.deepEqual(report.governance,{status:'observed',pending:100,partial:true});
+ assert.deepEqual(report.governance,{status:'observed',scope:'repository-wide',pending:100,partial:true});
  assert.equal(calls.length,3);
  assert.ok(calls.slice(0,2).every(c=>c.method==='GET'));
  assert.ok(calls[2].sql.startsWith('SELECT'));
