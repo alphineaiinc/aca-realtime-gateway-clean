@@ -31,6 +31,20 @@ test('isolated PostgreSQL queue: concurrent claims, retries, restart, expiry and
  const identities=new Map([['manager',{...scope,id:'manager',permission:'queue.manage'}],...['w1','w2'].map(id=>[id,{...scope,id,role,permission:'queue.work'}])]);
  const make=pool=>createDurableQueue({pool,scopes:[scope],authenticate:async c=>identities.get(c)});
  const q=make(pools[0]),q2=make(pools[1]);
+ const {createCiEventAdmission}=require('../src/automation/engineeringTeam/ciEventAdmission');
+ const admission=(pool,credential='manager')=>createCiEventAdmission({pool,scope,workflowId:42,authenticate:async c=>identities.get(c),credential});
+ const event={scope,workflowId:42,runId:123,attempt:1};
+ assert.equal(await admission(pools[0],'w1')(event),false);
+ assert.equal(await admission(pools[0])({...event,scope:{...scope,sha:'b'.repeat(40)}}),false);
+ const admissions=await Promise.all(pools.map(pool=>admission(pool)(event)));
+ assert.equal(admissions.filter(Boolean).length,1);
+ assert.equal(await admission(pools[1])(event),false);
+ assert.equal(await admission(pools[1])({...event,attempt:2}),true);
+ const stopScope={...scope,repository:'fixture/stopped'};
+ const stoppedAdmission=createCiEventAdmission({pool:pools[0],scope:stopScope,workflowId:42,authenticate:async()=>({...stopScope,id:'manager',permission:'queue.manage'}),credential:'fixture'});
+ await pools[0].query('INSERT INTO engineering_team_stops(product,repository,actor_id) VALUES ($1,$2,$3)',[stopScope.product,stopScope.repository,'manager']);
+ assert.equal(await stoppedAdmission({...event,scope:stopScope}),false);
+
  const id=await q.enqueue({scope,role,credential:'manager'});
  const claims=await Promise.all([q.claim({scope,role,credential:'w1'}),q2.claim({scope,role,credential:'w2'})]);
  assert.equal(claims.filter(Boolean).length,1);
