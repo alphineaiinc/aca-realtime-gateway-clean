@@ -1,3 +1,4 @@
+const console = require("../../voice/voiceLogger").operationalConsole;
 // src/brain/utils/sttGoogle.js
 // Google Cloud Speech-to-Text streaming helper for Twilio Media Streams (μ-law 8k)
 

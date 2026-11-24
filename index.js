@@ -1,3 +1,4 @@
+const console = require("./src/voice/voiceLogger").operationalConsole;
 // index.js – Orchestrator with Tanglish detection + debug logging
 console.log("🧭 process.cwd():", process.cwd());
 console.log("🧭 __dirname:", __dirname);
@@ -915,6 +916,25 @@ const http = require("http"); // ✅ Needed so express-ws binds to the same serv
 const cors = require("cors");
 const bodyParser = require("body-parser");
 const app = express();
+// Temporary staging-only diagnostic: no header values returned to clients.
+console.log("ACA_SEC09_START",{serviceMatches:process.env.RENDER_SERVICE_ID==="srv-dc2ffvm8bjmc73fhn8j0"});
+if(process.env.RENDER_SERVICE_ID==="srv-dc2ffvm8bjmc73fhn8j0"){
+ app.get("/__aca_sec09_ready",(req,res)=>res.status(200).type("text/plain").send("aca-sec09-probe-v3"));
+ const makeProbeLimit=require("./src/security/ingressLimit").ingressLimit;
+ const diagnosticLimit=makeProbeLimit({max:10,globalBudget:true});
+ const observedResolved=new Set(),observedPeers=new Set();
+ const probeBudgets={twilio:makeProbeLimit({max:5,globalBudget:true}),stripe:makeProbeLimit({max:5,globalBudget:true}),ordinary:makeProbeLimit({max:5,globalBudget:true})};
+ for(const kind of Object.keys(probeBudgets)) app.get("/__aca_sec09_capacity/"+kind,probeBudgets[kind],(req,res)=>res.status(204).end());
+ app.get("/__aca_sec09_probe",diagnosticLimit,(req,res)=>{
+  const chain=String(req.headers["x-forwarded-for"]||"").split(",").map(x=>x.trim()).filter(Boolean);
+  const marker="192.0.2.123";
+  if(observedResolved.size<10) observedResolved.add(req.ip);
+  if(observedPeers.size<10) observedPeers.add(req.socket.remoteAddress);
+  console.log("ACA_SEC09_PROXY",{hopCount:chain.length,resolvedDistinct:observedResolved.size,peerDistinct:observedPeers.size,markerPresent:chain.includes(marker),resolvedIsMarker:req.ip===marker,noTrustIsMarker:req.socket.remoteAddress===marker});
+  res.status(204).end();
+ });
+}
+
 
 // ✅ Story 12.8 — security headers + origin allowlist guard (fail-closed in prod)
 try {
@@ -1092,45 +1112,17 @@ if (compression) {
 }
 
 // ✅ FIX (Story 12.3): app must exist before any app.use(...)
+// Stripe signature verification requires the untouched raw request body.
+app.use("/api/stripe", require("./src/routes/stripeWebhook"));
+
 app.use(express.json({ limit: "1mb" }));
 
-app.post("/api/gpt/chat", async (req, res) => {
-  try {
-    const result = await handleConversationTurn({
-      sessionId: req.body?.session_id,
-      message: req.body?.message,
-      channel: "chat",
-      tenantBusinessType: req.body?.tenant_business_type || null,
-      tenantId: 1,
-      locale: "en-US",
-    });
-
-    if (!result.ok) {
-      return res.status(400).json(result);
-    }
-
-    return res.status(200).json({
-      ok: true,
-      reply: result.reply,
-      session_id: result.session_id,
-      source: result.source,
-      scenario: result.scenario,
-      tenant_business_type: result.tenant_business_type,
-      business_type: result.business_type,
-      context: result.context,
-    });
-  } catch (err) {
-    console.error("❌ /api/gpt/chat error:", err);
-    return res.status(500).json({
-      ok: false,
-      error: "Internal server error",
-    });
-  }
-});
+// Public marketplace chat must not use a real tenant's knowledge or session.
+app.post("/api/gpt/chat", (_req,res)=>res.status(503).json({ok:false,error:"Marketplace chat unavailable pending isolated demo configuration"}));
 
 // ✅ Initialize express-ws so WebSocket routes actually work
 try {
-  require("express-ws")(app, server); // ✅ bind to the real listening server
+  require("express-ws")(app, server, { wsOptions: require("./src/voice/streamSecurity").WS_OPTIONS }); // ✅ bind to the real listening server
   console.log("✅ express-ws WebSocket support initialized");
 } catch (err) {
   console.warn("⚠️ express-ws init failed:", err.message);
@@ -1155,7 +1147,7 @@ app.use((err, req, res, next) => {
 
   if (isJsonSyntax) {
     console.warn("⚠️ Invalid JSON received:", {
-      path: req.originalUrl || req.url,
+      path: req.path,
       method: req.method,
       ip: req.ip,
       contentType: req.headers["content-type"],
@@ -1315,11 +1307,10 @@ app.get(/^\/\.well-known\/(.+)$/i, (req, res) => {
 
 console.log("✅ .well-known bound to:", wellKnownAbsolute);
 
-// Stripe Webhook Route (Story 11.6)
-app.use("/api/stripe", require("./src/routes/stripeWebhook"));
-
 // also expose everything under /public normally
 const staticDir = path.resolve(__dirname, "public");
+// Invoice files are private; never serve them through the public static roots.
+app.use(require("./src/security/privateStaticGuard"));
 app.use(express.static(staticDir));
 console.log("✅ Static assets served from absolute path:", staticDir);
 

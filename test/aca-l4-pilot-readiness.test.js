@@ -1,0 +1,3 @@
+const test=require("node:test");const assert=require("node:assert/strict");const {REQUIRED,evaluatePilotReadiness}=require("../src/monitor/pilotReadiness");
+test("missing or nonboolean evidence blocks readiness",()=>{assert.equal(evaluatePilotReadiness({}).ready,false);assert.equal(evaluatePilotReadiness(Object.fromEntries(REQUIRED.map(k=>[k,"true"]))).ready,false);});
+test("all gates required and readiness never authorizes activation",()=>{const e=Object.fromEntries(REQUIRED.map(k=>[k,true]));assert.deepEqual(evaluatePilotReadiness(e),{ready:true,missing:[],activationAuthorized:false});for(const k of REQUIRED){assert.equal(evaluatePilotReadiness({...e,[k]:false}).ready,false);}});

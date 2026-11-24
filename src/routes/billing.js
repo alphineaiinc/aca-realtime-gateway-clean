@@ -2,47 +2,31 @@
 const express = require("express");
 const jwt = require("jsonwebtoken");
 const pool = require("../db/pool");
-const { generateInvoice } = require("../brain/billingEngine");
-const { logPayment } = require("../brain/utils/paymentLogger");
-const fs = require("fs");
-const path = require("path");
-const archiver = require("archiver");   // ensure available
 
 const router = express.Router();
+const ingressRateLimit=require("../security/ingressLimit").ingressLimit({max:60});
+
 
 
 // ---------------------------------------------------------------------
 // Simple in-memory rate limiter per partner for /pay (3 reqs / 10s)
 // ---------------------------------------------------------------------
-const RATE_WINDOW_MS = 10_000;
-const RATE_MAX = 3;
-const rateBucket = new Map(); // partner_id -> {count, resetAt}
-
-function rateLimit(req, res, next) {
-  const pid = req.partner_id || "anon";
-  const now = Date.now();
-  const bucket = rateBucket.get(pid) || { count: 0, resetAt: now + RATE_WINDOW_MS };
-  if (now > bucket.resetAt) {
-    bucket.count = 0;
-    bucket.resetAt = now + RATE_WINDOW_MS;
-  }
-  bucket.count += 1;
-  rateBucket.set(pid, bucket);
-  if (bucket.count > RATE_MAX) {
-    return res.status(429).json({ ok: false, error: "Rate limit exceeded. Try again shortly." });
-  }
-  next();
-}
+const rateLimit = require("../middleware/postgresRateLimit").createPostgresRateLimiter({pool,scope:"billing",windowMs:10000,max:3});
 
 // ---------------------------------------------------------------------
 // Middleware: partner / tenant JWT auth
 // ---------------------------------------------------------------------
-function authenticate(req, res, next) {
+async function authenticate(req, res, next) {
   try {
-    const token = (req.headers.authorization || "").replace("Bearer ", "");
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    const auth = req.headers.authorization || "";
+    if (!auth.startsWith("Bearer ")) throw Error("Invalid authorization");
+    const token = auth.slice(7).trim();
+    const decoded = jwt.verify(token, process.env.JWT_SECRET, { algorithms: ["HS256"], issuer: "alphine-ai", audience: "aca-business" });
+    if (decoded.purpose !== "verified_business" || !Number.isSafeInteger(decoded.tenant_id) || decoded.tenant_id <= 0 || typeof decoded.sub !== "string") throw new Error("invalid business identity");
+    const { rows } = await pool.query("SELECT tenant_id FROM public.aca_business_identities WHERE email=$1 AND tenant_id=$2 AND is_active", [decoded.sub, decoded.tenant_id]);
+    if (rows.length !== 1) throw new Error("inactive business identity");
     req.tenant_id = decoded.tenant_id;
-    req.partner_id = decoded.partner_id;
+    req.partner_id = null;
     next();
   } catch {
     return res.status(401).json({ ok: false, error: "Unauthorized" });
@@ -52,28 +36,12 @@ function authenticate(req, res, next) {
 // ---------------------------------------------------------------------
 // POST /api/billing/generate – create invoice
 // ---------------------------------------------------------------------
-router.post("/generate", authenticate, async (req, res) => {
-  try {
-    const { usage_minutes, ai_tokens } = req.body;
-    const invoice = await generateInvoice(
-      req.tenant_id,
-      req.partner_id,
-      Number(usage_minutes || 0),
-      Number(ai_tokens || 0),
-      0.05,      // USD per minute
-      0.0005     // USD per token
-    );
-    res.json({ ok: true, invoice });
-  } catch (err) {
-    console.error("[billing/generate]", err);
-    res.status(500).json({ ok: false, error: err.message });
-  }
-});
+router.post("/generate", ingressRateLimit, authenticate, rateLimit, (_req,res)=>res.status(503).json({ok:false,error:"Trusted usage invoicing unavailable"}));
 
 // ---------------------------------------------------------------------
 // GET /api/billing/history – list invoices
 // ---------------------------------------------------------------------
-router.get("/history", authenticate, async (req, res) => {
+router.get("/history", ingressRateLimit, authenticate, rateLimit, async (req, res) => {
   try {
     const { status, from, to } = req.query;
     const where = ["tenant_id = $1"];
@@ -87,7 +55,7 @@ router.get("/history", authenticate, async (req, res) => {
     if (to)   { where.push(`generated_at <  $${p++}`); params.push(new Date(to)); }
 
     const result = await pool.query(
-      `SELECT id, amount_usd, status, generated_at, invoice_path 
+      `SELECT id, amount_usd, status, generated_at 
          FROM billing_invoices 
         WHERE ${where.join(" AND ")}
         ORDER BY id DESC`,
@@ -95,80 +63,27 @@ router.get("/history", authenticate, async (req, res) => {
     );
     res.json({ ok: true, invoices: result.rows });
   } catch (err) {
-    console.error("[billing/history]", err);
-    res.status(500).json({ ok: false, error: err.message });
+    console.error("[billing/history] operation failed");
+    res.status(500).json({ ok: false, error: "Billing operation failed" });
   }
 });
 
 // ---------------------------------------------------------------------
 // POST /api/billing/pay – mark invoice paid (rate-limited)
 // ---------------------------------------------------------------------
-router.post("/pay", authenticate, rateLimit, async (req, res) => {
-  try {
-    const { invoice_id, payment_method = "mock", notes = "" } = req.body;
-    if (!invoice_id) return res.status(400).json({ ok: false, error: "invoice_id required" });
-
-    const paymentRef = `pay_${Date.now()}`;
-    const upd = await pool.query(
-      `UPDATE billing_invoices
-          SET status='paid',
-              paid_at=NOW(),
-              paid_by=$1,
-              payment_method=$2,
-              payment_reference=$3,
-              notes=$4
-        WHERE id=$5 AND tenant_id=$6
-        RETURNING id, tenant_id, partner_id, status, paid_at, payment_method, payment_reference, amount_usd;`,
-      [
-        `partner_${req.partner_id}`,
-        payment_method,
-        paymentRef,
-        notes,
-        invoice_id,
-        req.tenant_id,
-      ]
-    );
-    if (upd.rowCount === 0)
-      return res.status(404).json({ ok: false, error: "Invoice not found or access denied" });
-
-    const row = upd.rows[0];
-    logPayment({
-      t: new Date().toISOString(),
-      event: "invoice_paid",
-      partner_id: req.partner_id,
-      tenant_id: row.tenant_id,
-      invoice_id: row.id,
-      amount_usd: row.amount_usd,
-      method: row.payment_method,
-      ref: row.payment_reference
-    });
-
-    console.log(`[billing/pay] partner=${req.partner_id} invoice=${invoice_id} method=${payment_method}`);
-    res.json({
-      ok: true,
-      payment: {
-        id: row.id,
-        status: row.status,
-        paid_at: row.paid_at,
-        payment_method: row.payment_method,
-        payment_reference: row.payment_reference
-      }
-    });
-  } catch (err) {
-    console.error("[billing/pay]", err);
-    res.status(500).json({ ok: false, error: err.message });
-  }
-});
+// Payment state may only be changed by verified payment-provider webhooks.
+router.post("/pay", ingressRateLimit, authenticate, rateLimit, (_req,res) => res.status(410).json({ok:false,error:"Direct payment marking is disabled; use the configured payment provider."}));
 
 // ---------------------------------------------------------------------
 // GET /api/billing/status/:id – single invoice
 // ---------------------------------------------------------------------
-router.get("/status/:id", authenticate, async (req, res) => {
+router.get("/status/:id", ingressRateLimit, authenticate, rateLimit, async (req, res) => {
   try {
-    const invoiceId = parseInt(req.params.id);
+    const invoiceId = Number(req.params.id);
+    if (!/^[1-9][0-9]*$/.test(req.params.id) || !Number.isSafeInteger(invoiceId)) return res.status(400).json({ok:false,error:'Invalid invoice ID'});
     const result = await pool.query(
       `SELECT id, amount_usd, status, paid_at, payment_method,
-              payment_reference, notes, generated_at, invoice_path
+              payment_reference, notes, generated_at
          FROM billing_invoices
         WHERE id=$1 AND tenant_id=$2`,
       [invoiceId, req.tenant_id]
@@ -177,15 +92,15 @@ router.get("/status/:id", authenticate, async (req, res) => {
       return res.status(404).json({ ok: false, error: "Invoice not found or access denied" });
     res.json({ ok: true, invoice: result.rows[0] });
   } catch (err) {
-    console.error("[billing/status]", err);
-    res.status(500).json({ ok: false, error: err.message });
+    console.error("[billing/status] operation failed");
+    res.status(500).json({ ok: false, error: "Billing operation failed" });
   }
 });
 
 // ---------------------------------------------------------------------
 // GET /api/billing/stats – totals + monthly series
 // ---------------------------------------------------------------------
-router.get("/stats", authenticate, async (req, res) => {
+router.get("/stats", ingressRateLimit, authenticate, rateLimit, async (req, res) => {
   try {
     const totals = await pool.query(
       `SELECT
@@ -219,15 +134,15 @@ router.get("/stats", authenticate, async (req, res) => {
       }))
     });
   } catch (err) {
-    console.error("[billing/stats]", err);
-    res.status(500).json({ ok: false, error: err.message });
+    console.error("[billing/stats] operation failed");
+    res.status(500).json({ ok: false, error: "Billing operation failed" });
   }
 });
 
 // ---------------------------------------------------------------------
 // GET /api/billing/summary – alias for /stats (Story 11.7)
 // ---------------------------------------------------------------------
-router.get("/summary", authenticate, async (req, res) => {
+router.get("/summary", ingressRateLimit, authenticate, rateLimit, async (req, res) => {
   try {
     const totals = await pool.query(
       `SELECT
@@ -261,94 +176,67 @@ router.get("/summary", authenticate, async (req, res) => {
       }))
     });
   } catch (err) {
-    console.error("[billing/summary]", err);
-    res.status(500).json({ ok: false, error: err.message });
+    console.error("[billing/summary] operation failed");
+    res.status(500).json({ ok: false, error: "Billing operation failed" });
   }
 });
 
 // ---------------------------------------------------------------------
 // GET /api/billing/export – CSV export of invoices for tenant
 // ---------------------------------------------------------------------
-router.get("/export", authenticate, async (req, res) => {
+router.get("/export", ingressRateLimit, authenticate, rateLimit, async (req, res) => {
   try {
     const result = await pool.query(
       `SELECT id, tenant_id, partner_id, amount_usd, status, payment_method,
-              payment_reference, generated_at, paid_at, invoice_path
+              payment_reference, generated_at, paid_at
          FROM billing_invoices
         WHERE tenant_id = $1
         ORDER BY id DESC`,
       [req.tenant_id]
     );
     const rows = result.rows;
-    const header = ["id","tenant_id","partner_id","amount_usd","status","payment_method","payment_reference","generated_at","paid_at","invoice_path"];
+    const header = ["id","tenant_id","partner_id","amount_usd","status","payment_method","payment_reference","generated_at","paid_at"];
     const csv = [
       header.join(","),
       ...rows.map(r => header.map(k => {
-        const v = r[k] == null ? "" : String(r[k]).replace(/"/g,'""');
+        let v = r[k] == null ? "" : String(r[k]);
+        if (/^[\s]*[=+@-]/.test(v) || /^[\t\r\n]/.test(v)) v = "'"+v;
+        v=v.replace(/"/g,'""');
         return `"${v}"`;
       }).join(","))
     ].join("\n");
 
+    res.setHeader("Cache-Control", "private, no-store");
     res.setHeader("Content-Type", "text/csv");
     res.setHeader("Content-Disposition", `attachment; filename="invoices_tenant_${req.tenant_id}.csv"`);
     res.send(csv);
   } catch (err) {
-    console.error("[billing/export]", err);
-    res.status(500).json({ ok: false, error: err.message });
+    console.error("[billing/export] operation failed");
+    res.status(500).json({ ok: false, error: "Billing operation failed" });
   }
 });
 
 // ---------------------------------------------------------------------
 // POST /api/billing/email/:id – mock email sender
 // ---------------------------------------------------------------------
-router.post("/email/:id", authenticate, async (req, res) => {
-  try {
-    const id = parseInt(req.params.id);
-    const q = await pool.query(
-      `SELECT id, invoice_path, amount_usd FROM billing_invoices
-        WHERE id=$1 AND tenant_id=$2`, [id, req.tenant_id]
-    );
-    if (q.rowCount === 0)
-      return res.status(404).json({ ok:false, error:"Invoice not found" });
-    console.log(`[billing/email] mock sent invoice=${id} path=${q.rows[0].invoice_path}`);
-    res.json({ ok:true, email_sent:true, invoice_id:id });
-  } catch (err) {
-    console.error("[billing/email]", err);
-    res.status(500).json({ ok:false, error: err.message });
-  }
-});
+router.post("/email/:id", ingressRateLimit, authenticate, rateLimit, (_req,res)=>res.status(503).json({ok:false,error:"Verified invoice email unavailable"}));
 
 // ---------------------------------------------------------------------
 // GET /api/billing/download-all  –  returns ZIP of all invoices for tenant
 // ---------------------------------------------------------------------
-router.get("/download-all", authenticate, async (req, res) => {
-  try {
-    const invoiceDir = path.join(__dirname, "../../public/invoices", String(req.tenant_id));
-    if (!fs.existsSync(invoiceDir)) {
-      fs.mkdirSync(invoiceDir, { recursive: true });
-      return res.status(404).json({ ok:false, error:"No invoices found for this tenant" });
-    }
-
-    const zipName = `invoices_tenant_${req.tenant_id}_${Date.now()}.zip`;
-    console.log("[billing/download-all] Streaming ZIP for tenant", req.tenant_id);
-
-    res.setHeader("Content-Type", "application/zip");
-    res.setHeader("Content-Disposition", `attachment; filename=\"${zipName}\"`);
-
-    const archive = archiver("zip", { zlib: { level: 9 } });
-    archive.on("error", (err) => {
-      console.error("[billing/download-all] archive error:", err.message);
-      res.status(500).end();
-    });
-
-    archive.pipe(res);
-    archive.directory(invoiceDir, false);
-    await archive.finalize();
-  } catch (err) {
-    console.error("[billing/download-all]", err);
-    res.status(500).json({ ok:false, error:err.message });
-  }
+router.get("/download-all", ingressRateLimit, authenticate, rateLimit, (_req,res)=>res.status(503).json({ok:false,error:"private_invoice_storage_required"}));
+router.get("/document/:id", ingressRateLimit, authenticate, rateLimit, async(req,res)=>{
+ const id=Number(req.params.id);
+ if(!/^[1-9][0-9]*$/.test(req.params.id)||!Number.isSafeInteger(id))return res.status(400).json({ok:false,error:"Invalid invoice ID"});
+ try{
+  const result=await pool.query("SELECT id,amount_usd,status,generated_at FROM billing_invoices WHERE id=$1 AND tenant_id=$2",[id,req.tenant_id]);
+  if(result.rowCount!==1)return res.status(404).json({ok:false,error:"Invoice not found"});
+  const {PDFDocument,StandardFonts}=require("pdf-lib");
+  const doc=await PDFDocument.create(),page=doc.addPage(),font=await doc.embedFont(StandardFonts.Helvetica);
+  const row=result.rows[0];
+  ["Alphine AI - Invoice ledger copy","Invoice "+id,"Amount USD "+String(row.amount_usd),"Status "+String(row.status)].forEach((line,i)=>page.drawText(line,{x:40,y:750-i*30,font,size:12}));
+  res.set({"Content-Type":"application/pdf","Content-Disposition":'attachment; filename="invoice-'+id+'.pdf"',"Cache-Control":"private, no-store","X-Content-Type-Options":"nosniff"});
+  return res.send(Buffer.from(await doc.save()));
+ }catch{return res.status(503).json({ok:false,error:"Invoice unavailable"});}
 });
-
-
-module.exports = router;
+module.exports=router;

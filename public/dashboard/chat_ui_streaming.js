@@ -33,7 +33,7 @@
     !!document.getElementById("demoPill");
 
   function newSessionId() {
-    return "webchat_" + Math.random().toString(16).slice(2) + "_" + Date.now();
+    return "webchat_" + globalThis.crypto.randomUUID();
   }
 
   let session_id = localStorage.getItem(LS_SESSION_KEY) || newSessionId();

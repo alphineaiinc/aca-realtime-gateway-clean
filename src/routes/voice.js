@@ -1,3 +1,4 @@
+const console = require("../voice/voiceLogger").operationalConsole;
 // src/routes/voice.js
 // Server-side routes for tenant voice profile & preview
 // IMPORTANT: This file runs on Node.js (no window/document here)
@@ -9,6 +10,8 @@ const pool = require("../db/pool");
 const { synthesizeSpeech } = require("../../tts");
 
 const router = express.Router();
+const ingressRateLimit=require("../security/ingressLimit").ingressLimit({max:30});
+
 
 // Ensure JSON bodies are parsed for this router
 router.use(express.json());
@@ -16,31 +19,8 @@ router.use(express.json());
 // ---------------------------------------------------------------------------
 // Middleware: verify JWT and extract tenant_id
 // ---------------------------------------------------------------------------
-function authenticate(req, res, next) {
-  try {
-    const raw = req.headers.authorization || "";
-    const token = raw.replace("Bearer ", "").trim();
-    if (!token) {
-      return res
-        .status(401)
-        .json({ ok: false, error: "Missing Authorization Bearer token" });
-    }
+const {verifiedBusiness:authenticate}=require("../security/verifiedBusinessMiddleware");
 
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    if (!decoded || !decoded.tenant_id) {
-      return res
-        .status(401)
-        .json({ ok: false, error: "Invalid token or tenant_id missing" });
-    }
-
-    req.tenant_id = decoded.tenant_id;
-    req.jwt_payload = decoded;
-    return next();
-  } catch (err) {
-    console.error("🔐 [voice] JWT error:", err);
-    return res.status(401).json({ ok: false, error: "Unauthorized" });
-  }
-}
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -90,7 +70,7 @@ function normalizeProfilePayload(body = {}) {
 // GET /api/voice/profile
 // (mounted in index.js as app.use("/api/voice", router))
 // ---------------------------------------------------------------------------
-router.get("/profile", authenticate, async (req, res) => {
+router.get("/profile", ingressRateLimit, authenticate, async (req, res) => {
   const tenantId = req.tenant_id;
 
   try {
@@ -141,7 +121,7 @@ router.get("/profile", authenticate, async (req, res) => {
 // ---------------------------------------------------------------------------
 // POST /api/voice/profile
 // ---------------------------------------------------------------------------
-router.post("/profile", authenticate, async (req, res) => {
+router.post("/profile", ingressRateLimit, authenticate, async (req, res) => {
   const tenantId = req.tenant_id;
   const payload = normalizeProfilePayload(req.body || {});
   const now = new Date().toISOString();
@@ -266,7 +246,8 @@ router.post("/profile", authenticate, async (req, res) => {
 // POST /api/voice/preview – generate an audio preview via ElevenLabs
 // (mounted at /api/voice → final path /api/voice/preview)
 // ---------------------------------------------------------------------------
-router.post("/preview", authenticate, async (req, res) => {
+router.post("/preview", ingressRateLimit, authenticate, async (req, res) => {
+  if(process.env.ACA_VOICE_PREVIEW_ENABLED!=="true")return res.status(503).json({ok:false,error:"Preview unavailable"});
   const tenantId = req.tenant_id;
   const { text, profile } = req.body || {};
 
@@ -274,7 +255,7 @@ router.post("/preview", authenticate, async (req, res) => {
     const trimmedText =
       typeof text === "string" ? text.trim() : "";
 
-    if (!trimmedText) {
+    if (!trimmedText || trimmedText.length>500) {
       return res
         .status(400)
         .json({ ok: false, error: "Missing or empty 'text' in request body" });
