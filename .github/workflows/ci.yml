@@ -48,4 +48,4 @@ jobs:
         env:
           RUN_STRIPE_RECEIPT_CI: '1'
           STRIPE_RECEIPT_CI_URL: postgresql://aca_ci:disposable_ci_only@127.0.0.1:5432/aca_stripe_ci
-        run: node --test test/stripe-event-receipt.integration.test.js test/aca-l5-settlement.integration.test.js
+        run: node --test test/stripe-event-receipt.integration.test.js test/aca-l5-settlement.integration.test.js test/aca-l5-ledgers.integration.test.js
