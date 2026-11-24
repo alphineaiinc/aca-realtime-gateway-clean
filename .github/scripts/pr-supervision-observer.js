@@ -10,7 +10,7 @@ const {ALLOWLIST_LABEL, LABELS} = require("../../src/automation/safeQueuePolicy"
 const {verifyClosingIssueLink} = require("../../src/automation/verifiedPrLink");
 const {readCorrectionHistory} = require("../../src/automation/postgresCorrectionHistoryReader");
 const {randomBytes} = require("node:crypto");
-const {verifySignedReview} = require("../../src/automation/signedReviewEvidence");
+const {validateDisposition} = require("../../src/automation/substantiveDisposition");
 const {verifiedRequiredChecks} = require("../../src/automation/verifiedCiEvidence");
 const {bindChecksToWorkflowRuns} = require("../../src/automation/ciWorkflowRunBinding");
 
@@ -32,7 +32,7 @@ function normalizeCheck(run, sha) {
 }
 async function observe({github, owner, repo, prNumber, issueNumber,
   authenticatedLedgerClient, trustedReviewProvider, trustedReviewerId,
-  trustedCiAppId, trustedCiWorkflowId, trustedReviewerPublicKey}) {
+  trustedCiAppId, trustedCiWorkflowId, trustedReviewerPublicKey, trustedEvidenceDigestProvider}) {
   if (!github?.rest || !owner || !repo || !validNumber(prNumber) || !validNumber(issueNumber)) {
     throw new Error("invalid_observer_arguments");
   }
@@ -95,14 +95,16 @@ async function observe({github, owner, repo, prNumber, issueNumber,
   }
   let review = null;
   if (trustedHead && trustedLink && typeof trustedReviewProvider === "function" &&
-      validNumber(trustedReviewerId) && trustedReviewerPublicKey) {
+      validNumber(trustedReviewerId) && trustedReviewerPublicKey && typeof trustedEvidenceDigestProvider === "function") {
     try {
       const challenge=randomBytes(32).toString("hex");
-      const evidence = await trustedReviewProvider({repositoryId:repository.id,
-        issueNumber,prNumber,headSha,challenge});
-      review = verifySignedReview({envelope:evidence,
-        publicKey:trustedReviewerPublicKey,repositoryId:repository.id,
-        reviewerId:trustedReviewerId,prNumber,headSha,issueNumber,challenge});
+      const scope = Object.freeze({repositoryId:repository.id, issueNumber,prNumber,headSha,challenge});
+      const evidenceSha256 = await trustedEvidenceDigestProvider(scope);
+      if (typeof evidenceSha256 !== "string" || !/^[a-f0-9]{64}$/.test(evidenceSha256)) throw Error("Missing independent digest");
+      const evidence = await trustedReviewProvider(scope);
+      const disposition = validateDisposition({envelope:evidence,publicKey:trustedReviewerPublicKey,
+        expected:{...scope,reviewerId:trustedReviewerId,evidenceSha256}});
+      if (disposition) review = Object.freeze({headSha,status:disposition.status,findings:disposition.findings,independent:true,source:"trusted_review"});
     } catch { review = null; }
   }
   return evaluatePrSupervision({
