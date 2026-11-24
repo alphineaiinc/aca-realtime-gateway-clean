@@ -762,6 +762,7 @@ test('isolated PostgreSQL queue: concurrent claims, retries, restart, expiry and
  assert.equal((await pools[1].query('SELECT count(*)::int AS n FROM engineering_team_publication_reconciliation WHERE binding=$1',[reconBinding])).rows[0].n,1);
  await assert.rejects(pools[0].query('UPDATE engineering_team_publication_reconciliation SET state=state WHERE binding=$1',[reconBinding]),e=>e.code==='P0001');
  await assert.rejects(pools[0].query('DELETE FROM engineering_team_publication_reconciliation WHERE binding=$1',[reconBinding]),e=>e.code==='P0001');
+ await assert.rejects(pools[0].query('TRUNCATE engineering_team_publication_reconciliation'),e=>e.code==='P0001');
 
  // A second reservation proves failed independent verification rolls back the
  // transaction and leaves no durable reconciliation row.
