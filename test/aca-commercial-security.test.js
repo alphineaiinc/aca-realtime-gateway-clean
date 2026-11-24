@@ -1,7 +1,7 @@
 const test=require("node:test");
 const assert=require("node:assert/strict");
 const {connectionPolicy}=require("../src/db/connectionPolicy");
-const {ConnectionParameters}=require("pg/lib/connection-parameters");
+const ConnectionParameters=require("pg/lib/connection-parameters");
 test("remote database TLS cannot be disabled by legacy URL modes",()=>{
  for(const mode of ["disable","prefer","require","verify-ca","verify-full"]){
   const config=connectionPolicy("postgres://u:p@db.example.com/db?sslmode="+mode);
