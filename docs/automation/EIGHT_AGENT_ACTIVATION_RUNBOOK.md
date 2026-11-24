@@ -33,3 +33,9 @@ Scope: PR #142, exact reviewed head only. Item 14 remains open.
 
 ## Current verified baseline
 Trusted sandbox probe and Node CI passed at a776d4853c9d69a926aaff436868c2a605bc31c7 (run 45297144234). Later changes require new exact-head validation. Inert initialization is not live runtime orchestration. No credentials, provider calls or live migration performed.
+
+## Integrated fixture checkpoint
+- Verified baseline ad1f8f8c72aff93a964e54fcbd274efa78a7b5c5, CI 45313271196: persistent eight-role fixture runtime, developer change preparation, publication transport mock tests, disposable PostgreSQL and trusted sandbox fixture. No live model invocation or arbitrary generated-code execution.
+- Governance follow-up 0b1598b61a17cfe6998b9ef0b3b7ee8266a777ba: mandatory pre-bound workflow tasks, unique steps, exact claims, transactional handoffs and quarantine denial. Observed CI at documentation time: [{"id":45313627819,"status":"completed","conclusion":"success"}].
+- Remaining blockers: actual Phase 2 policy integration and durable dispatch admission; trusted runner for generated code (pinned image and isolation acceptance); independently authenticated review and separate single-use branch/PR admissions with restart reconciliation; actual cost-envelope verification; live artifact classification and retention; durable workflow input and recovery; isolated service/DB role configuration and identity issuance/revocation. GitHub does not provide atomic compare-and-set on PR creation; stale base detection is not an atomic guarantee.
+- Do not treat fixture adapters, injected callbacks, approval records or green CI as live authorization. First live test must be bounded read-only, separately approved, with verified budget and no publication. Item 14 remains paused/open; no release clearance.
