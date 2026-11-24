@@ -46,5 +46,21 @@ test("isolated commercial pricing, replay and concurrent invoice acceptance",asy
  await assert.rejects(queueLateUsage(pool,{...late,tenantId:2}),/CONFLICTING_LATE_USAGE/);
  await assert.rejects(queueLateUsage(pool,{...late,quantity:16}),/CONFLICTING_LATE_USAGE/);
  assert.equal((await pool.query("SELECT count(*)::int AS n FROM public.billing_invoices")).rows[0].n,1);
+ await pool.query(fs.readFileSync("migrations/draft_aca_financial_roles.sql","utf8"));
+ const client=await pool.connect();
+ try{
+ await client.query("SET ROLE aca_financial_meter");
+ await assert.rejects(client.query("INSERT INTO public.aca_period_pricing VALUES(2,'2020-01-01',60,500)"),/permission denied/);
+ await assert.rejects(client.query("TRUNCATE public.analytics_events"),/permission denied/);
+ await assert.rejects(client.query("UPDATE public.analytics_events SET quantity=999"),/permission denied/);
+ await client.query("RESET ROLE");
+ await client.query("SET ROLE aca_financial_pricer");
+ await client.query("INSERT INTO public.aca_period_pricing VALUES(2,'2020-01-01',60,500)");
+ await assert.rejects(client.query("INSERT INTO public.aca_billable_usage_keys VALUES(2,'forbidden','voice_seconds')"),/permission denied/);
+ await client.query("RESET ROLE");
+ await client.query("SET ROLE aca_financial_closer");
+ await assert.rejects(client.query("UPDATE public.aca_period_pricing SET minute_rate_cents=1"),/permission denied/);
+ await assert.rejects(client.query("DELETE FROM public.billing_invoices"),/permission denied/);
+ }finally{await client.query("RESET ROLE");client.release();}
  }finally{await pool.end();}
 });
