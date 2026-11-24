@@ -300,9 +300,9 @@ test('isolated PostgreSQL queue: concurrent claims, retries, restart, expiry and
  assert.equal(unknownResume.taskId,unknownTask);
  assert.equal((await fixtureQueue.inspectWorkflowStep({scope,workflowId:unknownWorkflow.id,workflowStep:0,credential:'manager'})).state,'running');
  const publicationBinding='e'.repeat(64);
- const pub=await approval(pools[0]).request({scope,operation:'github.write',evidence:publicationBinding,credential:'manager'});
+ const pub=await approval(pools[0]).request({scope,operation:'github.write',evidence:reconciliationBinding,credential:'manager'});
  const reserve=pool=>createPublicationReservation({pool,scope,authenticate:async c=>identities.get(c)});
- const reservation={credential:'manager',approvalId:pub.id,binding:publicationBinding};
+ const reservation={credential:'manager',approvalId:pub.id,binding:reconciliationBinding};
  await assert.rejects(reserve(pools[0]).reserve(reservation),/Reservation denied/);
  await approval(pools[1]).recordDecision({scope,id:pub.id,binding:pub.binding,decision:'approved',credential:'owner'});
  await assert.rejects(reserve(pools[1]).reserve({...reservation,binding:'f'.repeat(64)}),/Reservation denied/);
@@ -311,7 +311,7 @@ test('isolated PostgreSQL queue: concurrent claims, retries, restart, expiry and
  const attempts=await Promise.allSettled(pools.map(pool=>reserve(pool).reserve(reservation)));
  assert.equal(attempts.filter(x=>x.status==='fulfilled').length,1);
  assert.equal(attempts.find(x=>x.status==='fulfilled').value.executionAuthorized,false);
- assert.deepEqual((await pools[0].query('SELECT reserved_by FROM engineering_team_publication_attempts WHERE binding=$1',[publicationBinding])).rows,[{reserved_by:'manager'}]);
+ assert.deepEqual((await pools[0].query('SELECT reserved_by FROM engineering_team_publication_attempts WHERE binding=$1',[reconciliationBinding])).rows,[{reserved_by:'manager'}]);
  await assert.rejects(reserve(pools[1]).reserve(reservation),/Reservation denied/);
  const providerBudgetId=randomUUID();
  const providerManifest=createActivationManifest({scope,models:Object.fromEntries(sequence.map(r=>[r,'fixture'])),budgetId:providerBudgetId,paths:['src/example.js'],issue:42,runnerImage:'node@sha256:'+'a'.repeat(64),limits:{maxCalls:8,maxOutputTokens:256,maxSpendMicrousd:1000}});
@@ -735,27 +735,27 @@ test('isolated PostgreSQL queue: concurrent claims, retries, restart, expiry and
  // exact-revision-bound; replay is idempotent and evidence is append-only.
  const {createReconciliationStore}=require('../src/automation/engineeringTeam/publicationReconciliationStore');
  const publicationScope={product:'aca',repository:'fixture/publication-reconciliation',sha:'a'.repeat(40)};
- const publicationBinding='b'.repeat(64),publicationHead='c'.repeat(40),publicationApproval=randomUUID();
- const publicationIdentity={id:'publication-manager',permission:'queue.manage',...publicationScope};
- const publicationAuth=async credential=>credential==='publication-manager'?publicationIdentity:null;
+ const reconciliationBinding='b'.repeat(64),publicationHead='c'.repeat(40),publicationApproval=randomUUID();
+ const publicationIdentity={id:'publication-manager',permission:'queue.manage',...reconciliationScope};
+ const publicationAuth=async credential=>credential==='publication-manager'?reconciliationIdentity:null;
  await pools[0].query(`INSERT INTO engineering_team_approval_requests
   (id,product,repository,head_sha,operation,evidence_sha256,binding,requested_by,state,created_at,expires_at,decided_by,decided_at)
   VALUES ($1,$2,$3,$4,'github.write',$5,$6,$7,'approved',clock_timestamp(),clock_timestamp()+interval '10 minutes','independent-owner',clock_timestamp())`,
- [publicationApproval,publicationScope.product,publicationScope.repository,publicationHead,'d'.repeat(64),publicationBinding,publicationIdentity.id]);
+ [reconciliationApproval,reconciliationScope.product,reconciliationScope.repository,reconciliationHead,'d'.repeat(64),reconciliationBinding,reconciliationIdentity.id]);
  await pools[0].query(`INSERT INTO engineering_team_publication_attempts(binding,approval_id,product,repository,base_sha,reserved_by)
-  VALUES ($1,$2,$3,$4,$5,$6)`,[publicationBinding,publicationApproval,publicationScope.product,publicationScope.repository,publicationScope.sha,publicationIdentity.id]);
- const publicationObservation={binding:publicationBinding,repository:publicationScope.repository,baseSha:publicationScope.sha,headSha:publicationHead,requesterId:publicationIdentity.id,baseBranch:'main',headBranch:'draft',complete:true,observations:[{number:77,body:'Evidence binding: '+publicationBinding,draft:true,state:'open',base:{repo:{full_name:publicationScope.repository},ref:'main',sha:publicationScope.sha},head:{repo:{full_name:publicationScope.repository},ref:'draft',sha:publicationHead}}]};
- const publicationStore=createReconciliationStore({pool:pools[0],authenticate:publicationAuth,collect:async scope=>({...publicationObservation,...scope}),verifyObservation:async()=>true});
- const publicationResult=await publicationStore.record({credential:'publication-manager',binding:publicationBinding});
- assert.equal(publicationResult.state,'observed-draft');
- assert.equal(publicationResult.number,77);
- assert.equal(publicationResult.retryAuthorized,false);
- assert.equal(publicationResult.executionAuthorized,false);
- const publicationReplay=await publicationStore.record({credential:'publication-manager',binding:publicationBinding});
- assert.equal(publicationReplay.replayed,true);
- assert.equal(publicationReplay.retryAuthorized,false);
- assert.equal((await pools[1].query('SELECT count(*)::int AS n FROM engineering_team_publication_reconciliation WHERE binding=$1',[publicationBinding])).rows[0].n,1);
- await assert.rejects(pools[0].query('UPDATE engineering_team_publication_reconciliation SET state=state WHERE binding=$1',[publicationBinding]),e=>e.code==='P0001');
- await assert.rejects(pools[0].query('DELETE FROM engineering_team_publication_reconciliation WHERE binding=$1',[publicationBinding]),e=>e.code==='P0001');
+  VALUES ($1,$2,$3,$4,$5,$6)`,[reconciliationBinding,reconciliationApproval,reconciliationScope.product,reconciliationScope.repository,reconciliationScope.sha,reconciliationIdentity.id]);
+ const publicationObservation={binding:reconciliationBinding,repository:reconciliationScope.repository,baseSha:reconciliationScope.sha,headSha:reconciliationHead,requesterId:reconciliationIdentity.id,baseBranch:'main',headBranch:'draft',complete:true,observations:[{number:77,body:'Evidence binding: '+reconciliationBinding,draft:true,state:'open',base:{repo:{full_name:reconciliationScope.repository},ref:'main',sha:reconciliationScope.sha},head:{repo:{full_name:reconciliationScope.repository},ref:'draft',sha:reconciliationHead}}]};
+ const publicationStore=createReconciliationStore({pool:pools[0],authenticate:reconciliationAuth,collect:async scope=>({...reconciliationObservation,...scope}),verifyObservation:async()=>true});
+ const publicationResult=await reconciliationStore.record({credential:'publication-manager',binding:reconciliationBinding});
+ assert.equal(reconciliationResult.state,'observed-draft');
+ assert.equal(reconciliationResult.number,77);
+ assert.equal(reconciliationResult.retryAuthorized,false);
+ assert.equal(reconciliationResult.executionAuthorized,false);
+ const publicationReplay=await reconciliationStore.record({credential:'publication-manager',binding:reconciliationBinding});
+ assert.equal(reconciliationReplay.replayed,true);
+ assert.equal(reconciliationReplay.retryAuthorized,false);
+ assert.equal((await pools[1].query('SELECT count(*)::int AS n FROM engineering_team_publication_reconciliation WHERE binding=$1',[reconciliationBinding])).rows[0].n,1);
+ await assert.rejects(pools[0].query('UPDATE engineering_team_publication_reconciliation SET state=state WHERE binding=$1',[reconciliationBinding]),e=>e.code==='P0001');
+ await assert.rejects(pools[0].query('DELETE FROM engineering_team_publication_reconciliation WHERE binding=$1',[reconciliationBinding]),e=>e.code==='P0001');
 
 });
