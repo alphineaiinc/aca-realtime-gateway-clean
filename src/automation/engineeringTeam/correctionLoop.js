@@ -20,7 +20,7 @@ function createCorrectionLoop({scope,propose,verify,authorize,maxAttempts=2}={})
     const report=await verify(structuredClone(current));
     if(stopped)return result('stopped',attempts);
     if(!report||report.evidenceSha256!==current.evidenceSha256||report.profile!=='disposable-no-network-no-secrets')return result('unknown',attempts);
-    if(report.status==='passed')return result('candidate-passed',attempts);
+    if(report.status==='passed')return Object.freeze({...result('candidate-passed',attempts),candidateDigest:current.evidenceSha256});
     if(report.status!=='failed'||!repairable.has(report.category))return result('blocked',attempts);
     if(attempts>=maxAttempts)return result('limit',attempts);
     if(await authorize({scope:pinned,action:'correction.simulate',evidenceSha256:current.evidenceSha256})!==true||stopped)return result('denied',attempts);
