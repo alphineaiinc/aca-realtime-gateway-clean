@@ -1,8 +1,8 @@
 "use strict";
 
 // Content-free diagnostics. Never serialize caller-controlled strings or objects.
-const numeric = new Set(["bytes", "chars", "elapsedMs", "holdMs", "mediaPacketCount", "payloadBytes", "base64Chars", "rms", "peak", "speechMs", "wordCount", "slotCount", "requiredSlotCount", "missingSlotCount", "statusCode"]);
-const booleans = new Set(["hasAudio", "hasReply", "completed", "isProcessing", "isSpeaking", "accepted"]);
+const numeric = new Set(["hopCount", "bytes", "chars", "elapsedMs", "holdMs", "mediaPacketCount", "payloadBytes", "base64Chars", "rms", "peak", "speechMs", "wordCount", "slotCount", "requiredSlotCount", "missingSlotCount", "statusCode"]);
+const booleans = new Set(["serviceMatches", "markerPresent", "resolvedIsMarker", "noTrustIsMarker", "hasAudio", "hasReply", "completed", "isProcessing", "isSpeaking", "accepted"]);
 const enums = {
   state: new Set(["idle", "greeting", "listening", "awaiting_end_of_turn", "processing", "ready_to_speak", "speaking", "awaiting_input", "task_in_progress", "ready_for_confirmation", "completed", "ended", "failed"]),
   workflowStatus: new Set(["idle", "collecting", "ready_for_confirmation", "completed", "handoff_required"]),
@@ -12,6 +12,8 @@ const enums = {
 };
 enums.previousState = enums.state;
 const diagnosticEvents = new Map([
+  ["ACA_SEC09_START", "ACA_SEC09_START"],
+  ["ACA_SEC09_PROXY", "ACA_SEC09_PROXY"],
   ["TTS_PROVIDER_FAILURE", "TTS_PROVIDER_FAILURE"],
   ["❌ [stt] Streaming STT error:", "STT_PROVIDER_FAILURE"],
   ["❌ searchKB error (DB or embeddings):", "RETRIEVAL_FAILURE"],
