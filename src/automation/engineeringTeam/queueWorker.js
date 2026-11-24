@@ -1,5 +1,6 @@
 'use strict';
 const {getRole}=require('./registry');
+const {createHash}=require('node:crypto');
 // Runs one offline proposal. No worker polling, network, or privileged tools.
 function createQueueWorker({queue,manager,loadTask}={}){
  if(!queue||typeof queue.claim!=='function'||typeof queue.finish!=='function'||!manager||typeof manager.createTask!=='function'||typeof manager.propose!=='function'||typeof loadTask!=='function')throw Error('Invalid worker configuration');
@@ -20,9 +21,10 @@ function createQueueWorker({queue,manager,loadTask}={}){
    return Object.freeze({state,taskId:lease.id,releaseApproved:false});
   }
   // Only return proposal after current lease and governance are verified by queue.
-  const state=await queue.finish({...completion,outcome:'succeeded'});
+  const evidenceSha256=createHash('sha256').update(JSON.stringify(proposal)).digest('hex');
+  const state=await queue.finish({...completion,outcome:'succeeded',evidenceSha256});
   if(state!=='succeeded')throw Error('Completion denied');
-  return Object.freeze({state,taskId:lease.id,proposal,releaseApproved:false});
+  return Object.freeze({state,taskId:lease.id,proposal,evidenceSha256,releaseApproved:false});
  }});
 }
 module.exports={createQueueWorker};
