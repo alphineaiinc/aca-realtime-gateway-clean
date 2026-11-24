@@ -119,6 +119,18 @@ test('isolated PostgreSQL queue: concurrent claims, retries, restart, expiry and
  const prior=await ledger(pools[1]).readFixturePrior({credential:'manager',id:persistent.id});
  assert.deepEqual(prior.map(p=>p.role),sequence);
  await assert.rejects(ledger(pools[1]).readFixturePrior({credential:'w1',id:persistent.id}),/Workflow identity denied/);
+ const boundWorkflow=await ledger(pools[0]).create('manager');
+ const unrelatedWorkflow=await ledger(pools[1]).create('manager');
+ const boundRole=sequence[0],boundCredential='worker-0';
+ await assert.rejects(fixtureQueue.enqueue({scope,role:'devops',credential:'manager',workflowId:boundWorkflow.id,workflowStep:0}),/Workflow enqueue denied/);
+ const boundTask=await fixtureQueue.enqueue({scope,role:boundRole,credential:'manager',workflowId:boundWorkflow.id,workflowStep:0});
+ await assert.rejects(fixtureQueue.enqueue({scope,role:boundRole,credential:'manager',workflowId:boundWorkflow.id,workflowStep:0}));
+ assert.equal(await q2.claim({scope,role:boundRole,credential:boundCredential}),null);
+ const boundLease=await fixtureQueue.claim({scope,role:boundRole,credential:boundCredential,expectedTaskId:boundTask});
+ assert.equal(boundLease.id,boundTask);
+ await fixtureQueue.finish({scope,role:boundRole,credential:boundCredential,taskId:boundTask,leaseId:boundLease.lease_id,outcome:'succeeded',evidenceSha256:'a'.repeat(64)});
+ await assert.rejects(ledger(pools[1]).advance({credential:'manager',id:unrelatedWorkflow.id,step:0,taskId:boundTask}),/Handoff denied/);
+ assert.equal((await ledger(pools[1]).advance({credential:'manager',id:boundWorkflow.id,step:0,taskId:boundTask})).next_step,1);
  const runtimeCalls=[];
  const runtimeFiles=[{path:'src/example.js',role:'backend-developer',text:'module.exports=1;'}];
  const runtimeAdapters=Object.fromEntries(sequence.map((r,i)=>[r,async ctx=>{
