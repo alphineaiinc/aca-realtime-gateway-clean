@@ -71,3 +71,19 @@ jobs:
             --memory 128m --cpus 0.5 --pids-limit 32 \
             --mount "type=bind,source=$PWD/test/fixtures/engineering-sandbox-probe.js,target=/probe.js,readonly" \
             node:22-bookworm-slim node /probe.js
+
+      - name: Execute trusted planned patch in disposable sandbox
+        run: |
+          set -eu
+          work="$(mktemp -d)"
+          trap 'docker rm -f aca-patch-fixture >/dev/null 2>&1 || true; rm -rf "$work"' EXIT
+          chmod 755 "$work"
+          node test/fixtures/engineering-patch-fixture.js > "$work/example.js"
+          printf '%s\n' "const assert=require('node:assert/strict'); const add=require('./example.js'); assert.equal(add(2,3),5); assert.equal(add(-2,2),0);" > "$work/check.js"
+          chmod 644 "$work/"*.js
+          timeout --kill-after=5s 40s docker run --rm --name aca-patch-fixture \
+            --network none --read-only --user 65534:65534 \
+            --cap-drop ALL --security-opt no-new-privileges \
+            --memory 128m --cpus 0.5 --pids-limit 32 \
+            --mount "type=bind,source=$work,target=/fixture,readonly" \
+            node:22-bookworm-slim node /fixture/check.js
