@@ -25,15 +25,19 @@ function createProviderReservation({pool,manifest,policy,authenticate,ceilings,r
   return digest(JSON.stringify([pinned.evidenceSha256,p.evidenceSha256,'orchestrator',model,amount,'single-call-offline-reservation',reviewDigest,costEvidenceSha256??null,prepared?.evidenceSha256??null]));
  }
  return Object.freeze({evidence,async reserve({credential,approvalId,reviewEnvelope,request}={}){
+  // Freeze caller-owned evidence before asynchronous identity and policy checks.
+  reviewEnvelope=structuredClone(reviewEnvelope);
+  request=structuredClone(request);
   const actor=await authenticate(credential);
   if(!actor||actor.permission!=='queue.manage'||actor.role!==undefined||actor.product!==scope.product||actor.repository!==scope.repository||actor.sha!==scope.sha||typeof approvalId!=='string'||! /^[a-f0-9-]{36}$/.test(approvalId))throw Error('Reservation denied');
+  const actorId=actor.id;
   const binding=await evidence(reviewEnvelope,request);
   const client=await pool.connect();let discard=false;
   try{
    await client.query('BEGIN');
    await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))',[JSON.stringify([scope.product,scope.repository])]);
    const freshActor=await authenticate(credential);
-   if(!freshActor||freshActor.id!==actor.id||freshActor.permission!=='queue.manage'||freshActor.role!==undefined||freshActor.product!==scope.product||freshActor.repository!==scope.repository||freshActor.sha!==scope.sha)throw Error('Reservation denied');
+   if(!freshActor||freshActor.id!==actorId||freshActor.permission!=='queue.manage'||freshActor.role!==undefined||freshActor.product!==scope.product||freshActor.repository!==scope.repository||freshActor.sha!==scope.sha)throw Error('Reservation denied');
    if(await evidence(reviewEnvelope,request)!==binding)throw Error('Policy or review binding changed');
    if(reviewVerifier!==undefined){
     const fresh=await reviewVerifier.verify(reviewEnvelope);
