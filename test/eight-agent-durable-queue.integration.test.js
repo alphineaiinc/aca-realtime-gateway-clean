@@ -371,12 +371,14 @@ test('isolated PostgreSQL queue: concurrent claims, retries, restart, expiry and
  assert.equal(recorded.filter(x=>x.status==='fulfilled').length,1);
  assert.equal(recorded.find(x=>x.status==='fulfilled').value.outcome,'completed');
  // Distinct approved requests race against both independent durable budget ceilings.
- async function runProviderBudgetRace({tag,maxCalls,maxMicrousd}){
+ async function runProviderBudgetRace({tag,maxMicrousd,preReservedCalls=0}){
+  const maxCalls=8;
   const budgetId=randomUUID();
   const raceManifest=createActivationManifest({...providerManifest,budgetId,limits:{...providerManifest.limits,maxCalls,maxSpendMicrousd:maxMicrousd}});
   const racePolicy=createQueuePolicyBridge({manifest:raceManifest,readQueueState:async()=>({repository:scope.repository,headSha:scope.sha,issue:{number:42,state:'open',isPullRequest:false,labels:['aca:auto/docs-test'],assignees:[]},activeIssueNumbers:[]})});
   const raceProvider=pool=>createProviderReservation({pool,manifest:raceManifest,policy:racePolicy,authenticate:async c=>identities.get(c),ceilings:{fixture:400},prepareRequest:request=>({model:'fixture',executionAuthorized:false,evidenceSha256:digest(JSON.stringify([tag,request]))})});
   await pools[0].query('INSERT INTO engineering_team_spend_budgets(product,repository,budget_id,max_calls,max_microusd) VALUES ($1,$2,$3,$4,$5)',[scope.product,scope.repository,budgetId,maxCalls,maxMicrousd]);
+  if(preReservedCalls>0)await pools[0].query('UPDATE engineering_team_spend_budgets SET reserved_calls=$4 WHERE product=$1 AND repository=$2 AND budget_id=$3',[scope.product,scope.repository,budgetId,preReservedCalls]);
   const requests=await Promise.all(['request-a','request-b'].map(async label=>{
    const request={label};
    const binding=await raceProvider(pools[0]).evidence(undefined,request);
@@ -391,11 +393,11 @@ test('isolated PostgreSQL queue: concurrent claims, retries, restart, expiry and
   // not from the unresolved-attempt circuit breaker.
   await assert.rejects(raceProvider(pools[1]).reserve({credential:'manager',approvalId:requests[1].approvalId,request:requests[1].request}),/Spend budget denied/);
   const stored=await pools[1].query('SELECT reserved_calls,reserved_microusd FROM engineering_team_spend_budgets WHERE budget_id=$1',[budgetId]);
-  assert.deepEqual(stored.rows[0],{reserved_calls:1,reserved_microusd:'400'});
+  assert.deepEqual(stored.rows[0],{reserved_calls:preReservedCalls+1,reserved_microusd:'400'});
   assert.equal((await pools[1].query('SELECT count(*)::int AS n FROM engineering_team_provider_attempts WHERE budget_id=$1',[budgetId])).rows[0].n,1);
  }
- await runProviderBudgetRace({tag:'call-cap',maxCalls:1,maxMicrousd:1000});
- await runProviderBudgetRace({tag:'spend-cap',maxCalls:8,maxMicrousd:400});
+ await runProviderBudgetRace({tag:'call-cap',maxMicrousd:1000,preReservedCalls:7});
+ await runProviderBudgetRace({tag:'spend-cap',maxMicrousd:400});
 
  assert.deepEqual((await pools[0].query('SELECT reserved_calls,reserved_microusd FROM engineering_team_spend_budgets WHERE budget_id=$1',[providerBudgetId])).rows[0],{reserved_calls:1,reserved_microusd:'400'});
  const reviewResults=await Promise.allSettled(pools.map(pool=>reviewed(pool).reserve(reviewInput)));
