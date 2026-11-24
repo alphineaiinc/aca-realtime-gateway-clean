@@ -220,6 +220,23 @@ test('isolated PostgreSQL queue: concurrent claims, retries, restart, expiry and
  assert.equal(runtimeResult.releaseApproved,false);
  assert.equal((await ledger(pools[0]).status({credential:'manager',id:runtimeResult.workflowId})).next_step,8);
  await assert.rejects(runtime.run(runtimeInput),/Fixture runtime denied/);
+ // A role-level policy closure pauses at the exact next step; reopening policy resumes
+ // from durable handoffs without replaying the already completed roles.
+ const pausedWorkflow=await ledger(pools[0]).create('manager',{subject:'Policy pause/resume fixture',developerRole:'backend-developer'});
+ const pausedRuntime=createFixtureRuntime({scope,queue:fixtureQueue,ledger:ledger(pools[1]),adapters:runtimeAdapters,preparation:runtimePreparation,authorize:async request=>!(request.action==='role.simulate'&&request.role===sequence[3])});
+ const paused=await pausedRuntime.resume({workflowId:pausedWorkflow.id,managerCredential:'manager',workerCredentials:runtimeInput.workerCredentials});
+ assert.equal(paused.state,'denied');
+ assert.equal((await ledger(pools[0]).status({credential:'manager',id:pausedWorkflow.id})).next_step,3);
+ const resumedRoles=[];
+ const resumedAdapters=Object.fromEntries(sequence.map(r=>[r,async ctx=>{
+  assert.deepEqual(ctx.prior.map(p=>p.role),sequence.slice(0,resumedRoles.length));
+  resumedRoles.push(r);
+  return Object.fromEntries(contract(r).fields.map(field=>[field,['resumed '+r+' '+field]]));
+ }]));
+ const policyResumed=await createFixtureRuntime({scope,queue:fixtureQueue,ledger:ledger(pools[1]),adapters:resumedAdapters,preparation:runtimePreparation,authorize:async()=>true}).resume({workflowId:pausedWorkflow.id,managerCredential:'manager',workerCredentials:runtimeInput.workerCredentials});
+ assert.equal(policyResumed.state,'completed');
+ assert.deepEqual(resumedRoles,sequence.slice(3));
+ assert.equal((await ledger(pools[0]).status({credential:'manager',id:pausedWorkflow.id})).next_step,8);
  // Restart recovery: task succeeded durably, but process stopped before ledger advance.
  const recoveryWorkflow=await ledger(pools[0]).create('manager',{subject:'Restart recovery fixture',developerRole:'backend-developer'});
  const recoveryTask=await fixtureQueue.enqueue({scope,role:sequence[0],credential:'manager',workflowId:recoveryWorkflow.id,workflowStep:0});
