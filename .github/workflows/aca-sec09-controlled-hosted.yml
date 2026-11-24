@@ -1,0 +1,45 @@
+name: ACA SEC09 controlled hosted
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened]
+permissions:
+  contents: read
+jobs:
+  controlled:
+    if: github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.head.ref == 'aca-sec09-isolated-proxy-diagnostic'
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Initial safety gate
+        env:
+          ATTEMPT: ${{ github.run_attempt }}
+        run: |
+          case "$ATTEMPT" in
+            1) echo 'SEC09_INITIAL_GATE no hosted requests';;
+            2) echo 'SEC09_CONTROLLED_ATTEMPT readiness required';;
+            *) exit 1;;
+          esac
+      - name: Independent bounded hosted checks
+        if: github.run_attempt == '2'
+        shell: bash
+        run: |
+          set -euo pipefail
+          base=https://alphine-aca-product-staging.onrender.com
+          status=$(curl --proto '=https' --connect-timeout 5 --max-time 10 -sS -o /tmp/aca-ready -w '%{http_code}' "$base/__aca_sec09_ready")
+          test "$status" = 200
+          test "$(cat /tmp/aca-ready)" = 'aca-sec09-probe-v3'
+          failed=0
+          check() {
+            expected=$1; label=$2; shift 2
+            actual=$(curl --proto '=https' --connect-timeout 5 --max-time 10 -sS -o /dev/null -w '%{http_code}' "$@") || actual=transport-error
+            echo "$label HTTP: $actual expected: $expected"
+            if [ "$actual" != "$expected" ]; then failed=1; fi
+          }
+          for i in $(seq 1 3); do check 204 "identity-$i" "$base/__aca_sec09_probe"; done
+          check 204 marker -H 'X-Forwarded-For: 192.0.2.123' "$base/__aca_sec09_probe"
+          for i in $(seq 1 5); do check 204 "twilio-$i" "$base/__aca_sec09_capacity/twilio"; done
+          check 429 twilio-exhausted "$base/__aca_sec09_capacity/twilio"
+          check 204 stripe "$base/__aca_sec09_capacity/stripe"
+          check 204 ordinary "$base/__aca_sec09_capacity/ordinary"
+          exit "$failed"
