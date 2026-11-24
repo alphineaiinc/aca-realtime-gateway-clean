@@ -24,8 +24,9 @@ function createWorkflowLedger({pool,scope,authenticate}={}){
  UPDATE engineering_team_workflows w SET next_step=next_step+1
  WHERE w.id=$1 AND w.product=$2 AND w.repository=$3 AND w.head_sha=$4 AND w.next_step=$5
  AND EXISTS(SELECT 1 FROM engineering_team_tasks t JOIN engineering_team_proposal_receipts r ON r.task_id=t.id
- WHERE t.id=$6 AND t.product=w.product AND t.repository=w.repository AND t.head_sha=w.head_sha AND t.role=$7 AND t.state='succeeded')
+ WHERE t.id=$6 AND t.product=w.product AND t.repository=w.repository AND t.head_sha=w.head_sha AND t.role=$7 AND t.state='succeeded' AND (t.workflow_id IS NULL OR (t.workflow_id=w.id AND t.workflow_step=$5)))
  AND NOT EXISTS(SELECT 1 FROM engineering_team_stops s WHERE s.product=w.product AND s.repository=w.repository)
+ AND NOT EXISTS(SELECT 1 FROM engineering_team_quarantine q WHERE q.product=w.product AND q.repository=w.repository AND q.role=$7)
  RETURNING w.id,w.next_step
  ), handoff AS (INSERT INTO engineering_team_handoffs(workflow_id,step,task_id) SELECT id,$5,$6 FROM advanced RETURNING workflow_id)
  SELECT id,next_step FROM advanced JOIN handoff ON handoff.workflow_id=advanced.id`,[id,...params,step,taskId,sequence[step]]);
