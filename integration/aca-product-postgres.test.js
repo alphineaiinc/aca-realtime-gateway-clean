@@ -18,5 +18,19 @@ test("isolated product migration chain and verified onboarding",async()=>{
  await prepareRouting(pool,{tenantId,workflowId:"generic",phoneNumber:"+14165550123"});
  const {rows}=await pool.query("SELECT i.is_active AS identity_active,r.is_active AS notification_active,n.is_active AS number_active,c.is_active AS workflow_active FROM aca_business_identities i JOIN aca_notification_recipients r USING(tenant_id) JOIN tenant_phone_numbers n USING(tenant_id) JOIN tenant_workflow_configs c USING(tenant_id) WHERE i.tenant_id=$1",[tenantId]);
  assert.deepEqual(rows,[{identity_active:true,notification_active:false,number_active:false,workflow_active:false}]);
+ const {deliverOne}=require("../src/voice/requestNotificationWorker");
+ const request=await pool.query("INSERT INTO aca_customer_requests(tenant_id,call_sid,workflow_id,workflow_version,intent,details) VALUES($1,$2,'generic',1,'capture_request',$3::jsonb) RETURNING id",[tenantId,"CA"+"a".repeat(32),JSON.stringify({name:"Disposable caller"})]);
+ const id=request.rows[0].id;
+ await pool.query("INSERT INTO aca_request_outbox(request_id,tenant_id) VALUES($1,$2)",[id,tenantId]);
+ let sent=0;
+ const sendMail=async mail=>{sent++;assert.equal(mail.to,email);assert.ok(!mail.text.includes("Disposable caller"));return {accepted:[email]};};
+ assert.equal(await deliverOne({pool,sendMail}),false);assert.equal(sent,0);
+ await pool.query("UPDATE aca_notification_recipients SET is_active=TRUE WHERE tenant_id=$1",[tenantId]);
+ await assert.rejects(deliverOne({pool,sendMail:async()=>({accepted:[]})}),/REQUEST_NOTIFICATION_FAILED/);
+ assert.equal((await pool.query("SELECT delivered_at FROM aca_request_outbox WHERE request_id=$1",[id])).rows[0].delivered_at,null);
+ assert.equal(await deliverOne({pool,sendMail}),true);
+ assert.equal(await deliverOne({pool,sendMail}),false);assert.equal(sent,1);
+ const other=await pool.query("INSERT INTO master_tenants(business_name) VALUES('Other disposable tenant') RETURNING id");
+ await assert.rejects(pool.query("INSERT INTO aca_request_outbox(request_id,tenant_id) VALUES($1,$2)",[id,other.rows[0].id]));
  }finally{await pool.end();}
 });
