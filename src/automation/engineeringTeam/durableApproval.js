@@ -10,8 +10,9 @@ function createDurableApprovalPolicy({pool,scopes,authenticate,ttlSeconds=900}={
  const allowed=new Set(scopes.map(key));
  function scopeParams(scope){if(!validScope(scope)||!allowed.has(key(scope)))throw Error('Scope denied');return [scope.product,scope.repository,scope.sha];}
  async function actorId(credential,scope,permission){
+  const expectedScopeKey=key(scope);
   const actor=await authenticate(credential);
-  if(!actor||actor.permission!==permission||key(actor)!==key(scope)||!validId(actor.id)||actor.role!==undefined)throw Error('Identity denied');
+  if(!actor||actor.permission!==permission||key(actor)!==expectedScopeKey||!validId(actor.id)||actor.role!==undefinedthrow Error('Identity denied');
   return actor.id;
  }
  return Object.freeze({
