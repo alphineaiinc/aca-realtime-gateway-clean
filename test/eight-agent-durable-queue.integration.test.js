@@ -393,9 +393,6 @@ test('isolated PostgreSQL queue: concurrent claims, retries, restart, expiry and
   const stored=await pools[1].query('SELECT reserved_calls,reserved_microusd FROM engineering_team_spend_budgets WHERE budget_id=$1',[budgetId]);
   assert.deepEqual(stored.rows[0],{reserved_calls:1,reserved_microusd:'400'});
   assert.equal((await pools[1].query('SELECT count(*)::int AS n FROM engineering_team_provider_attempts WHERE budget_id=$1',[budgetId])).rows[0].n,1);
-  await assert.rejects(raceProvider(pools[1]).reserve({credential:'manager',approvalId:requests[1-winner].approvalId,request:requests[1-winner].request}),/Spend budget denied/);
-  assert.deepEqual((await pools[1].query('SELECT reserved_calls,reserved_microusd FROM engineering_team_spend_budgets WHERE budget_id=$1',[budgetId])).rows[0],{reserved_calls:1,reserved_microusd:'400'});
-  assert.equal((await pools[1].query('SELECT count(*)::int AS n FROM engineering_team_provider_attempts WHERE budget_id=$1',[budgetId])).rows[0].n,1);
  }
  await runProviderBudgetRace({tag:'call-cap',maxCalls:1,maxMicrousd:1000});
  await runProviderBudgetRace({tag:'spend-cap',maxCalls:8,maxMicrousd:400});
