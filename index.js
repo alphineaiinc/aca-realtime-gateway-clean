@@ -916,6 +916,7 @@ const http = require("http"); // ✅ Needed so express-ws binds to the same serv
 const cors = require("cors");
 const bodyParser = require("body-parser");
 const app = express();
+app.set("trust proxy", require("./src/security/proxyPolicy").proxyPolicy(process.env.ACA_TRUSTED_PROXY_CIDRS || ""));
 // Global bounded ingress before parsers, authentication and expensive handlers.
 const { rateLimit: recognizedRateLimit } = require("express-rate-limit");
 const { ingressLimit: boundedIngress } = require("./src/security/ingressLimit");
@@ -1100,7 +1101,7 @@ try {
 }
 
 // Trust Render proxy and log runtime roots once
-app.set("trust proxy", 1);
+
 console.log("🧭 process.cwd():", process.cwd());
 console.log("🧭 __dirname:", __dirname);
 
