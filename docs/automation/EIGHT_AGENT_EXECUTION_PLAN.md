@@ -48,3 +48,13 @@ The draft fixture runtime already composes the durable queue, workflow ledger, e
 - Disposable PostgreSQL regression coverage simulates both the committed-receipt/pre-ledger crash window and an unresolved in-flight lease.
 
 Implementation commits: f1e5de7 (workflow-step inspection), 5c8144f (restart-aware fixture runtime), 4ee293a (PostgreSQL restart/reconciliation tests). Exact-head CI run 45328768523 (#776) was pending at documentation time. These are fixture-only controls; no live provider, scheduler, GitHub dispatch, production database migration, merge, deployment or activation. Independent reviewer #22 and all SDP-001 activation gates remain mandatory.
+
+
+## Exact-head policy-revocation fixture correction — 2026-11-24
+
+- Exact head `905fdcb94aca9f295df6c31a42dda6d20eae20e8`; commit message: isolate blocked-policy acceptance fixture from subsequent queue concurrency test.
+- Regression semantics established in CI #802: a successful CI event followed by current-policy revocation yields safe idle drain; task remains queued; task loader and proposal generator are not invoked. CI #802 subsequently failed at the later queue-concurrency assertion because this deliberately queued task contaminated the shared fixture.
+- Correction: after the regression asserts the queued state, the manager cancels the disposable task and the test asserts its state is cancelled. This keeps the policy assertion meaningful while restoring fixture isolation.
+- Exact-head CI #803 (`45331756050`) completed successfully. The available job inventory shows Node tests and trusted engineering sandbox probe passed. A separate PostgreSQL job and CodeQL/dynamic analysis are not present in the returned job inventory; do not claim those checks passed at this exact head. Prior broad CI #801 remains a prior baseline only.
+- Remaining next batch: obtain exact-head disposable PostgreSQL queue integration evidence; then exercise sequential eight-role lifecycle, durable proposal handoffs and evidence digest/provenance checks. Continue developer → QA → independent security correction cycles only with genuine role separation and review evidence.
+- Status remains offline/draft foundation. No live provider calls, external dispatch, merge, deployment, production database changes, or added spend.
