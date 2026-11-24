@@ -29,7 +29,7 @@ function initializeRuntime({config,pool,identity,ceilings,readQueueState,indepen
  const reviewVerifier=independentReview===undefined?undefined:createActivationReviewVerifier({...independentReview,manifest});
  // Unreviewed initialization remains inert; runtime cannot expose an unreviewed reservation.
  const providerReservation=policy===null||reviewVerifier===undefined||costEnvelope===null?null:createProviderReservation({pool,manifest,policy,authenticate,ceilings,reviewVerifier,costEvidenceSha256:costEnvelope.evidenceSha256,prepareRequest:request=>prepareRequestEnvelope({manifest,costEnvelope,request})});
- const providerOutcome=providerReservation===null?null:createProviderOutcome({pool,scope:manifest.scope,authenticate});
+ const providerOutcome=providerReservation===null?null:createProviderOutcome({pool,scope:manifest.scope,authenticate,costEnvelope});
  return Object.freeze({providerOutcome,manifest,costEnvelope,queue,approvals,budget,workflow,policy,providerReservation,authenticate,status:'initialized-inert',executionAllowed:()=>false});
 }
 module.exports={initializeRuntime};
