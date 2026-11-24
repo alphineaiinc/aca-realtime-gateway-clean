@@ -7,10 +7,10 @@ Original parent #4 defines four phases. #14/#16 Phase 1; #20/#23 supervision/cor
 
 ## Baseline accounting
 - P1: 3/4 closed; 1 implementation evidence, 0 open, 0 blocked.
-- P2: 2/34 closed; 22 implementation evidence, 2 open, 8 blocked.
+- P2: 2/34 closed; 23 implementation evidence, 1 open, 8 blocked.
 - P3: 1/3 closed; 0 implementation evidence, 2 open, 0 blocked.
 - P4: 0/3 closed; 0 implementation evidence, 1 open, 2 blocked.
-- Total 6/44 closed (13.6%); 38 outstanding, including 23 with implementation/partial evidence. Not an estimate of code written.
+- Total 6/44 closed (13.6%); 38 outstanding, including 24 with implementation/partial evidence. Not an estimate of code written.
 - Remaining effort estimate 67–144 engineering hours, sum of row ranges; planning assumption, not measured or promised; conditional defects, approval waiting, independent reviewer availability and cost/credential constraints may extend it. Estimates include verification of existing work, not rebuilding foundations.
 
 ## Permanent checklist
@@ -29,7 +29,7 @@ Original parent #4 defines four phases. #14/#16 Phase 1; #20/#23 supervision/cor
 | P2-07 | B | Current CodeQL inventory, settings and default alert #5 disposition | #24/#118; #116/#117 | P2-06 | 2–4 | Owner supplies read-only export/settings evidence; compare SARIF and default branch |
 | P2-08 | D | Rate-limit cohort including all applicable routes and shared-store behavior | #125 46b534a; historical 67 | P2-07 | 4–8 | Per-alert disposition; distributed and abuse tests; no blanket clearance |
 | P2-09 | D | Logging, randomness, path, URL, XSS cohort disposition | #117/#122 004ae42/#123 9f2a6c5/#124 3561024 | P2-07 | 4–8 | Per-alert source/sink assessment and real integration; default closure after approved release |
-| P2-10 | O | Confirmed authentication/security concerns and dependency/SMTP acceptance | #24 email-only login/JWT fallback; #115 2a47fb3 | P2-07 | 4–8 | Risk assessment, scoped fixes where required, negative auth/TLS tests, audit; coordinate ACA product backlog without duplication |
+| P2-10 | D | Confirmed authentication/security concerns and dependency/SMTP acceptance | #24 email-only login/JWT fallback; #115 2a47fb3 | P2-07 | 4–8 | Risk assessment, scoped fixes where required, negative auth/TLS tests, audit; coordinate ACA product backlog without duplication |
 | P2-11 | D | Reviewer runtime source, substantive disposition, replay/key checks | #22/#21 64aed92 CI 45473844726 | P2-01 | 1–3 | Independent semantic review of auth/JWT/App, replay, parsing, tenant/secret boundaries |
 | P2-12 | B | Protected reviewer artifact, signer custody and operational App permissions | #22 explicit hold | P2-11 | 3–6 | Independent key pin, protected immutable artifact, least privilege, rotation/revocation; owner authorization |
 | P2-13 | B | Reviewer staging acceptance and genuine independent findings | #22/#118 B | P2-12 | 2–4 | Positive/negative signature, triage never approves, webhook/idempotency/rate limits and substantive PR findings |
@@ -90,3 +90,9 @@ P2-08/09/10 retain existing status pending per-alert disposition, actual integra
 - P2-09: CI 45269017617 job 138023618957 failed syntax check in test/browser-session-entropy.test.js due to overescaped regular expressions; tests were skipped. Corrected test regex literals on #123 at 7421a9c6825a4cee598651768a62e717ec620f8c. New CI: []. No claim of alert clearance or acceptance until evidence passes.
 - P1-04: issue #16 comments retrieval returned empty; independent review disposition remains unverified; prior merged recovery evidence preserved. No duplicate queue code or PR #17 merge. Remaining acceptance criteria unchanged.
 - Fixed totals: 6 C, 23 D, 5 O, 10 B; 44 total. CAD $0; no restricted operations.
+
+## B01 verified evidence checkpoint — 2026-11-24
+- P2-09: PR #123 exact head 7421a9c6825a4cee598651768a62e717ec620f8c ACA CI 45494171886 success. Previous syntax failure resolved; alert disposition remains open.
+- P1-04: recovered exact-head independent Codex code review (PR #15 comment 7053645990, completed, no unresolved findings at 424283714fab91996d02105a3b574055f77b3159) and owner-approved live smoke record (comment 7054516672). Explicit API-error regression evidence remains outstanding. No duplicate implementation or PR #17 merge.
+- P2-10: inspected #123 public.js at 7421a9c; hard-coded JWT fallback removed, unverified email-only token issuance denied, randomBytes(32) tenant key, generic error logging. Legitimate login replacement, signup transaction and TLS verification remain acceptance gaps. Upgrade O to D, not C.
+- Current totals 6 C, 24 D, 4 O, 10 B = 44. No new requirements. CAD $0.
