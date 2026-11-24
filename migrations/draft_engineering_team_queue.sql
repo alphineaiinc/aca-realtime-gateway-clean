@@ -118,3 +118,11 @@ CREATE TABLE engineering_team_publication_attempts (
  base_sha text NOT NULL CHECK(base_sha ~ '^[a-f0-9]{40}$'),
  created_at timestamptz NOT NULL DEFAULT clock_timestamp()
 );
+
+-- Disposable fixture proposal bodies only. Live retention requires separate
+-- data classification, redaction, access and deletion acceptance.
+CREATE TABLE engineering_team_fixture_proposals (
+ task_id uuid PRIMARY KEY REFERENCES engineering_team_proposal_receipts(task_id),
+ body text NOT NULL CHECK(octet_length(body) BETWEEN 1 AND 32768),
+ created_at timestamptz NOT NULL DEFAULT clock_timestamp()
+);
