@@ -39,10 +39,22 @@ test('writable root configuration rejected and removed',()=>{
 });
 
 test('fixed timeout fixture uses bounded start and denies acceptance',()=>{
- const {api,calls}=harness([sequence()[0],sequence()[1],{error:{code:'ETIMEDOUT'}},good(id),good('')]);
- assert.throws(()=>api.runTimeoutFixture(),/Fixed timeout observed/);assert.equal(calls[2].options.timeout,2000);assert.equal(calls[3].args.join(' '),'rm -f '+id);
+ const {api,calls}=harness([sequence()[0],sequence()[1],{error:{code:'ETIMEDOUT'}},good('true 123\n'),good(id),good('')]);
+ assert.throws(()=>api.runTimeoutFixture(),/Fixed timeout observed/);assert.equal(calls[2].options.timeout,2000);assert.equal(calls[4].args.join(' '),'rm -f '+id);
 });
 test('fixed failed query fixture denies acceptance after removal',()=>{
  const s=sequence();s[5]={status:125,stdout:'',stderr:'unknown flag'};
- const {api,calls}=harness(s);assert.throws(()=>api.runFailedQueryFixture(),/Cleanup unresolved/);assert.equal(calls[5].args.join(' '),'ps --invalid-fixed-fixture-option');
+ s.push(good(''));const {api,calls}=harness(s);assert.throws(()=>api.runFailedQueryFixture(),/Fixed query failure reconciled/);assert.equal(calls[5].args.join(' '),'ps --invalid-fixed-fixture-option');
+});
+
+test('timeout without running process evidence is not accepted',()=>{
+ const {api}=harness([sequence()[0],sequence()[1],{error:{code:'ETIMEDOUT'}},good('false 0'),good(id),good('')]);
+ assert.throws(()=>api.runTimeoutFixture(),/Timeout start unverified/);
+});
+test('query fixture cannot mask removal failure or residual state',()=>{
+ for(const removal of [false,true]){
+ const s=sequence();if(removal)s[4]={status:1,stdout:'',stderr:'failed'};
+ s[5]={status:125,stdout:'',stderr:'unknown flag'};s.push(good(id));
+ const {api}=harness(s);assert.throws(()=>api.runFailedQueryFixture(),removal?/Removal unresolved/:/Cleanup unresolved/);
+ }
 });

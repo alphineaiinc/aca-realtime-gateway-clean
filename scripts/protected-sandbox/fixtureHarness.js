@@ -24,7 +24,11 @@ function execute(image,mode){
   const config=call(['inspect','--format','{{.HostConfig.ReadonlyRootfs}} {{.HostConfig.Memory}} {{.HostConfig.MemorySwap}} {{.HostConfig.NanoCpus}} {{.HostConfig.PidsLimit}}',id]);
   if(!ok(config)||config.stdout.trim()!=='true 134217728 134217728 500000000 32')throw Error('Configuration denied');
   const result=call(['start','-a',id],mode==='timeout'?2000:15000);
-  if(mode==='timeout'&&result.error?.code==='ETIMEDOUT')throw Error('Fixed timeout observed');
+  if(mode==='timeout'&&result.error?.code==='ETIMEDOUT'){
+   const running=call(['inspect','--format','{{.State.Running}} {{.State.Pid}}',id]);
+   if(!ok(running)||!/^true [1-9][0-9]*\n?$/.test(running.stdout))throw Error('Timeout start unverified');
+   throw Error('Fixed timeout observed');
+  }
   if(!ok(result)||result.stdout!=='fixture-ok')throw Error('Fixture outcome denied');
   const state=call(['inspect','--format','{{.State.Status}} {{.State.ExitCode}}',id]);
   if(!ok(state)||state.stdout.trim()!=='exited 0')throw Error('Fixture state denied');
@@ -32,7 +36,15 @@ function execute(image,mode){
  }finally{
   const removed=call(['rm','-f',id]);
   const absent=call(mode==='query-failure'?['ps','--invalid-fixed-fixture-option']:['ps','-aq','--no-trunc','--filter','id='+id]);
-  if(!ok(removed)||!ok(absent)||absent.stdout!=='')throw Error('Cleanup unresolved; reconcile '+id);
+  if(!ok(removed))throw Error('Removal unresolved; reconcile '+id);
+  if(mode==='query-failure'){
+   if(ok(absent)||absent.error||absent.signal||absent.status!==125||!absent.stderr.includes('unknown flag'))throw Error('Expected query fault unverified; reconcile '+id);
+   const reconciled=call(['ps','-aq','--no-trunc','--filter','id='+id]);
+   if(!ok(reconciled)||reconciled.stdout!=='')throw Error('Cleanup unresolved; reconcile '+id);
+   if(!passed)throw Error('Fixture outcome denied');
+   throw Error('Fixed query failure reconciled');
+  }
+  if(!ok(absent)||absent.stdout!=='')throw Error('Cleanup unresolved; reconcile '+id);
  }
  if(!passed)throw Error('Fixture outcome denied');
  return Object.freeze({fixturePassed:true,probeSha256:createHash('sha256').update(probe).digest('hex'),image,executionAuthorized:false,attestation:false});
