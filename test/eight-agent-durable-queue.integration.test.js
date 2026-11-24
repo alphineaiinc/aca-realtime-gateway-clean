@@ -280,7 +280,12 @@ test('isolated PostgreSQL queue: concurrent claims, retries, restart, expiry and
  await approval(pools[1]).recordDecision({scope,id:breachApproval.id,binding:breachApproval.binding,decision:'approved',credential:'owner'});
  await assert.rejects(breachProvider.reserve({credential:'manager',approvalId:breachApproval.id}),/unresolved provider attempt/);
  // Reconcile the first fixture before admitting another attempt.
- await outcomes[0].record({credential:'owner',binding:unknownBinding,usage:{inputTokens:10,outputTokens:5,actualMicrousd:100}});
+ const {createCostEnvelope}=require('../src/automation/engineeringTeam/costEnvelope');
+ const costManifest=createActivationManifest({...providerManifest,limits:{...providerManifest.limits,maxSpendMicrousd:10000}});
+ const costEnvelope=createCostEnvelope({manifest:costManifest,maxInputTokens:1000,prices:{fixture:{input:100000,output:200000}}});
+ const assessedOutcomes=pools.map(pool=>createProviderOutcome({pool,scope,authenticate:async c=>identities.get(c),costEnvelope}));
+ await assessedOutcomes[0].record({credential:'owner',binding:unknownBinding,usage:{inputTokens:10,outputTokens:5,actualMicrousd:999}});
+ assert.equal(Number((await pools[1].query('SELECT actual_microusd FROM engineering_team_provider_outcomes WHERE binding=$1',[unknownBinding])).rows[0].actual_microusd),2);
  await breachProvider.reserve({credential:'manager',approvalId:breachApproval.id});
  const stopQuery='SELECT 1 FROM engineering_team_stops WHERE product=$1 AND repository=$2';
  const stopArgs=[scope.product,scope.repository];
