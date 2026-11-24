@@ -7,7 +7,12 @@ const role='backend-developer';
 function setup(){
  const queries=[];
  const identities=new Map([['manager',{...scope,id:'manager',permission:'queue.manage'}],['worker',{...scope,id:'worker-1',permission:'queue.work',role}],['other',{...scope,id:'worker-2',permission:'queue.work',role:'qa-testing'}]]);
- const pool={async query(sql,params){queries.push({sql,params});return {rowCount:1,rows:[{id:params[0],state:'succeeded',lease_id:'fixture'}]};}};
+ const query=async(sql,params=[])=>{
+  if(['BEGIN','COMMIT','ROLLBACK'].includes(sql)||sql.startsWith('SELECT pg_advisory'))return {rowCount:0,rows:[]};
+  if(sql.startsWith('SELECT EXISTS'))return {rowCount:1,rows:[{blocked:false}]};
+  queries.push({sql,params});return {rowCount:1,rows:[{id:params[0],state:'succeeded',lease_id:'fixture'}]};
+ };
+ const pool={query,async connect(){return {query,release(){}};}};
  const queue=createDurableQueue({pool,scopes:[scope],authenticate:async credential=>identities.get(credential)});
  return {queue,queries};
 }
@@ -41,4 +46,15 @@ test('expiry and cancellation require manager identity and do not dispatch',asyn
  await queue.cancel({scope,credential:'manager',taskId:'fixture'});
  assert.match(queries[0].sql,/SET state='failed'/);
  assert.match(queries[1].sql,/SET state='cancelled'/);
+});
+
+test('persistent governance mutations require manager credentials',async()=>{
+ const {queue,queries}=setup();
+ await assert.rejects(queue.stop({scope,credential:'worker'}));
+ await assert.rejects(queue.quarantine({scope,role,credential:'worker'}));
+ assert.equal(queries.length,0);
+ await queue.quarantine({scope,role,credential:'manager'});
+ await queue.stop({scope,credential:'manager'});
+ assert.match(queries[0].sql,/engineering_team_quarantine/);
+ assert.match(queries[1].sql,/engineering_team_stops/);
 });
