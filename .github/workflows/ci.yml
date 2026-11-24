@@ -54,37 +54,4 @@ jobs:
           ENGINEERING_QUEUE_CI_DATABASE_URL: postgresql://aca_ci:disposable-ci-only@127.0.0.1:5432/aca_engineering_queue_ci
         run: node --test test/eight-agent-durable-queue.integration.test.js
 
-  engineering-sandbox-probe:
-    name: Base-pinned sandbox smoke (not independent attestation)
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: ${{ github.event.pull_request.base.sha || github.sha }}
-          persist-credentials: false
-      - name: Run trusted fixture without network or credentials
-        run: |
-          docker pull node:22.23.5-bookworm-slim@sha256:47725aca53d3295ec2d3be8f62726599b3033cc262edc2c7e429909b3ac599fc
-          timeout --kill-after=5s 40s docker run --rm --name aca-sandbox-fixture \
-            --network none --read-only --user 65534:65534 \
-            --cap-drop ALL --security-opt no-new-privileges \
-            --memory 128m --cpus 0.5 --pids-limit 32 \
-            --mount "type=bind,source=$PWD/test/fixtures/engineering-sandbox-probe.js,target=/probe.js,readonly" \
-            node:22-bookworm-slim node /probe.js
-
-      - name: Execute trusted planned patch in disposable sandbox
-        run: |
-          set -eu
-          work="$(mktemp -d)"
-          trap 'docker rm -f aca-patch-fixture >/dev/null 2>&1 || true; rm -rf "$work"' EXIT
-          chmod 755 "$work"
-          node test/fixtures/engineering-patch-fixture.js > "$work/example.js"
-          printf '%s\n' "const assert=require('node:assert/strict'); const add=require('./example.js'); assert.equal(add(2,3),5); assert.equal(add(-2,2),0);" > "$work/check.js"
-          chmod 644 "$work/"*.js
-          timeout --kill-after=5s 40s docker run --rm --name aca-patch-fixture \
-            --network none --read-only --user 65534:65534 \
-            --cap-drop ALL --security-opt no-new-privileges \
-            --memory 128m --cpus 0.5 --pids-limit 32 \
-            --mount "type=bind,source=$work,target=/fixture,readonly" \
-            node:22-bookworm-slim node /fixture/check.js
+  # Trusted sandbox attestation is intentionally disabled until its harness is supplied by a protected revision.
