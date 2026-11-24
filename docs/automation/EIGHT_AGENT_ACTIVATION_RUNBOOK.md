@@ -283,3 +283,7 @@ Assessment source: user-provided independent security assessment. Its PR #142 fi
 - PR #21 exact head `8e96ad2a67c559f84ab166538ab6bb05f1137878` passed its three associated CI runs: `45406657995`, `45406657657`, `45406657804`. GitHub review records still contain only a quota-blocked Copilot COMMENTED notice, not an independent approval.
 - Restricted observation remains disabled. Candidate-controlled sandbox CI was removed pending a protected harness. PR #21 signer trust root, key custody, substantive security disposition, DB role/credential verification, provider-side spend cap and deployment isolation remain unaccepted.
 - No merge, deployment, secret activation, production DB change, live agent dispatch or real provider call.
+
+
+### SEC-09 publication hold
+Post-admission reference rechecks are defense in depth, not atomic publication. Keep live publication disabled until protected reference ownership, authenticated requester-bound durable admission, uncertain-outcome reconciliation and duplicate prevention are independently accepted. Never retry an ambiguous POST merely because a client timed out. Reconcile exact repository, base/head revisions, branch and durable binding first; unresolved outcomes remain blocked. External runner cancellation requires independently verified termination or quarantine. No operational acceptance is claimed.
