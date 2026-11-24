@@ -5,7 +5,7 @@ const {verifiedRequiredChecks}=require("../src/automation/verifiedCiEvidence");
 const sha="a".repeat(40);
 const names=["Node tests","PostgreSQL ledger integration"];
 const runs=names.map(name=>({name,head_sha:sha,status:"completed",
- conclusion:"success",app:{id:1234},check_suite:{workflow_run:{workflow_id:4321,id:9876,head_sha:sha}}}));
+ conclusion:"success",app:{id:1234},check_suite:{workflow_run:{workflow_id:4321,id:9876,head_sha:sha,run_attempt:1}}}));
 const args={runs,totalCount:2,headSha:sha,requiredNames:names,trustedAppId:1234,trustedWorkflowId:4321};
 test("accepts complete current-head checks from pinned app",()=>{
  assert.equal(verifiedRequiredChecks(args).length,2);
@@ -28,6 +28,13 @@ test("rejects missing or duplicate required checks",()=>{
 test("rejects wrong workflow, stale workflow run, or missing provenance",()=>{
  assert.equal(verifiedRequiredChecks({...args,trustedWorkflowId:undefined}),null);
  assert.equal(verifiedRequiredChecks({...args,runs:[{...runs[0],check_suite:{workflow_run:{workflow_id:999,id:9876,head_sha:sha}}},runs[1]]}),null);
- assert.equal(verifiedRequiredChecks({...args,runs:[{...runs[0],check_suite:{workflow_run:{workflow_id:4321,id:9876,head_sha:"b".repeat(40)}}},runs[1]]}),null);
+ assert.equal(verifiedRequiredChecks({...args,runs:[{...runs[0],check_suite:{workflow_run:{workflow_id:4321,id:9876,head_sha:"b".repeat(40),run_attempt:1}}},runs[1]]}),null);
  assert.equal(verifiedRequiredChecks({...args,runs:[{...runs[0],check_suite:{}},runs[1]]}),null);
+});
+
+test("rejects required checks combined from different workflow runs or attempts",()=>{
+ const mixedRun=[runs[0],{...runs[1],check_suite:{workflow_run:{workflow_id:4321,id:9877,head_sha:sha,run_attempt:1}}}];
+ const mixedAttempt=[runs[0],{...runs[1],check_suite:{workflow_run:{workflow_id:4321,id:9876,head_sha:sha,run_attempt:2}}}];
+ assert.equal(verifiedRequiredChecks({...args,runs:mixedRun}),null);
+ assert.equal(verifiedRequiredChecks({...args,runs:mixedAttempt}),null);
 });
