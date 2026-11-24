@@ -108,3 +108,18 @@ test('one-shot manager observes once, never dispatches and never returns credent
  const failed=await observeOnce({env,fetchImpl:async()=>{throw Error('private-fixture-token');}});
  denied(failed);assert.equal(failed.status,'unavailable');assert.ok(!JSON.stringify(failed).includes('private-fixture-token'));
 });
+
+test('restricted observer rejects oversized and malformed transport responses without leaking credentials',async()=>{
+ for(const body of ['x'.repeat(262145),'{invalid JSON']){
+  const transport=createGitHubReadTransport({token:'private-fixture-token',repository:scope.repository,fetchImpl:async()=>new Response(body)});
+  await assert.rejects(transport.readIssueStatus({...scope,issue}),error=>error.message==='GitHub read failed');
+ }
+});
+test('restricted transport refuses cross-repository reads before network access for every read method',async()=>{
+ let calls=0;
+ const transport=createGitHubReadTransport({token:'fixture-token',repository:scope.repository,fetchImpl:async()=>{calls++;throw Error('unexpected network');}});
+ for(const name of ['readSource','readIssue','readIssueStatus','readCI']){
+  await assert.rejects(transport[name]({...scope,repository:'other/repo',issue,path:'src/example.js'}),/Repository scope denied/);
+ }
+ assert.equal(calls,0);
+});
