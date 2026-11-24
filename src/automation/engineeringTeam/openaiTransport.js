@@ -22,8 +22,8 @@ function createOpenAITransport({client,models,authorize,maxCalls=8,maxOutputToke
    if(result.usage.output_tokens>maxOutputTokens){halted=true;throw Error('Output budget exceeded');}
    if(result.status!=='completed'||typeof result.output_text!=='string')throw Error('Incomplete model response');
    return result.output_text;
-  }catch{throw Error('Provider request failed');}
-  finally{active=false;}
+  }catch{halted=true;throw Error('Provider request failed');}
+  finally{active=false,halted=false;}
  }
  return Object.freeze({generate,usage:()=>Object.freeze({calls,inputTokens,outputTokens})});
 }
