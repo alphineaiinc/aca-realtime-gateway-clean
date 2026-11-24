@@ -35,7 +35,7 @@ function createFixtureBroker({snapshots}={}){
    const action=request?.action;
    const known=typeof action==='string'&&['issue.read','source.read','ci.read'].includes(action);
    const deny=()=>{onDecision(known?action:'unknown','deny');throw Error('Capability denied');};
-   if(closed||!isActive()||!snapshot||!known||!capabilities[role].includes(action)||reads>=maxReads)return deny();
+   if(closed||isActive()!==true||!request||typeof request!=='object'||Array.isArray(request)||!Object.hasOwn(request,'action')||!snapshot||!known||!capabilities[role].includes(action)||reads>=maxReads)return deny();
    const keys=Object.keys(request);
    if(action==='source.read'){
     if(keys.length!==2||!Object.hasOwn(request,'path')||!validPath(request.path)||!snapshot.files.has(request.path))return deny();
