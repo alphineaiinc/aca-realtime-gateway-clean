@@ -143,3 +143,13 @@ Implementation commits: f1e5de7 (workflow-step inspection), 5c8144f (restart-awa
 - Provider budget cap tests now separately exhaust the supported eight-call cap and the 400-micro-USD spend cap after reconciling each completed attempt, avoiding false positives from the unresolved-attempt circuit breaker.
 - This confirms offline repository/product isolation in the durable queue and independent call/spend ceiling enforcement. It does not establish production multi-tenant authorization, live event ingestion, provider operation or deployment isolation; those require operational acceptance and independent review.
 - No live agents/providers, production database changes, merge, deployment, secrets or additional spend.
+
+
+## Provider stop and spend-budget repository isolation acceptance — 2026-11-24
+
+- Code/test change: `ff32b69350c90c6ec35855d3294b8c259a64e520`; validated by exact-head CI #841 (`45336133873`) at branch head `194e31f27a39a68d3ab98b425793e45f3b5922e2`.
+- Node suite: 171 total, 170 passed, 0 failed, 1 skipped. Disposable PostgreSQL 17 integration: 1 passed, 0 failed. Trusted engineering sandbox passed.
+- Added a second repository scope for the same product with separate queue-manager and owner identities, independent approval policy and spend budget. After an unknown provider outcome creates a persistent stop for repository A, repository B successfully reserves and reconciles its own approved provider attempt.
+- Assertions verify repository A's stop remains present, repository B has no stop, and repository B's reserved counters are isolated at 1 call / 400 micro-USD. This exercises repository-level isolation in provider reservation, approval, outcome and stop predicates.
+- Combined with the preceding cross-product queue isolation acceptance and provider cap exhaustion coverage, this strengthens offline tenant/repository separation. It does not prove production multi-tenant auth configuration or deployment isolation.
+- No production runtime/schema change, live provider call, merge, deployment, secret activation, production database change or additional spend. Independent reviewer #22 remains HOLD.
