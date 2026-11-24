@@ -68,7 +68,12 @@ const server=app.listen(0,"127.0.0.1");
 try{
  await new Promise((resolve,reject)=>{server.once("listening",resolve);server.once("error",reject);});
  const origin="http://127.0.0.1:"+server.address().port;
- const request=async(path,token,body)=>{const response=await fetch(origin+path,{method:body?"POST":"GET",headers:{...(token?{Authorization:"Bearer "+token}:{}),...(body?{"Content-Type":"application/json"}:{})},...(body?{body:JSON.stringify(body)}:{})});return {status:response.status,body:await response.json()};};
+ const request=async(path,token,body,localAddress="127.0.0.1")=>new Promise((resolve,reject)=>{
+ const payload=body?JSON.stringify(body):null;
+ const req=require("node:http").request(origin+path,{localAddress,method:body?"POST":"GET",headers:{...(token?{Authorization:"Bearer "+token}:{}),...(payload?{"Content-Type":"application/json","Content-Length":Buffer.byteLength(payload)}:{})}},res=>{
+ let data="";res.setEncoding("utf8");res.on("data",chunk=>data+=chunk);res.on("end",()=>{try{resolve({status:res.statusCode,body:JSON.parse(data)});}catch(e){reject(e);}});res.on("error",reject);
+ });req.on("error",reject);req.setTimeout(5000,()=>req.destroy(new Error("HTTP test timeout")));req.end(payload);
+ });
  const otherEmail="other-product@example.test";
  await pool.query("INSERT INTO aca_business_identities(email,tenant_id,verified_at,is_active) VALUES($1,$2,NOW(),true)",[otherEmail,otherContext.tenantId]);
  const {issueLogin}=require("../src/security/verifiedBusinessLogin");
@@ -87,8 +92,8 @@ try{
  let expiredCode;await issueLogin({query,email,sendMail:async mail=>{expiredCode=mail.text.match(/[a-f0-9]{64}/)[0];}});
  assert.ok(expiredCode);
  await pool.query("UPDATE aca_login_challenges SET expires_at=NOW()-INTERVAL '1 second' WHERE token_hash=$1",[crypto.createHash("sha256").update(expiredCode).digest("hex")]);
- assert.equal((await request("/tenant/login/redeem",null,{token:expiredCode})).status,401);
- assert.equal((await request("/tenant/login/redeem",null,{token:a.code})).status,401);
+ assert.equal((await request("/tenant/login/redeem",null,{token:expiredCode},"127.0.0.2")).status,401);
+ assert.equal((await request("/tenant/login/redeem",null,{token:a.code},"127.0.0.2")).status,401);
  const forged=jwt.sign({tenant_id:otherContext.tenantId,sub:email,purpose:"verified_business"},secret,{algorithm:"HS256",issuer:"alphine-ai",audience:"aca-business",expiresIn:"1h"});
  assert.equal((await request("/tenant/profile",forged)).status,401);
  await pool.query("UPDATE aca_business_identities SET is_active=false WHERE email=$1",[email]);
