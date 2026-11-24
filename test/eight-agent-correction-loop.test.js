@@ -8,7 +8,7 @@ const plan=n=>{const p={scope,role:'backend-developer',changes:[{fixture:n}]};re
 const report=(p,status,category)=>({evidenceSha256:p.evidenceSha256,profile:'disposable-no-network-no-secrets',status,category});
 test('repairable failure permits bounded correction and retest',async()=>{
  const loop=createCorrectionLoop({scope,authorize:async()=>true,propose:async()=>plan(2),verify:async p=>report(p,p.changes[0].fixture===2?'passed':'failed','test-failure')});
- assert.deepEqual(await loop.run({plan:plan(1)}),{state:'candidate-passed',attempts:1,releaseApproved:false});
+ assert.deepEqual(await loop.run({plan:plan(1)}),{state:'candidate-passed',attempts:1,releaseApproved:false,candidateDigest:plan(2).evidenceSha256});
  await assert.rejects(loop.run({plan:plan(1)}),/denied/);
 });
 test('security failure and wrong evidence do not trigger correction',async()=>{
