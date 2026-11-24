@@ -21,7 +21,7 @@ function createManagerTeamWorkflow({manager,maxRoles=8}={}){
      results.push(Object.freeze({role,output:validateProposal(role,proposal.output),approval:false}));
     }
     return Object.freeze({state:'completed',taskId:task.id,completed:results.length,proposals:Object.freeze(results),releaseApproved:false,executionAuthorized:false});
-   }catch{return Object.freeze({state:'failed',completed:results.length,releaseApproved:false,executionAuthorized:false});}
+   }catch{return Object.freeze({state:stopped?'stopped':'failed',completed:results.length,releaseApproved:false,executionAuthorized:false});}
    finally{active=false;}
   }
  });
