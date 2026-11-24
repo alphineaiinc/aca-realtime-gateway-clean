@@ -52,3 +52,20 @@ test('rollback failure discards connection and does not report success',async()=
  await assert.rejects(withUploadAdmission(h.pool,'tenant-a',()=>42),/rollback failed/);
  assert.deepEqual(h.calls.at(-1),['release',true]);
 });
+
+test('connection loss signals protected work and prevents successful admission result',async()=>{
+ const {EventEmitter}=require('node:events');
+ const client=new EventEmitter();
+ let discarded;
+ client.query=async()=>({rows:[{acquired:true}]});
+ client.release=value=>{discarded=value;};
+ await assert.rejects(withUploadAdmission({connect:async()=>client},'tenant-a',async signal=>{
+   assert.equal(signal.aborted,false);
+   client.emit('error',Error('disconnected'));
+   assert.equal(signal.aborted,true);
+   return 42;
+ }),/connection lost/);
+ assert.equal(discarded,true);
+ assert.equal(client.listenerCount('error'),0);
+ assert.equal(client.listenerCount('end'),0);
+});
