@@ -241,3 +241,32 @@ CREATE TABLE engineering_team_preparation_attempts (
  CHECK((state='started' AND result_json IS NULL AND result_sha256 IS NULL AND completed_at IS NULL) OR
        (state='completed' AND result_json IS NOT NULL AND result_sha256 IS NOT NULL AND completed_at IS NOT NULL))
 );
+
+
+-- SEC-09: durable, append-only publication reconciliation observations.
+-- This records independently collected evidence only. It never authorizes retry.
+CREATE TABLE engineering_team_publication_reconciliation (
+ binding text PRIMARY KEY REFERENCES engineering_team_publication_attempts(binding),
+ product text NOT NULL,
+ repository text NOT NULL,
+ base_sha text NOT NULL CHECK(base_sha ~ '^[a-f0-9]{40}$'),
+ head_sha text CHECK(head_sha IS NULL OR head_sha ~ '^[a-f0-9]{40}$'),
+ observed_by text NOT NULL CHECK(observed_by ~ '^[A-Za-z0-9_.-]{1,80}$'),
+ state text NOT NULL CHECK(state IN ('unresolved','observed-draft')),
+ pr_number integer CHECK(pr_number IS NULL OR pr_number>0),
+ observation_sha256 text NOT NULL CHECK(observation_sha256 ~ '^[a-f0-9]{64}$'),
+ created_at timestamptz NOT NULL DEFAULT clock_timestamp(),
+ CHECK((state='unresolved' AND pr_number IS NULL) OR state='observed-draft')
+);
+CREATE INDEX engineering_team_publication_reconciliation_scope_idx
+ ON engineering_team_publication_reconciliation(product,repository,created_at);
+CREATE FUNCTION engineering_team_reconciliation_immutable() RETURNS trigger
+ LANGUAGE plpgsql AS $$
+ BEGIN
+  RAISE EXCEPTION 'publication reconciliation evidence is append-only';
+ END;
+ $$;
+CREATE TRIGGER engineering_team_publication_reconciliation_no_update_delete
+ BEFORE UPDATE OR DELETE ON engineering_team_publication_reconciliation
+ FOR EACH ROW EXECUTE FUNCTION engineering_team_reconciliation_immutable();
+REVOKE UPDATE, DELETE, TRUNCATE ON engineering_team_publication_reconciliation FROM PUBLIC;
