@@ -54,7 +54,7 @@ CREATE TABLE engineering_team_approval_requests (
  product text NOT NULL,
  repository text NOT NULL,
  head_sha text NOT NULL CHECK(head_sha ~ '^[a-f0-9]{40}$'),
- operation text NOT NULL CHECK(operation IN ('provider.activate','github.write','agent.dispatch','merge','deploy','sign','secret.change','database.write')),
+ operation text NOT NULL CHECK(operation IN ('provider.activate','github.write','agent.dispatch','merge','deploy','sign','secret.change','database.write','queue.recover')),
  evidence_sha256 text NOT NULL CHECK(evidence_sha256 ~ '^[a-f0-9]{64}$'),
  binding text NOT NULL CHECK(binding ~ '^[a-f0-9]{64}$'),
  requested_by text NOT NULL,
