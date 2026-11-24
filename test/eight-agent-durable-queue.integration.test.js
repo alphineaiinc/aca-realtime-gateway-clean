@@ -6,6 +6,7 @@ const path=require('node:path');
 const {Pool}=require('pg');
 const {randomUUID}=require('node:crypto');
 const {createCallBudget}=require('../src/automation/engineeringTeam/callBudget');
+const {createSpendBudget}=require('../src/automation/engineeringTeam/spendBudget');
 const {createDurableQueue}=require('../src/automation/engineeringTeam/durableQueue');
 const {createDurableApprovalPolicy}=require('../src/automation/engineeringTeam/durableApproval');
 test('isolated PostgreSQL queue: concurrent claims, retries, restart, expiry and cancellation',{skip:process.env.RUN_ENGINEERING_QUEUE_CI!=='1',timeout:30000},async t=>{
@@ -64,6 +65,14 @@ test('isolated PostgreSQL queue: concurrent claims, retries, restart, expiry and
  const reservations=await Promise.allSettled([budgets[0].reserve(),budgets[1].reserve(),budgets[0].reserve()]);
  assert.equal(reservations.filter(x=>x.status==='fulfilled').length,2);
  await assert.rejects(createCallBudget({pool:pools[1],...scope,budgetId}).reserve(),/budget denied/);
+ const spendId=randomUUID();
+ await pools[0].query('INSERT INTO engineering_team_spend_budgets(product,repository,budget_id,max_calls,max_microusd) VALUES ($1,$2,$3,8,1000)',[scope.product,scope.repository,spendId]);
+ const spend=pools.map(pool=>createSpendBudget({pool,...scope,budgetId:spendId,ceilings:{fixture:400}}));
+ const spendResults=await Promise.allSettled([spend[0].reserve({model:'fixture'}),spend[1].reserve({model:'fixture'}),spend[0].reserve({model:'fixture'})]);
+ assert.equal(spendResults.filter(x=>x.status==='fulfilled').length,2);
+ await assert.rejects(spend[1].reserve({model:'unknown'}),/Unknown model/);
+ const balance=(await pools[1].query('SELECT reserved_calls,reserved_microusd FROM engineering_team_spend_budgets WHERE budget_id=$1',[spendId])).rows[0];
+ assert.deepEqual(balance,{reserved_calls:2,reserved_microusd:'800'});
  const stoppedTask=await q.enqueue({scope,role,credential:'manager'});
  const running=await q.claim({scope,role,credential:'w1'});
  await q2.quarantine({scope,role,credential:'manager'});
