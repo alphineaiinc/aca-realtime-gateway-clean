@@ -323,6 +323,20 @@ test('isolated PostgreSQL queue: concurrent claims, retries, restart, expiry and
  await assert.rejects(provider(pools[1]).reserve(providerInput),/Spend budget denied/);
  assert.equal((await pools[0].query('SELECT binding FROM engineering_team_provider_attempts WHERE binding=$1',[providerBinding])).rowCount,0);
  await pools[0].query('UPDATE engineering_team_spend_budgets SET max_microusd=1000 WHERE budget_id=$1',[providerBudgetId]);
+ // Expired approval must fail even when budget and current issue policy are valid.
+ await pools[0].query("UPDATE engineering_team_approval_requests SET created_at=clock_timestamp()-interval '2 minutes',expires_at=clock_timestamp()-interval '1 minute' WHERE id=$1",[providerApproval.id]);
+ await assert.rejects(provider(pools[1]).reserve(providerInput),/Reservation denied/);
+ assert.equal((await pools[1].query('SELECT binding FROM engineering_team_provider_attempts WHERE binding=$1',[providerBinding])).rowCount,0);
+ assert.deepEqual((await pools[1].query('SELECT reserved_calls,reserved_microusd FROM engineering_team_spend_budgets WHERE budget_id=$1',[providerBudgetId])).rows[0],{reserved_calls:0,reserved_microusd:'0'});
+ // Restore only the disposable approval fixture for the existing concurrency test.
+ await pools[0].query("UPDATE engineering_team_approval_requests SET expires_at=clock_timestamp()+interval '5 minutes' WHERE id=$1",[providerApproval.id]);
+ let providerIdentityChecks=0;
+ const revokedProvider=createProviderReservation({pool:pools[1],manifest:providerManifest,policy:providerPolicy,authenticate:async c=>++providerIdentityChecks===1?identities.get(c):null,ceilings:{fixture:400}});
+ await assert.rejects(revokedProvider.reserve(providerInput),/Reservation denied/);
+ assert.equal(providerIdentityChecks,2);
+ assert.equal((await pools[0].query('SELECT binding FROM engineering_team_provider_attempts WHERE binding=$1',[providerBinding])).rowCount,0);
+ assert.deepEqual((await pools[0].query('SELECT reserved_calls,reserved_microusd FROM engineering_team_spend_budgets WHERE budget_id=$1',[providerBudgetId])).rows[0],{reserved_calls:0,reserved_microusd:'0'});
+
  const providerResults=await Promise.allSettled(pools.map(pool=>provider(pool).reserve(providerInput)));
  assert.equal(providerResults.filter(x=>x.status==='fulfilled').length,1);
  assert.equal(providerResults.find(x=>x.status==='fulfilled').value.executionAuthorized,false);
