@@ -527,11 +527,11 @@ test('isolated PostgreSQL queue: concurrent claims, retries, restart, expiry and
  assert.equal(resumedLease.id,afterStopTask);
  assert.equal(await recoveryQueue.finish({scope:recoveryScope,role:recoveryRole,credential:'recovery-worker',taskId:afterStopTask,leaseId:resumedLease.lease_id,outcome:'succeeded'}),'succeeded');
  // Even an owner-approved stop clear cannot bypass an unresolved provider attempt.
- const unresolvedBudgetId=randomUUID(),providerApprovalEvidence='8'.repeat(64),providerBinding='9'.repeat(64);
+ const unresolvedBudgetId=randomUUID(),providerApprovalEvidence='8'.repeat(64),recoveryProviderBinding='9'.repeat(64);
  await pools[0].query('INSERT INTO engineering_team_spend_budgets(product,repository,budget_id,max_calls,max_microusd) VALUES ($1,$2,$3,1,10)',[recoveryScope.product,recoveryScope.repository,unresolvedBudgetId]);
  const providerApprovalRequest=await recoveryApprovals.request({scope:recoveryScope,operation:'provider.activate',evidence:providerApprovalEvidence,credential:'recovery-manager'});
  await recoveryApprovals.recordDecision({scope:recoveryScope,id:providerApprovalRequest.id,binding:providerApprovalRequest.binding,decision:'approved',credential:'recovery-owner'});
- await pools[0].query('INSERT INTO engineering_team_provider_attempts(binding,approval_id,product,repository,head_sha,budget_id,model,reserved_microusd) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)',[providerBinding,providerApprovalRequest.id,recoveryScope.product,recoveryScope.repository,recoveryScope.sha,unresolvedBudgetId,'fixture',1]);
+ await pools[0].query('INSERT INTO engineering_team_provider_attempts(binding,approval_id,product,repository,head_sha,budget_id,model,reserved_microusd) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)',[recoveryProviderBinding,providerApprovalRequest.id,recoveryScope.product,recoveryScope.repository,recoveryScope.sha,unresolvedBudgetId,'fixture',1]);
  await recoveryQueue.stop({scope:recoveryScope,credential:'recovery-manager'});
  const unresolvedStopEvidence=recoveryGate.evidence({action:'clear-stop'});
  const unresolvedStopRequest=await recoveryApprovals.request({scope:recoveryScope,operation:'queue.recover',evidence:unresolvedStopEvidence,credential:'recovery-manager'});
