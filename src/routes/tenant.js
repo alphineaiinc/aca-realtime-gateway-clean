@@ -74,6 +74,7 @@ router.post("/login/start",loginLimit,async(req,res)=>{
  return res.status(202).json({ok:true,message:"If eligible, a sign-in code will be sent."});
 });
 router.post("/login/redeem",loginLimit,async(req,res)=>{
+ res.set("Cache-Control","no-store");
  if(process.env.ACA_VERIFIED_LOGIN_ENABLED!=="true")return res.status(503).json({ok:false,error:"Login unavailable"});
  try{
  const token=await redeemLogin({query:(...a)=>pool.query(...a),token:req.body?.token,secret:process.env.JWT_SECRET});
@@ -82,11 +83,12 @@ router.post("/login/redeem",loginLimit,async(req,res)=>{
  return res.status(401).json({ok:false,error:"Invalid or expired code"});
 });
 async function verifiedBusiness(req,res,next){
+ res.set("Cache-Control","no-store");
  try{
  const auth=req.headers.authorization||"";
  if(!auth.startsWith("Bearer "))throw Error();
  const claims=jwt.verify(auth.slice(7),process.env.JWT_SECRET,{algorithms:["HS256"],issuer:"alphine-ai",audience:"aca-business"});
- if(claims.purpose!=="verified_business"||!Number.isInteger(claims.tenant_id)||claims.tenant_id<=0||typeof claims.sub!=="string")throw Error();
+ if(claims.purpose!=="verified_business"||!Number.isSafeInteger(claims.tenant_id)||claims.tenant_id<=0||typeof claims.sub!=="string")throw Error();
  const {rows}=await pool.query("SELECT tenant_id FROM public.aca_business_identities WHERE email=$1 AND tenant_id=$2 AND is_active",[claims.sub,claims.tenant_id]);
  if(rows.length!==1)throw Error();
  req.verifiedTenantId=claims.tenant_id;next();
