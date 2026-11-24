@@ -213,3 +213,10 @@ CREATE TABLE engineering_team_governance_alerts (
 );
 CREATE INDEX engineering_team_governance_alerts_scope_idx
  ON engineering_team_governance_alerts(product,repository,created_at);
+
+-- Operator acknowledgement is not delivery, recovery, or execution authorization.
+CREATE TABLE engineering_team_governance_acknowledgements (
+ alert_id uuid PRIMARY KEY REFERENCES engineering_team_governance_alerts(id),
+ acknowledged_by text NOT NULL,
+ acknowledged_at timestamptz NOT NULL DEFAULT clock_timestamp()
+);
