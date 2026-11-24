@@ -7,7 +7,7 @@ const {startServer}=require("../src/automation/reviewerStagingServer");
 const {verifySignedReview}=require("../src/automation/signedReviewEvidence");
 const sha="a".repeat(40),otherSha="b".repeat(40),repositoryId=1080201236,reviewerId=800;
 const token="isolated-test-token-"+("x".repeat(32));
-const scope={repositoryId,issueNumber:20,prNumber:21,headSha:sha};
+const scope={repositoryId,issueNumber:20,prNumber:21,headSha:sha,challenge:"c".repeat(64)};
 const keys=generateKeyPairSync("ed25519");
 const pem=keys.privateKey.export({type:"pkcs8",format:"pem"});
 const goodPr={number:21,state:"open",draft:false,user:{id:230486228},
@@ -50,13 +50,13 @@ test("full authenticated HTTP review signs only independently approved exact com
   assert.equal(response.status,200);
   const envelope=await response.json();
   assert.equal(paths.length,4,"fetch PR, reviews, then revalidate PR and reviews");
-  const review=verifySignedReview({envelope,publicKey:keys.publicKey,repositoryId,
-    prNumber:21,headSha:sha,reviewerId});
+  const review=verifySignedReview({envelope,publicKey:keys.publicKey,...scope,
+    headSha:sha,reviewerId});
   assert.equal(review.status,"passed");
-  assert.equal(verifySignedReview({envelope,publicKey:keys.publicKey,repositoryId,
-    prNumber:21,headSha:otherSha,reviewerId}),null);
+  assert.equal(verifySignedReview({envelope,publicKey:keys.publicKey,...scope,
+    headSha:otherSha,reviewerId}),null);
   assert.equal(verifySignedReview({envelope,publicKey:generateKeyPairSync("ed25519").publicKey,
-    repositoryId,prNumber:21,headSha:sha,reviewerId}),null);
+    ...scope,reviewerId}),null);
  });
 });
 test("stale head changed during review cannot sign",async()=>{
@@ -92,5 +92,17 @@ test("approval dismissed between evidence fetches fails closed",async()=>{
   const response=await callReviewer(server);
   assert.equal(response.status,409);
   assert.equal((await response.json()).error,"review_head_changed");
+ });
+});
+
+test("review rejects absent challenge and binds response to exact request",async()=>{
+ await withServer({},async({server,paths})=>{
+  assert.equal((await callReviewer(server,{...scope,challenge:undefined})).status,503);
+  assert.equal(paths.length,0);
+  const r=await callReviewer(server);assert.equal(r.status,200);
+  const envelope=await r.json();
+  for(const mismatch of [{challenge:"d".repeat(64)},{issueNumber:99}]){
+   assert.equal(verifySignedReview({envelope,publicKey:keys.publicKey,...scope,reviewerId,...mismatch}),null);
+  }
  });
 });
