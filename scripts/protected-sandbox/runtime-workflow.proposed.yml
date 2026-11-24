@@ -30,3 +30,21 @@ jobs:
           timeout 90s node -e 'const h=require("./scripts/protected-sandbox/fixtureHarness");const r=h.run(h.imagePin);if(!r.fixturePassed||r.executionAuthorized!==false||r.attestation!==false)process.exit(1);console.log(JSON.stringify(r))'
           timeout 90s node -e 'const assert=require("node:assert/strict");const h=require("./scripts/protected-sandbox/fixtureHarness");assert.throws(()=>h.runTimeoutFixture(),/^Error: Fixed timeout observed$/);assert.throws(()=>h.runFailedQueryFixture(),/^Error: Fixed query failure reconciled$/);console.log("Expected distinct fault denials and ID reconciliation observed")'
           echo 'Development fixture only; no execution authorization or attestation'
+      - name: Reconcile residual fixed fixtures on dedicated disposable runner
+        if: ${{ always() }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Dedicated fixture job only. No other workloads may share this daemon.
+          ids="$(timeout 10s /usr/bin/docker ps -aq --no-trunc --filter 'name=alphine-fixture-')"
+          if [[ -n "$ids" ]]; then
+            while IFS= read -r id; do
+              [[ "$id" =~ ^[a-f0-9]{64}$ ]]
+              name="$(timeout 10s /usr/bin/docker inspect --format '{{.Name}}' "$id")"
+              [[ "$name" =~ ^/alphine-fixture-[a-f0-9-]{36}$ ]]
+              timeout 10s /usr/bin/docker rm -f "$id"
+            done <<< "$ids"
+            echo 'Residual fixture detected; cleanup attempted; acceptance denied'
+            exit 1
+          fi
+          echo 'No residual fixed fixtures observed at final query'
