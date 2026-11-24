@@ -179,3 +179,13 @@ Trusted sandbox probe and Node CI passed at a776d4853c9d69a926aaff436868c2a605bc
 - An initial test iteration failed because the activation manifest correctly rejects a configured maxCalls below eight. The fixture was corrected to preserve the eight-call manifest floor and exercise exhaustion by consuming the available allowance. Exact-head CI #835 passed.
 - No production runtime code, database schema, credentials, or provider client was changed. This is disposable PostgreSQL acceptance only; no live provider calls, billing, production DB changes, merge, deployment, secret activation or additional spend.
 - Next: adversarial multi-scope isolation and operational stop/quarantine notification evidence, followed by independent security reviewer #22. Reviewer #22 remains HOLD; offline acceptance does not clear it or activate agents.
+
+
+## Cross-product durable queue isolation acceptance — 2026-11-24
+
+- Latest code/test head: `17c50069fd0a38667de2291b3e10ee6b1e637570`; exact-head CI #839 (`45336011070`) passed.
+- Standard Node suite: 171 total, 170 passed, 0 failed, 1 skipped. Disposable PostgreSQL queue integration: 1 passed, 0 failed. Trusted sandbox and planned-patch fixture passed.
+- Added PostgreSQL integration with two product identities sharing the same repository and commit SHA. A stop for Product A blocks Product A claims only; Product A's worker cannot claim Product B's task; Product B's worker can claim and complete its own task. Product A's queued task remains queued.
+- Provider budget cap tests now separately exhaust the supported eight-call cap and the 400-micro-USD spend cap after reconciling each completed attempt, avoiding false positives from the unresolved-attempt circuit breaker.
+- This confirms offline repository/product isolation in the durable queue and independent call/spend ceiling enforcement. It does not establish production multi-tenant authorization, live event ingestion, provider operation or deployment isolation; those require operational acceptance and independent review.
+- No live agents/providers, production database changes, merge, deployment, secrets or additional spend.
