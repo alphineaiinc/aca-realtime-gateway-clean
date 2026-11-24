@@ -299,3 +299,5 @@ The draft migration adds `engineering_team_publication_reconciliation`, keyed to
 - The collector supports a single-page bounded observation only; when 100 or more PR records are returned, it fails closed pending a complete pagination implementation. It never calls POST/PATCH/PUT/DELETE and cannot create, edit, merge, or retry a pull request.
 - Unit tests cover independent GET transports, changed/tampered observations, scope substitution, pagination uncertainty, non-200 responses and transport/token-provider separation.
 - Exact-head CI and PostgreSQL integration remain required. No migration has been applied; no production data, credentials, merge, deployment, signing or agent dispatch is authorized.
+
+- Reconciliation store construction pins `baseBranch` and `headBranch` explicitly; those values are passed into both collection and independent verification scope. Do not infer branch names from untrusted provider observations.
