@@ -513,6 +513,13 @@ test('isolated PostgreSQL queue: concurrent claims, retries, restart, expiry and
  const unknown=await outcomes[1].record({credential:'owner',binding:finalUnknownBinding});
  assert.deepEqual(unknown,{outcome:'unknown',executionAuthorized:false});
  assert.equal((await pools[0].query(stopQuery,stopArgs)).rowCount,1);
+ const providerStopAlerts=await pools[1].query("SELECT actor_id FROM engineering_team_governance_alerts WHERE product=$1 AND repository=$2 AND event_type='stop.created'",stopArgs);
+ assert.equal(providerStopAlerts.rowCount,2); // breach and unknown outcome, separated by disposable fixture reset
+ assert.ok(providerStopAlerts.rows.every(row=>row.actor_id==='owner'));
+ // Every role must observe the same durable emergency stop, including after restart.
+ const stopRoleIdentities=new Map(sequence.map(r=>[r,{...scope,id:'stop-'+r,role:r,permission:'queue.work'}]));
+ const stoppedQueue=createDurableQueue({pool:pools[1],scopes:[scope],authenticate:async c=>stopRoleIdentities.get(c)});
+ for(const r of sequence)await assert.rejects(stoppedQueue.claim({scope,role:r,credential:r}),/Governance denied/);
  // A stop and unknown provider outcome in one repository must not block another tenant scope.
  const isolatedScope={...scope,repository:'fixture/isolated'};
  const isolatedIdentities=new Map([
