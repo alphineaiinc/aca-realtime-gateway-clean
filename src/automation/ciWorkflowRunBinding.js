@@ -13,7 +13,8 @@ function bindChecksToWorkflowRuns({checks,workflowRuns,headSha,trustedWorkflowId
  for(const run of workflowRuns){
    if(run?.workflow_id!==trustedWorkflowId||run.head_sha!==headSha||
       !Number.isSafeInteger(run.id)||run.id<=0||
-      !Number.isSafeInteger(run.check_suite_id)||run.check_suite_id<=0||\n      !Number.isSafeInteger(run.run_attempt)||run.run_attempt<=0)continue;
+      !Number.isSafeInteger(run.check_suite_id)||run.check_suite_id<=0||
+      !Number.isSafeInteger(run.run_attempt)||run.run_attempt<=0)continue;
    if(suites.has(run.check_suite_id))return null;
    suites.set(run.check_suite_id,run);
  }
