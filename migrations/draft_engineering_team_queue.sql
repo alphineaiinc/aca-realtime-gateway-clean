@@ -91,3 +91,19 @@ CREATE TABLE engineering_team_spend_budgets (
  reserved_calls integer NOT NULL DEFAULT 0 CHECK(reserved_calls BETWEEN 0 AND max_calls),
  PRIMARY KEY(product,repository,budget_id)
 );
+
+-- Durable sequential handoff metadata. No source or proposal body retention.
+CREATE TABLE engineering_team_workflows (
+ id uuid PRIMARY KEY,
+ product text NOT NULL,
+ repository text NOT NULL,
+ head_sha text NOT NULL CHECK(head_sha ~ '^[a-f0-9]{40}$'),
+ next_step integer NOT NULL DEFAULT 0 CHECK(next_step BETWEEN 0 AND 8),
+ created_at timestamptz NOT NULL DEFAULT clock_timestamp()
+);
+CREATE TABLE engineering_team_handoffs (
+ workflow_id uuid NOT NULL REFERENCES engineering_team_workflows(id),
+ step integer NOT NULL CHECK(step BETWEEN 0 AND 7),
+ task_id uuid NOT NULL UNIQUE REFERENCES engineering_team_proposal_receipts(task_id),
+ PRIMARY KEY(workflow_id,step)
+);
