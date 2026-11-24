@@ -19,7 +19,7 @@ Original parent #4 defines four phases. #14/#16 Phase 1; #20/#23 supervision/cor
 | P1-01 | C | Dispatch feasibility and accepted manual fallback | #14/#15 | None | 0 | Document supported interfaces; no false dispatch claim |
 | P1-02 | C | Guarded eligibility, single lock, audit and issue event workflow | #15 merged d5bbdf5 | P1-01 | 0 | Policy and workflow tested |
 | P1-03 | C | Owner-approved merge and disposable smoke acceptance | #4, #18/#19 closed; #15 merged | P1-02 | 0 | Transitions, revocation, cancellation and cleanup demonstrated |
-| P1-04 | D | Stale active lock recovery | #15 exact head 424283714fab91996d02105a3b574055f77b3159; CI 44845417284 success; merged d5bbdf5304d5cd0f0fdd73e02a2c4991d609a8df; main source/test blobs identical | P1-03 | 1–2 | Existing implementation supersedes #17 code objective; independent review recovered; API-error regression PR #150 requires exact-head CI and review |
+| P1-04 | D | Stale active lock recovery | #15 exact head 424283714fab91996d02105a3b574055f77b3159; CI 44845417284 success; merged d5bbdf5304d5cd0f0fdd73e02a2c4991d609a8df; main source/test blobs identical | P1-03 | 1–2 | Existing implementation supersedes #17 code objective; independent review recovered; API-error regression PR #150 CI 45494930061 passed; review and authorized integration remain |
 | P2-01 | D | Pure supervision policy: exact-head CI/review, explicit states, fail closed | #20/#21 64aed92 CI 45473844726 | P1-03 | 1–2 | Independent review and authorized integration |
 | P2-02 | D | Read-only PR observer, reconciliation, idempotent provenance and least privilege | #20/#21 observer prior run 45473844701 | P2-01 | 2–4 | Live paginated reads, stale/lost events, SHA and effective permissions |
 | P2-03 | D | Bounded correction and offline simulation | #20/#23; prior offline foundation | P2-01 | 2–4 | Max two corrections, no dispatch, stale/ambiguous/replay/outage negatives; exact evidence and review |
@@ -99,3 +99,10 @@ P2-08/09/10 retain existing status pending per-alert disposition, actual integra
 
 ## B01 P1-04 focused regression checkpoint
 Draft PR #150, head acd60d56916df8ed061cf3b454839a7b6c3aa5fb, test-only change against main: injected 503 on live active-holder read and active inventory listing failure; assert existing lock preserved and no second lock or dispatch request. CI status at checkpoint: []. Empty run list means not yet observed. P1-04 remains D until exact-head CI/review and applicable authorized integration acceptance. No new permanent item; #17 source objective superseded. No merge, deploy or dispatch. CAD $0.
+
+## B01 coordinated security and queue checkpoint — 2026-11-24
+- P1-04: #150 exact head acd60d56916df8ed061cf3b454839a7b6c3aa5fb CI 45494930061 success. Existing recovery source and independent review preserved. Test-only review/integration remains, D.
+- P2-10: #123 commits df552a8d42415bbd1b29bde27b250ecf07dbe2a7 and bc7fd10c2aecbf928f5879b1b8af573292cedfa1 enforce certificate verification in public route pool, transactional signup, rollback/discard and release, no tenant email log, mocked negative and positive tests. CI 45495110527 in progress; legitimate login and real DB compatibility still require acceptance.
+- P2-08: existing #125 head 46b534a already includes shared PostgreSQL limiter, draft migration, route wiring, independent pool tests, IP ingress and bounded cleanup. Prior CI 45293298561 success. Do not rebuild. Effective proxy topology, grants, timeouts, cleanup scheduling, real staging and live alert disposition remain gates.
+- P2-09: historical 80-alert JSON exists in #125; candidate mappings are not confirmed dispositions. Live inventory/settings evidence P2-07 remains unavailable. No new source fix asserted for P2-09 beyond previously accepted corrective CI.
+- Counts unchanged: 6 C, 24 D, 4 O, 10 B, total 44. CAD $0. No merges, deployment, migrations, credential provisioning, signing or dispatch.
