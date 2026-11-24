@@ -23,7 +23,11 @@ test('runtime reservation requires pinned independent reviewer configuration',()
  assert.equal(initializeRuntime({...opts,readQueueState}).providerReservation,null);
  const {publicKey}=generateKeyPairSync('ed25519');
  const independentReview={publicKey,reviewerId:'reviewer',authorIds:['author'],isRevoked:async()=>false};
- const runtime=initializeRuntime({...opts,readQueueState,independentReview});
+ assert.equal(initializeRuntime({...opts,readQueueState,independentReview}).providerReservation,null);
+ const costConfig={maxInputTokens:1000,prices:{fixture:{input:50000,output:25000}}};
+ const runtime=initializeRuntime({...opts,readQueueState,independentReview,costConfig});
+ assert.equal(runtime.costEnvelope.ceilings.fixture,100);
+ assert.throws(()=>initializeRuntime({...opts,readQueueState,independentReview,costConfig,ceilings:{fixture:99}}),/Cost ceiling mismatch/);
  assert.equal(typeof runtime.providerReservation.reserve,'function');
  assert.equal(runtime.executionAllowed(),false);
  assert.throws(()=>initializeRuntime({...opts,readQueueState,independentReview:{...independentReview,authorIds:['reviewer']}}));
