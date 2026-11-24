@@ -2,25 +2,38 @@
 const {digest}=require('./patchPlanner');
 const {createActivationManifest}=require('./activationManifest');
 // Offline reservation only: no provider client, no execution grant.
-function createProviderReservation({pool,manifest,policy,authenticate,ceilings}={}){
+function createProviderReservation({pool,manifest,policy,authenticate,ceilings,reviewVerifier}={}){
  if(typeof pool?.connect!=='function'||typeof policy?.evaluate!=='function'||typeof authenticate!=='function'||!ceilings)throw Error('Invalid provider reservation');
  const pinned=createActivationManifest(manifest);
  if(pinned.evidenceSha256!==manifest.evidenceSha256||manifest.executionAuthorized!==false)throw Error('Manifest denied');
  const scope=pinned.scope,model=pinned.models.orchestrator,amount=ceilings[model];
  if(!Number.isSafeInteger(amount)||amount<1||amount>pinned.limits.maxSpendMicrousd)throw Error('Invalid provider ceiling');
- async function evidence(){
+ if(reviewVerifier!==undefined&&typeof reviewVerifier.verify!=='function')throw Error('Invalid review verifier');
+ async function evidence(reviewEnvelope){
   const p=await policy.evaluate();
   if(!p||p.eligibleForPreparation!==true||p.executionAuthorized!==false||p.manifestDigest!==pinned.evidenceSha256||p.issueNumber!==pinned.issue||p.scope?.product!==scope.product||p.scope?.repository!==scope.repository||p.scope?.sha!==scope.sha||p.decision!=='queued:none'||! /^[a-f0-9]{64}$/.test(p.evidenceSha256))throw Error('Policy denied');
-  return digest(JSON.stringify([pinned.evidenceSha256,p.evidenceSha256,'orchestrator',model,amount,'single-call-offline-reservation']));
+  let reviewDigest=null;
+  if(reviewVerifier!==undefined){
+   const review=await reviewVerifier.verify(reviewEnvelope);
+   if(!review||review.manifestDigest!==pinned.evidenceSha256||review.executionAuthorized!==false||! /^[a-f0-9]{64}$/.test(review.evidenceSha256)||!Number.isSafeInteger(review.expiresAt)||review.expiresAt<=Math.floor(Date.now()/1000))throw Error('Independent review denied');
+   reviewDigest=review.evidenceSha256;
+  }
+  return digest(JSON.stringify([pinned.evidenceSha256,p.evidenceSha256,'orchestrator',model,amount,'single-call-offline-reservation',reviewDigest]));
  }
- return Object.freeze({evidence,async reserve({credential,approvalId}={}){
+ return Object.freeze({evidence,async reserve({credential,approvalId,reviewEnvelope}={}){
   const actor=await authenticate(credential);
   if(!actor||actor.permission!=='queue.manage'||actor.role!==undefined||actor.product!==scope.product||actor.repository!==scope.repository||actor.sha!==scope.sha||typeof approvalId!=='string'||! /^[a-f0-9-]{36}$/.test(approvalId))throw Error('Reservation denied');
-  const binding=await evidence();
+  const binding=await evidence(reviewEnvelope);
   const client=await pool.connect();let discard=false;
   try{
    await client.query('BEGIN');
    await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))',[JSON.stringify([scope.product,scope.repository])]);
+   if(reviewVerifier!==undefined){
+    const fresh=await reviewVerifier.verify(reviewEnvelope);
+    if(!fresh||fresh.manifestDigest!==pinned.evidenceSha256||fresh.executionAuthorized!==false||!Number.isSafeInteger(fresh.expiresAt)||fresh.expiresAt<=Math.floor(Date.now()/1000))throw Error('Independent review denied');
+    // Rebind after lock acquisition to reject a changed review envelope.
+    if(await evidence(reviewEnvelope)!==binding)throw Error('Review binding changed');
+   }
    const result=await client.query(`INSERT INTO engineering_team_provider_attempts(binding,approval_id,product,repository,head_sha,budget_id,model,reserved_microusd)
  SELECT $1,a.id,a.product,a.repository,a.head_sha,$6,$7,$8 FROM engineering_team_approval_requests a
  WHERE a.id=$2 AND a.product=$3 AND a.repository=$4 AND a.head_sha=$5 AND a.operation='provider.activate' AND a.evidence_sha256=$1 AND a.state='approved' AND a.expires_at>clock_timestamp()
