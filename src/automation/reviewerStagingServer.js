@@ -119,8 +119,9 @@ function startServer(env=process.env,{githubTokenProvider=installationReadToken,
      const latestReviews=await github("/pulls/"+scope.prNumber+"/reviews?per_page=100");
      if(!matchingReview({pr:confirmed,reviews:latestReviews,scope,reviewerId}))
        return answer(409,{error:"review_head_changed"});
-     return answer(200,signVerdict(scope,reviewerId,
-       env.ACA_REVIEW_PRIVATE_KEY.replace(/\\n/g,String.fromCharCode(10))));
+     // GitHub approval is not substantive independent security evidence.
+     // Keep signing disabled until the independently controlled trust root is accepted.
+     return answer(409,{error:"substantive_independent_disposition_required"});
    }catch{return answer(503,{error:"review_evidence_unavailable"});}
    finally{activeRequests--;}
  });
