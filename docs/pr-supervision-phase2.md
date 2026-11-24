@@ -9,14 +9,17 @@ Inputs are a verified eligible issue, explicitly linked PR, same-head required C
 
 States: `unlinked` / `awaiting_manual_dispatch` (reserved for future issue-oriented orchestration), `awaiting_pr`, `ci_pending`, `ci_failed`, `review_pending`, `correction_needed`, `blocked`, `ready_for_human_approval`, and `closed`. Readiness is **not permission to merge**.
 
-## Next slices — unimplemented design
+## Historical next-slice design and remaining acceptance criteria
 - Observe `pull_request` (opened, reopened, synchronize, ready_for_review, closed), `pull_request_review` (submitted, dismissed), `check_run` (completed), `workflow_run` (completed) and optionally `issue_comment` only as a wake-up hint. Never treat user content as commands. GitHub filters may omit bot-triggered events.
 - Scheduled reconciliation and a restricted `workflow_dispatch` repair trigger must enumerate open monitored PRs. Re-fetch PR/issue association, SHA, current checks, trusted review and correction ledger live. Events are hints, not authoritative state. A replaced pending Actions run must not cause permanent stale status.
 - Use least-privilege `contents:read`, `pull-requests:read`, `checks:read`, `actions:read`, `issues:read` for the observation step; separate privileged audit-comment writer if reviewed and explicitly enabled. Never check out or run untrusted PR code in a privileged event. Avoid `pull_request_target` code execution.
 - Per-PR concurrency plus a periodic sweep; do not count on `cancel-in-progress:false` to retain pending events. Replay idempotently using marker scoped to repo, PR, head SHA, policy version, decision fingerprint and correction attempt. Revalidate head immediately before any write.
 - Corrections: at most **2** requests per logical issue/PR; do not reset budget after a head push/rebase, and halt after an unchanged failure. Suggestions only, unless a supported agent-dispatch interface is independently verified and explicitly authorized. No infinite loop. Agent assignment does not prove a running Codex task.
 - Escalate missing CI, stale review, transient GitHub API errors, an unverified Codex verdict, suspicious provenance, timeouts, or budget exhaustion to human owner rather than guessing.
-- Avoid overlaps with pending Phase 1 queue follow-up PR #17.
+- The original #17 recovery objective is superseded by merged #15; test-only #150 tracks API-error coverage.
 
 ## Validation and rollback
-Run `node --test test/pr-supervision-policy.test.js` and `node --check src/automation/prSupervisionPolicy.js`. Existing `ACA CI` should validate the complete PR against main. Revert the unmerged PR/branch to roll back Slice A. A future observer workflow must ship in disabled/dry-run mode until explicit acceptance and must remain separate from production ACA.
+Run `node --test test/pr-supervision-policy.test.js` and `node --check src/automation/prSupervisionPolicy.js`. Existing `ACA CI` should validate the complete PR against main. Revert the unmerged PR/branch to roll back Slice A. The observer must remain read-only and separate from production ACA.
+
+## Current source checkpoint — B01
+At source revision 64aed92779d5cedb75c2d967bdaef7d6b8af60fe, `.github/workflows/pr-supervision-events.yml` implements pull_request-only read-only observation, checks out trusted default-branch code with credentials not persisted, defers if observer absent, and blocks ambiguous closing-issue association. It does not implement periodic sweeping or the other event triggers proposed above. `level2CorrectionCoordinator.js` produces bounded human-actionable recommendations and explicitly denies dispatch, merge and deploy authorization. Existing CI 45473844726 passed at that source revision. Effective permissions, independent review, reconciliation coverage and authorized integration remain open. This documentation correction is not activation or acceptance.
