@@ -299,7 +299,12 @@ test('isolated PostgreSQL queue: concurrent claims, retries, restart, expiry and
  assert.equal(unknownResume.state,'needs-reconciliation');
  assert.equal(unknownResume.taskId,unknownTask);
  assert.equal((await fixtureQueue.inspectWorkflowStep({scope,workflowId:unknownWorkflow.id,workflowStep:0,credential:'manager'})).state,'running');
- const publicationDetails={evidenceSha256:'e'.repeat(64),baseBranch:'main',headBranch:'aca-agent-draft-'+'1'.repeat(16),headSha:'c'.repeat(40)};
+ function fixturePublicationRequest(scope,seed){
+  const payload={scope,operation:'github.write',mode:'draft-only',patchDigest:seed.repeat(64),testDigest:'1'.repeat(64),reviewDigest:'2'.repeat(64)};
+  return {...payload,evidenceSha256:digest(JSON.stringify(payload)),executionAuthorized:false,requiresIndependentAcceptance:true};
+ }
+ const publicationRequest=fixturePublicationRequest(scope,'e');
+ const publicationDetails={request:publicationRequest,evidenceSha256:publicationRequest.evidenceSha256,baseBranch:'main',headBranch:'aca-agent-draft-'+'1'.repeat(16),headSha:'c'.repeat(40)};
  const publicationBinding=computePublicationBinding({...publicationDetails,repository:scope.repository});
  const pub=await approval(pools[0]).request({scope,operation:'github.write',evidence:publicationBinding,credential:'manager'});
  const reserve=pool=>createPublicationReservation({pool,scope,authenticate:async c=>identities.get(c)});
@@ -741,8 +746,9 @@ test('isolated PostgreSQL queue: concurrent claims, retries, restart, expiry and
  const reconAuth=async credential=>credential==='publication-manager'?reconIdentity:credential==='independent-owner'?{...reconScope,id:'independent-owner',permission:'owner.approval'}:null;
  const reconApprovals=createDurableApprovalPolicy({pool:pools[0],scopes:[reconScope],authenticate:reconAuth});
  const reconReservations=createPublicationReservation({pool:pools[0],scope:reconScope,authenticate:reconAuth});
- async function reserveRecon(evidenceSha256){
-  const details={evidenceSha256,baseBranch:'main',headBranch:reconBranch,headSha:reconHead};
+ async function reserveRecon(seed){
+  const request=fixturePublicationRequest(reconScope,seed[0]);const evidenceSha256=request.evidenceSha256;
+  const details={request,evidenceSha256,baseBranch:'main',headBranch:reconBranch,headSha:reconHead};
   const binding=computePublicationBinding({...details,repository:reconScope.repository});
   const approval=await reconApprovals.request({scope:reconScope,operation:'github.write',evidence:binding,credential:'publication-manager'});
   assert.equal(new Set([approval.binding,binding,evidenceSha256]).size,3);
@@ -750,6 +756,9 @@ test('isolated PostgreSQL queue: concurrent claims, retries, restart, expiry and
   const input={credential:'publication-manager',approvalId:approval.id,binding,...details};
   await assert.rejects(reconReservations.reserve({...input,headSha:'d'.repeat(40)}),/Reservation denied/);
   await assert.rejects(reconReservations.reserve({...input,binding:approval.binding}),/Reservation denied/);
+  await assert.rejects(reconReservations.reserve({...input,request:undefined}),/Reservation denied/);
+  await assert.rejects(reconReservations.reserve({...input,request:{...request,reviewDigest:'f'.repeat(64)}}),/Reservation denied/);
+  await assert.rejects(reconReservations.reserve({...input,request:{...request,scope:{...reconScope,sha:reconHead}}}),/Reservation denied/);
   assert.equal((await reconReservations.reserve(input)).executionAuthorized,false);
   return binding;
  }
