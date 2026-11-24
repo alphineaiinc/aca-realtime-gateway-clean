@@ -526,6 +526,18 @@ test('isolated PostgreSQL queue: concurrent claims, retries, restart, expiry and
  const resumedLease=await recoveryQueue.claim({scope:recoveryScope,role:recoveryRole,credential:'recovery-worker',expectedTaskId:afterStopTask});
  assert.equal(resumedLease.id,afterStopTask);
  assert.equal(await recoveryQueue.finish({scope:recoveryScope,role:recoveryRole,credential:'recovery-worker',taskId:afterStopTask,leaseId:resumedLease.lease_id,outcome:'succeeded'}),'succeeded');
+ // Even an owner-approved stop clear cannot bypass an unresolved provider attempt.
+ const unresolvedBudgetId=randomUUID(),providerApprovalEvidence='8'.repeat(64),providerBinding='9'.repeat(64);
+ await pools[0].query('INSERT INTO engineering_team_spend_budgets(product,repository,budget_id,max_calls,max_microusd) VALUES ($1,$2,$3,1,10)',[recoveryScope.product,recoveryScope.repository,unresolvedBudgetId]);
+ const providerApprovalRequest=await recoveryApprovals.request({scope:recoveryScope,operation:'provider.activate',evidence:providerApprovalEvidence,credential:'recovery-manager'});
+ await recoveryApprovals.recordDecision({scope:recoveryScope,id:providerApprovalRequest.id,binding:providerApprovalRequest.binding,decision:'approved',credential:'recovery-owner'});
+ await pools[0].query('INSERT INTO engineering_team_provider_attempts(binding,approval_id,product,repository,head_sha,budget_id,model,reserved_microusd) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)',[providerBinding,providerApprovalRequest.id,recoveryScope.product,recoveryScope.repository,recoveryScope.sha,unresolvedBudgetId,'fixture',1]);
+ await recoveryQueue.stop({scope:recoveryScope,credential:'recovery-manager'});
+ const unresolvedStopEvidence=recoveryGate.evidence({action:'clear-stop'});
+ const unresolvedStopRequest=await recoveryApprovals.request({scope:recoveryScope,operation:'queue.recover',evidence:unresolvedStopEvidence,credential:'recovery-manager'});
+ await recoveryApprovals.recordDecision({scope:recoveryScope,id:unresolvedStopRequest.id,binding:unresolvedStopRequest.binding,decision:'approved',credential:'recovery-owner'});
+ await assert.rejects(recoveryGate.recover({credential:'recovery-manager',approvalId:unresolvedStopRequest.id,action:'clear-stop',evidenceSha256:unresolvedStopEvidence}),/unresolved provider attempt/);
+ assert.equal((await pools[1].query('SELECT count(*)::int AS n FROM engineering_team_stops WHERE product=$1 AND repository=$2',[recoveryScope.product,recoveryScope.repository])).rows[0].n,1);
  assert.equal((await pools[1].query('SELECT count(*)::int AS n FROM engineering_team_governance_recoveries WHERE product=$1 AND repository=$2',[recoveryScope.product,recoveryScope.repository])).rows[0].n,2);
  assert.equal(recoveryGate.executionAllowed(),false);
 });
