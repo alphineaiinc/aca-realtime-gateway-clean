@@ -917,7 +917,9 @@ const cors = require("cors");
 const bodyParser = require("body-parser");
 const app = express();
 // Temporary staging-only diagnostic: no header values returned to clients.
+console.log(JSON.stringify({event:"aca_sec09_diagnostic_start",serviceMatches:process.env.RENDER_SERVICE_ID==="srv-dc2ffvm8bjmc73fhn8j0"}));
 if(process.env.RENDER_SERVICE_ID==="srv-dc2ffvm8bjmc73fhn8j0"){
+ app.get("/__aca_sec09_ready",(req,res)=>res.status(200).type("text/plain").send("aca-sec09-probe-v3"));
  const makeProbeLimit=require("./src/security/ingressLimit").ingressLimit;
  const diagnosticLimit=makeProbeLimit({max:10});
  const probeBudgets={twilio:makeProbeLimit({max:5}),stripe:makeProbeLimit({max:5}),ordinary:makeProbeLimit({max:5})};
