@@ -94,6 +94,16 @@ test('isolated PostgreSQL queue: concurrent claims, retries, restart, expiry and
  const receipt=(await pools[1].query('SELECT lease_id,evidence_sha256 FROM engineering_team_proposal_receipts WHERE task_id=$1',[evidenceTask])).rows[0];
  assert.deepEqual(receipt,{lease_id:evidenceLease.lease_id,evidence_sha256:evidenceSha256});
  await assert.rejects(q.finish({scope,role,credential:'w1',taskId:evidenceTask,leaseId:evidenceLease.lease_id,outcome:'succeeded',evidenceSha256}),/Lease denied/);
+ const {createCorrectionAdmission}=require('../src/automation/engineeringTeam/correctionAdmission');
+ const correctionAdmission=(pool,credential='manager')=>createCorrectionAdmission({pool,scope,authenticate:async c=>identities.get(c),credential});
+ const correctionInput={taskId:evidenceTask,initialDigest:evidenceSha256};
+ assert.equal(await correctionAdmission(pools[0],'w1')(correctionInput),false);
+ assert.equal(await correctionAdmission(pools[0])({...correctionInput,initialDigest:'f'.repeat(64)}),false);
+ assert.equal(await correctionAdmission(pools[0])({...correctionInput,taskId:randomUUID()}),false);
+ const correctionResults=await Promise.all(pools.map(pool=>correctionAdmission(pool)(correctionInput)));
+ assert.equal(correctionResults.filter(Boolean).length,1);
+ assert.equal(await correctionAdmission(pools[1])(correctionInput),false);
+ assert.equal((await pools[0].query('SELECT initial_digest FROM engineering_team_correction_cycles WHERE task_id=$1',[evidenceTask])).rows[0].initial_digest,evidenceSha256);
  identities.set('owner',{...scope,id:'owner',permission:'owner.approval'});
  identities.set('self',{...scope,id:'manager',permission:'owner.approval'});
  const approval=pool=>createDurableApprovalPolicy({pool,scopes:[scope],authenticate:async c=>identities.get(c)});
