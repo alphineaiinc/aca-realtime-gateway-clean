@@ -5,6 +5,7 @@ const {createDurableQueue}=require('./durableQueue');
 const {createDurableApprovalPolicy}=require('./durableApproval');
 const {createSpendBudget}=require('./spendBudget');
 const {createQueuePolicyBridge}=require('./queuePolicyBridge');
+const {createProviderOutcome}=require('./providerOutcome');
 const {createProviderReservation}=require('./providerReservation');
 const {createActivationReviewVerifier}=require('./activationReviewVerifier');
 const {prepareRequestEnvelope}=require('./requestEnvelope');
@@ -28,6 +29,7 @@ function initializeRuntime({config,pool,identity,ceilings,readQueueState,indepen
  const reviewVerifier=independentReview===undefined?undefined:createActivationReviewVerifier({...independentReview,manifest});
  // Unreviewed initialization remains inert; runtime cannot expose an unreviewed reservation.
  const providerReservation=policy===null||reviewVerifier===undefined||costEnvelope===null?null:createProviderReservation({pool,manifest,policy,authenticate,ceilings,reviewVerifier,costEvidenceSha256:costEnvelope.evidenceSha256,prepareRequest:request=>prepareRequestEnvelope({manifest,costEnvelope,request})});
- return Object.freeze({manifest,costEnvelope,queue,approvals,budget,workflow,policy,providerReservation,authenticate,status:'initialized-inert',executionAllowed:()=>false});
+ const providerOutcome=providerReservation===null?null:createProviderOutcome({pool,scope:manifest.scope,authenticate});
+ return Object.freeze({providerOutcome,manifest,costEnvelope,queue,approvals,budget,workflow,policy,providerReservation,authenticate,status:'initialized-inert',executionAllowed:()=>false});
 }
 module.exports={initializeRuntime};
