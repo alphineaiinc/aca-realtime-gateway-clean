@@ -84,3 +84,9 @@ Current security draft CI inventory (only PR-triggered first page; CI is not ale
 - #124: ACA CI 45294328363 completed/success.
 - #125: ACA CI 45293298561 completed/success.
 P2-08/09/10 retain existing status pending per-alert disposition, actual integration and independent review. P2-07 remains blocked on live alert/settings evidence. No repeated checks for already accepted #21/#142/#146. No new scope or restricted operations; CAD $0.
+
+## B01 correction and daily procedure checkpoint — 2026-11-24
+- P2-04: SDP-001 v1.1 committed at 7c897b23347df49afac051230b987c6f0a1f8665, adds mandatory Goodnight daily reporting, permanent ID discipline and fixed scope. Draft adoption gate remains open.
+- P2-09: CI 45269017617 job 138023618957 failed syntax check in test/browser-session-entropy.test.js due to overescaped regular expressions; tests were skipped. Corrected test regex literals on #123 at 7421a9c6825a4cee598651768a62e717ec620f8c. New CI: []. No claim of alert clearance or acceptance until evidence passes.
+- P1-04: issue #16 comments retrieval returned empty; independent review disposition remains unverified; prior merged recovery evidence preserved. No duplicate queue code or PR #17 merge. Remaining acceptance criteria unchanged.
+- Fixed totals: 6 C, 23 D, 5 O, 10 B; 44 total. CAD $0; no restricted operations.
