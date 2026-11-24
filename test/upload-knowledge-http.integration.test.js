@@ -15,6 +15,7 @@ test('real multipart and PDF parser enforce authentication and tenant-scoped ing
   const embeddings = [];
   const context = {
     require(name) {
+      if (name === '../security/ingressLimit') return require('../src/security/ingressLimit');
       if (name === '../db/pool') return { query: async (...args) => { if(args[0].includes('aca_business_identities')) return {rows:args[1][0]==='fixture@example.test'&&args[1][1]===42?[{tenant_id:42}]:[]}; writes.push(args); } };
       if (name === '../brain/utils/embeddingManager') return { embedText: async text => { embeddings.push(text); return [0.1, 0.2]; } };
       return require(name);

@@ -18,6 +18,7 @@ function harness({ tenantId = 42, active = true, purpose = 'verified_business', 
   if (uploadError === 'LIMIT_FILE_SIZE') uploadError = new multer.MulterError('LIMIT_FILE_SIZE');
   const router = { post(name, ...handlers) { route = { name, handlers }; } };
   const mocks = {
+    '../security/ingressLimit': require('../src/security/ingressLimit'),
     express: { Router: () => router }, multer,
     jsonwebtoken: { verify: (token) => { if (token !== 'valid') throw new Error('Invalid test token'); return { tenant_id: tenantId, purpose, sub: 'fixture@example.test' }; } },
     'pdf-parse': { PDFParse },
