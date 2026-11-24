@@ -87,3 +87,20 @@ test('billing pre-authentication IP budget is shared, bounded, and fail-closed',
   });
   assert.equal(await invoke(unavailable, '198.51.100.44'), 503);
 });
+
+test('billing routes apply distributed IP limiting before authentication and tenant limiting', () => {
+  const fs = require('node:fs');
+  const source = fs.readFileSync(require.resolve('../src/routes/billing.js'), 'utf8');
+  assert.match(source, /const billingIpRateLimit\s*=\s*require\(['"]\.\.\/middleware\/postgresRateLimit['"]\)\.createPostgresRateLimiter\(/);
+  assert.match(source, /scope:\s*['"]billing-ip['"]/);
+  assert.match(source, /windowMs:\s*60000/);
+  assert.match(source, /max:\s*60/);
+  assert.match(source, /ipBased:\s*true/);
+  assert.doesNotMatch(source, /ingressRateLimit/);
+  const routes = source.split('\n').filter(line => /router\.(get|post|put|patch|delete)\(/.test(line));
+  assert.ok(routes.length > 0);
+  for (const route of routes) {
+    assert.match(route, /billingIpRateLimit,\s*authenticate,\s*rateLimit/,
+      'each billing route must apply shared IP limit before auth and tenant limit');
+  }
+});
