@@ -11,9 +11,12 @@ function run(image){
  const name='alphine-fixture-'+randomUUID();
  const args=plan(image); args.splice(1,0,'--name',name);
  const options={encoding:'utf8',timeout:15000,maxBuffer:8192,env:{PATH:'/usr/bin:/bin',HOME:'/nonexistent',DOCKER_HOST:'unix:///var/run/docker.sock'}};
- const absent=()=>{const check=spawnSync('/usr/bin/docker',['ps','-aq','--filter','name=^/'+name+'
+ const absent=()=>{
+  const check=spawnSync('/usr/bin/docker',['ps','-aq','--filter','name=^/'+name+'$'],{...options,timeout:5000});
+  return !check.error&&!check.signal&&check.status===0&&check.stdout===''&&check.stderr==='';
+ };
+ const result=spawnSync('/usr/bin/docker',args,options);
  if(result.error||result.signal||result.status!==0||result.stdout!=='fixture-ok'||result.stderr!==''){
-  // Best-effort cleanup; a failed or timed-out run never yields acceptance.
   spawnSync('/usr/bin/docker',['rm','-f',name],{...options,timeout:5000});
   if(!absent())throw Error('Fixture outcome denied; reconcile container state');
   throw Error('Fixture outcome denied; container absent');
@@ -22,16 +25,6 @@ function run(image){
   spawnSync('/usr/bin/docker',['rm','-f',name],{...options,timeout:5000});
   if(!absent())throw Error('Fixture outcome denied; reconcile container state');
   throw Error('Fixture outcome denied; unexpected residual container removed');
- }
- return Object.freeze({fixturePassed:true,probeSha256:createHash('sha256').update(probe).digest('hex'),image,executionAuthorized:false,attestation:false});
-}
-module.exports={plan,run};
-],{...options,timeout:5000});return !check.error&&!check.signal&&check.status===0&&check.stdout===''&&check.stderr==='';};
- const result=spawnSync('/usr/bin/docker',args,options);
- if(result.error||result.signal||result.status!==0||result.stdout!=='fixture-ok'||result.stderr!==''){
-  // Best-effort cleanup; a failed or timed-out run never yields acceptance.
-  spawnSync('/usr/bin/docker',['rm','-f',name],{...options,timeout:5000});
-  throw Error('Fixture outcome denied; reconcile container state');
  }
  return Object.freeze({fixturePassed:true,probeSha256:createHash('sha256').update(probe).digest('hex'),image,executionAuthorized:false,attestation:false});
 }
