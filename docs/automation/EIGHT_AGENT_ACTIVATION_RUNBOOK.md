@@ -39,3 +39,9 @@ Trusted sandbox probe and Node CI passed at a776d4853c9d69a926aaff436868c2a605bc
 - Governance follow-up 0b1598b61a17cfe6998b9ef0b3b7ee8266a777ba: mandatory pre-bound workflow tasks, unique steps, exact claims, transactional handoffs and quarantine denial. Observed CI at documentation time: [{"id":45313627819,"status":"completed","conclusion":"success"}].
 - Remaining blockers: actual Phase 2 policy integration and durable dispatch admission; trusted runner for generated code (pinned image and isolation acceptance); independently authenticated review and separate single-use branch/PR admissions with restart reconciliation; actual cost-envelope verification; live artifact classification and retention; durable workflow input and recovery; isolated service/DB role configuration and identity issuance/revocation. GitHub does not provide atomic compare-and-set on PR creation; stale base detection is not an atomic guarantee.
 - Do not treat fixture adapters, injected callbacks, approval records or green CI as live authorization. First live test must be bounded read-only, separately approved, with verified budget and no publication. Item 14 remains paused/open; no release clearance.
+
+## Independent review reservation checkpoint
+- CI 45314886838 passed at 2cfd43dab7b16b4d7d3ab94117b0699d249d923c.
+- Runtime initialization now requires pinned independent reviewer configuration before exposing provider reservation (6691de9); regression tests added (0453609).
+- Disposable PostgreSQL review-bound approval, signature, expiry, revocation, substitution, concurrent reservation and budget rollback tests committed at bfbaf13; exact-head CI acceptance pending.
+- Standalone offline reservation remains a fixture capability; actual live admission and side-effect enforcement remain outstanding. No live execution authorized. Item 14 remains open.
