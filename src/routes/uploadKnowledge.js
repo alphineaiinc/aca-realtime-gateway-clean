@@ -128,29 +128,26 @@ router.post("/tenant/upload-knowledge", authenticate, uploadRateLimit, reserveUp
 
     // 2️⃣ Chunk + embed
     const chunks = chunkText(text);
-    let inserted = 0;
-
-    for (let i = 0; i < chunks.length; i++) {
+    const vectors = [];
+    for (const content of chunks) {
       if (res.destroyed) return;
-      const content = chunks[i];
-
-      // Get embedding array
       const embedding = await embedText(content);
-      // An in-flight provider request cannot be undone; stop subsequent work.
       if (res.destroyed) return;
-
-      // ✅ Convert embedding array → valid pgvector literal
-      const vectorLiteral = "[" + embedding.join(",") + "]";
-
-      await pool.query(
-        `INSERT INTO kb_entries (business_id, content, embedding, source_filename, chunk_index, created_at)
-         VALUES ($1, $2, $3::vector, $4, $5, NOW())`,
-        [tenantId, content, vectorLiteral, originalName, i]
-      );
-
-      inserted++;
+      if (!Array.isArray(embedding) || !embedding.length || !embedding.every(Number.isFinite)) {
+        throw new Error("Invalid embedding");
+      }
+      vectors.push("[" + embedding.join(",") + "]");
     }
 
+    // One atomic SQL statement: no partial knowledge on embedding or insert failure.
+    if (res.destroyed) return;
+    await pool.query(
+      `INSERT INTO kb_entries (business_id, content, embedding, source_filename, chunk_index, created_at)
+       SELECT $1, item.content, item.vector::vector, $4, (item.ordinality - 1)::integer, NOW()
+       FROM unnest($2::text[], $3::text[]) WITH ORDINALITY AS item(content, vector, ordinality)`,
+      [tenantId, chunks, vectors, originalName]
+    );
+    const inserted = chunks.length;
     if (res.destroyed) return;
     return res.json({
       ok: true,
