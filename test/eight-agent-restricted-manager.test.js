@@ -56,3 +56,24 @@ test('metadata-only GitHub transport omits issue body and uses GET with redirect
  assert.equal(requests[0].url,'https://api.github.com/repos/fixture/aca/issues/118');
  assert.equal(requests[0].options.method,'GET');assert.equal(requests[0].options.redirect,'error');
 });
+
+test('restricted runtime composes only scoped GET and bounded SELECT observation',async()=>{
+ const {createRestrictedManagerRuntime}=require('../src/automation/engineeringTeam/restrictedManagerRuntime');
+ const calls=[];
+ const runtime=createRestrictedManagerRuntime({scope,issue,githubToken:'fixture-token',
+  fetchImpl:async(url,options)=>{
+   calls.push({url,method:options.method});
+   return new Response(JSON.stringify(url.includes('/issues/')?{number:issue,state:'open',labels:[]}:{total_count:1,workflow_runs:[{id:1,name:'CI',status:'completed',conclusion:'success',head_sha:scope.sha}]}));
+  },readOnlyPool:{query:async(sql,args)=>{calls.push({sql,args});return {rows:[{pending:101}]};}}});
+ assert.deepEqual(Object.keys(runtime),['observe']);
+ assert.equal(calls.length,0);
+ const report=await runtime.observe();
+ denied(report);
+ assert.equal(report.status,'observed');
+ assert.deepEqual(report.governance,{status:'observed',pending:100,partial:true});
+ assert.equal(calls.length,3);
+ assert.ok(calls.slice(0,2).every(c=>c.method==='GET'));
+ assert.ok(calls[2].sql.startsWith('SELECT'));
+ assert.deepEqual(calls[2].args,[scope.product,scope.repository]);
+ assert.match(calls[2].sql,/LIMIT 101/);
+});
