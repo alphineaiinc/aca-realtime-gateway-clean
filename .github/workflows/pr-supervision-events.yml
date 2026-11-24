@@ -2,6 +2,11 @@ name: ACA PR Supervision Event Observer
 on:
   pull_request:
     types: [opened, reopened, synchronize, ready_for_review, converted_to_draft, closed]
+  pull_request_review:
+    types: [submitted, dismissed]
+  schedule:
+    - cron: '17 * * * *'
+  workflow_dispatch:
 permissions:
   contents: read
   pull-requests: read
@@ -9,7 +14,6 @@ permissions:
   checks: read
 jobs:
   observe:
-    if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -25,35 +29,14 @@ jobs:
         with:
           script: |
             const fs = require('node:fs');
-            const observerPath = './.github/scripts/pr-supervision-observer.js';
+            const observerPath = './.github/scripts/pr-supervision-reconcile.js';
             if (!fs.existsSync(observerPath)) {
               core.notice('Trusted default branch has no supervisor yet; observation deferred until approved merge.');
               return;
             }
-            const {observe} = require(observerPath);
-            const prNumber = Number(process.env.ACA_PR_NUMBER);
-            if (!Number.isSafeInteger(prNumber) || prNumber < 1) throw new Error('invalid_pr_number');
-            const owner = context.repo.owner, repo = context.repo.repo;
-            const result = await github.graphql(`query($owner:String!,$repo:String!,$pr:Int!) {
-              repository(owner:$owner,name:$repo) {
-                pullRequest(number:$pr) {
-                  closingIssuesReferences(first:2) {
-                    pageInfo { hasNextPage }
-                    nodes { number repository { databaseId } }
-                  }
-                }
-              }
-            }`, {owner,repo,pr:prNumber});
-            const refs = result?.repository?.pullRequest?.closingIssuesReferences;
-            const ids = refs?.nodes || [];
-            if (refs?.pageInfo?.hasNextPage || ids.length !== 1) {
-              core.info('No unambiguous issue association; observation blocked.');
-              return;
-            }
-            const issueNumber = ids[0]?.number;
-            if (!Number.isSafeInteger(issueNumber) || issueNumber < 1) {
-              core.info('No valid issue number; observation blocked.');
-              return;
-            }
-            const decision = await observe({github,owner,repo,prNumber,issueNumber});
-            core.info(JSON.stringify(decision));
+            const {reconcile} = require(observerPath);
+            const targeted = ['pull_request','pull_request_review'].includes(context.eventName);
+            const prNumber = targeted ? Number(process.env.ACA_PR_NUMBER) : null;
+            if (targeted && (!Number.isSafeInteger(prNumber) || prNumber < 1)) throw new Error('invalid_pr_number');
+            const decisions = await reconcile({github,owner:context.repo.owner,repo:context.repo.repo,prNumber});
+            for (const decision of decisions) core.info(JSON.stringify(decision));
