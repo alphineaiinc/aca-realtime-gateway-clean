@@ -8,8 +8,9 @@ function createReconciliationStore({pool,authenticate,collect,verifyObservation,
  if(typeof pool?.connect!=='function'||typeof authenticate!=='function'||typeof collect!=='function'||typeof verifyObservation!=='function'||typeof baseBranch!=='string'||!baseBranch||typeof headBranch!=='string'||!headBranch)throw Error('Invalid reconciliation store');
  return Object.freeze({async record({credential,binding}={}){
   if(typeof binding!=='string'||!/^[a-f0-9]{64}$/.test(binding))throw Error('Invalid binding');
-  const actor=await authenticate(credential);
-  if(!actor||actor.permission!=='queue.manage'||actor.role!==undefined||typeof actor.id!=='string')throw Error('Reconciliation denied');
+  const identity=await authenticate(credential);
+  if(!identity||identity.permission!=='queue.manage'||identity.role!==undefined||typeof identity.id!=='string'||!/^[A-Za-z0-9_.-]{1,80}$/.test(identity.id)||typeof identity.product!=='string'||!identity.product||typeof identity.repository!=='string'||!identity.repository||typeof identity.sha!=='string'||!/^[a-f0-9]{40}$/.test(identity.sha))throw Error('Reconciliation denied');
+  const actor=Object.freeze({id:identity.id,product:identity.product,repository:identity.repository,sha:identity.sha});
   const client=await pool.connect();let discard=false;
   try{
    await client.query('BEGIN');
@@ -32,7 +33,7 @@ function createReconciliationStore({pool,authenticate,collect,verifyObservation,
    const requestScope=Object.freeze({binding,product:scope.product,repository:scope.repository,baseSha:scope.base_sha,headSha:scope.head_sha,baseBranch,headBranch,requesterId:scope.requested_by,approvalId:scope.approval_id});
    const observation=await collect(requestScope);
    if(!observation||await verifyObservation(observation,requestScope)!==true)throw Error('Independent observation authentication failed');
-   if(observation.repository!==scope.repository||observation.baseSha!==scope.base_sha||observation.headSha!==scope.head_sha||observation.binding!==binding||observation.requesterId!==scope.requested_by)throw Error('Independent observation scope mismatch');
+   if(observation.repository!==scope.repository||observation.baseSha!==scope.base_sha||observation.headSha!==scope.head_sha||observation.binding!==binding||observation.requesterId!==scope.requested_by||observation.baseBranch!==baseBranch||observation.headBranch!==headBranch)throw Error('Independent observation scope mismatch');
    const result=reconcilePublication({...observation,binding,repository:scope.repository,baseSha:scope.base_sha,headSha:scope.head_sha});
    const observationSha256=digest({requestScope,observation});
    await client.query(`INSERT INTO engineering_team_publication_reconciliation
