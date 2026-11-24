@@ -45,3 +45,30 @@ test('output usage breach prevents further provider calls',async()=>{
  await assert.rejects(t.generate(request),/budget/);
  assert.equal(calls,1);
 });
+
+test('ambiguous provider outcomes halt the instance and preserve actual attempt accounting',async()=>{
+ for(const outcome of ['throw','missing-usage','incomplete','over-budget']){
+  let attempts=0,reservations=0;
+  const t=createOpenAITransport({models,maxOutputTokens:256,authorize:async()=>true,budget:{reserve:async()=>{reservations++;return true;}},client:{responses:{create:async()=>{
+   attempts++;
+   if(outcome==='throw')throw Error('private fixture');
+   if(outcome==='missing-usage')return {status:'completed',output_text:'{}'};
+   return {status:outcome==='incomplete'?'incomplete':'completed',usage:{input_tokens:1,output_tokens:outcome==='over-budget'?257:1},output_text:'{}'};
+  }}}});
+  const request={role:'devops',mode:'proposal-only',input:'{}',instructions:'fixture'};
+  await assert.rejects(t.generate(request),/Provider request failed/);
+  await assert.rejects(t.generate(request),/budget/);
+  assert.equal(attempts,1);
+  assert.equal(reservations,1);
+  assert.equal(t.usage().calls,1);
+ }
+});
+test('ambiguous durable reservation never reaches provider or retries',async()=>{
+ let reservations=0;
+ const t=createOpenAITransport({models,authorize:async()=>true,budget:{reserve:async()=>{reservations++;throw Error('unknown commit outcome');}},client:{responses:{create:async()=>assert.fail('provider called')}}});
+ const request={role:'devops',mode:'proposal-only',input:'{}',instructions:'fixture'};
+ await assert.rejects(t.generate(request),/Provider request failed/);
+ await assert.rejects(t.generate(request),/budget/);
+ assert.equal(reservations,1);
+ assert.equal(t.usage().calls,0);
+});
