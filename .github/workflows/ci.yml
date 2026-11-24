@@ -67,6 +67,10 @@ jobs:
           node -e "const {Client}=require('pg');(async()=>{const c=new Client({connectionString:'postgres://onboarding_test:onboarding_test_only@127.0.0.1:5432/onboarding_test'});await c.connect();try{await c.query('CREATE DATABASE aca_rate_limit_ci')}finally{await c.end()}})().catch(e=>{console.error(e.message);process.exitCode=1})"
           node -e "const {Client}=require('pg');(async()=>{const c=new Client({connectionString:process.env.RATE_LIMIT_CI_DATABASE_URL});await c.connect();try{await c.query(require('fs').readFileSync('migrations/draft_aca_rate_limit_buckets.sql','utf8'))}finally{await c.end()}})().catch(e=>{console.error(e.message);process.exitCode=1})"
           node --test test/postgres-rate-limit.integration.test.js
+      - name: Isolated commercial billing acceptance
+        run: |
+          node -e "const {Client}=require('pg');(async()=>{const c=new Client({connectionString:'postgres://onboarding_test:onboarding_test_only@127.0.0.1:5432/onboarding_test'});await c.connect();try{await c.query('CREATE DATABASE aca_commercial_ci')}finally{await c.end()}})().catch(e=>{console.error(e.message);process.exitCode=1})"
+          node --test integration/aca-commercial-postgres.test.js
   hosted-staging:
     name: Hosted ACA staging acceptance
     if: github.event_name == 'pull_request' && github.head_ref == 'aca-l1-integrated-routing-onboarding' && github.event.pull_request.head.repo.full_name == github.repository
