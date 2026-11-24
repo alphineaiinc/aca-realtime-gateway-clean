@@ -59,3 +59,10 @@ test('query fixture cannot mask removal failure or residual state',()=>{
  const {api}=harness(s);assert.throws(()=>api.runFailedQueryFixture(),removal?/Removal unresolved/:/Cleanup unresolved/);
  }
 });
+
+test('secondary cleanup never upgrades residual state to acceptance',()=>{
+ const s=sequence();s[5]=good(id);s.push(good(id),good(''));
+ const {api,calls}=harness(s);assert.throws(()=>api.run(api.imagePin),/Cleanup unresolved/);
+ assert.equal(calls.length,8);assert.equal(calls[6].args.join(' '),'rm -f '+id);
+ assert.equal(calls[7].args.join(' '),'ps -aq --no-trunc --filter id='+id);
+});
