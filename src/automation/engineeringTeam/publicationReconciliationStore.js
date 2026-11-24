@@ -1,6 +1,7 @@
 'use strict';
 const {createHash}=require('node:crypto');
 const {reconcilePublication}=require('./publicationReconciliation');
+const {publicationBinding}=require('./publicationReservation');
 function digest(value){return createHash('sha256').update(JSON.stringify(value)).digest('hex');}
 // Offline only. Collector must authenticate GitHub observations independently.
 // A stored observation never releases a reservation or authorizes a retry/write.
@@ -14,15 +15,16 @@ function createReconciliationStore({pool,authenticate,collect,verifyObservation,
   const client=await pool.connect();let discard=false;
   try{
    await client.query('BEGIN');
-   const reservation=await client.query(`SELECT p.binding,p.approval_id,p.product,p.repository,p.base_sha,p.reserved_by,a.requested_by,a.head_sha
+   const reservation=await client.query(`SELECT p.binding,p.approval_id,p.product,p.repository,p.base_sha,p.reserved_by,a.requested_by,p.head_sha,p.base_branch,p.head_branch,p.request_evidence_sha256,a.binding AS approval_binding
     FROM engineering_team_publication_attempts p
     JOIN engineering_team_approval_requests a ON a.id=p.approval_id
     WHERE p.binding=$1 AND p.product=$2 AND p.repository=$3 AND p.reserved_by=$4
       AND a.requested_by=p.reserved_by AND a.product=p.product AND a.repository=p.repository
-      AND a.operation='github.write' AND a.state='approved' AND a.binding=p.binding AND a.evidence_sha256=p.binding AND a.expires_at>clock_timestamp() AND a.decided_by<>a.requested_by
+      AND a.operation='github.write' AND a.state='approved' AND a.head_sha=p.base_sha AND a.evidence_sha256=p.binding AND a.expires_at>clock_timestamp() AND a.decided_by<>a.requested_by
     FOR UPDATE OF p`,[binding,actor.product,actor.repository,actor.id]);
    if(reservation.rowCount!==1)throw Error('Reconciliation denied');
    const scope=reservation.rows[0];
+   if(scope.base_sha!==actor.sha||scope.base_branch!==baseBranch||scope.head_branch!==headBranch||publicationBinding({evidenceSha256:scope.request_evidence_sha256,repository:scope.repository,baseBranch:scope.base_branch,headBranch:scope.head_branch,headSha:scope.head_sha})!==binding||scope.approval_binding!==digest([scope.approval_id,scope.product,scope.repository,scope.base_sha,'github.write',binding]))throw Error('Reconciliation denied');
    const fresh=await authenticate(credential);
    if(!fresh||fresh.id!==actor.id||fresh.permission!=='queue.manage'||fresh.role!==undefined||fresh.product!==scope.product||fresh.repository!==scope.repository||fresh.sha!==scope.base_sha)throw Error('Reconciliation denied');
    const prior=await client.query('SELECT state,pr_number FROM engineering_team_publication_reconciliation WHERE binding=$1',[binding]);
