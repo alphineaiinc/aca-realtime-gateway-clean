@@ -1,5 +1,6 @@
 'use strict';
 const {createHash}=require('node:crypto');
+const {validatePublicationRequest}=require('./publicationRequest');
 function publicationBinding({evidenceSha256,repository,baseBranch,headBranch,headSha}={}){
  if(typeof evidenceSha256!=='string'||!/^[a-f0-9]{64}$/.test(evidenceSha256)||typeof repository!=='string'||! /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(repository)||typeof baseBranch!=='string'||!/^[A-Za-z0-9_-]+$/.test(baseBranch)||typeof headBranch!=='string'||!/^aca-agent-draft-[a-f0-9]{16}$/.test(headBranch)||headBranch===baseBranch||typeof headSha!=='string'||!/^[a-f0-9]{40}$/.test(headSha))throw Error('Invalid publication binding');
  return createHash('sha256').update(JSON.stringify([evidenceSha256,repository,baseBranch,headBranch,headSha])).digest('hex');
@@ -10,8 +11,8 @@ function publicationBinding({evidenceSha256,repository,baseBranch,headBranch,hea
 function createPublicationReservation({pool,scope,authenticate}={}){
  if(!pool||typeof pool.connect!=='function'||typeof authenticate!=='function'||!scope||typeof scope.product!=='string'||typeof scope.repository!=='string'||! /^[a-f0-9]{40}$/.test(scope.sha))throw Error('Invalid publication reservation');
  const pinned=Object.freeze({product:scope.product,repository:scope.repository,sha:scope.sha});
- return Object.freeze({async reserve({credential,approvalId,binding,evidenceSha256,baseBranch,headBranch,headSha}={}){
-  try{if(publicationBinding({evidenceSha256,repository:pinned.repository,baseBranch,headBranch,headSha})!==binding)throw Error('Mismatch');}catch{throw Error('Reservation denied');}
+ return Object.freeze({async reserve({credential,approvalId,binding,evidenceSha256,baseBranch,headBranch,headSha,request}={}){
+  try{if(validatePublicationRequest(request,pinned).evidenceSha256!==evidenceSha256)throw Error('Mismatch');if(publicationBinding({evidenceSha256,repository:pinned.repository,baseBranch,headBranch,headSha})!==binding)throw Error('Mismatch');}catch{throw Error('Reservation denied');}
   const actor=await authenticate(credential);
   if(!actor||actor.permission!=='queue.manage'||actor.role!==undefined||actor.product!==pinned.product||actor.repository!==pinned.repository||actor.sha!==pinned.sha||typeof actor.id!=='string'||!/^[A-Za-z0-9_.-]{1,80}$/.test(actor.id)||typeof approvalId!=='string'||! /^[a-f0-9-]{36}$/.test(approvalId)||typeof binding!=='string'||! /^[a-f0-9]{64}$/.test(binding))throw Error('Reservation denied');
   const actorId=actor.id;
