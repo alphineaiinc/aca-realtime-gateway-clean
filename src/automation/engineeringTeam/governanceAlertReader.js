@@ -1,5 +1,5 @@
 'use strict';
-const validScope=s=>s&&typeof s.product==='string'&&/^[A-Za-z0-9][A-Za-z0-9_.-]{0,79}$/.test(s.product)&&typeof s.repository==='string'&&/^[A-Za-z0-9_.-]+\\/[A-Za-z0-9_.-]+$/.test(s.repository)&&s.repository.length<=200&&typeof s.sha==='string'&&/^[a-f0-9]{40}$/.test(s.sha);
+const validScope=s=>s&&typeof s.product==='string'&&/^[A-Za-z0-9][A-Za-z0-9_.-]{0,79}$/.test(s.product)&&typeof s.repository==='string'&&s.repository.length<=200&&s.repository.split('/').length===2&&s.repository.split('/').every(part=>/^[A-Za-z0-9_.-]+$/.test(part))&&typeof s.sha==='string'&&/^[a-f0-9]{40}$/.test(s.sha);
 function createGovernanceAlertReader({pool,scope,authenticate}={}){
  if(typeof pool?.query!=='function'||typeof authenticate!=='function'||!validScope(scope))throw Error('Invalid governance alert reader');
  const pinned=Object.freeze({product:scope.product,repository:scope.repository,sha:scope.sha});
