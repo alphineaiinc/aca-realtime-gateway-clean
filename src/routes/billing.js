@@ -11,25 +11,7 @@ const ingressRateLimit=require("../security/ingressLimit").ingressLimit({max:60}
 // ---------------------------------------------------------------------
 // Simple in-memory rate limiter per partner for /pay (3 reqs / 10s)
 // ---------------------------------------------------------------------
-const RATE_WINDOW_MS = 10_000;
-const RATE_MAX = 3;
-const rateBucket = new Map(); // partner_id -> {count, resetAt}
-
-function rateLimit(req, res, next) {
-  const pid = String(req.tenant_id || req.ip || "anon");
-  const now = Date.now();
-  const bucket = rateBucket.get(pid) || { count: 0, resetAt: now + RATE_WINDOW_MS };
-  if (now > bucket.resetAt) {
-    bucket.count = 0;
-    bucket.resetAt = now + RATE_WINDOW_MS;
-  }
-  bucket.count += 1;
-  rateBucket.set(pid, bucket);
-  if (bucket.count > RATE_MAX) {
-    return res.status(429).json({ ok: false, error: "Rate limit exceeded. Try again shortly." });
-  }
-  next();
-}
+const rateLimit = require("../middleware/postgresRateLimit").createPostgresRateLimiter({pool,scope:"billing",windowMs:10000,max:3});
 
 // ---------------------------------------------------------------------
 // Middleware: partner / tenant JWT auth
