@@ -44,3 +44,22 @@ test('policy facade rejects cross-product input scope before policy evaluation o
  await assert.rejects(f.bound.enqueue({scope:{...scope,product:'other-product'},role:'orchestrator'}),/Queue scope denied/);
  assert.deepEqual(f.calls,[]);
 });
+
+test('policy facade snapshots configured and caller scope before asynchronous policy evaluation',async()=>{
+ const mutableScope={...scope};
+ let releasePolicy;
+ const policyPending=new Promise(resolve=>{releasePolicy=resolve;});
+ const received=[];
+ const queue={enqueue:async input=>{received.push(input);return true;},inspectWorkflowStep:async()=>null,claim:async()=>null,finish:async()=>true,stop:async()=>true,quarantine:async()=>true,expire:async()=>0,cancel:async()=>true};
+ const policy={evaluate:async()=>{await policyPending;return {scope:{...scope},issueNumber:issue,manifestDigest,policyVersion:'v1',eligibleForPreparation:true,executionAuthorized:false,evidenceSha256:'c'.repeat(64)};}};
+ const bound=createPolicyBoundQueue({queue,policy,scope:mutableScope,issue,manifestDigest});
+ const input={scope:{...mutableScope},role:'orchestrator'};
+ const pending=bound.enqueue(input);
+ input.scope.product='other-product';
+ mutableScope.product='other-product';
+ releasePolicy();
+ await pending;
+ assert.equal(received.length,1);
+ assert.deepEqual(received[0].scope,scope);
+ assert.notEqual(received[0].scope,input.scope);
+});
