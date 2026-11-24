@@ -928,7 +928,8 @@ if(process.env.RENDER_SERVICE_ID==="srv-dc2ffvm8bjmc73fhn8j0"){
  app.get("/__aca_sec09_probe",diagnosticLimit,(req,res)=>{
   const chain=String(req.headers["x-forwarded-for"]||"").split(",").map(x=>x.trim()).filter(Boolean);
   const marker="192.0.2.123";
-  observedResolved.add(req.ip); observedPeers.add(req.socket.remoteAddress);
+  if(observedResolved.size<10) observedResolved.add(req.ip);
+  if(observedPeers.size<10) observedPeers.add(req.socket.remoteAddress);
   console.log("ACA_SEC09_PROXY",{hopCount:chain.length,resolvedDistinct:observedResolved.size,peerDistinct:observedPeers.size,markerPresent:chain.includes(marker),resolvedIsMarker:req.ip===marker,noTrustIsMarker:req.socket.remoteAddress===marker});
   res.status(204).end();
  });
