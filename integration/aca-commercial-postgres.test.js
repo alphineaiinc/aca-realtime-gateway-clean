@@ -36,6 +36,11 @@ test("isolated commercial pricing, replay and concurrent invoice acceptance",asy
  await pool.query(fs.readFileSync("migrations/draft_aca_usage_reconciliation.sql","utf8"));
  const {queueLateUsage}=require("../src/analytics/lateUsage");
  const late={tenantId:1,eventId:"CA_late",kind:"voice_seconds",quantity:15,occurredAt:new Date("2020-01-20T00:00:00Z")};
+ const routed={...late,eventId:"CA_routed"};
+ assert.deepEqual(await recordUsage(pool,routed),{stored:false,reconciliation:true,queued:true});
+ assert.deepEqual(await recordUsage(pool,routed),{stored:false,reconciliation:true,queued:false});
+ await assert.rejects(recordUsage(pool,{...routed,tenantId:2}),/CONFLICTING_USAGE_EVIDENCE/);
+ await assert.rejects(queueLateUsage(pool,{...late,eventId:event.eventId}),/CONFLICTING_LATE_USAGE/);
  const queued=await Promise.all(Array.from({length:8},()=>queueLateUsage(pool,late)));
  assert.equal(queued.filter(x=>x.queued).length,1);
  await assert.rejects(queueLateUsage(pool,{...late,tenantId:2}),/CONFLICTING_LATE_USAGE/);
