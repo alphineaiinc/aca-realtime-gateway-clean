@@ -7,6 +7,7 @@ const pool = require("../db/pool");
 const { embedText } = require("../brain/utils/embeddingManager");
 const { createPostgresRateLimiter } = require("../middleware/postgresRateLimit");
 
+const { withUploadAdmission } = require("../security/uploadAdmission");
 const router = express.Router();
 
 // ---------------------------------------------------------------------------
@@ -24,7 +25,7 @@ function authenticate(req, res, next) {
   try {
     const token = (req.headers.authorization || "").replace("Bearer ", "");
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    if (!decoded || !decoded.tenant_id) {
+    if (!decoded || !decoded.tenant_id || decoded.demo === true || decoded.role === "demo") {
       return res.status(401).json({ ok: false, error: "Unauthorized" });
     }
     req.tenant_id = decoded.tenant_id;
@@ -126,29 +127,40 @@ router.post("/tenant/upload-knowledge", authenticate, uploadRateLimit, reserveUp
       return res.status(413).json({ ok: false, error: "PDF text exceeds upload limit" });
     }
 
-    // 2️⃣ Chunk + embed
-    const chunks = chunkText(text);
-    const vectors = [];
-    for (const content of chunks) {
-      if (res.destroyed) return;
-      const embedding = await embedText(content);
-      if (res.destroyed) return;
-      if (!Array.isArray(embedding) || !embedding.length || !embedding.every(Number.isFinite)) {
-        throw new Error("Invalid embedding");
+    // Optional distributed protection of post-multipart processing only.
+    // Keep disabled until the dedicated connection budget and deployment gates pass.
+    const processChunks = async (signal) => {
+      const stopped = () => res.destroyed || signal?.aborted;
+      const chunks = chunkText(text);
+      const vectors = [];
+      for (const content of chunks) {
+        if (stopped()) return null;
+        const embedding = await embedText(content);
+        if (stopped()) return null;
+        if (!Array.isArray(embedding) || !embedding.length || !embedding.every(Number.isFinite)) {
+          throw new Error("Invalid embedding");
+        }
+        vectors.push("[" + embedding.join(",") + "]");
       }
-      vectors.push("[" + embedding.join(",") + "]");
+      if (stopped()) return null;
+      await pool.query(
+        `INSERT INTO kb_entries (business_id, content, embedding, source_filename, chunk_index, created_at)
+         SELECT $1, item.content, item.vector::vector, $4, (item.ordinality - 1)::integer, NOW()
+         FROM unnest($2::text[], $3::text[]) WITH ORDINALITY AS item(content, vector, ordinality)`,
+        [tenantId, chunks, vectors, originalName]
+      );
+      return stopped() ? null : chunks.length;
+    };
+    let inserted;
+    if (process.env.ACA_DISTRIBUTED_UPLOAD_ADMISSION === "1") {
+      const result = await withUploadAdmission(pool, String(tenantId), processChunks);
+      if (res.destroyed) return;
+      if (!result.admitted) return res.status(429).json({ ok: false, error: "Upload capacity reached" });
+      inserted = result.result;
+    } else {
+      inserted = await processChunks();
     }
-
-    // One atomic SQL statement: no partial knowledge on embedding or insert failure.
-    if (res.destroyed) return;
-    await pool.query(
-      `INSERT INTO kb_entries (business_id, content, embedding, source_filename, chunk_index, created_at)
-       SELECT $1, item.content, item.vector::vector, $4, (item.ordinality - 1)::integer, NOW()
-       FROM unnest($2::text[], $3::text[]) WITH ORDINALITY AS item(content, vector, ordinality)`,
-      [tenantId, chunks, vectors, originalName]
-    );
-    const inserted = chunks.length;
-    if (res.destroyed) return;
+    if (res.destroyed || inserted === null) return;
     return res.json({
       ok: true,
       message: "Knowledge uploaded successfully",
