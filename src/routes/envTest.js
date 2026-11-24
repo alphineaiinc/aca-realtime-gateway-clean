@@ -2,6 +2,7 @@
 const express = require("express");
 const jwt = require("jsonwebtoken");
 const router = express.Router();
+const ingressRateLimit = require('../security/ingressLimit').ingressLimit({ max: 30 });
 
 function authenticateAdmin(req, res, next) {
   try {
@@ -25,7 +26,7 @@ function authenticateAdmin(req, res, next) {
   }
 }
 
-router.get("/env", authenticateAdmin, (req, res) => {
+router.get("/env", ingressRateLimit, authenticateAdmin, (req, res) => {
   try {
     // Only show presence, not full values
     res.json({
