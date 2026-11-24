@@ -8,9 +8,10 @@ const {createModelAdapters}=require('../src/automation/engineeringTeam/modelAdap
 const {createAgentManager}=require('../src/automation/engineeringTeam/manager');
 const {runOfflineTeam}=require('../src/automation/engineeringTeam/offlineTeam');
 const models=Object.fromEntries(Object.keys(roles).map(r=>[r,'fixture-model']));
+function budgetFixture(){let serial=0;const pending=new Map();return {async reserve(input){const binding=String(++serial).padStart(64,'0');pending.set(binding,input.requestDigest);return {executionAuthorized:true,requestDigest:input.requestDigest,binding};},async consume(input){if(pending.get(input.binding)!==input.requestDigest)return false;pending.delete(input.binding);return true;}};}
 test('eight roles use authorized SDK-shaped mock with bounded requests and usage accounting',async()=>{
  const calls=[];
- const transport=createOpenAITransport({models,authorize:async()=>true,client:{responses:{async create(request,options){
+ const transport=createOpenAITransport({models,authorize:async()=>true,budget:budgetFixture(),client:{responses:{async create(request,options){
   calls.push(request);assert.equal(request.store,false);assert.equal(options.maxRetries,0);assert.equal(options.timeout,30000);
   return {status:'completed',usage:{input_tokens:100,output_tokens:50},output_text:JSON.stringify(Object.fromEntries(request.text.format.schema.required.map(f=>[f,['fixture']])) )};
  }}}});
@@ -22,7 +23,7 @@ test('eight roles use authorized SDK-shaped mock with bounded requests and usage
  assert.equal(calls.length,8);
 });
 test('authorization denial never contacts mock provider',async()=>{
- const t=createOpenAITransport({models,authorize:async()=>false,client:{responses:{create:async()=>assert.fail('provider called')}}});
+ const t=createOpenAITransport({models,authorize:async()=>false,budget:budgetFixture(),client:{responses:{create:async()=>assert.fail('provider called')}}});
  await assert.rejects(t.generate({role:'devops',mode:'proposal-only',input:'{}',instructions:'fixture'}),/authorization/);
  assert.equal(t.usage().calls,0);
 });
@@ -39,7 +40,7 @@ test('async admission cannot substitute role, input or schema',async()=>{
 });
 test('output usage breach prevents further provider calls',async()=>{
  let calls=0;
- const t=createOpenAITransport({models,maxOutputTokens:256,authorize:async()=>true,client:{responses:{create:async()=>{calls++;return {status:'completed',usage:{input_tokens:1,output_tokens:257},output_text:'{}'};}}}});
+ const t=createOpenAITransport({models,maxOutputTokens:256,authorize:async()=>true,budget:budgetFixture(),client:{responses:{create:async()=>{calls++;return {status:'completed',usage:{input_tokens:1,output_tokens:257},output_text:'{}'};}}}});
  const request={role:'devops',mode:'proposal-only',input:'{}',instructions:'fixture'};
  await assert.rejects(t.generate(request),/Provider request failed/);
  await assert.rejects(t.generate(request),/budget/);
@@ -49,7 +50,7 @@ test('output usage breach prevents further provider calls',async()=>{
 test('ambiguous provider outcomes halt the instance and preserve actual attempt accounting',async()=>{
  for(const outcome of ['throw','missing-usage','incomplete','over-budget']){
   let attempts=0,reservations=0;
-  const t=createOpenAITransport({models,maxOutputTokens:256,authorize:async()=>true,budget:{reserve:async()=>{reservations++;return true;}},client:{responses:{create:async()=>{
+  const t=createOpenAITransport({models,maxOutputTokens:256,authorize:async()=>true,budget:{async reserve(input){reservations++;return {executionAuthorized:true,requestDigest:input.requestDigest,binding:String(reservations).padStart(64,'0')};},async consume(){return true;}},client:{responses:{create:async()=>{
    attempts++;
    if(outcome==='throw')throw Error('private fixture');
    if(outcome==='missing-usage')return {status:'completed',output_text:'{}'};
@@ -75,7 +76,7 @@ test('authorization revoked after durable reservation blocks the provider side e
 });
 test('ambiguous durable reservation never reaches provider or retries',async()=>{
  let reservations=0;
- const t=createOpenAITransport({models,authorize:async()=>true,budget:{reserve:async()=>{reservations++;throw Error('unknown commit outcome');}},client:{responses:{create:async()=>assert.fail('provider called')}}});
+ const t=createOpenAITransport({models,authorize:async()=>true,budget:{async reserve(){reservations++;throw Error('unknown commit outcome');},async consume(){return false;}},client:{responses:{create:async()=>assert.fail('provider called')}}});
  const request={role:'devops',mode:'proposal-only',input:'{}',instructions:'fixture'};
  await assert.rejects(t.generate(request),/Provider request failed/);
  await assert.rejects(t.generate(request),/budget/);
