@@ -20,3 +20,13 @@ test('request preimage validation pins scope, policy and all evidence digests',(
  const request=preparePublicationRequest({plan,verification,review});const snapshot=validatePublicationRequest(request,scope);assert.equal(snapshot.evidenceSha256,request.evidenceSha256);assert.ok(Object.isFrozen(snapshot.scope));
  for(const patch of [{patchDigest:'f'.repeat(64)},{testDigest:'f'.repeat(64)},{reviewDigest:'f'.repeat(64)},{scope:{...scope,sha:'b'.repeat(40)}},{scope:{...scope,product:'other'}},{executionAuthorized:true},{requiresIndependentAcceptance:false}])assert.throws(()=>validatePublicationRequest({...request,...patch},scope));
 });
+
+test('prepared publication scope is immutable and detached from caller-owned plan',()=>{
+ const mutableScope={...scope};
+ const mutablePlan={...plan,scope:mutableScope};
+ const request=preparePublicationRequest({plan:mutablePlan,verification,review});
+ mutableScope.sha='b'.repeat(40);
+ assert.equal(request.scope.sha,scope.sha);
+ assert.ok(Object.isFrozen(request.scope));
+ assert.equal(validatePublicationRequest(request,scope).evidenceSha256,request.evidenceSha256);
+});
