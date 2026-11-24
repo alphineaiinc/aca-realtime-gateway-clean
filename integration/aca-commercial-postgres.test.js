@@ -33,5 +33,13 @@ test("isolated commercial pricing, replay and concurrent invoice acceptance",asy
  assert.equal((await pool.query("SELECT count(*)::int AS n FROM public.billing_invoices")).rows[0].n,1);
  assert.equal(await invoiceClosedMonth(pool,{...input,tenantId:2}),null);
  await assert.rejects(pool.query("INSERT INTO public.analytics_events(tenant_id,event_type,quantity,unit,created_at) VALUES(1,'ACA_VERIFIED_USAGE',1,'voice_seconds','2020-01-20')"),/USAGE_PERIOD_CLOSED/);
+ await pool.query(fs.readFileSync("migrations/draft_aca_usage_reconciliation.sql","utf8"));
+ const {queueLateUsage}=require("../src/analytics/lateUsage");
+ const late={tenantId:1,eventId:"CA_late",kind:"voice_seconds",quantity:15,occurredAt:new Date("2020-01-20T00:00:00Z")};
+ const queued=await Promise.all(Array.from({length:8},()=>queueLateUsage(pool,late)));
+ assert.equal(queued.filter(x=>x.queued).length,1);
+ await assert.rejects(queueLateUsage(pool,{...late,tenantId:2}),/CONFLICTING_LATE_USAGE/);
+ await assert.rejects(queueLateUsage(pool,{...late,quantity:16}),/CONFLICTING_LATE_USAGE/);
+ assert.equal((await pool.query("SELECT count(*)::int AS n FROM public.billing_invoices")).rows[0].n,1);
  }finally{await pool.end();}
 });
