@@ -6,6 +6,8 @@ const jwt = require("jsonwebtoken");
 const { retrieveAnswer } = require("../../retriever");
 
 const router = express.Router();
+const ingressRateLimit = require('../security/ingressLimit').ingressLimit({ max: 30 });
+const sharedIpLimit = require('../middleware/postgresRateLimit').createPostgresRateLimiter({ pool: require('../db/pool'), scope: 'chat-ip', max: 30, ipBased: true });
 
 // -------------------------------
 // Security: small input limits
@@ -109,7 +111,7 @@ const {verifiedBusiness:authenticate}=require("../security/verifiedBusinessMiddl
 // POST /api/chat
 // body: { session_id, locale, message }
 // -------------------------------
-router.post("/", authenticate, rateLimit, async (req, res) => {
+router.post("/", ingressRateLimit, sharedIpLimit, authenticate, rateLimit, async (req, res) => {
   try {
     const session_id = String(req.body?.session_id || "webchat");
     const locale = String(req.body?.locale || "en-US");
