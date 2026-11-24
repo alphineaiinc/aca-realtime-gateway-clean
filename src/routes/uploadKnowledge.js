@@ -28,18 +28,17 @@ const upload = multer({
 // ---------------------------------------------------------------------------
 // Middleware: verify JWT
 // ---------------------------------------------------------------------------
-function authenticate(req, res, next) {
-  try {
-    const token = (req.headers.authorization || "").replace("Bearer ", "");
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    if (!decoded || !/^[1-9]\d*$/.test(String(decoded.tenant_id)) || !Number.isSafeInteger(Number(decoded.tenant_id))) {
-      return res.status(401).json({ ok: false, error: "Unauthorized" });
-    }
-    req.tenant_id = Number(decoded.tenant_id);
+async function authenticate(req,res,next){
+  try{
+    const auth=req.headers.authorization||"";
+    if(!auth.startsWith("Bearer "))throw Error();
+    const claims=jwt.verify(auth.slice(7),process.env.JWT_SECRET,{algorithms:["HS256"],issuer:"alphine-ai",audience:"aca-business"});
+    if(claims.purpose!=="verified_business"||!Number.isSafeInteger(claims.tenant_id)||claims.tenant_id<=0||typeof claims.sub!=="string")throw Error();
+    const {rows}=await pool.query("SELECT tenant_id FROM public.aca_business_identities WHERE email=$1 AND tenant_id=$2 AND is_active",[claims.sub,claims.tenant_id]);
+    if(rows.length!==1)throw Error();
+    req.tenant_id=claims.tenant_id;
     next();
-  } catch (err) {
-    return res.status(401).json({ ok: false, error: "Unauthorized" });
-  }
+  }catch{return res.status(401).json({ok:false,error:"Unauthorized"});}
 }
 
 // ---------------------------------------------------------------------------
