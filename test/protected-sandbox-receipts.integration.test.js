@@ -1,0 +1,28 @@
+'use strict';
+const test=require('node:test');
+const assert=require('node:assert/strict');
+const fs=require('node:fs');
+const path=require('node:path');
+const {Pool}=require('pg');
+const {generateKeyPairSync,sign,createHash}=require('node:crypto');
+const {createFixtureAttestationVerifier}=require('../src/automation/protectedSandbox/fixtureAttestation');
+const {createFixtureReceiptStore}=require('../src/automation/protectedSandbox/fixtureReceiptStore');
+test('disposable PostgreSQL attestation receipts survive independent connections and reject replay',{skip:process.env.RUN_SANDBOX_RECEIPT_CI!=='1',timeout:20000},async t=>{
+ const url=new URL(process.env.SANDBOX_RECEIPT_CI_DATABASE_URL);
+ assert.equal(url.hostname,'127.0.0.1');assert.equal(url.pathname,'/aca_sandbox_receipt_ci');
+ const pools=[new Pool({connectionString:url.toString(),max:2}),new Pool({connectionString:url.toString(),max:2})];
+ t.after(async()=>Promise.all(pools.map(p=>p.end())));
+ await pools[0].query(fs.readFileSync(path.join(__dirname,'../migrations/draft_sandbox_fixture_receipts.sql'),'utf8'));
+ const expected={harnessSha:'a'.repeat(40),image:'node@sha256:'+'b'.repeat(64),fixtureSha256:'c'.repeat(64),attemptId:'aca-fixture-12345678-1234-4234-8234-123456789abc'};
+ const keys=generateKeyPairSync('ed25519');
+ const publicKey=keys.publicKey.export({type:'spki',format:'pem'});
+ const payload={...expected,status:'passed',cleanupConfirmed:true,requiresReconciliation:false,provenance:'unreviewed-fixed-fixture-harness',executionAuthorized:false};
+ const report={...payload,reportSha256:createHash('sha256').update(JSON.stringify(payload)).digest('hex')};
+ const signature=sign(null,Buffer.from('alphine:fixed-sandbox-attestation:v1\n'+JSON.stringify({...expected,reportSha256:report.reportSha256}),'utf8'),keys.privateKey).toString('hex');
+ const make=pool=>createFixtureAttestationVerifier({publicKey,expected,consumeReceipt:createFixtureReceiptStore({pool,expected})});
+ const results=await Promise.all(pools.map(pool=>make(pool).inspect({report,signature})));
+ assert.equal(results.filter(r=>r.status==='signature-verified').length,1);
+ assert.ok(results.every(r=>r.executionAuthorized===false));
+ assert.equal((await make(pools[1]).inspect({report,signature})).status,'denied');
+ assert.deepEqual((await pools[1].query('SELECT attempt_id,report_sha256 FROM sandbox_fixture_receipts')).rows,[{attempt_id:expected.attemptId,report_sha256:report.reportSha256}]);
+});
