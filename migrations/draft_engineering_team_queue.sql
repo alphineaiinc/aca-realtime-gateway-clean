@@ -107,3 +107,14 @@ CREATE TABLE engineering_team_handoffs (
  task_id uuid NOT NULL UNIQUE REFERENCES engineering_team_proposal_receipts(task_id),
  PRIMARY KEY(workflow_id,step)
 );
+
+-- Admission reservation is not a live authorization. A consumed attempt is
+-- never retried automatically, including after restart or unknown outcomes.
+CREATE TABLE engineering_team_publication_attempts (
+ binding text PRIMARY KEY CHECK(binding ~ '^[a-f0-9]{64}$'),
+ approval_id uuid NOT NULL UNIQUE REFERENCES engineering_team_approval_requests(id),
+ product text NOT NULL,
+ repository text NOT NULL,
+ base_sha text NOT NULL CHECK(base_sha ~ '^[a-f0-9]{40}$'),
+ created_at timestamptz NOT NULL DEFAULT clock_timestamp()
+);
