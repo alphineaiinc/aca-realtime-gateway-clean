@@ -612,6 +612,20 @@ test('isolated PostgreSQL queue: concurrent claims, retries, restart, expiry and
  const alertReader=createGovernanceAlertReader({pool:pools[1],scope:recoveryScope,authenticate:recoveryAuth});
  const visibleAlerts=await alertReader.list({credential:'recovery-manager',limit:10});
  assert.equal(visibleAlerts.length,5);
+ const pendingAlerts=await alertReader.backlog({credential:'recovery-manager',limit:2});
+ assert.equal(pendingAlerts.length,2);
+ assert.equal(pendingAlerts[0].event_type,'quarantine.created');
+ const alertId=pendingAlerts[0].id;
+ await assert.rejects(alertReader.acknowledge({credential:'recovery-worker',alertId}),/identity denied/);
+ const secondReader=createGovernanceAlertReader({pool:pools[0],scope:recoveryScope,authenticate:recoveryAuth});
+ const ackResults=await Promise.all([alertReader,secondReader].map(reader=>reader.acknowledge({credential:'recovery-manager',alertId})));
+ assert.equal(ackResults.filter(x=>x.newAcknowledgement).length,1);
+ assert.ok(ackResults.every(x=>x.acknowledged&&!x.executionAuthorized));
+ assert.equal((await secondReader.backlog({credential:'recovery-manager',limit:100})).length,4);
+ assert.equal((await secondReader.list({credential:'recovery-manager',limit:100})).length,5);
+ assert.equal((await pools[1].query('SELECT count(*)::int AS n FROM engineering_team_governance_acknowledgements WHERE alert_id=$1',[alertId])).rows[0].n,1);
+ assert.equal((await pools[1].query('SELECT 1 FROM engineering_team_stops WHERE product=$1 AND repository=$2',[recoveryScope.product,recoveryScope.repository])).rowCount,1);
+
  assert.equal(visibleAlerts[0].event_type,'stop.created'); // unresolved stop is the newest journal event
  assert.ok(visibleAlerts.every(x=>!Object.hasOwn(x,'evidence_sha256')&&!Object.hasOwn(x,'credential')));
  assert.equal(recoveryGate.executionAllowed(),false);
