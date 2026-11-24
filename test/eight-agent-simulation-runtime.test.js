@@ -5,8 +5,8 @@ const {createSimulationRuntime}=require('../src/automation/engineeringTeam/simul
 const {sequence}=require('../src/automation/engineeringTeam/offlineTeam');
 const scope={product:'aca',repository:'fixture/aca',sha:'a'.repeat(40)};
 function setup(overrides={}){
- const requests=[],models=[];let reservations=0;
- const runtime=createSimulationRuntime({scope,issue:42,paths:['src/example.js'],authorize:async()=>true,budget:{async reserve(){reservations++;return true;}},
+ const requests=[],models=[];let reservations=0,serial=0;const pending=new Map();
+ const runtime=createSimulationRuntime({scope,issue:42,paths:['src/example.js'],authorize:async()=>true,budget:{async reserve(input){reservations++;const binding=String(++serial).padStart(64,'0');pending.set(binding,input.requestDigest);return {executionAuthorized:true,requestDigest:input.requestDigest,binding};},async consume(input){if(pending.get(input.binding)!==input.requestDigest)return false;pending.delete(input.binding);return true;}},
  fetchFixture:async(url,options)=>{
   requests.push(url);assert.equal(options.method,'GET');assert.equal(options.redirect,'error');
   if(url.includes('/contents/'))return new Response(JSON.stringify({type:'file',path:'src/example.js',encoding:'base64',size:3,content:'YWJj'}));
