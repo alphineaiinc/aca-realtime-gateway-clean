@@ -18,3 +18,23 @@ jobs:
           status=$(curl --proto '=https' --connect-timeout 10 --max-time 90 --retry 1 --retry-delay 2 --output /dev/null --silent --show-error --write-out '%{http_code}' "$url")
           echo "Staging health HTTP status: $status"
           test "$status" = 200
+      - name: Bounded temporary diagnostic probes
+        shell: bash
+        run: |
+          set -euo pipefail
+          base=https://alphine-aca-product-staging.onrender.com
+          probe() { curl --proto '=https' --connect-timeout 5 --max-time 15 --silent --show-error --output /dev/null --write-out '%{http_code}' "$@"; }
+          ready=0
+          for i in $(seq 1 12); do
+            if [ "$(probe "$base/__aca_sec09_probe")" = 204 ]; then ready=1; break; fi
+            sleep 5
+          done
+          test "$ready" = 1
+          test "$(probe -H 'X-Forwarded-For: 192.0.2.123' "$base/__aca_sec09_probe")" = 204
+          for i in $(seq 1 5); do
+            test "$(probe "$base/__aca_sec09_capacity/twilio")" = 204
+          done
+          test "$(probe "$base/__aca_sec09_capacity/twilio")" = 429
+          test "$(probe "$base/__aca_sec09_capacity/stripe")" = 204
+          test "$(probe "$base/__aca_sec09_capacity/ordinary")" = 204
+          echo 'Synthetic budget isolation passed'
