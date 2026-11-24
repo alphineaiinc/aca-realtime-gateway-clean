@@ -26,17 +26,28 @@ async function withUploadAdmission(pool, tenantId, work) {
   if (!pool || typeof pool.connect !== 'function' || typeof work !== 'function') throw new TypeError('Invalid admission owner');
   const client = await pool.connect();
   let discard = false;
+  const controller = new AbortController();
+  const onLoss = () => { discard = true; controller.abort(); };
+  client.on?.('error', onLoss);
+  client.on?.('end', onLoss);
   try {
     await client.query('BEGIN');
     if (!await acquireUploadAdmission(client, tenantId)) return { admitted: false };
-    return { admitted: true, result: await work() };
+    if (controller.signal.aborted) throw new Error('Upload admission connection lost');
+    const result = await work(controller.signal);
+    if (controller.signal.aborted) throw new Error('Upload admission connection lost');
+    return { admitted: true, result };
   } catch (error) {
     discard = true;
     throw error;
   } finally {
     try { await client.query('ROLLBACK'); }
     catch (error) { discard = true; throw error; }
-    finally { client.release(discard); }
+    finally {
+      client.removeListener?.('error', onLoss);
+      client.removeListener?.('end', onLoss);
+      client.release(discard);
+    }
   }
 }
 module.exports = { acquireUploadAdmission, withUploadAdmission };
