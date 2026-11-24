@@ -1,4 +1,5 @@
 'use strict';
+const {randomUUID}=require('node:crypto');
 // Fixture evidence only; no provider billing verification or execution grant.
 function createProviderOutcome({pool,scope,authenticate,costEnvelope}={}){
  if(typeof pool?.connect!=='function'||typeof authenticate!=='function'||!scope?.product||!scope?.repository||! /^[a-f0-9]{40}$/.test(scope.sha))throw Error('Invalid outcome configuration');
@@ -28,7 +29,10 @@ function createProviderOutcome({pool,scope,authenticate,costEnvelope}={}){
    const outcome=assessed===null?'unknown':assessed.breach===true&&costEnvelope!==undefined||BigInt(assessed.actualMicrousd)>BigInt(attempt.rows[0].reserved_microusd)?'breach':'completed';
    const result=await client.query('INSERT INTO engineering_team_provider_outcomes(binding,outcome,input_tokens,output_tokens,actual_microusd,recorded_by) VALUES($1,$2,$3,$4,$5,$6) ON CONFLICT DO NOTHING RETURNING binding',[binding,outcome,assessed?.inputTokens??null,assessed?.outputTokens??null,assessed?.actualMicrousd??null,actorId]);
    if(result.rowCount!==1)throw Error('Outcome already recorded');
-   if(outcome!=='completed')await client.query('INSERT INTO engineering_team_stops(product,repository,actor_id) VALUES($1,$2,$3) ON CONFLICT DO NOTHING',[pinned.product,pinned.repository,actorId]);
+   if(outcome!=='completed'){
+    const stopped=await client.query('INSERT INTO engineering_team_stops(product,repository,actor_id) VALUES($1,$2,$3) ON CONFLICT DO NOTHING RETURNING product',[pinned.product,pinned.repository,actorId]);
+    if(stopped.rowCount===1)await client.query("INSERT INTO engineering_team_governance_alerts(id,product,repository,event_type,actor_id) VALUES ($1,$2,$3,'stop.created',$4)",[randomUUID(),pinned.product,pinned.repository,actorId]);
+   }
    await client.query('COMMIT');
    return Object.freeze({outcome,executionAuthorized:false});
   }catch(e){try{await client.query('ROLLBACK');}catch{discard=true;}throw e;}finally{client.release(discard);}
