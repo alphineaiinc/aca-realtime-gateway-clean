@@ -22,6 +22,8 @@ function checkContext(context,scope){
     !/^[a-f0-9]{40}$/.test(context.headSha||""))
    throw new Error("unverified_automation_service_scope");
 }
+// Capture caller-owned data before the first asynchronous boundary.
+function snapshot(value){return Object.freeze(structuredClone(value));}
 async function withAuthorizedClient(client,operation,context,scope,fn){
  checkContext(context,scope);
  if(!client||typeof client.query!=="function"||typeof client.release!=="function")
@@ -30,16 +32,19 @@ async function withAuthorizedClient(client,operation,context,scope,fn){
  return fn();
 }
 async function serviceReadHistory(client,scope,context){
+ scope=snapshot(scope);context=snapshot(context);
  return withAuthorizedClient(client,"read",context,scope,
    ()=>readCorrectionHistory(client,scope));
 }
 async function serviceInitializeLedger(client,scope,context){
+ scope=snapshot(scope);context=snapshot(context);
  return withAuthorizedClient(client,"initialize",context,scope,
    ()=>initializeCorrectionLedger(client,scope,{
      verifiedHeadSha:context.headSha,authenticatedInitializer:true
    }));
 }
 async function serviceAppendCorrection(client,claim,context){
+ claim=snapshot(claim);context=snapshot(context);
  return withAuthorizedClient(client,"append",context,claim,()=>{
    if(claim.resultingHeadSha!==context.headSha)
      throw new Error("stale_correction_service_head");
