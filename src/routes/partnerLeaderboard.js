@@ -9,6 +9,7 @@ const { encrypt } = require("../brain/utils/cryptoVault");
 
 const router = express.Router();
 const ingressRateLimit=require("../security/ingressLimit").ingressLimit({max:30});
+const sharedLimit=require("../middleware/postgresRateLimit").createPostgresRateLimiter({pool,scope:"partner-leaderboard",max:30});
 
 
 // --- Logger (append-only) ---
@@ -40,7 +41,7 @@ function requireAdmin(req, res, next) {
 }
 
 // --- GET /partner/leaderboard?scope=all|month|week&limit=50 ---
-router.get("/partner/leaderboard", ingressRateLimit, authenticate, async (req, res) => {
+router.get("/partner/leaderboard", ingressRateLimit, authenticate, sharedLimit, async (req, res) => {
   try {
     const scope = String(req.query.scope || "all").toLowerCase();
     const limit = Math.min(parseInt(req.query.limit || "50", 10), 200);
@@ -79,10 +80,10 @@ router.get("/partner/leaderboard", ingressRateLimit, authenticate, async (req, r
 });
 
 // --- POST /partner/payouts/request  body: { amount, method } ---
-router.post("/partner/payouts/request", ingressRateLimit, authenticate, (_req,res)=>res.status(503).json({ok:false,error:"Verified payout workflow unavailable"}));
+router.post("/partner/payouts/request", ingressRateLimit, authenticate, sharedLimit, (_req,res)=>res.status(503).json({ok:false,error:"Verified payout workflow unavailable"}));
 
 // --- GET /partner/payouts/admin?status=pending (admin only) ---
-router.get("/partner/payouts/admin", ingressRateLimit, authenticate, requireAdmin, async (req, res) => {
+router.get("/partner/payouts/admin", ingressRateLimit, authenticate, sharedLimit, requireAdmin, async (req, res) => {
   try {
     const status = String(req.query.status || "pending");
     const { rows } = await pool.query(
@@ -101,6 +102,6 @@ router.get("/partner/payouts/admin", ingressRateLimit, authenticate, requireAdmi
 });
 
 // --- POST /partner/payouts/admin/decision  body: { id, action, payout_reference } ---
-router.post("/partner/payouts/admin/decision", ingressRateLimit, authenticate, requireAdmin, (_req,res)=>res.status(503).json({ok:false,error:"Verified payout workflow unavailable"}));
+router.post("/partner/payouts/admin/decision", ingressRateLimit, authenticate, sharedLimit, requireAdmin, (_req,res)=>res.status(503).json({ok:false,error:"Verified payout workflow unavailable"}));
 
 module.exports = router;
