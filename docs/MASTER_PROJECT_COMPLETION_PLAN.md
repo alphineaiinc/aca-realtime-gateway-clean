@@ -6,12 +6,12 @@ Baseline v1.0 | 2026-11-24 | SDP-001 | Scope frozen for delivery planning by own
 Original parent #4 defines four phases. #14/#16 Phase 1; #20/#23 supervision/correction; #118 sections A–G and SDP-001; #22 reviewer; #24 security. #118 F/G eight roles and Manager belong to Phase 2, not an additional phase. #118 H explicitly tracked roadmap: founder recipient, Gmail transport, recurring reports and long-term vision remain deferred pending separate scope approval; do not erase them. ACA product backlog (#9/#10/#11 and other product-only items) is separate; security findings already in #24 retain disposition obligations here. No double counting of alert IDs, role foundations, CI, or cross-phase dependencies. Historical checklist entries consolidated into permanent IDs below; more detailed evidence remains in source trackers. C = criterion complete at stated scope, D = implementation/partial evidence (not closed), O = open, B = blocked by external evidence or specific owner authorization. All D/O/B count outstanding. No claim of independent security clearance. Counts are unweighted work packages, not effort-weighted percent. Evidence snapshot retrieved in conversation; not a full audit of every PR's code or every comment. Unknown is not complete.
 
 ## Baseline accounting
-- P1: 3/4 closed; 0 implementation evidence, 1 open, 0 blocked.
+- P1: 3/4 closed; 1 implementation evidence, 0 open, 0 blocked.
 - P2: 2/34 closed; 22 implementation evidence, 2 open, 8 blocked.
 - P3: 1/3 closed; 0 implementation evidence, 2 open, 0 blocked.
 - P4: 0/3 closed; 0 implementation evidence, 1 open, 2 blocked.
-- Total 6/44 closed (13.6%); 38 outstanding, including 22 with implementation/partial evidence. Not an estimate of code written.
-- Remaining effort estimate 68–146 engineering hours, sum of row ranges; planning assumption, not measured or promised; conditional defects, approval waiting, independent reviewer availability and cost/credential constraints may extend it. Estimates include verification of existing work, not rebuilding foundations.
+- Total 6/44 closed (13.6%); 38 outstanding, including 23 with implementation/partial evidence. Not an estimate of code written.
+- Remaining effort estimate 67–144 engineering hours, sum of row ranges; planning assumption, not measured or promised; conditional defects, approval waiting, independent reviewer availability and cost/credential constraints may extend it. Estimates include verification of existing work, not rebuilding foundations.
 
 ## Permanent checklist
 | ID | State | Deliverable | Evidence / source | Dependencies | Remaining hours | Exit evidence |
@@ -19,7 +19,7 @@ Original parent #4 defines four phases. #14/#16 Phase 1; #20/#23 supervision/cor
 | P1-01 | C | Dispatch feasibility and accepted manual fallback | #14/#15 | None | 0 | Document supported interfaces; no false dispatch claim |
 | P1-02 | C | Guarded eligibility, single lock, audit and issue event workflow | #15 merged d5bbdf5 | P1-01 | 0 | Policy and workflow tested |
 | P1-03 | C | Owner-approved merge and disposable smoke acceptance | #4, #18/#19 closed; #15 merged | P1-02 | 0 | Transitions, revocation, cancellation and cleanup demonstrated |
-| P1-04 | O | Stale active lock recovery | #16/#17 bb135f1 draft | P1-03 | 2–4 | Dropped event regression; integrate after review or prove superseded |
+| P1-04 | D | Stale active lock recovery | #15 exact head 424283714fab91996d02105a3b574055f77b3159; CI 44845417284 success; merged d5bbdf5304d5cd0f0fdd73e02a2c4991d609a8df; main source/test blobs identical | P1-03 | 1–2 | Existing implementation supersedes #17 code objective; confirm independent review and API-error regression evidence or document disposition |
 | P2-01 | D | Pure supervision policy: exact-head CI/review, explicit states, fail closed | #20/#21 64aed92 CI 45473844726 | P1-03 | 1–2 | Independent review and authorized integration |
 | P2-02 | D | Read-only PR observer, reconciliation, idempotent provenance and least privilege | #20/#21 observer prior run 45473844701 | P2-01 | 2–4 | Live paginated reads, stale/lost events, SHA and effective permissions |
 | P2-03 | D | Bounded correction and offline simulation | #20/#23; prior offline foundation | P2-01 | 2–4 | Max two corrections, no dispatch, stale/ambiguous/replay/outage negatives; exact evidence and review |
@@ -73,3 +73,14 @@ PR #15 merged d5bbdf5304d5cd0f0fdd73e02a2c4991d609a8df; #17 bb135f1f676a819adcd1
 
 ## Fixed definition of done / change control
 Every mandatory ID C with exact evidence; all eight roles operational in approved nonproduction scope; owner-observed issue-to-draft lifecycle and mobile approval/rejection; independent security acceptance, effective permissions, protected signer/sandbox, budget/stop/rollback and no unresolved release-blocking security findings; approved handover to ACA. No automatic merge/deploy. No new features or speculative hardening before closure. New defect affecting an existing criterion is logged under that ID, not counted again. New requirements require explicit owner-approved versioned change with impact and denominator change; deferred #118 H remains visible separately. Update only evidence/status as batches complete. Source readiness does not equal release readiness. No merges, deployments, migrations, credential provisioning, operational signing, dispatch, security-settings changes or additional spend authorized by this document. CAD $0. HOLD until explicit gates pass.
+
+## B01 evidence reconciliation — 2026-11-24
+P1-04: merged #15 already includes dropped allowlist event, valid holder, revoked assignee, single-lock and queued eligibility regression cases. Runner blob af86c3f63a6b406a107151f20ae09de0e705172d and test blob cf5c2d815a0797864fc73154b43defda6698c06f identical across tested PR head, merge commit and main. CI 44845417284 passed. #17 lacks queue files at its head (404); do not rebuild or merge it. Independent review disposition and explicit API-error regression evidence remain unverified; D not C. Event-driven recovery requires a later event; no periodic sweep claimed. No administrative closure performed.
+
+Current security draft CI inventory (only PR-triggered first page; CI is not alert clearance):
+- #115: Phase 2 Code Scanning Alert Inventory 45092325512 completed/success; Phase 2 dependency security audit 45092325535 completed/success; ACA CI 45092325442 completed/success.
+- #122: ACA CI 45293583771 completed/success.
+- #123: ACA CI 45269017617 completed/failure.
+- #124: ACA CI 45294328363 completed/success.
+- #125: ACA CI 45293298561 completed/success.
+P2-08/09/10 retain existing status pending per-alert disposition, actual integration and independent review. P2-07 remains blocked on live alert/settings evidence. No repeated checks for already accepted #21/#142/#146. No new scope or restricted operations; CAD $0.
