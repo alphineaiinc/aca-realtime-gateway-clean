@@ -129,3 +129,17 @@ CREATE TABLE engineering_team_fixture_proposals (
 
 -- Bind each fixture task to its workflow before execution, not after completion.
 ALTER TABLE engineering_team_tasks ADD COLUMN workflow_id uuid REFERENCES engineering_team_workflows(id), ADD COLUMN workflow_step integer CHECK(workflow_step BETWEEN 0 AND 7), ADD CHECK((workflow_id IS NULL)=(workflow_step IS NULL)), ADD UNIQUE(workflow_id,workflow_step);
+
+-- Offline connectivity reservation, never a provider execution grant.
+CREATE TABLE engineering_team_provider_attempts (
+ binding text PRIMARY KEY CHECK(binding ~ '^[a-f0-9]{64}$'),
+ approval_id uuid NOT NULL UNIQUE REFERENCES engineering_team_approval_requests(id),
+ product text NOT NULL,
+ repository text NOT NULL,
+ head_sha text NOT NULL CHECK(head_sha ~ '^[a-f0-9]{40}$'),
+ budget_id uuid NOT NULL,
+ model text NOT NULL CHECK(length(model) BETWEEN 1 AND 100),
+ reserved_microusd bigint NOT NULL CHECK(reserved_microusd BETWEEN 1 AND 10000000),
+ created_at timestamptz NOT NULL DEFAULT clock_timestamp(),
+ FOREIGN KEY(product,repository,budget_id) REFERENCES engineering_team_spend_budgets(product,repository,budget_id)
+);
