@@ -84,12 +84,13 @@ test('isolated PostgreSQL queue: concurrent claims, retries, restart, expiry and
  assert.deepEqual(balance,{reserved_calls:2,reserved_microusd:'800'});
  const ledger=pool=>createWorkflowLedger({pool,scope,authenticate:async c=>identities.get(c)});
  const workflow=await ledger(pools[0]).create('manager');
+ const fixtureQueue=createDurableQueue({pool:pools[0],scopes:[scope],authenticate:async c=>identities.get(c),fixtureProposalStorage:true});
  await assert.rejects(ledger(pools[1]).advance({credential:'manager',id:workflow.id,step:0,taskId:evidenceTask}),/Handoff denied/);
  for(const [step,agentRole] of sequence.entries()){
   const credential='worker-'+step;
   identities.set(credential,{...scope,id:credential,permission:'queue.work',role:agentRole});
-  const taskId=await q.enqueue({scope,role:agentRole,credential:'manager'});
-  const claimed=await q.claim({scope,role:agentRole,credential});
+  const taskId=await fixtureQueue.enqueue({scope,role:agentRole,credential:'manager',workflowId:workflow.id,workflowStep:step});
+  const claimed=await fixtureQueue.claim({scope,role:agentRole,credential,expectedTaskId:taskId});
   assert.equal(claimed.id,taskId);
   await q.finish({scope,role:agentRole,credential,taskId,leaseId:claimed.lease_id,outcome:'succeeded',evidenceSha256:'d'.repeat(64)});
   const advanced=await ledger(pools[1]).advance({credential:'manager',id:workflow.id,step,taskId});
@@ -99,7 +100,6 @@ test('isolated PostgreSQL queue: concurrent claims, retries, restart, expiry and
  assert.equal((await ledger(pools[0]).status({credential:'manager',id:workflow.id})).next_step,8);
  await assert.rejects(ledger(pools[1]).status({credential:'w1',id:workflow.id}),/Workflow identity denied/);
  const persistent=await ledger(pools[0]).create('manager');
- const fixtureQueue=createDurableQueue({pool:pools[0],scopes:[scope],authenticate:async c=>identities.get(c),fixtureProposalStorage:true});
  for(const [step,agentRole] of sequence.entries()){
   const prior=await ledger(pools[1]).readFixturePrior({credential:'manager',id:persistent.id});
   assert.equal(prior.length,step);
@@ -109,9 +109,9 @@ test('isolated PostgreSQL queue: concurrent claims, retries, restart, expiry and
    return Object.fromEntries(contract(r).fields.map(field=>[field,['fixture '+r+' '+field]]));
   }]));
   const manager=createAgentManager({scopes:[scope],adapters,fixturePriorEnabled:true});
-  const taskId=await fixtureQueue.enqueue({scope,role:agentRole,credential:'manager'});
+  const taskId=await fixtureQueue.enqueue({scope,role:agentRole,credential:'manager',workflowId:persistent.id,workflowStep:step});
   const worker=createQueueWorker({queue:fixtureQueue,manager,fixtureProposalStorage:true,loadTask:async ({id})=>({id,...scope,subject:'Disposable workflow fixture',fixturePrior:prior})});
-  const completed=await worker.runOnce({scope,role:agentRole,credential:'worker-'+step});
+  const completed=await worker.runOnce({scope,role:agentRole,credential:'worker-'+step,expectedTaskId:taskId});
   assert.equal(completed.state,'succeeded');
   assert.equal(completed.taskId,taskId);
   await ledger(pools[1]).advance({credential:'manager',id:persistent.id,step,taskId});
@@ -122,6 +122,10 @@ test('isolated PostgreSQL queue: concurrent claims, retries, restart, expiry and
  const boundWorkflow=await ledger(pools[0]).create('manager');
  const unrelatedWorkflow=await ledger(pools[1]).create('manager');
  const boundRole=sequence[0],boundCredential='worker-0';
+ const unboundTask=await q.enqueue({scope,role:boundRole,credential:'manager'});
+ const unboundLease=await q.claim({scope,role:boundRole,credential:boundCredential});
+ await q.finish({scope,role:boundRole,credential:boundCredential,taskId:unboundTask,leaseId:unboundLease.lease_id,outcome:'succeeded',evidenceSha256:'b'.repeat(64)});
+ await assert.rejects(ledger(pools[1]).advance({credential:'manager',id:unrelatedWorkflow.id,step:0,taskId:unboundTask}),/Handoff denied/);
  await assert.rejects(fixtureQueue.enqueue({scope,role:'devops',credential:'manager',workflowId:boundWorkflow.id,workflowStep:0}),/Workflow enqueue denied/);
  const boundTask=await fixtureQueue.enqueue({scope,role:boundRole,credential:'manager',workflowId:boundWorkflow.id,workflowStep:0});
  await assert.rejects(fixtureQueue.enqueue({scope,role:boundRole,credential:'manager',workflowId:boundWorkflow.id,workflowStep:0}));
@@ -168,6 +172,7 @@ test('isolated PostgreSQL queue: concurrent claims, retries, restart, expiry and
  await q2.quarantine({scope,role,credential:'manager'});
  await assert.rejects(make(pools[0]).finish({scope,role,credential:'w1',taskId:stoppedTask,leaseId:running.lease_id,outcome:'succeeded'}),/Governance denied/);
  await assert.rejects(q.claim({scope,role,credential:'w2'}),/Governance denied/);
+ await assert.rejects(ledger(pools[1]).readFixturePrior({credential:'manager',id:runtimeResult.workflowId}),/Workflow unavailable/);
  await q2.stop({scope,credential:'manager'});
  await assert.rejects(make(pools[1]).enqueue({scope,role:'devops',credential:'manager'}),/Governance denied/);
  assert.equal(await q.cancel({scope,credential:'manager',taskId:stoppedTask}),true);
