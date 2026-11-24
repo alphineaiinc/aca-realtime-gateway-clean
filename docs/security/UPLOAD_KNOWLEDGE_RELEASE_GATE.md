@@ -20,7 +20,10 @@ Status: draft only; requires coordinated PR #125 rate-limit schema.
 No merge, migration on staging/production, deployment, or alert dismissal is authorized by this draft.
 
 ## Disconnect behavior
-The draft stops further chunk processing and database writes after a closed response is observed, including after an in-flight embedding returns. It does not cancel an already-dispatched provider call or database statement, and previously written chunks are not rolled back. Local capacity is retained until the processing handler exits. A distributed concurrent admission control remains a separate required gate.
+The draft stops further chunk processing and database writes after a closed response is observed, including after an in-flight embedding returns. It does not cancel an already-dispatched provider call or database statement, and the route now prepares all vectors before a single atomic INSERT; disconnect during an already-dispatched INSERT may still result in a complete write. Local capacity is retained until the processing handler exits. A distributed concurrent admission control remains a separate required gate.
 
 ## Distributed admission candidate
 An unmounted transaction-scoped PostgreSQL advisory-lock primitive and five mock unit tests are included. It is not a live concurrency cap. Before wiring, prove dedicated transaction ownership, rollback on every exit, connection loss behavior, no reentrant acquisition, transaction pool compatibility, bounded connection usage and real concurrent PostgreSQL tests. Hash collisions conservatively deny admission. Do not hold an unbounded transaction across provider calls; evaluate capacity isolation and cancellation before activation.
+
+## Atomic persistence
+All embeddings are collected and checked for finite numeric values before one parameterized PostgreSQL INSERT using paired arrays and ordinality. A failed embedding produces no knowledge writes; a statement failure cannot leave a subset of its rows committed. A lost response after database commit remains ambiguous; retry idempotency is not claimed. Verify the SQL against the actual pgvector schema before rollout. The distributed admission candidate remains unmounted pending validation.
