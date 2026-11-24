@@ -168,3 +168,14 @@ Trusted sandbox probe and Node CI passed at a776d4853c9d69a926aaff436868c2a605bc
 - Call cap: eight approved/reserved/reconciled calls are admitted; the ninth is denied. Spend cap: one 400-micro-USD reservation exhausts the 400-micro-USD budget; after outcome reconciliation, a second approved request is denied. In both cases persisted reserved_calls/reserved_microusd and provider-attempt row counts remain at the exact cap.
 - CI #828 exposed a test setup mismatch between budget-row max_calls and manifest limits. The first correction attempted maxCalls=1, which the manifest intentionally disallows (minimum 8); the final test exhausts the supported eight-call cap instead. CI #833 then failed on the invalid test configuration; exact-head CI #835 passed after correction.
 - This remains offline mock-provider and disposable PostgreSQL evidence. No real provider call, production billing, live credentials, production DB change, merge, deployment or added spend.
+
+
+## Provider call-count and monetary budget exhaustion acceptance — 2026-11-24
+
+- Code/test head: `f6f20decf76bd9eccd86f8c1c640087b3abc9bf0`; exact-head CI #835 (`45335732516`) passed.
+- Standard Node suite: 171 total, 170 passed, 0 failed, 1 skipped. Disposable PostgreSQL 17 queue/provider integration: 1 passed, 0 failed. Trusted engineering sandbox probe passed.
+- Extended the PostgreSQL-backed provider reservation test with two distinct owner-approved request sets and distinct request-evidence digests. The call-cap case exhausts all eight manifest-authorized calls, reconciles each attempt, then verifies the ninth request is denied. The spend-cap case reserves the full 400 micro-USD ceiling, reconciles the attempt, then verifies the next independently approved request is denied.
+- Both cases assert durable reserved call/micro-USD totals and that the rejected request leaves no provider-attempt row. Attempts are reconciled between reservations so the unresolved-outcome circuit breaker cannot mask the budget ceiling being tested.
+- An initial test iteration failed because the activation manifest correctly rejects a configured maxCalls below eight. The fixture was corrected to preserve the eight-call manifest floor and exercise exhaustion by consuming the available allowance. Exact-head CI #835 passed.
+- No production runtime code, database schema, credentials, or provider client was changed. This is disposable PostgreSQL acceptance only; no live provider calls, billing, production DB changes, merge, deployment, secret activation or additional spend.
+- Next: adversarial multi-scope isolation and operational stop/quarantine notification evidence, followed by independent security reviewer #22. Reviewer #22 remains HOLD; offline acceptance does not clear it or activate agents.
