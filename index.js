@@ -916,6 +916,17 @@ const http = require("http"); // ✅ Needed so express-ws binds to the same serv
 const cors = require("cors");
 const bodyParser = require("body-parser");
 const app = express();
+// Temporary staging-only diagnostic: no header values returned to clients.
+if(process.env.RENDER_SERVICE_ID==="srv-dc2ffvm8bjmc73fhn8j0"){
+ const diagnosticLimit=require("./src/security/ingressLimit").ingressLimit({max:10});
+ app.get("/__aca_sec09_probe",diagnosticLimit,(req,res)=>{
+  const chain=String(req.headers["x-forwarded-for"]||"").split(",").map(x=>x.trim()).filter(Boolean);
+  const marker="192.0.2.123";
+  console.log(JSON.stringify({event:"aca_sec09_proxy_probe",peer:req.socket.remoteAddress,hopCount:chain.length,markerPresent:chain.includes(marker),markerPosition:chain.indexOf(marker),resolvedIsMarker:req.ip===marker}));
+  res.status(204).end();
+ });
+}
+
 
 // ✅ Story 12.8 — security headers + origin allowlist guard (fail-closed in prod)
 try {
