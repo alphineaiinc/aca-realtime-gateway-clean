@@ -231,6 +231,14 @@ test('isolated PostgreSQL queue: concurrent claims, retries, restart, expiry and
  await approval(pools[1]).recordDecision({scope,id:excessApproval.id,binding:excessApproval.binding,decision:'approved',credential:'owner'});
  await assert.rejects(reviewed(pools[1]).reserve({credential:'manager',approvalId:excessApproval.id,reviewEnvelope:excessEnvelope}),/Spend budget denied/);
  assert.equal((await pools[0].query('SELECT binding FROM engineering_team_provider_attempts WHERE binding=$1',[excessBinding])).rowCount,0);
+ const requestBound=createProviderReservation({pool:pools[0],manifest:providerManifest,policy:providerPolicy,authenticate:async c=>identities.get(c),ceilings:{fixture:400},reviewVerifier,prepareRequest:request=>({model:'fixture',executionAuthorized:false,evidenceSha256:digest(JSON.stringify(request))})});
+ const exactRequest={input:'fixture'};
+ const exactBinding=await requestBound.evidence(reviewEnvelope,exactRequest);
+ assert.notEqual(exactBinding,await requestBound.evidence(reviewEnvelope,{input:'substitution'}));
+ const exactApproval=await approval(pools[0]).request({scope,operation:'provider.activate',evidence:exactBinding,credential:'manager'});
+ await approval(pools[1]).recordDecision({scope,id:exactApproval.id,binding:exactApproval.binding,decision:'approved',credential:'owner'});
+ await assert.rejects(requestBound.reserve({credential:'manager',approvalId:exactApproval.id,reviewEnvelope,request:{input:'substitution'}}),/Reservation denied/);
+ assert.equal((await pools[0].query('SELECT binding FROM engineering_team_provider_attempts WHERE binding=$1',[exactBinding])).rowCount,0);
  const stoppedTask=await q.enqueue({scope,role,credential:'manager'});
  const running=await q.claim({scope,role,credential:'w1'});
  await q2.quarantine({scope,role,credential:'manager'});
