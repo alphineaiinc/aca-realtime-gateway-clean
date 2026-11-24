@@ -74,3 +74,10 @@ test('durable approval rejects scope mutation during asynchronous authentication
  const approval=createDurableApprovalPolicy({pool:{query:async()=>({rowCount:1,rows:[{id:'approval'}]})},scopes:[mutable],authenticate:async()=>{mutable.product='product-b';return {id:'attacker',product:'product-b',repository:scope.repository,sha:scope.sha,permission:'queue.manage'};}});
  await assert.rejects(approval.request({scope:mutable,operation:'provider.activate',evidence:'a'.repeat(64),credential:'credential'}),/Identity denied/);
 });
+
+test('durable approval owner decision rejects scope mutation during asynchronous authentication',async()=>{
+ const mutable={...scope},queries=[];
+ const approval=createDurableApprovalPolicy({pool:{query:async(sql,params)=>{queries.push({sql,params});return {rowCount:1,rows:[{id:'approval',state:'approved'}]};}},scopes:[mutable],authenticate:async()=>{mutable.product='product-b';return {id:'attacker',product:'product-b',repository:scope.repository,sha:scope.sha,permission:'owner.approval'};}});
+ await assert.rejects(approval.recordDecision({scope:mutable,id:'123e4567-e89b-42d3-a456-426614174000',binding:'b'.repeat(64),credential:'credential',decision:'approved'}),/Identity denied/);
+ assert.equal(queries.length,0);
+});
