@@ -195,3 +195,21 @@ CREATE TABLE engineering_team_governance_recoveries (
  created_at timestamptz NOT NULL DEFAULT clock_timestamp(),
  CHECK((action='clear-stop' AND role IS NULL) OR (action='clear-quarantine' AND role IS NOT NULL))
 );
+
+
+-- Durable operational governance alert journal. This records alerts atomically;
+-- it does not imply delivery or authorize an external notification provider.
+CREATE TABLE engineering_team_governance_alerts (
+ id uuid PRIMARY KEY,
+ product text NOT NULL,
+ repository text NOT NULL,
+ event_type text NOT NULL CHECK(event_type IN ('stop.created','quarantine.created','stop.cleared','quarantine.cleared')),
+ role text CHECK(role IS NULL OR role IN ('orchestrator','project-manager','solution-architect','backend-developer','frontend-developer','qa-testing','security-reviewer','devops')),
+ actor_id text NOT NULL,
+ approval_id uuid REFERENCES engineering_team_approval_requests(id),
+ created_at timestamptz NOT NULL DEFAULT clock_timestamp(),
+ CHECK((event_type IN ('stop.created','stop.cleared') AND role IS NULL) OR
+       (event_type IN ('quarantine.created','quarantine.cleared') AND role IS NOT NULL))
+);
+CREATE INDEX engineering_team_governance_alerts_scope_idx
+ ON engineering_team_governance_alerts(product,repository,created_at);
