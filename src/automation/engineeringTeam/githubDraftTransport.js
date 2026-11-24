@@ -1,5 +1,5 @@
 'use strict';
-const {digest}=require('./patchPlanner');
+const {validatePublicationRequest}=require('./publicationRequest');
 const {publicationBinding}=require('./publicationReservation');
 // Unmounted GitHub draft transport. Requires an independently authorized,
 // durable single-use admission service. Never writes a branch or merges.
@@ -16,8 +16,7 @@ function createGitHubDraftTransport({token,repository,baseBranch,fetchImpl=globa
  }
  return Object.freeze({async publish({request,headSha,headBranch,signal}={}){
   if(!request||request.scope?.repository!==repository||request.operation!=='github.write'||request.mode!=='draft-only'||request.executionAuthorized!==false||request.requiresIndependentAcceptance!==true||! /^[a-f0-9]{40}$/.test(request.scope.sha)||! /^[a-f0-9]{40}$/.test(headSha)||typeof headBranch!=='string'||! /^aca-agent-draft-[a-f0-9]{16}$/.test(headBranch)||headBranch===baseBranch)throw Error('Draft request denied');
-  const payload={scope:request.scope,operation:request.operation,mode:request.mode,patchDigest:request.patchDigest,testDigest:request.testDigest,reviewDigest:request.reviewDigest};
-  if([payload.patchDigest,payload.testDigest,payload.reviewDigest].some(x=>typeof x!=='string'||! /^[a-f0-9]{64}$/.test(x))||digest(JSON.stringify(payload))!==request.evidenceSha256)throw Error('Evidence denied');
+  request=validatePublicationRequest(request,{repository});
   const binding=publicationBinding({evidenceSha256:request.evidenceSha256,repository,baseBranch,headBranch,headSha});
   const base=await call('/git/ref/heads/'+baseBranch,'GET',undefined,signal);
   const head=await call('/git/ref/heads/'+headBranch,'GET',undefined,signal);
