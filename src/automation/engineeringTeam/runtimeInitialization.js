@@ -4,10 +4,11 @@ const {createIdentityVerifier}=require('./identityVerifier');
 const {createDurableQueue}=require('./durableQueue');
 const {createDurableApprovalPolicy}=require('./durableApproval');
 const {createSpendBudget}=require('./spendBudget');
+const {createQueuePolicyBridge}=require('./queuePolicyBridge');
 const {createWorkflowLedger}=require('./workflowLedger');
 // Initialization is deliberately inert: no provider clients, scheduler or
 // external writes are created. Real execution requires separate acceptance.
-function initializeRuntime({config,pool,identity,ceilings}={}){
+function initializeRuntime({config,pool,identity,ceilings,readQueueState}={}){
  const manifest=createActivationManifest(config);
  if(!pool||typeof pool.query!=='function'||typeof pool.connect!=='function')throw Error('Transactional pool required');
  if(!ceilings||Object.values(manifest.models).some(model=>!Object.hasOwn(ceilings,model)))throw Error('Model ceilings required');
@@ -17,6 +18,7 @@ function initializeRuntime({config,pool,identity,ceilings}={}){
  const approvals=createDurableApprovalPolicy({pool,scopes,authenticate});
  const budget=createSpendBudget({pool,...manifest.scope,budgetId:manifest.budgetId,ceilings});
  const workflow=createWorkflowLedger({pool,scope:manifest.scope,authenticate});
- return Object.freeze({manifest,queue,approvals,budget,workflow,authenticate,status:'initialized-inert',executionAllowed:()=>false});
+ const policy=readQueueState===undefined?null:createQueuePolicyBridge({manifest,readQueueState});
+ return Object.freeze({manifest,queue,approvals,budget,workflow,policy,authenticate,status:'initialized-inert',executionAllowed:()=>false});
 }
 module.exports={initializeRuntime};
