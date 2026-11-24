@@ -36,9 +36,14 @@ function createGovernanceRecovery({pool,scope,authenticate}={}){
    const audit=await client.query("INSERT INTO engineering_team_governance_recoveries(approval_id,product,repository,head_sha,action,role,evidence_sha256,recovered_by) VALUES($1,$2,$3,$4,$5,$6,$7,$8) ON CONFLICT DO NOTHING RETURNING approval_id",[approvalId,...params,action,role??null,evidenceSha256,actorId]);
    if(audit.rowCount!==1)throw Error('Recovery approval already consumed');
    const removed=action==='clear-stop'
-    ?await client.query('DELETE FROM engineering_team_stops WHERE product=$1 AND repository=$2',[...params.slice(0,2)])
-    :await client.query('DELETE FROM engineering_team_quarantine WHERE product=$1 AND repository=$2 AND role=$3',[...params.slice(0,2),role]);
+    ?await client.query('DELETE FROM engineering_team_stops WHERE product=$1 AND repository=$2 RETURNING product',[...params.slice(0,2)])
+    :await client.query('DELETE FROM engineering_team_quarantine WHERE product=$1 AND repository=$2 AND role=$3 RETURNING role',[...params.slice(0,2),role]);
    if(removed.rowCount!==1)throw Error('Recovery target unavailable');
+   await client.query(action==='clear-stop'
+    ?"INSERT INTO engineering_team_governance_alerts(id,product,repository,event_type,actor_id,approval_id) VALUES ($1,$2,$3,'stop.cleared',$4,$5)"
+    :"INSERT INTO engineering_team_governance_alerts(id,product,repository,event_type,role,actor_id,approval_id) VALUES ($1,$2,$3,'quarantine.cleared',$4,$5,$6)",
+    action==='clear-stop'?[createHash('sha256').update(JSON.stringify([approvalId,'stop.cleared'])).digest('hex').slice(0,32).replace(/(.{8})(.{4})(.{4})(.{4})(.{12})/,'$1-$2-$3-$4-$5'),...params.slice(0,2),actorId,approvalId]
+    :[createHash('sha256').update(JSON.stringify([approvalId,'quarantine.cleared'])).digest('hex').slice(0,32).replace(/(.{8})(.{4})(.{4})(.{4})(.{12})/,'$1-$2-$3-$4-$5'),...params.slice(0,2),role,actorId,approvalId]);
    await client.query('COMMIT');
    return Object.freeze({action,role:role??null,recovered:true,executionAuthorized:false});
   }catch(e){try{await client.query('ROLLBACK');}catch{discard=true;}throw e;}
