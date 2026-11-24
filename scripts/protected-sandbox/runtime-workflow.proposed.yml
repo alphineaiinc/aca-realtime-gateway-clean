@@ -1,0 +1,31 @@
+# Proposed runtime acceptance workflow — NOT ACTIVE
+# Requires independent review and trusted workflow installation before execution.
+name: Reviewed fixed fixture runtime
+on:
+  workflow_dispatch:
+permissions: {}
+jobs:
+  fixture:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Fetch only pinned reviewed source files
+        shell: bash
+        run: |
+          set -euo pipefail
+          umask 077
+          cd "$(mktemp -d)"
+          revision='04193ffc919a30747a5c9b9a93ae252cf659e520'
+          fetch() {
+            mkdir -p "$(dirname "$1")"
+            curl --fail --silent --show-error --max-time 30 "https://raw.githubusercontent.com/alphineaiinc/aca-realtime-gateway-clean/$revision/$1" -o "$1"
+            [[ "$(git hash-object "$1")" == "$2" ]]
+          }
+          fetch 'scripts/protected-sandbox/fixtureHarness.js' '5bb56db4d92ee6cdfe0bf69e4d24b3dbf6c07f59'
+          fetch 'test/protected-sandbox-failure.test.js' '0500b1daeb4dd3fbf5de50fccb0d4a06b469c19d'
+          fetch 'test/protected-sandbox-fixture-harness.test.js' '75fd7a1547b274225d323309aebfd385c6724e0d'
+          [[ "$(uname -s):$(uname -m)" == Linux:x86_64 ]]
+          node --test test/protected-sandbox-failure.test.js test/protected-sandbox-fixture-harness.test.js
+          timeout 60s docker pull --platform linux/amd64 'node@sha256:be979e5523c76fa4d5ca4ebd3099078f220aa47ec39c48ad5b5df9314debd6eb'
+          timeout 90s node -e 'const h=require("./scripts/protected-sandbox/fixtureHarness");const r=h.run(h.imagePin);if(!r.fixturePassed||r.executionAuthorized!==false||r.attestation!==false)process.exit(1);console.log(JSON.stringify(r))'
+          echo 'Development fixture only; no execution authorization or attestation'
