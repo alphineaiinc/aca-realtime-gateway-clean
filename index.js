@@ -990,6 +990,7 @@ const { ingressLimit: createIngressLimit } = require("./src/security/ingressLimi
 const publicRateLimit = createIngressLimit({ windowMs: 60000, max: 20 });
 const demoRateLimit = createIngressLimit({ windowMs: 60000, max: 10 });
 const authRateLimit = createIngressLimit({ windowMs: 60000, max: 30 });
+const monitorRateLimit = createIngressLimit({ windowMs: 60000, max: 30 });
 
 // ✅ Story 12.5/12.6 — Create HTTP server EARLY so express-ws binds correctly
 const server = http.createServer(app);
@@ -1106,7 +1107,7 @@ const {
 app.use("/twilio", twilioRouter);
 console.log("✅ Mounted /twilio routes");
 
-app.get("/monitor/twilio-debug", requireAdmin, (req, res) => {
+app.get("/monitor/twilio-debug", monitorRateLimit, requireAdmin, (req, res) => {
   try {
     return res.status(200).json({
       ok: true,
@@ -1303,7 +1304,7 @@ app.get("/health", (req, res) => {
   }
 });
 
-app.get("/monitor/resilience", requireAdmin, (req, res) => {
+app.get("/monitor/resilience", monitorRateLimit, requireAdmin, (req, res) => {
   res.set("Content-Type", "text/plain; version=0.0.4");
   res.send(getMetricsText());
 });
@@ -1377,7 +1378,7 @@ try {
 // ============================================================
 // === Story 9.6 — Global Matrix Health Endpoint ===
 // ============================================================
-app.get("/monitor/deploy-matrix", requireAdmin, async (req, res) => {
+app.get("/monitor/deploy-matrix", monitorRateLimit, requireAdmin, async (req, res) => {
   try {
     const dashboardUrl =
       process.env.DASHBOARD_URL || "https://alphine-dashboard.vercel.app";
