@@ -3,7 +3,7 @@ const {test}=require("node:test");
 const assert=require("node:assert/strict");
 const {generateKeyPairSync}=require("node:crypto");
 const {once}=require("node:events");
-const {startServer}=require("../src/automation/reviewerStagingServer");
+const {startServer,signVerdict}=require("../src/automation/reviewerStagingServer");
 const {verifySignedReview}=require("../src/automation/signedReviewEvidence");
 const sha="a".repeat(40),otherSha="b".repeat(40),repositoryId=1080201236,reviewerId=800;
 const token="isolated-test-token-"+("x".repeat(32));
@@ -44,20 +44,20 @@ async function withServer(options,action){
  try{await action(env);}
  finally{await new Promise((resolve,reject)=>env.server.close(e=>e?reject(e):resolve()));}
 }
-test("full authenticated HTTP review signs only independently approved exact commit",async()=>{
+test("exact-head approval alone cannot produce a signed verdict",async()=>{
  await withServer({},async({server,paths})=>{
   const response=await callReviewer(server);
-  assert.equal(response.status,200);
-  const envelope=await response.json();
-  assert.equal(paths.length,4,"fetch PR, reviews, then revalidate PR and reviews");
-  const review=verifySignedReview({envelope,publicKey:keys.publicKey,...scope,
-    headSha:sha,reviewerId});
-  assert.equal(review.status,"passed");
-  assert.equal(verifySignedReview({envelope,publicKey:keys.publicKey,...scope,
-    headSha:otherSha,reviewerId}),null);
-  assert.equal(verifySignedReview({envelope,publicKey:generateKeyPairSync("ed25519").publicKey,
-    ...scope,reviewerId}),null);
+  assert.equal(response.status,409);
+  assert.deepEqual(await response.json(),{error:"substantive_independent_disposition_required"});
+  assert.equal(paths.length,4);
  });
+});
+test("isolated disposable-key envelope retains cryptographic scope binding",()=>{
+ const envelope=signVerdict(scope,reviewerId,pem);
+ assert.equal(verifySignedReview({envelope,publicKey:keys.publicKey,...scope,reviewerId}).status,"passed");
+ for(const mismatch of [{headSha:otherSha},{challenge:"d".repeat(64)},{issueNumber:99},{publicKey:generateKeyPairSync("ed25519").publicKey}]){
+  assert.equal(verifySignedReview({envelope,publicKey:keys.publicKey,...scope,reviewerId,...mismatch}),null);
+ }
 });
 test("stale head changed during review cannot sign",async()=>{
  await withServer({latePr:{...goodPr,head:{...goodPr.head,sha:otherSha}}},async({server})=>{
@@ -95,14 +95,11 @@ test("approval dismissed between evidence fetches fails closed",async()=>{
  });
 });
 
-test("review rejects absent challenge and binds response to exact request",async()=>{
+test("review rejects absent challenge and denies approval-only signing",async()=>{
  await withServer({},async({server,paths})=>{
   assert.equal((await callReviewer(server,{...scope,challenge:undefined})).status,503);
   assert.equal(paths.length,0);
-  const r=await callReviewer(server);assert.equal(r.status,200);
-  const envelope=await r.json();
-  for(const mismatch of [{challenge:"d".repeat(64)},{issueNumber:99}]){
-   assert.equal(verifySignedReview({envelope,publicKey:keys.publicKey,...scope,reviewerId,...mismatch}),null);
-  }
+  const r=await callReviewer(server);assert.equal(r.status,409);
+  assert.deepEqual(await r.json(),{error:"substantive_independent_disposition_required"});
  });
 });
