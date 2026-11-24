@@ -281,8 +281,8 @@ test('isolated PostgreSQL queue: concurrent claims, retries, restart, expiry and
  await assert.rejects(breachProvider.reserve({credential:'manager',approvalId:breachApproval.id}),/unresolved provider attempt/);
  // Reconcile the first fixture before admitting another attempt.
  const {createCostEnvelope}=require('../src/automation/engineeringTeam/costEnvelope');
- const costManifest=createActivationManifest({...providerManifest,limits:{...providerManifest.limits,maxSpendMicrousd:10000}});
- const costEnvelope=createCostEnvelope({manifest:costManifest,maxInputTokens:1000,prices:{fixture:{input:100000,output:200000}}});
+ const costManifest=unknownManifest;
+ const costEnvelope=createCostEnvelope({manifest:costManifest,maxInputTokens:100,prices:{fixture:{input:100000,output:200000}}});
  const assessedOutcomes=pools.map(pool=>createProviderOutcome({pool,scope,authenticate:async c=>identities.get(c),costEnvelope}));
  await assessedOutcomes[0].record({credential:'owner',binding:unknownBinding,usage:{inputTokens:10,outputTokens:5,actualMicrousd:999}});
  assert.equal(Number((await pools[1].query('SELECT actual_microusd FROM engineering_team_provider_outcomes WHERE binding=$1',[unknownBinding])).rows[0].actual_microusd),2);
@@ -290,7 +290,6 @@ test('isolated PostgreSQL queue: concurrent claims, retries, restart, expiry and
  const stopQuery='SELECT 1 FROM engineering_team_stops WHERE product=$1 AND repository=$2';
  const stopArgs=[scope.product,scope.repository];
  assert.equal((await pools[0].query(stopQuery,stopArgs)).rowCount,0);
- const {createCostEnvelope}=require('../src/automation/engineeringTeam/costEnvelope');
  const costBound=createProviderOutcome({pool:pools[0],scope,authenticate:async c=>identities.get(c),costEnvelope:createCostEnvelope({manifest:breachManifest,maxInputTokens:100,prices:{fixture:{input:100000,output:200000}}})});
  const wrongBudget=createProviderOutcome({pool:pools[1],scope,authenticate:async c=>identities.get(c),costEnvelope:createCostEnvelope({manifest:unknownManifest,maxInputTokens:100,prices:{fixture:{input:100000,output:200000}}})});
  await assert.rejects(wrongBudget.record({credential:'owner',binding:breachBinding,usage:{inputTokens:101,outputTokens:0}}),/Outcome budget denied/);
