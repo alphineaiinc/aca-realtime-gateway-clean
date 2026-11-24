@@ -2,11 +2,12 @@ name: ACA SEC09 isolated hosted probes
 on:
   pull_request:
     branches: [main]
+    types: [labeled]
 permissions:
   contents: read
 jobs:
   probes:
-    if: github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.head.ref == 'aca-sec09-isolated-proxy-diagnostic' && contains(github.event.pull_request.labels.*.name, 'sec09-hosted-authorized')
+    if: github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.head.ref == 'aca-sec09-isolated-proxy-diagnostic' && github.event.label.name == 'sec09-hosted-authorized'
     runs-on: ubuntu-latest
     timeout-minutes: 3
     steps:
