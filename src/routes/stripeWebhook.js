@@ -224,6 +224,8 @@ router.post(
         if (settlementMode && event.type === 'invoice.payment_succeeded') {
           const result = await settleInvoice(event);
           if (result !== 'settled' && result !== 'duplicate') return res.status(503).send('Webhook temporarily unavailable');
+          // Settlement is durable; notification requires a separately verified recipient.
+          return res.json({ received: true });
         }
         const outcome = await durableProcessor(event);
         if (outcome === 'completed') return res.json({ received: true });
