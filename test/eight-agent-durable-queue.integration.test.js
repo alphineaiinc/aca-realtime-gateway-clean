@@ -141,7 +141,7 @@ test('isolated PostgreSQL queue: concurrent claims, retries, restart, expiry and
  assert.equal(correctionResult.releaseApproved,false);
  assert.deepEqual({correctionRuns,correctionProposals,correctionReviews},{correctionRuns:2,correctionProposals:1,correctionReviews:1});
  assert.equal((await pools[1].query('SELECT initial_digest FROM engineering_team_correction_cycles WHERE task_id=$1',[correctionTask])).rows[0].initial_digest,initialCorrectionPlan.evidenceSha256);
- await assert.rejects(durableCorrection.run({taskId:correctionTask,edits:correctionEdits('module.exports = broken;')}),/Correction unavailable/);
+ await assert.rejects(durableCorrection.run({taskId:correctionTask,edits:correctionEdits('module.exports = broken;')}),/consumed/);
  identities.set('owner',{...scope,id:'owner',permission:'owner.approval'});
  identities.set('self',{...scope,id:'manager',permission:'owner.approval'});
  const approval=pool=>createDurableApprovalPolicy({pool,scopes:[scope],authenticate:async c=>identities.get(c)});
