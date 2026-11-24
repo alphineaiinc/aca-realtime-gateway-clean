@@ -38,3 +38,9 @@ test('policy evidence must match exact issue, manifest, repository and revision'
   await assert.rejects(bound.enqueue({}),/Queue policy denied/);
  }
 });
+
+test('policy facade rejects cross-product input scope before policy evaluation or queue access',async()=>{
+ const f=fixture();
+ await assert.rejects(f.bound.enqueue({scope:{...scope,product:'other-product'},role:'orchestrator'}),/Queue scope denied/);
+ assert.deepEqual(f.calls,[]);
+});
