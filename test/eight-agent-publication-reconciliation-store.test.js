@@ -15,7 +15,7 @@ function fixture({prior=[],mismatch=false,failInsert=false}={}){
  throw Error('unexpected SQL '+sql);
  },release(value){released=true;discard=value===true;}};
  const pool={connect:async()=>client};
- const store=createReconciliationStore({pool,authenticate:async()=>actor,collect:async scope=>mismatch?{...observation,requesterId:'attacker'}:{...observation,...scope},verifyObservation:async()=>!mismatch});
+ const store=createReconciliationStore({pool,authenticate:async()=>actor,collect:async scope=>mismatch?{...observation,requesterId:'attacker'}:{...observation,...scope},verifyObservation:async()=>true});
  return {store,calls,client,get inserted(){return inserted;},get released(){return released;},get discard(){return discard;}};
 }
 test('persists exact requester-bound observation once and never authorizes retry',async()=>{
@@ -38,4 +38,11 @@ test('database failure rolls back and connection is released',async()=>{
 test('invalid binding rejected before database access',async()=>{
  let connected=false;const store=createReconciliationStore({pool:{connect:async()=>{connected=true;}},authenticate:async()=>actor,collect:async()=>observation});
  await assert.rejects(store.record({credential:'fixture',binding:'bad'}),/Invalid binding/);assert.equal(connected,false);
+});
+
+test('unauthenticated collector evidence is rejected and rolled back',async()=>{
+ const f=fixture();
+ const guarded=createReconciliationStore({pool:{connect:async()=>f.client},authenticate:async()=>actor,collect:async scope=>({...observation,...scope}),verifyObservation:async()=>false});
+ await assert.rejects(guarded.record({credential:'fixture',binding}),/authentication failed/);
+ assert.ok(f.calls.some(x=>x.sql==='ROLLBACK'));assert.equal(f.inserted,null);
 });
