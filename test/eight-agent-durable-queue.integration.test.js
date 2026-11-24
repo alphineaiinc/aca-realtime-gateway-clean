@@ -756,7 +756,7 @@ test('isolated PostgreSQL queue: concurrent claims, retries, restart, expiry and
  const reconBinding=await reserveRecon('b'.repeat(64));
  const {createGitHubPublicationEvidenceBoundary}=require('../src/automation/engineeringTeam/githubPublicationEvidenceBoundary');
  const githubPr={number:77,body:'Evidence binding: '+reconBinding,draft:true,state:'open',base:{repo:{full_name:reconScope.repository},ref:'main',sha:reconScope.sha},head:{repo:{full_name:reconScope.repository},ref:reconBranch,sha:reconHead}};
- const githubResponse=async()=>({status:200,json:async()=>[githubPr]});
+ const githubResponse=async()=>new Response(JSON.stringify([githubPr]));
  const collectorFetch=async(url,options)=>{assert.equal(options.method,'GET');return githubResponse();};
  const independentVerifierFetch=async(url,options)=>{assert.equal(options.method,'GET');return githubResponse();};
  const evidenceBoundary=createGitHubPublicationEvidenceBoundary({collectFetch:collectorFetch,verifyFetch:independentVerifierFetch,collectToken:async()=>'disposable-collector-read-token',verifyToken:async()=>'disposable-independent-read-token'});
@@ -779,8 +779,8 @@ test('isolated PostgreSQL queue: concurrent claims, retries, restart, expiry and
  const rollbackBinding=await reserveRecon('f'.repeat(64));
  const tamperedPr={...githubPr,head:{...githubPr.head,sha:'d'.repeat(40)}};
  const rollbackBoundary=createGitHubPublicationEvidenceBoundary({
-  collectFetch:async()=>({status:200,json:async()=>[githubPr]}),
-  verifyFetch:async()=>({status:200,json:async()=>[tamperedPr]}),
+  collectFetch:async()=>new Response(JSON.stringify([githubPr])),
+  verifyFetch:async()=>new Response(JSON.stringify([tamperedPr])),
   collectToken:async()=>'disposable-collector-read-token',
   verifyToken:async()=>'disposable-independent-read-token'
  });
