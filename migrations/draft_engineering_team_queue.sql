@@ -232,7 +232,7 @@ CREATE TABLE engineering_team_preparation_attempts (
  repository text NOT NULL,
  head_sha text NOT NULL CHECK(head_sha ~ '^[a-f0-9]{40}$'),
  state text NOT NULL CHECK(state IN ('started','completed')),
- result_json jsonb,
+ result_json text CHECK(result_json IS NULL OR octet_length(result_json)<=131072),
  result_sha256 text CHECK(result_sha256 IS NULL OR result_sha256 ~ '^[a-f0-9]{64}$'),
  started_at timestamptz NOT NULL DEFAULT clock_timestamp(),
  completed_at timestamptz,
