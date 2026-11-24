@@ -172,6 +172,15 @@ async function deliverNotification(event, sendEmail) {
 
 }
 
+// Explicit release gate; disabled until trusted mapping provisioning and acceptance.
+const settlementMode = process.env.ACA_STRIPE_SETTLEMENT === '1';
+let settleInvoice;
+if (settlementMode) {
+  if (process.env.STRIPE_DURABLE_RECEIPTS !== '1') throw new Error('Durable receipts required');
+  const {createStripeInvoiceSettlement} = require('../security/stripeInvoiceSettlement');
+  const {createStripeInvoiceSettlementStore} = require('../security/stripeInvoiceSettlementStore');
+  settleInvoice = createStripeInvoiceSettlement({store:createStripeInvoiceSettlementStore(require('../db/pool')),liveMode:true});
+}
 const durableMode = process.env.STRIPE_DURABLE_RECEIPTS === '1';
 let durableProcessor;
 if (durableMode) {
@@ -212,6 +221,10 @@ router.post(
     }
     if (durableMode) {
       try {
+        if (settlementMode && event.type === 'invoice.payment_succeeded') {
+          const result = await settleInvoice(event);
+          if (result !== 'settled' && result !== 'duplicate') return res.status(503).send('Webhook temporarily unavailable');
+        }
         const outcome = await durableProcessor(event);
         if (outcome === 'completed') return res.json({ received: true });
       } catch {
