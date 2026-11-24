@@ -202,6 +202,27 @@ test('isolated PostgreSQL queue: concurrent claims, retries, restart, expiry and
  assert.equal(runtimeResult.releaseApproved,false);
  assert.equal((await ledger(pools[0]).status({credential:'manager',id:runtimeResult.workflowId})).next_step,8);
  await assert.rejects(runtime.run(runtimeInput),/Fixture runtime denied/);
+ // Restart recovery: task succeeded durably, but process stopped before ledger advance.
+ const recoveryWorkflow=await ledger(pools[0]).create('manager');
+ const recoveryTask=await fixtureQueue.enqueue({scope,role:sequence[0],credential:'manager',workflowId:recoveryWorkflow.id,workflowStep:0});
+ const recoveryPrior=await ledger(pools[1]).readFixturePrior({credential:'manager',id:recoveryWorkflow.id});
+ const recoveryAdapters=Object.fromEntries(sequence.map(r=>[r,async()=>Object.fromEntries(contract(r).fields.map(field=>[field,['recovery '+r]]))]));
+ const recoveryManager=createAgentManager({scopes:[scope],adapters:recoveryAdapters,fixturePriorEnabled:true});
+ const recoveryWorker=createQueueWorker({queue:fixtureQueue,manager:recoveryManager,fixtureProposalStorage:true,loadTask:async({id})=>({id,...scope,subject:'Restart recovery fixture',fixturePrior:recoveryPrior})});
+ assert.equal((await recoveryWorker.runOnce({scope,role:sequence[0],credential:'worker-0',expectedTaskId:recoveryTask})).state,'succeeded');
+ const resumedRuntime=createFixtureRuntime({scope,queue:fixtureQueue,ledger:ledger(pools[1]),adapters:recoveryAdapters,preparation:runtimePreparation,authorize:async()=>true});
+ const resumed=await resumedRuntime.resume({workflowId:recoveryWorkflow.id,subject:'Restart recovery fixture',developerRole:'backend-developer',managerCredential:'manager',workerCredentials:Object.fromEntries(sequence.map((r,i)=>[r,'worker-'+i]))});
+ assert.equal(resumed.state,'completed');
+ assert.equal((await ledger(pools[0]).status({credential:'manager',id:recoveryWorkflow.id})).next_step,8);
+ // Unknown in-flight work is surfaced for reconciliation and never reclaimed automatically.
+ const unknownWorkflow=await ledger(pools[0]).create('manager');
+ const unknownTask=await fixtureQueue.enqueue({scope,role:sequence[0],credential:'manager',workflowId:unknownWorkflow.id,workflowStep:0});
+ const unknownLease=await fixtureQueue.claim({scope,role:sequence[0],credential:'worker-0',expectedTaskId:unknownTask});
+ assert.equal(unknownLease.id,unknownTask);
+ const unknownResume=await createFixtureRuntime({scope,queue:fixtureQueue,ledger:ledger(pools[1]),adapters:recoveryAdapters,preparation:runtimePreparation,authorize:async()=>true}).resume({workflowId:unknownWorkflow.id,subject:'Unknown lease fixture',developerRole:'backend-developer',managerCredential:'manager',workerCredentials:Object.fromEntries(sequence.map((r,i)=>[r,'worker-'+i]))});
+ assert.equal(unknownResume.state,'needs-reconciliation');
+ assert.equal(unknownResume.taskId,unknownTask);
+ assert.equal((await fixtureQueue.inspectWorkflowStep({scope,workflowId:unknownWorkflow.id,workflowStep:0,credential:'manager'})).state,'running');
  const publicationBinding='e'.repeat(64);
  const pub=await approval(pools[0]).request({scope,operation:'github.write',evidence:publicationBinding,credential:'manager'});
  const reserve=pool=>createPublicationReservation({pool,scope,authenticate:async c=>identities.get(c)});
