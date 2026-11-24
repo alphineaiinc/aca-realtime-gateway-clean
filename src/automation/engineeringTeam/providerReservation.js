@@ -6,7 +6,7 @@ function createProviderReservation({pool,manifest,policy,authenticate,ceilings,r
  if(typeof pool?.connect!=='function'||typeof policy?.evaluate!=='function'||typeof authenticate!=='function'||!ceilings)throw Error('Invalid provider reservation');
  const pinned=createActivationManifest(manifest);
  if(pinned.evidenceSha256!==manifest.evidenceSha256||manifest.executionAuthorized!==false)throw Error('Manifest denied');
- const scope=pinned.scope,model=pinned.models.orchestrator,amount=ceilings[model];
+ const scope=pinned.scope,model=pinned.models.orchestrator,amount=Object.hasOwn(ceilings,model)?ceilings[model]:undefined;
  if(!Number.isSafeInteger(amount)||amount<1||amount>pinned.limits.maxSpendMicrousd)throw Error('Invalid provider ceiling');
  if(reviewVerifier!==undefined&&typeof reviewVerifier.verify!=='function')throw Error('Invalid review verifier');
  if(costEvidenceSha256!==undefined&&!/^[a-f0-9]{64}$/.test(costEvidenceSha256))throw Error('Invalid cost evidence');
