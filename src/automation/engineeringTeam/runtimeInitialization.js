@@ -4,6 +4,7 @@ const {createIdentityVerifier}=require('./identityVerifier');
 const {createDurableQueue}=require('./durableQueue');
 const {createDurableApprovalPolicy}=require('./durableApproval');
 const {createSpendBudget}=require('./spendBudget');
+const {createWorkflowLedger}=require('./workflowLedger');
 // Initialization is deliberately inert: no provider clients, scheduler or
 // external writes are created. Real execution requires separate acceptance.
 function initializeRuntime({config,pool,identity,ceilings}={}){
@@ -15,6 +16,7 @@ function initializeRuntime({config,pool,identity,ceilings}={}){
  const queue=createDurableQueue({pool,scopes,authenticate});
  const approvals=createDurableApprovalPolicy({pool,scopes,authenticate});
  const budget=createSpendBudget({pool,...manifest.scope,budgetId:manifest.budgetId,ceilings});
- return Object.freeze({manifest,queue,approvals,budget,authenticate,status:'initialized-inert',executionAllowed:()=>false});
+ const workflow=createWorkflowLedger({pool,scope:manifest.scope,authenticate});
+ return Object.freeze({manifest,queue,approvals,budget,workflow,authenticate,status:'initialized-inert',executionAllowed:()=>false});
 }
 module.exports={initializeRuntime};
