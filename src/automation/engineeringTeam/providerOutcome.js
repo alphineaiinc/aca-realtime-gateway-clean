@@ -3,7 +3,7 @@
 function createProviderOutcome({pool,scope,authenticate}={}){
  if(typeof pool?.connect!=='function'||typeof authenticate!=='function'||!scope?.product||!scope?.repository||! /^[a-f0-9]{40}$/.test(scope.sha))throw Error('Invalid outcome configuration');
  const pinned=Object.freeze({...scope});
- const allowed=a=>a&&typeof a.id==='string'&&a.permission==='queue.manage'&&a.role===undefined&&a.product===pinned.product&&a.repository===pinned.repository&&a.sha===pinned.sha;
+ const allowed=a=>a&&typeof a.id==='string'&&/^[a-zA-Z0-9_.-]{1,80}$/.test(a.id)&&a.permission==='owner.approval'&&a.role===undefined&&a.product===pinned.product&&a.repository===pinned.repository&&a.sha===pinned.sha;
  return Object.freeze({async record({credential,binding,usage=null}={}){
   if(typeof binding!=='string'||! /^[a-f0-9]{64}$/.test(binding))throw Error('Outcome denied');
   const u=usage===null?null:structuredClone(usage);
