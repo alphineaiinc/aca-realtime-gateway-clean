@@ -181,3 +181,12 @@ Implementation commits: f1e5de7 (workflow-step inspection), 5c8144f (restart-awa
 - Current code/test head: `f4a7126dcfc2e86f9136ee2edd7c8790d770def2`. Exact-head CI has NOT yet been observed for this head; do not mark these changes tested or accepted until CI executes and passes.
 - Recovery and preparation changes are development-only schema/code. The migration remains draft and must only be exercised in disposable CI. No production migration, live provider, agent dispatch, merge, deployment, credential change or additional spend.
 - Review findings remain open until independently re-reviewed against the corrected head. PR #21's Copilot review reported insufficient remaining quota; no successful independent reviewer clearance is established. Agent Manager remains not activated.
+
+
+## Security findings remediation checkpoint — 2026-11-24
+
+- Six Copilot findings on the Agent Manager candidate were traced to mutable scope during async identity checks, incident-agnostic recovery approval, unpinned policy facade scope, product omission from CI admission uniqueness, and restart replay of fixture preparation.
+- The PR branch now contains corresponding implementation changes: immutable captured scope comparisons; incident_id-bound recovery evidence and target deletion; pinned/validated scope snapshots in policyBoundQueue; product-inclusive CI receipt key; and durable preparation attempt/result records that require reconciliation after an interrupted attempt.
+- Exact-head PostgreSQL integration initially failed because its test fixture omitted incidentId after the API was hardened. Updated the disposable integration fixture to read and bind incident IDs. Exact head d93e2397e390ca3a10a4c99be3e7eb91cd7bf057 passed CI run 45401717224: Node tests 186 passed/1 skipped, PostgreSQL integration passed, trusted sandbox passed.
+- Independent review acceptance is still outstanding: inline Copilot threads have not been formally cleared on the corrected head; PR #21 review failed because reviewer quota was exhausted; no Codex assessment report is available in the project record. Keep #22 open and PR #142 draft.
+- No live agent dispatch, provider calls, merge, deployment, production database modification, credential rotation or additional spending. Offline 8/8 remains distinct from live 0/8.
