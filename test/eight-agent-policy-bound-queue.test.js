@@ -38,3 +38,22 @@ test('policy evidence must match exact issue, manifest, repository and revision'
   await assert.rejects(bound.enqueue({}),/Queue policy denied/);
  }
 });
+
+test('policy-bound facade rejects cross-scope requests before policy or queue access',async()=>{
+ const f=fixture();
+ const other={...scope,product:'other-product'};
+ await assert.rejects(f.bound.enqueue({scope:other,role:'orchestrator'}),/Queue scope denied/);
+ await assert.rejects(f.bound.claim({scope:other,role:'orchestrator',credential:'worker'}),/Queue scope denied/);
+ assert.deepEqual(f.calls,[]);
+});
+test('policy-bound facade snapshots the configured scope and rejects caller mutation',async()=>{
+ const f=fixture();
+ const mutable={...scope};
+ const queueCalls=[];
+ const queue=Object.fromEntries(['enqueue','inspectWorkflowStep','claim','finish','stop','quarantine','expire','cancel'].map(name=>[name,async input=>{queueCalls.push(input);return true;}]));
+ const bound=createPolicyBoundQueue({queue,policy:{evaluate:async()=>({scope,issueNumber:issue,manifestDigest,policyVersion:'v1',eligibleForPreparation:true,executionAuthorized:false,evidenceSha256:'c'.repeat(64)})},scope:mutable,issue,manifestDigest});
+ mutable.product='other-product';
+ await bound.enqueue({role:'orchestrator'});
+ assert.equal(queueCalls[0].scope.product,'aca');
+ assert.notEqual(queueCalls[0].scope,mutable);
+});
