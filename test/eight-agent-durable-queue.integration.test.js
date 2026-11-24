@@ -210,7 +210,11 @@ test('isolated PostgreSQL queue: concurrent claims, retries, restart, expiry and
  const recoveryManager=createAgentManager({scopes:[scope],adapters:recoveryAdapters,fixturePriorEnabled:true});
  const recoveryWorker=createQueueWorker({queue:fixtureQueue,manager:recoveryManager,fixtureProposalStorage:true,loadTask:async({id})=>({id,...scope,subject:'Restart recovery fixture',fixturePrior:recoveryPrior})});
  assert.equal((await recoveryWorker.runOnce({scope,role:sequence[0],credential:'worker-0',expectedTaskId:recoveryTask})).state,'succeeded');
- const resumedRuntime=createFixtureRuntime({scope,queue:fixtureQueue,ledger:ledger(pools[1]),adapters:recoveryAdapters,preparation:runtimePreparation,authorize:async()=>true});
+ const recoveryPreparation=createChangePreparation({scope,files:runtimeFiles,requiredChecks:['fixture'],authorize:async()=>true,
+ generate:async()=>JSON.stringify({edits:[{path:runtimeFiles[0].path,beforeSha256:digest(runtimeFiles[0].text),replacement:'module.exports=2;'}]}),
+ runIsolated:async x=>({evidenceSha256:x.plan.evidenceSha256,profile:x.profile,checks:[{name:'fixture',status:'passed'}]}),
+ reviewPatch:async x=>({role:'security-reviewer',disposition:'recommend-review',evidenceSha256:x.plan.evidenceSha256})});
+ const resumedRuntime=createFixtureRuntime({scope,queue:fixtureQueue,ledger:ledger(pools[1]),adapters:recoveryAdapters,preparation:recoveryPreparation,authorize:async()=>true});
  const resumed=await resumedRuntime.resume({workflowId:recoveryWorkflow.id,subject:'ATTACKER-SUBSTITUTED SUBJECT',developerRole:'backend-developer',managerCredential:'manager',workerCredentials:Object.fromEntries(sequence.map((r,i)=>[r,'worker-'+i]))});
  assert.equal(resumed.state,'completed');
  assert.equal((await ledger(pools[0]).status({credential:'manager',id:recoveryWorkflow.id})).next_step,8);
