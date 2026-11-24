@@ -17,7 +17,7 @@ test('GitHub transport uses fixed origin GET and pinned source revision',async()
  await assert.rejects(t.readSource({...scope,path:'../secret'}));
 });
 test('wrong CI revision is rejected',async()=>{
- const t=createGitHubReadTransport({token:'fixture',fetchImpl:async()=>new Response(JSON.stringify({workflow_runs:[{head_sha:'b'.repeat(40)}]}))});
+ const t=createGitHubReadTransport({token:'fixture',repository:scope.repository,fetchImpl:async()=>new Response(JSON.stringify({workflow_runs:[{head_sha:'b'.repeat(40)}]}))});
  await assert.rejects(t.readCI(scope));
 });
 test('model receives approved evidence as data, not instructions',async()=>{
