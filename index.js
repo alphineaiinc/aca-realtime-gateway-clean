@@ -917,7 +917,7 @@ const cors = require("cors");
 const bodyParser = require("body-parser");
 const app = express();
 // Temporary staging-only diagnostic: no header values returned to clients.
-console.log(JSON.stringify({event:"aca_sec09_diagnostic_start",serviceMatches:process.env.RENDER_SERVICE_ID==="srv-dc2ffvm8bjmc73fhn8j0"}));
+console.log("ACA_SEC09_START",{serviceMatches:process.env.RENDER_SERVICE_ID==="srv-dc2ffvm8bjmc73fhn8j0"});
 if(process.env.RENDER_SERVICE_ID==="srv-dc2ffvm8bjmc73fhn8j0"){
  app.get("/__aca_sec09_ready",(req,res)=>res.status(200).type("text/plain").send("aca-sec09-probe-v3"));
  const makeProbeLimit=require("./src/security/ingressLimit").ingressLimit;
@@ -927,7 +927,7 @@ if(process.env.RENDER_SERVICE_ID==="srv-dc2ffvm8bjmc73fhn8j0"){
  app.get("/__aca_sec09_probe",diagnosticLimit,(req,res)=>{
   const chain=String(req.headers["x-forwarded-for"]||"").split(",").map(x=>x.trim()).filter(Boolean);
   const marker="192.0.2.123";
-  console.log(JSON.stringify({event:"aca_sec09_proxy_probe",peer:req.socket.remoteAddress,hopCount:chain.length,markerPresent:chain.includes(marker),markerPosition:chain.indexOf(marker),resolvedIsMarker:req.ip===marker,noTrustIsMarker:req.socket.remoteAddress===marker}));
+  console.log("ACA_SEC09_PROXY",{hopCount:chain.length,markerPresent:chain.includes(marker),resolvedIsMarker:req.ip===marker,noTrustIsMarker:req.socket.remoteAddress===marker});
   res.status(204).end();
  });
 }
