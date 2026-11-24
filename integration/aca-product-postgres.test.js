@@ -54,5 +54,36 @@ test("isolated product migration chain and verified onboarding",async()=>{
  assert.notEqual(otherId,id);
  assert.equal((await pool.query("SELECT count(*)::int AS n FROM aca_customer_requests WHERE id=$1 AND tenant_id=$2",[id,otherContext.tenantId])).rows[0].n,0);
  await assert.rejects(pool.query("INSERT INTO aca_request_outbox(request_id,tenant_id) VALUES($1,$2)",[id,other.rows[0].id]));
+
+// Real HTTP routes, actual disposable PostgreSQL, no external email.
+const crypto=require("node:crypto"),jwt=require("jsonwebtoken"),express=require("express");
+const secret=crypto.randomBytes(48).toString("hex");
+process.env.JWT_SECRET=secret;
+process.env.ACA_VERIFIED_LOGIN_ENABLED="true";
+const poolPath=require.resolve("../src/db/pool");
+const previous=require.cache[poolPath];
+require.cache[poolPath]={id:poolPath,filename:poolPath,loaded:true,exports:pool};
+const app=express();app.use(express.json());app.use("/tenant",require("../src/routes/tenant"));
+const server=app.listen(0,"127.0.0.1");
+try{
+ await new Promise((resolve,reject)=>{server.once("listening",resolve);server.once("error",reject);});
+ const origin="http://127.0.0.1:"+server.address().port;
+ const request=async(path,token,body)=>{const response=await fetch(origin+path,{method:body?"POST":"GET",headers:{...(token?{Authorization:"Bearer "+token}:{}),...(body?{"Content-Type":"application/json"}:{})},...(body?{body:JSON.stringify(body)}:{})});return {status:response.status,body:await response.json()};};
+ const otherEmail="other-product@example.test";
+ await pool.query("INSERT INTO aca_business_identities(email,tenant_id,verified_at,is_active) VALUES($1,$2,NOW(),true)",[otherEmail,otherContext.tenantId]);
+ const {issueLogin}=require("../src/security/verifiedBusinessLogin");
+ const login=async(email)=>{let code;await issueLogin({query,email,sendMail:async mail=>{code=mail.text.match(/[a-f0-9]{64}/)[0];}});assert.ok(code);const result=await request("/tenant/login/redeem",null,{token:code});assert.equal(result.status,200);return {token:result.body.token,code};};
+ const a=await login(email),b=await login(otherEmail);
+ assert.equal((await request("/tenant/profile",a.token)).body.profile.tenant_id,tenantId);
+ assert.equal((await request("/tenant/profile",b.token)).body.profile.tenant_id,otherContext.tenantId);
+ assert.deepEqual((await request("/tenant/requests",a.token)).body.requests.map(x=>String(x.id)),[String(id)]);
+ assert.deepEqual((await request("/tenant/requests",b.token)).body.requests.map(x=>String(x.id)),[String(otherId)]);
+ assert.equal((await request("/tenant/login/redeem",null,{token:a.code})).status,401);
+ const forged=jwt.sign({tenant_id:otherContext.tenantId,sub:email,purpose:"verified_business"},secret,{algorithm:"HS256",issuer:"alphine-ai",audience:"aca-business",expiresIn:"1h"});
+ assert.equal((await request("/tenant/profile",forged)).status,401);
+ await pool.query("UPDATE aca_business_identities SET is_active=false WHERE email=$1",[email]);
+ assert.equal((await request("/tenant/profile",a.token)).status,401);
+ console.log("Authenticated HTTP acceptance: two identities, scoped profiles and requests, replay, mismatch and revocation passed");
+}finally{await new Promise(resolve=>server.close(resolve));if(previous)require.cache[poolPath]=previous;else delete require.cache[poolPath];delete process.env.JWT_SECRET;delete process.env.ACA_VERIFIED_LOGIN_ENABLED;}
  }finally{await pool.end();}
 });
