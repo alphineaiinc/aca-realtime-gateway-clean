@@ -62,3 +62,17 @@ test('persistent governance mutations require manager credentials',async()=>{
  assert.match(queries[3].sql,/engineering_team_governance_alerts/);
  assert.match(queries[3].sql,/stop.created/);
 });
+
+test('queue identity is checked against the captured scope when caller scope mutates during authentication',async()=>{
+ let release;
+ const authPending=new Promise(resolve=>{release=resolve;});
+ const mutableScope={...scope};
+ const queries=[];
+ const query=async(sql,params=[])=>{queries.push({sql,params});if(sql==='BEGIN'||sql==='COMMIT'||sql==='ROLLBACK'||sql.startsWith('SELECT pg_advisory'))return {rowCount:0,rows:[]};if(sql.startsWith('SELECT EXISTS'))return {rowCount:1,rows:[{blocked:false}]};return {rowCount:1,rows:[{id:'task'}]};};
+ const queue=createDurableQueue({pool:{query,connect:async()=>({query,release(){}})},scopes:[scope],authenticate:async()=>authPending});
+ const pending=queue.enqueue({scope:mutableScope,role,credential:'mutable'});
+ mutableScope.product='other-product';
+ release({...scope,product:'other-product',id:'attacker',permission:'queue.manage'});
+ await assert.rejects(pending,/Identity denied/);
+ assert.equal(queries.length,0);
+});
