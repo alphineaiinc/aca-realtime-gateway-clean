@@ -56,3 +56,6 @@ jobs:
         run: |
           node -e "const fs=require('node:fs');const {Client}=require('pg');(async()=>{const c=new Client({connectionString:process.env.ONBOARDING_STAGING_DATABASE_URL});await c.connect();try{await c.query(fs.readFileSync('migrations/draft_onboarding_challenges.sql','utf8'))}finally{await c.end()}})().catch(e=>{console.error(e.message);process.exitCode=1})"
           node --test test/onboarding-postgres.integration.test.js
+
+      - name: Isolated product migration and onboarding acceptance
+        run: node --test integration/aca-product-postgres.test.js
