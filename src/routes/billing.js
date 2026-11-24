@@ -36,9 +36,11 @@ function rateLimit(req, res, next) {
 // ---------------------------------------------------------------------
 async function authenticate(req, res, next) {
   try {
-    const token = (req.headers.authorization || "").replace("Bearer ", "");
+    const auth = req.headers.authorization || "";
+    if (!auth.startsWith("Bearer ")) throw Error("Invalid authorization");
+    const token = auth.slice(7).trim();
     const decoded = jwt.verify(token, process.env.JWT_SECRET, { algorithms: ["HS256"], issuer: "alphine-ai", audience: "aca-business" });
-    if (decoded.purpose !== "verified_business" || !Number.isInteger(decoded.tenant_id) || decoded.tenant_id <= 0 || typeof decoded.sub !== "string") throw new Error("invalid business identity");
+    if (decoded.purpose !== "verified_business" || !Number.isSafeInteger(decoded.tenant_id) || decoded.tenant_id <= 0 || typeof decoded.sub !== "string") throw new Error("invalid business identity");
     const { rows } = await pool.query("SELECT tenant_id FROM public.aca_business_identities WHERE email=$1 AND tenant_id=$2 AND is_active", [decoded.sub, decoded.tenant_id]);
     if (rows.length !== 1) throw new Error("inactive business identity");
     req.tenant_id = decoded.tenant_id;
@@ -222,6 +224,7 @@ router.get("/export", ingressRateLimit, authenticate, rateLimit, async (req, res
       }).join(","))
     ].join("\n");
 
+    res.setHeader("Cache-Control", "private, no-store");
     res.setHeader("Content-Type", "text/csv");
     res.setHeader("Content-Disposition", `attachment; filename="invoices_tenant_${req.tenant_id}.csv"`);
     res.send(csv);
