@@ -135,3 +135,15 @@ Trusted sandbox probe and Node CI passed at a776d4853c9d69a926aaff436868c2a605bc
 - CI #811 initially failed only because the test expected the wrong one-shot error wording (`Correction unavailable` vs actual `Correction runtime consumed`). The assertion now checks the stable consumed contract; no runtime implementation change was needed. Exact-head CI #812 passed.
 - This is offline test-adapter and disposable PostgreSQL evidence only. The security role output is a recommendation fixture, not an independent security audit or GitHub approval. No live model/provider execution, privileged GitHub write, merge, deployment, secret activation, production DB mutation or additional spend.
 - Next acceptance: transactional spending/provider admission at real side-effect boundaries, then emergency stop/quarantine/recovery and adversarial policy checks. Independent reviewer #22 remains an external release gate.
+
+
+## Owner-approved emergency stop and quarantine recovery acceptance — 2026-11-24
+
+- Code/test head: `a35433b64abc12ff00f87ba5764da41d30e166cb`; exact-head CI #822 (`45334465026`) passed.
+- Standard Node suite: 170 total, 169 passed, 0 failed, 1 skipped. Disposable PostgreSQL queue integration: 1 passed, 0 failed. Trusted sandbox and planned-patch fixture passed.
+- Added `queue.recover` as a durable owner-approval operation and a draft migration table for single-use recovery audit records. Recovery binds exact product/repository/SHA, clear-stop vs clear-quarantine action, and role where applicable.
+- Recovery requires a queue-manager requester and a distinct owner.approval decision, exact evidence digest/binding, unexpired approved request, transactional scope lock and single-use audit. It refuses recovery while relevant task leases are running; clearing a repository stop also refuses unresolved provider attempts. No recovery path grants execution authority.
+- Disposable PostgreSQL integration proves: quarantine blocks claim; separately owner-approved clear-quarantine restores the eligible queue; duplicate recovery is rejected; stop clear is denied while a lease is active; manager cancellation permits separately approved recovery; queued work resumes only after stop clear; unresolved provider attempt blocks a later stop clear and leaves the stop active.
+- Unit tests cover malformed evidence/target, missing approval, wrong identity, active lease and replay. CI #821 failed at syntax check due a duplicate test fixture identifier; renamed it and exact-head CI #822 passed. Earlier CI #819 exposed a test assertion calling executionAllowed on the queue rather than recovery gate; corrected and #820 passed before the final unresolved-provider assertion was added.
+- This is disposable PostgreSQL acceptance only. No production migration or database modification, live agent/provider execution, merge, deployment, secret activation or additional spend. The recovery approval is not approval for live activation.
+- Remaining: operational recovery playbook/notification, adversarial policy and multi-tenant scope checks, full independent security review (#22), and controlled operational acceptance.
