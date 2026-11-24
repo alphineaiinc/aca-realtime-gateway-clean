@@ -13,6 +13,7 @@ test('initialization composes durable components without touching database or ac
  assert.equal(runtime.status,'initialized-inert');assert.equal(runtime.executionAllowed(),false);assert.equal(runtime.approvals.executionAllowed(),false);
  assert.equal(runtime.providerOutcome,null);
  assert.equal(runtime.queue,null);assert.equal(typeof runtime.budget.reserve,'function');
+ assert.equal(typeof runtime.governanceAlerts.list,'function');
 });
 test('missing budget ceilings or transactional pool fails closed',()=>{
  assert.throws(()=>initializeRuntime({...opts,ceilings:{}}));
