@@ -5,7 +5,7 @@ const {createGitHubReadTransport}=require('./githubReadTransport');
 // scheduler, provider, credential issuer or publication client is constructed.
 function createRestrictedManagerRuntime({scope,issue,githubToken,fetchImpl,readOnlyPool}={}){
  const pinned=Object.freeze({...scope});
- const transport=createGitHubReadTransport({token:githubToken,fetchImpl});
+ const transport=createGitHubReadTransport({token:githubToken,repository:pinned.repository,fetchImpl};
  if(readOnlyPool!==undefined&&typeof readOnlyPool?.query!=='function')throw Error('Read-only pool required');
  const readAlertSummary=readOnlyPool===undefined?undefined:async s=>{
   if(s.product!==pinned.product||s.repository!==pinned.repository||s.sha!==pinned.sha)throw Error('Alert scope denied');
