@@ -181,6 +181,9 @@ test('isolated PostgreSQL queue: concurrent claims, retries, restart, expiry and
  const prior=await ledger(pools[1]).readFixturePrior({credential:'manager',id:persistent.id});
  assert.deepEqual(prior.map(p=>p.role),sequence);
  await assert.rejects(ledger(pools[1]).readFixturePrior({credential:'w1',id:persistent.id}),/Workflow identity denied/);
+ // Durable proposal bodies must remain cryptographically bound to their receipt digests.
+ await pools[0].query("UPDATE engineering_team_fixture_proposals SET body=body || 'tampered' WHERE task_id=(SELECT task_id FROM engineering_team_handoffs WHERE workflow_id=$1 AND step=3)",[persistent.id]);
+ await assert.rejects(ledger(pools[1]).readFixturePrior({credential:'manager',id:persistent.id}),/Prior evidence denied/);
  const boundWorkflow=await ledger(pools[0]).create('manager');
  const unrelatedWorkflow=await ledger(pools[1]).create('manager');
  const boundRole=sequence[0],boundCredential='worker-0';
