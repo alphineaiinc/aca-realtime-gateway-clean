@@ -112,3 +112,13 @@ Implementation commits: f1e5de7 (workflow-step inspection), 5c8144f (restart-awa
 - Existing exact-head integration coverage continues to exercise concurrent call/spend ceilings, provider approval and independent-review evidence binding, current queue policy, stop/quarantine denial, cost-evidence substitution rejection, usage assessment, unknown outcomes and breach-triggered persistent stop.
 - No live provider SDK client, real provider pricing verification, external provider call, production billing reconciliation, merge, deployment, secret activation, production DB modification or additional spend was performed. The SDK transport remains injected/mock-only; operational admission and independent security review remain separate gates.
 - Next: finalize adversarial multi-scope and emergency-stop notification/recovery evidence; then complete independent reviewer #22 and operational acceptance. Do not mark live agents activated based on offline CI.
+
+
+## Provider call/spend ceiling exhaustion acceptance — 2026-11-24
+
+- Latest code/test head: `f6f20decf76bd9eccd86f8c1c640087b3abc9bf0`; exact-head CI #835 (`45335732516`) passed.
+- Standard Node suite: 171 total, 170 passed, 0 failed, 1 skipped. Disposable PostgreSQL queue integration: 1 passed, 0 failed. Trusted sandbox and planned-patch fixture passed.
+- Expanded PostgreSQL provider-reservation acceptance to isolate the two independent durable ceilings from the unresolved-attempt circuit breaker. After each successful reservation, the test records a completed outcome before attempting the next request.
+- Call cap: eight approved/reserved/reconciled calls are admitted; the ninth is denied. Spend cap: one 400-micro-USD reservation exhausts the 400-micro-USD budget; after outcome reconciliation, a second approved request is denied. In both cases persisted reserved_calls/reserved_microusd and provider-attempt row counts remain at the exact cap.
+- CI #828 exposed a test setup mismatch between budget-row max_calls and manifest limits. The first correction attempted maxCalls=1, which the manifest intentionally disallows (minimum 8); the final test exhausts the supported eight-call cap instead. CI #833 then failed on the invalid test configuration; exact-head CI #835 passed after correction.
+- This remains offline mock-provider and disposable PostgreSQL evidence. No real provider call, production billing, live credentials, production DB change, merge, deployment or added spend.
