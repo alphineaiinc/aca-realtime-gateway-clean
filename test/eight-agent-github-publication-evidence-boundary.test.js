@@ -16,7 +16,7 @@ test('rejects a changed GitHub observation at independent verification',async()=
 });
 test('rejects tampered digest, scope substitution and incomplete pagination',async()=>{
  const boundary=createGitHubPublicationEvidenceBoundary({collectFetch:async()=>response([pr]),verifyFetch:async()=>response([pr]),collectToken:async()=>'collector-token-long-enough',verifyToken:async()=>'verifier-token-long-enough'});
- const evidence=await boundary.collect(scope);assert.equal(await boundary.verify({...evidence,observations:[]},scope),false);assert.equal(await boundary.verify(evidence,{...scope,headSha:'d'.repeat(40)}),false);
+ const evidence=await boundary.collect(scope);assert.equal(await boundary.verify({...evidence,observations:[]},scope),false);assert.equal(await boundary.verify(evidence,{...scope,headSha:'d'.repeat(40)}),false);assert.equal(await boundary.verify(evidence,{...scope,baseBranch:'other'}),false);assert.equal(await boundary.verify(evidence,{...scope,headBranch:'other'}),false);
  const incomplete=createGitHubPublicationEvidenceBoundary({collectFetch:async()=>response(Array(100).fill(pr)),verifyFetch:async()=>response([pr]),collectToken:async()=>'collector-token-long-enough',verifyToken:async()=>'verifier-token-long-enough'});
  await assert.rejects(incomplete.collect(scope),/pagination required/);
 });
