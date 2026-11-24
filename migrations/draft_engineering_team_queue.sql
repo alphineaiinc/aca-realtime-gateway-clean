@@ -269,4 +269,7 @@ CREATE FUNCTION engineering_team_reconciliation_immutable() RETURNS trigger
 CREATE TRIGGER engineering_team_publication_reconciliation_no_update_delete
  BEFORE UPDATE OR DELETE ON engineering_team_publication_reconciliation
  FOR EACH ROW EXECUTE FUNCTION engineering_team_reconciliation_immutable();
+CREATE TRIGGER engineering_team_publication_reconciliation_no_truncate
+ BEFORE TRUNCATE ON engineering_team_publication_reconciliation
+ FOR EACH STATEMENT EXECUTE FUNCTION engineering_team_reconciliation_immutable();
 REVOKE UPDATE, DELETE, TRUNCATE ON engineering_team_publication_reconciliation FROM PUBLIC;
