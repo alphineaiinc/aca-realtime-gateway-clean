@@ -34,3 +34,7 @@ Scope: reviewer code on PR #21 and isolated staging service only.
 
 ## Authorization status
 **HOLD: NOT READY TO SIGN OR MERGE.** No secrets applied, no live independent signed review, no production changes, no native Codex dispatch.
+
+
+## SEC-07/08 updated acceptance gate
+Approval-only envelopes are not substantive dispositions. The observer requires a separately trusted evidence digest and a fresh challenge bound to repository, issue, PR, reviewer and exact head. The digest provider must independently obtain and canonicalize the reviewed evidence; it must not echo the signer's claim. Before enabling delivery, independently pin the accepted signer artifact and public key outside PR-controlled configuration. Maintain an owner-controlled active key inventory, deny revoked keys, fail closed on unavailable revocation state, and rotate by separately approving the replacement artifact/key pair and retiring the old key before resuming. Verify stale challenges, wrong digest, wrong revision, revoked keys and rotation rollback denial. No signing or credential provisioning is authorized by this document.
