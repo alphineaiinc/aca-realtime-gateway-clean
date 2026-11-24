@@ -139,6 +139,25 @@ CREATE TABLE engineering_team_provider_attempts (
  head_sha text NOT NULL CHECK(head_sha ~ '^[a-f0-9]{40}$'),
  budget_id uuid NOT NULL,
  model text NOT NULL CHECK(length(model) BETWEEN 1 AND 100),
+ cost_evidence_sha256 text CHECK(cost_evidence_sha256 ~ '^[a-f0-9]{64}
+ reserved_microusd bigint NOT NULL CHECK(reserved_microusd BETWEEN 1 AND 10000000),
+ created_at timestamptz NOT NULL DEFAULT clock_timestamp(),
+ FOREIGN KEY(product,repository,budget_id) REFERENCES engineering_team_spend_budgets(product,repository,budget_id)
+);
+
+-- Fixture reconciliation only. No refunds, no automatic retry, no live authorization.
+CREATE TABLE engineering_team_provider_outcomes (
+ binding text PRIMARY KEY REFERENCES engineering_team_provider_attempts(binding),
+ outcome text NOT NULL CHECK(outcome IN ('completed','unknown','breach')),
+ input_tokens integer CHECK(input_tokens>=0),
+ output_tokens integer CHECK(output_tokens>=0),
+ actual_microusd bigint CHECK(actual_microusd>=0),
+ recorded_by text NOT NULL,
+ created_at timestamptz NOT NULL DEFAULT clock_timestamp(),
+ CHECK ((outcome='unknown' AND input_tokens IS NULL AND output_tokens IS NULL AND actual_microusd IS NULL) OR
+ (outcome IN ('completed','breach') AND input_tokens IS NOT NULL AND output_tokens IS NOT NULL AND actual_microusd IS NOT NULL))
+);
+),
  reserved_microusd bigint NOT NULL CHECK(reserved_microusd BETWEEN 1 AND 10000000),
  created_at timestamptz NOT NULL DEFAULT clock_timestamp(),
  FOREIGN KEY(product,repository,budget_id) REFERENCES engineering_team_spend_budgets(product,repository,budget_id)

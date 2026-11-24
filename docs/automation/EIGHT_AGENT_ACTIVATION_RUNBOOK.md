@@ -63,3 +63,6 @@ Trusted sandbox probe and Node CI passed at a776d4853c9d69a926aaff436868c2a605bc
 - Follow-up binds assessment to exact budget and tests cross-budget denial and token-only breach with derived cost in disposable PostgreSQL. Independent provider billing and live admission remain open.
 
 - Request preparation now requires exact manifest digest and budget identity from the cost envelope and an own positive model ceiling. Offline only; provider tokenizer and billing verification remain required.
+
+## Durable cost evidence binding
+- Baseline e620207102634b017060e51a0409eb00bd32c58a passed CI 45319159675. Draft schema now persists exact cost evidence on reservations; reconciliation denies changed or omitted evidence, including same-budget substitution. Unbound fixture reservations remain fixture-only. New exact-head CI required; no live authorization.

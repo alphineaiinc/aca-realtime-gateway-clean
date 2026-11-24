@@ -263,7 +263,9 @@ test('isolated PostgreSQL queue: concurrent claims, retries, restart, expiry and
  const unknownBudgetId=randomUUID();
  const unknownManifest=createActivationManifest({...providerManifest,budgetId:unknownBudgetId});
  const unknownPolicy=createQueuePolicyBridge({manifest:unknownManifest,readQueueState:async()=>({repository:scope.repository,headSha:scope.sha,issue:{number:42,state:'open',isPullRequest:false,labels:['aca:auto/docs-test'],assignees:[]},activeIssueNumbers:[]})});
- const unknownProvider=createProviderReservation({pool:pools[0],manifest:unknownManifest,policy:unknownPolicy,authenticate:async c=>identities.get(c),ceilings:{fixture:400}});
+ const {createCostEnvelope}=require('../src/automation/engineeringTeam/costEnvelope');
+ const costEnvelope=createCostEnvelope({manifest:unknownManifest,maxInputTokens:100,prices:{fixture:{input:100000,output:200000}}});
+ const unknownProvider=createProviderReservation({pool:pools[0],manifest:unknownManifest,policy:unknownPolicy,authenticate:async c=>identities.get(c),ceilings:costEnvelope.ceilings,costEvidenceSha256:costEnvelope.evidenceSha256});
  await pools[0].query('INSERT INTO engineering_team_spend_budgets(product,repository,budget_id,max_calls,max_microusd) VALUES ($1,$2,$3,8,1000)',[scope.product,scope.repository,unknownBudgetId]);
  const unknownBinding=await unknownProvider.evidence();
  const unknownApproval=await approval(pools[0]).request({scope,operation:'provider.activate',evidence:unknownBinding,credential:'manager'});
@@ -273,17 +275,19 @@ test('isolated PostgreSQL queue: concurrent claims, retries, restart, expiry and
  const breachBudgetId=randomUUID();
  const breachManifest=createActivationManifest({...providerManifest,budgetId:breachBudgetId});
  const breachPolicy=createQueuePolicyBridge({manifest:breachManifest,readQueueState:async()=>({repository:scope.repository,headSha:scope.sha,issue:{number:42,state:'open',isPullRequest:false,labels:['aca:auto/docs-test'],assignees:[]},activeIssueNumbers:[]})});
- const breachProvider=createProviderReservation({pool:pools[0],manifest:breachManifest,policy:breachPolicy,authenticate:async c=>identities.get(c),ceilings:{fixture:400}});
+ const breachCost=createCostEnvelope({manifest:breachManifest,maxInputTokens:100,prices:{fixture:{input:100000,output:200000}}});
+ const breachProvider=createProviderReservation({pool:pools[0],manifest:breachManifest,policy:breachPolicy,authenticate:async c=>identities.get(c),ceilings:breachCost.ceilings,costEvidenceSha256:breachCost.evidenceSha256});
  await pools[0].query('INSERT INTO engineering_team_spend_budgets(product,repository,budget_id,max_calls,max_microusd) VALUES ($1,$2,$3,8,1000)',[scope.product,scope.repository,breachBudgetId]);
  const breachBinding=await breachProvider.evidence();
  const breachApproval=await approval(pools[0]).request({scope,operation:'provider.activate',evidence:breachBinding,credential:'manager'});
  await approval(pools[1]).recordDecision({scope,id:breachApproval.id,binding:breachApproval.binding,decision:'approved',credential:'owner'});
  await assert.rejects(breachProvider.reserve({credential:'manager',approvalId:breachApproval.id}),/unresolved provider attempt/);
  // Reconcile the first fixture before admitting another attempt.
- const {createCostEnvelope}=require('../src/automation/engineeringTeam/costEnvelope');
- const costManifest=unknownManifest;
- const costEnvelope=createCostEnvelope({manifest:costManifest,maxInputTokens:100,prices:{fixture:{input:100000,output:200000}}});
+
  const assessedOutcomes=pools.map(pool=>createProviderOutcome({pool,scope,authenticate:async c=>identities.get(c),costEnvelope}));
+ const changedCost=createProviderOutcome({pool:pools[1],scope,authenticate:async c=>identities.get(c),costEnvelope:createCostEnvelope({manifest:unknownManifest,maxInputTokens:99,prices:{fixture:{input:100000,output:200000}}})});
+ await assert.rejects(changedCost.record({credential:'owner',binding:unknownBinding,usage}),/Outcome cost evidence denied/);
+ await assert.rejects(outcomes[0].record({credential:'owner',binding:unknownBinding,usage}),/Outcome cost evidence denied/);
  await assessedOutcomes[0].record({credential:'owner',binding:unknownBinding,usage:{inputTokens:10,outputTokens:5,actualMicrousd:999}});
  assert.equal(Number((await pools[1].query('SELECT actual_microusd FROM engineering_team_provider_outcomes WHERE binding=$1',[unknownBinding])).rows[0].actual_microusd),2);
  await breachProvider.reserve({credential:'manager',approvalId:breachApproval.id});
@@ -297,7 +301,7 @@ test('isolated PostgreSQL queue: concurrent claims, retries, restart, expiry and
  assert.equal((await pools[0].query('SELECT actual_microusd FROM engineering_team_provider_outcomes WHERE binding=$1',[breachBinding])).rows[0].actual_microusd,'11');
  assert.deepEqual(breach,{outcome:'breach',executionAuthorized:false});
  assert.equal((await pools[1].query(stopQuery,stopArgs)).rowCount,1);
- assert.deepEqual((await pools[1].query('SELECT reserved_calls,reserved_microusd FROM engineering_team_spend_budgets WHERE budget_id=$1',[breachBudgetId])).rows[0],{reserved_calls:1,reserved_microusd:'400'});
+ assert.deepEqual((await pools[1].query('SELECT reserved_calls,reserved_microusd FROM engineering_team_spend_budgets WHERE budget_id=$1',[breachBudgetId])).rows[0],{reserved_calls:1,reserved_microusd:String(breachCost.ceilings.fixture)});
  // Reset only the disposable test fixture to isolate the unknown-outcome assertion.
  await pools[0].query('DELETE FROM engineering_team_stops WHERE product=$1 AND repository=$2',stopArgs);
  assert.equal((await pools[1].query(stopQuery,stopArgs)).rowCount,0);
