@@ -233,7 +233,11 @@ test('isolated PostgreSQL queue: concurrent claims, retries, restart, expiry and
   resumedRoles.push(r);
   return Object.fromEntries(contract(r).fields.map(field=>[field,['resumed '+r+' '+field]]));
  }]));
- const policyResumed=await createFixtureRuntime({scope,queue:fixtureQueue,ledger:ledger(pools[1]),adapters:resumedAdapters,preparation:runtimePreparation,authorize:async()=>true}).resume({workflowId:pausedWorkflow.id,managerCredential:'manager',workerCredentials:runtimeInput.workerCredentials});
+ const resumedPreparation=createChangePreparation({scope,files:runtimeFiles,requiredChecks:['fixture'],authorize:async()=>true,
+ generate:async()=>JSON.stringify({edits:[{path:runtimeFiles[0].path,beforeSha256:digest(runtimeFiles[0].text),replacement:'module.exports=2;'}]}),
+ runIsolated:async x=>({evidenceSha256:x.plan.evidenceSha256,profile:x.profile,checks:[{name:'fixture',status:'passed'}]}),
+ reviewPatch:async x=>({role:'security-reviewer',disposition:'recommend-review',evidenceSha256:x.plan.evidenceSha256})});
+ const policyResumed=await createFixtureRuntime({scope,queue:fixtureQueue,ledger:ledger(pools[1]),adapters:resumedAdapters,preparation:resumedPreparation,authorize:async()=>true}).resume({workflowId:pausedWorkflow.id,managerCredential:'manager',workerCredentials:runtimeInput.workerCredentials});
  assert.equal(policyResumed.state,'completed');
  assert.deepEqual(resumedRoles,sequence.slice(3));
  assert.equal((await ledger(pools[0]).status({credential:'manager',id:pausedWorkflow.id})).next_step,8);
