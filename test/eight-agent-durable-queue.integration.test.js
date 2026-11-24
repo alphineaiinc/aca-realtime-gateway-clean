@@ -228,6 +228,9 @@ test('isolated PostgreSQL queue: concurrent claims, retries, restart, expiry and
  await assert.rejects(outcomes[0].record({credential:'w1',binding:providerBinding,usage}),/Outcome denied/);
  await assert.rejects(outcomes[0].record({credential:'owner',binding:'f'.repeat(64),usage}),/Outcome denied/);
  await assert.rejects(outcomes[0].record({credential:'manager',binding:providerBinding,usage}),/Outcome denied/);
+ const otherScope={...scope,sha:'f'.repeat(40)};
+ const otherOutcome=createProviderOutcome({pool:pools[0],scope:otherScope,authenticate:async()=>({...identities.get('owner'),sha:otherScope.sha})});
+ await assert.rejects(otherOutcome.record({credential:'owner',binding:providerBinding,usage}),/Outcome denied/);
  const recorded=await Promise.allSettled(outcomes.map(o=>o.record({credential:'owner',binding:providerBinding,usage})));
  assert.equal(recorded.filter(x=>x.status==='fulfilled').length,1);
  assert.equal(recorded.find(x=>x.status==='fulfilled').value.outcome,'completed');
