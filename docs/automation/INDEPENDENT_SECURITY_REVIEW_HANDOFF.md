@@ -6,9 +6,9 @@ Prepared from the currently verified draft pull-request heads. This document is 
 
 | PR | Purpose | Exact head | Draft state | CI evidence |
 |---|---|---|---|---|
-| #21 | Reviewer supervision and trusted disposition | `9c7222473bd7243e1eb98e3d71d19fd2bd6b4f00` | Open, draft | ACA CI #1035 / [45465109963](https://github.com/alphineaiinc/aca-realtime-gateway-clean/actions/runs/45465109963); PR Supervision Event Observer #574 / [45465110108](https://github.com/alphineaiinc/aca-realtime-gateway-clean/actions/runs/45465110108); Reviewer staging HTTP smoke #44 / [45465110229](https://github.com/alphineaiinc/aca-realtime-gateway-clean/actions/runs/45465110229) — all successful |
+| #21 | Reviewer supervision and trusted disposition | `b9592ac3aa6b131e32850c7bf036a380e11c3497` | Open, draft | ACA CI #1035 / [45465109963](https://github.com/alphineaiinc/aca-realtime-gateway-clean/actions/runs/45465109963); PR Supervision Event Observer #574 / [45465110108](https://github.com/alphineaiinc/aca-realtime-gateway-clean/actions/runs/45465110108); Reviewer staging HTTP smoke #44 / [45465110229](https://github.com/alphineaiinc/aca-realtime-gateway-clean/actions/runs/45465110229) — all successful |
 | #142 | Eight-agent manager, durable queue and SEC-09 reconciliation | `7f9e0bcc0ca3650d00b533f24afca754f8b70f31` | Open, draft | ACA CI #1075 / [45471444110](https://github.com/alphineaiinc/aca-realtime-gateway-clean/actions/runs/45471444110) — successful; Node tests and isolated PostgreSQL integration steps successful |
-| #146 | Protected sandbox harness | `2b928b91df7cb3ae68bc9ebc5353fbae34d90337` | Open, draft | ACA CI #1043 / [45465837929](https://github.com/alphineaiinc/aca-realtime-gateway-clean/actions/runs/45465837929) — successful |
+| #146 | Protected sandbox harness | `ae83005234886637b90ef8e4f6397eac521e6012` | Open, draft | ACA CI #1043 / [45465837929](https://github.com/alphineaiinc/aca-realtime-gateway-clean/actions/runs/45465837929) — successful |
 
 ## SEC-09 evidence added to PR #142
 
@@ -34,3 +34,11 @@ Prepared from the currently verified draft pull-request heads. This document is 
 ## Restrictions observed during this work
 
 No merges, deployments, database migrations, credential provisioning, signing, production changes or engineering-agent dispatch. Additional spending: CAD $0.
+
+
+## Follow-up source remediation (November 24, 2026)
+
+- PR #21 head `b9592ac3aa6b131e32850c7bf036a380e11c3497`: added SEC-08 regression coverage for fresh-challenge replay mismatch and legacy approval-only envelope rejection; updated reviewer trust gate documentation.
+- PR #146 head `ae83005234886637b90ef8e4f6397eac521e6012`: added a workflow regression test asserting the active protected sandbox workflow remains manually dispatched, permissionless and denial-only; updated sandbox acceptance evidence documentation. Proposed runtime workflow remains inactive.
+- PR #142 remains at `bc592afdea87dde99ae292d20b63a9f3e079175b` for this handoff update; its exact-head CI run #1076 [45471678963](https://github.com/alphineaiinc/aca-realtime-gateway-clean/actions/runs/45471678963) passed.
+- These are source-level checks only. They do not establish independent signer custody, actual identity separation, protected publisher provenance, runner teardown/quarantine, or operational runtime acceptance. Independent review remains HOLD.
