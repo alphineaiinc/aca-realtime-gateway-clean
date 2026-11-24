@@ -14,7 +14,7 @@ const message=Buffer.from('alphine:fixed-sandbox-attestation:v1\n'+JSON.stringif
 const signature=sign(null,message,keys.privateKey).toString('hex');
 test('valid signature is admitted once and never grants execution',async()=>{
  let calls=0;
- const verifier=createFixtureAttestationVerifier({publicKey,expected,consumeReceipt:async r=>{assert.deepEqual(r,receipt);calls++;return true;}});
+ const verifier=createFixtureAttestationVerifier({publicKey,expected,consumeReceipt:async r=>{assert.deepEqual(r,receipt);calls++;return {status:'inserted',executionAuthorized:false};}});
  const results=await Promise.all([verifier.inspect({report,signature}),verifier.inspect({report,signature})]);
  assert.equal(results.filter(r=>r.status==='signature-verified').length,1);
  assert.ok(results.every(r=>r.executionAuthorized===false));
@@ -25,12 +25,13 @@ test('wrong key, forged signature, substituted attempt and unknown storage outco
  let calls=0;
  const wrongKey=generateKeyPairSync('ed25519').publicKey.export({type:'spki',format:'pem'});
  for(const [key,sig,exp] of [[wrongKey,signature,expected],[publicKey,'0'.repeat(128),expected],[publicKey,signature,{...expected,attemptId:'aca-fixture-12345678-1234-4234-8234-123456789abd'}]]){
-  const v=createFixtureAttestationVerifier({publicKey:key,expected:exp,consumeReceipt:async()=>{calls++;return true;}});
+  const v=createFixtureAttestationVerifier({publicKey:key,expected:exp,consumeReceipt:async()=>{calls++;return {status:'inserted',executionAuthorized:false};}});
   assert.equal((await v.inspect({report,signature:sig})).status,'denied');
  }
  assert.equal(calls,0);
  const v=createFixtureAttestationVerifier({publicKey,expected,consumeReceipt:async()=>{calls++;throw Error('private database error');}});
- for(let i=0;i<2;i++)assert.deepEqual(await v.inspect({report,signature}),{status:'denied',executionAuthorized:false});
+ assert.deepEqual(await v.inspect({report,signature}),{status:'unknown',requiresReconciliation:true,executionAuthorized:false});
+ assert.deepEqual(await v.inspect({report,signature}),{status:'denied',executionAuthorized:false});
  assert.equal(calls,1);
 });
 test('scoped receipt store rejects substitutions and independent verifier instances cannot reuse a receipt in the shared fixture store',async()=>{
@@ -41,11 +42,20 @@ test('scoped receipt store rejects substitutions and independent verifier instan
   if(seen.has(params[0]))return {rowCount:0,rows:[]};
   seen.add(params[0]);return {rowCount:1,rows:[{attempt_id:params[0]}]};
  }};
- const consumeReceipt=createFixtureReceiptStore({pool,expected});
- assert.equal(await consumeReceipt({...receipt,image:'node:22'}),false);assert.equal(calls,0);
- const make=()=>createFixtureAttestationVerifier({publicKey,expected,consumeReceipt:createFixtureReceiptStore({pool,expected})});
+ const {consumeReceipt}=createFixtureReceiptStore({pool,expected});
+ assert.equal((await consumeReceipt({...receipt,image:'node:22'})).status,'denied');assert.equal(calls,0);
+ const make=()=>createFixtureAttestationVerifier({publicKey,expected,consumeReceipt:createFixtureReceiptStore({pool,expected}).consumeReceipt});
  const results=await Promise.all([make().inspect({report,signature}),make().inspect({report,signature})]);
  assert.equal(results.filter(r=>r.status==='signature-verified').length,1);
- assert.equal((await make().inspect({report,signature})).status,'denied');
+ assert.equal((await make().inspect({report,signature})).status,'duplicate');
  assert.equal(calls,3);
+});
+
+test('receipt ambiguity is not retried and exact reconciliation never authorizes execution',async()=>{
+ const store=createFixtureReceiptStore({pool:{query:async()=>{throw Error('lost response');}},expected});
+ assert.deepEqual(await store.consumeReceipt(receipt),{status:'unknown',executionAuthorized:false});
+ const reader={query:async(sql,params)=>{assert.match(sql,/SELECT EXISTS/);assert.deepEqual(params,[expected.attemptId,expected.harnessSha,expected.image,expected.fixtureSha256,report.reportSha256]);return {rows:[{matched:true}]};}};
+ assert.deepEqual(await store.reconcileReceipt(receipt,reader),{status:'confirmed-present',executionAuthorized:false});
+ assert.equal((await store.reconcileReceipt({...receipt,image:'node:22'},reader)).status,'denied');
+ assert.equal((await store.reconcileReceipt(receipt,{query:async()=>({rows:[{matched:false}]})})).status,'unknown');
 });
