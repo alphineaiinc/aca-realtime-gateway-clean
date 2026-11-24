@@ -11,6 +11,7 @@ const opts={config,pool:{query:async()=>assert.fail('database touched on initial
 test('initialization composes durable components without touching database or activating execution',()=>{
  const runtime=initializeRuntime(opts);
  assert.equal(runtime.status,'initialized-inert');assert.equal(runtime.executionAllowed(),false);assert.equal(runtime.approvals.executionAllowed(),false);
+ assert.equal(runtime.providerOutcome,null);
  assert.equal(typeof runtime.queue.claim,'function');assert.equal(typeof runtime.budget.reserve,'function');
 });
 test('missing budget ceilings or transactional pool fails closed',()=>{
@@ -29,6 +30,7 @@ test('runtime reservation requires pinned independent reviewer configuration',()
  assert.equal(runtime.costEnvelope.ceilings.fixture,100);
  assert.throws(()=>initializeRuntime({...opts,readQueueState,independentReview,costConfig,ceilings:{fixture:99}}),/Cost ceiling mismatch/);
  assert.equal(typeof runtime.providerReservation.reserve,'function');
+ assert.equal(typeof runtime.providerOutcome.record,'function');
  assert.equal(runtime.executionAllowed(),false);
  assert.throws(()=>initializeRuntime({...opts,readQueueState,independentReview:{...independentReview,authorIds:['reviewer']}}));
 });
