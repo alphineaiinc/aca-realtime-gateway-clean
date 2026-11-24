@@ -22,10 +22,19 @@ function createWorkflowLedger({pool,scope,authenticate}={}){
   finally{client.release(discard);}
  }
  return Object.freeze({
-  async create(credential){
-   await auth(credential);const id=randomUUID();
-   const result=await pool.query('INSERT INTO engineering_team_workflows(id,product,repository,head_sha) VALUES ($1,$2,$3,$4) RETURNING id,next_step',[id,...params]);
+  async create(credential,input={}){
+   await auth(credential);
+   const hasSubject=Object.hasOwn(input,'subject'),hasRole=Object.hasOwn(input,'developerRole');
+   if(hasSubject!==hasRole||(hasSubject&&(typeof input.subject!=='string'||!input.subject.trim()||input.subject.length>2000||!['backend-developer','frontend-developer'].includes(input.developerRole))))throw Error('Workflow input denied');
+   const id=randomUUID();
+   const result=await pool.query('INSERT INTO engineering_team_workflows(id,product,repository,head_sha,subject,developer_role) VALUES ($1,$2,$3,$4,$5,$6) RETURNING id,next_step',[id,...params,hasSubject?input.subject:null,hasRole?input.developerRole:null]);
    return result.rows[0];
+  },
+  async readInput({credential,id}){
+   await auth(credential);
+   const result=await pool.query('SELECT subject,developer_role FROM engineering_team_workflows WHERE id=$1 AND product=$2 AND repository=$3 AND head_sha=$4',[id,...params]);
+   if(result.rowCount!==1||typeof result.rows[0].subject!=='string'||!['backend-developer','frontend-developer'].includes(result.rows[0].developer_role))throw Error('Workflow input unavailable');
+   return Object.freeze({subject:result.rows[0].subject,developerRole:result.rows[0].developer_role});
   },
   async advance({credential,id,step,taskId}){
    await auth(credential);
