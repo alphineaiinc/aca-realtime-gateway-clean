@@ -527,5 +527,5 @@ test('isolated PostgreSQL queue: concurrent claims, retries, restart, expiry and
  assert.equal(resumedLease.id,afterStopTask);
  assert.equal(await recoveryQueue.finish({scope:recoveryScope,role:recoveryRole,credential:'recovery-worker',taskId:afterStopTask,leaseId:resumedLease.lease_id,outcome:'succeeded'}),'succeeded');
  assert.equal((await pools[1].query('SELECT count(*)::int AS n FROM engineering_team_governance_recoveries WHERE product=$1 AND repository=$2',[recoveryScope.product,recoveryScope.repository])).rows[0].n,2);
- assert.equal(recoveryQueue.executionAllowed(),false);
+ assert.equal(recoveryGate.executionAllowed(),false);
 });
