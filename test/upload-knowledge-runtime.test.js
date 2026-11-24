@@ -5,7 +5,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
 const source = fs.readFileSync(path.join(__dirname, '../src/routes/uploadKnowledge.js'), 'utf8');
-function harness({ tenantId = 42, pdfText = 'Knowledge text', pdfError = null, uploadError = null, waitForEmbedding = null, disconnectBeforeParsing = false } = {}) {
+function harness({ tenantId = 42, active = true, purpose = 'verified_business', pdfText = 'Knowledge text', pdfError = null, uploadError = null, waitForEmbedding = null, disconnectBeforeParsing = false } = {}) {
   let route, dbWrites = 0, embeddingCalls = 0, parserDestroyed = 0;
   class PDFParse {
     constructor() {}
@@ -19,9 +19,9 @@ function harness({ tenantId = 42, pdfText = 'Knowledge text', pdfError = null, u
   const router = { post(name, ...handlers) { route = { name, handlers }; } };
   const mocks = {
     express: { Router: () => router }, multer,
-    jsonwebtoken: { verify: (token) => { if (token !== 'valid') throw new Error('Invalid test token'); return { tenant_id: tenantId }; } },
+    jsonwebtoken: { verify: (token) => { if (token !== 'valid') throw new Error('Invalid test token'); return { tenant_id: tenantId, purpose, sub: 'fixture@example.test' }; } },
     'pdf-parse': { PDFParse },
-    '../db/pool': { async query() { dbWrites++; } },
+    '../db/pool': { async query(sql) { if(sql.includes('aca_business_identities')) return {rows:active?[{tenant_id:tenantId}]:[]}; dbWrites++; } },
     '../brain/utils/embeddingManager': { async embedText() { embeddingCalls++; if (waitForEmbedding) await waitForEmbedding; return [0.1, 0.2]; } },
   };
   const context = { require(name) { if (!(name in mocks)) throw new Error('Unexpected import ' + name); return mocks[name]; }, module: { exports: {} }, Buffer, process: { env: { JWT_SECRET: 'test-only-secret' } }, console: { error() {} } };
@@ -35,7 +35,7 @@ function harness({ tenantId = 42, pdfText = 'Knowledge text', pdfError = null, u
       if (!handler) return;
       if (handler.length >= 3) {
         let nextCalled = false;
-        handler(req, res, () => { nextCalled = true; });
+        await handler(req, res, () => { nextCalled = true; });
         if (nextCalled) await run();
       } else await handler(req, res);
     };
@@ -132,3 +132,5 @@ test('disconnect before PDF processing releases capacity and prevents writes', a
   assert.notEqual(second.statusCode, 429);
   assert.deepEqual(h.stats(), { dbWrites: 0, embeddingCalls: 0, parserDestroyed: 0 });
 });
+
+test('inactive identity and legacy purpose cannot upload',async()=>{for(const options of [{active:false},{purpose:undefined},{purpose:'legacy'}]){if(options.purpose===undefined&&options.active!==false)continue;const h=harness(options);assert.equal((await h.request(Buffer.from('%PDF-1.7'))).statusCode,401);assert.equal(h.stats().dbWrites,0);assert.equal(h.stats().embeddingCalls,0);}});

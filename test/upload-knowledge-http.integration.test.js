@@ -15,7 +15,7 @@ test('real multipart and PDF parser enforce authentication and tenant-scoped ing
   const embeddings = [];
   const context = {
     require(name) {
-      if (name === '../db/pool') return { query: async (...args) => writes.push(args) };
+      if (name === '../db/pool') return { query: async (...args) => { if(args[0].includes('aca_business_identities')) return {rows:args[1][0]==='fixture@example.test'&&args[1][1]===42?[{tenant_id:42}]:[]}; writes.push(args); } };
       if (name === '../brain/utils/embeddingManager') return { embedText: async text => { embeddings.push(text); return [0.1, 0.2]; } };
       return require(name);
     },
@@ -33,7 +33,7 @@ test('real multipart and PDF parser enforce authentication and tenant-scoped ing
   const font = await doc.embedFont(StandardFonts.Helvetica);
   doc.addPage().drawText('Disposable knowledge fixture', { x: 40, y: 500, font, size: 14 });
   const bytes = await doc.save();
-  const token = jwt.sign({ tenant_id: 42 }, secret);
+  const token = jwt.sign({ tenant_id: 42, purpose:'verified_business', sub:'fixture@example.test' }, secret,{issuer:'alphine-ai',audience:'aca-business',algorithm:'HS256'});
   async function send(data, auth, extra = false) {
     const form = new FormData();
     form.append('file', new Blob([data], { type: 'application/pdf' }), 'fixture.pdf');
@@ -41,6 +41,7 @@ test('real multipart and PDF parser enforce authentication and tenant-scoped ing
     return fetch(url, { method: 'POST', headers: auth ? { authorization: 'Bearer ' + auth } : {}, body: form });
   }
   assert.equal((await send(bytes, null)).status, 401);
+  assert.equal((await send(bytes, jwt.sign({tenant_id:42},secret))).status,401);
   assert.equal((await send(Buffer.from('not a pdf'), token)).status, 400);
   assert.equal((await send(bytes, token, true)).status, 400);
   assert.equal(writes.length, 0);
