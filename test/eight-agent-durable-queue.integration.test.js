@@ -373,7 +373,7 @@ test('isolated PostgreSQL queue: concurrent claims, retries, restart, expiry and
  // Distinct approved requests race against both independent durable budget ceilings.
  async function runProviderBudgetRace({tag,maxCalls,maxMicrousd}){
   const budgetId=randomUUID();
-  const raceManifest=createActivationManifest({...providerManifest,budgetId,limits:{...providerManifest.limits,maxSpendMicrousd:maxMicrousd}});
+  const raceManifest=createActivationManifest({...providerManifest,budgetId,limits:{...providerManifest.limits,maxCalls,maxSpendMicrousd:maxMicrousd}});
   const racePolicy=createQueuePolicyBridge({manifest:raceManifest,readQueueState:async()=>({repository:scope.repository,headSha:scope.sha,issue:{number:42,state:'open',isPullRequest:false,labels:['aca:auto/docs-test'],assignees:[]},activeIssueNumbers:[]})});
   const raceProvider=pool=>createProviderReservation({pool,manifest:raceManifest,policy:racePolicy,authenticate:async c=>identities.get(c),ceilings:{fixture:400},prepareRequest:request=>({model:'fixture',executionAuthorized:false,evidenceSha256:digest(JSON.stringify([tag,request]))})});
   await pools[0].query('INSERT INTO engineering_team_spend_budgets(product,repository,budget_id,max_calls,max_microusd) VALUES ($1,$2,$3,$4,$5)',[scope.product,scope.repository,budgetId,maxCalls,maxMicrousd]);
