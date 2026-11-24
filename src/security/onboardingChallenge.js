@@ -11,7 +11,7 @@ const MAX_TTL_MS = 15 * 60 * 1000;
 function normalizeEmail(value) {
   if (typeof value !== 'string') throw new TypeError('Invalid email');
   const email = value.trim().toLowerCase();
-  if (email.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+  if (email.length > 254 || !/^[a-z0-9.!#$%&\x27*+/=?^_`{|}~-]+@[a-z0-9-]+(?:\.[a-z0-9-]+)+$/.test(email)) {
     throw new TypeError('Invalid email');
   }
   return email;
