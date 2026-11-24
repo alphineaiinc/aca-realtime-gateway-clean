@@ -8,7 +8,7 @@ const headSha='b'.repeat(40),headBranch='aca-agent-draft-1234567890abcdef';
 const payload={scope,operation:'github.write',mode:'draft-only',patchDigest:'c'.repeat(64),testDigest:'d'.repeat(64),reviewDigest:'e'.repeat(64)};
 const request={...payload,evidenceSha256:digest(JSON.stringify(payload)),executionAuthorized:false,requiresIndependentAcceptance:true};
 const input={request,headSha,headBranch};
-function fixture({allow=true,stale=false,fail=false}={}){
+function fixture({allow=true,stale=false,fail=false,race=false}={}){
  const calls=[];const admissions=[];
  const transport=createGitHubDraftTransport({token:'fixture',repository:scope.repository,baseBranch:'main',admit:async x=>{admissions.push(x);return allow;},fetchImpl:async(url,options)=>{
  calls.push({url,method:options.method});
@@ -19,14 +19,14 @@ function fixture({allow=true,stale=false,fail=false}={}){
   if(fail)throw Error('fixture timeout');
   return new Response(JSON.stringify({number:42,draft:true,base:{sha:scope.sha},head:{sha:headSha}}));
  }
- return new Response(JSON.stringify({object:{sha:url.endsWith('/main')?(stale?'f'.repeat(40):scope.sha):headSha}}));
+ return new Response(JSON.stringify({object:{sha:url.endsWith('/main')?((stale||(race&&admissions.length))?'f'.repeat(40):scope.sha):headSha}}));
  }});
  return {transport,calls,admissions};
 }
 test('draft transport checks both revisions and admits exact binding before POST',async()=>{
  const f=fixture();const result=await f.transport.publish(input);
  assert.equal(result.number,42);assert.equal(result.releaseApproved,false);
- assert.deepEqual(f.calls.map(x=>x.method),['GET','GET','POST']);
+ assert.deepEqual(f.calls.map(x=>x.method),['GET','GET','GET','GET','POST']);
  assert.equal(result.binding,f.admissions[0].binding);
 });
 test('stale revisions and denied admission never POST',async()=>{
@@ -43,4 +43,9 @@ test('invalid branch or evidence never contacts API',async()=>{
 test('uncertain publication is surfaced without automatic retry',async()=>{
  const f=fixture({fail:true});await assert.rejects(f.transport.publish(input),/reconcile/);
  assert.equal(f.calls.filter(x=>x.method==='POST').length,1);
+});
+
+test('ref change during admission prevents publication',async()=>{
+ const f=fixture({race:true});await assert.rejects(f.transport.publish(input),/Revision changed/);
+ assert.equal(f.admissions.length,1);assert.equal(f.calls.some(x=>x.method==='POST'),false);
 });
