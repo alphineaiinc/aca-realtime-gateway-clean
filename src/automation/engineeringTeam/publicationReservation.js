@@ -6,18 +6,21 @@ function createPublicationReservation({pool,scope,authenticate}={}){
  const pinned=Object.freeze({product:scope.product,repository:scope.repository,sha:scope.sha});
  return Object.freeze({async reserve({credential,approvalId,binding}){
   const actor=await authenticate(credential);
-  if(!actor||actor.permission!=='queue.manage'||actor.role!==undefined||actor.product!==pinned.product||actor.repository!==pinned.repository||actor.sha!==pinned.sha||typeof approvalId!=='string'||! /^[a-f0-9-]{36}$/.test(approvalId)||typeof binding!=='string'||! /^[a-f0-9]{64}$/.test(binding))throw Error('Reservation denied');
+  if(!actor||actor.permission!=='queue.manage'||actor.role!==undefined||actor.product!==pinned.product||actor.repository!==pinned.repository||actor.sha!==pinned.sha||typeof actor.id!=='string'||!/^[A-Za-z0-9_.-]{1,80}$/.test(actor.id)||typeof approvalId!=='string'||! /^[a-f0-9-]{36}$/.test(approvalId)||typeof binding!=='string'||! /^[a-f0-9]{64}$/.test(binding))throw Error('Reservation denied');
+  const actorId=actor.id;
   const client=await pool.connect();let discard=false;
   try{
    await client.query('BEGIN');
    await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))',[JSON.stringify([pinned.product,pinned.repository])]);
-   const result=await client.query(`INSERT INTO engineering_team_publication_attempts(binding,approval_id,product,repository,base_sha)
- SELECT $1,a.id,a.product,a.repository,a.head_sha FROM engineering_team_approval_requests a
+   const fresh=await authenticate(credential);
+   if(!fresh||fresh.id!==actorId||fresh.permission!=='queue.manage'||fresh.role!==undefined||fresh.product!==pinned.product||fresh.repository!==pinned.repository||fresh.sha!==pinned.sha)throw Error('Reservation denied');
+   const result=await client.query(`INSERT INTO engineering_team_publication_attempts(binding,approval_id,product,repository,base_sha,reserved_by)
+ SELECT $1,a.id,a.product,a.repository,a.head_sha,$6 FROM engineering_team_approval_requests a
  WHERE a.id=$2 AND a.product=$3 AND a.repository=$4 AND a.head_sha=$5 AND a.operation='github.write'
- AND a.evidence_sha256=$1 AND a.state='approved' AND a.expires_at>clock_timestamp()
+ AND a.requested_by=$6 AND a.decided_by<>$6 AND a.evidence_sha256=$1 AND a.state='approved' AND a.expires_at>clock_timestamp()
  AND NOT EXISTS(SELECT 1 FROM engineering_team_stops s WHERE s.product=a.product AND s.repository=a.repository)
  AND NOT EXISTS(SELECT 1 FROM engineering_team_quarantine q WHERE q.product=a.product AND q.repository=a.repository)
- ON CONFLICT DO NOTHING RETURNING binding`,[binding,approvalId,pinned.product,pinned.repository,pinned.sha]);
+ ON CONFLICT DO NOTHING RETURNING binding`,[binding,approvalId,pinned.product,pinned.repository,pinned.sha,actorId]);
    if(result.rowCount!==1)throw Error('Reservation denied');
    await client.query('COMMIT');
    return Object.freeze({binding,reserved:true,executionAuthorized:false});

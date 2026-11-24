@@ -307,9 +307,11 @@ test('isolated PostgreSQL queue: concurrent claims, retries, restart, expiry and
  await approval(pools[1]).recordDecision({scope,id:pub.id,binding:pub.binding,decision:'approved',credential:'owner'});
  await assert.rejects(reserve(pools[1]).reserve({...reservation,binding:'f'.repeat(64)}),/Reservation denied/);
  await assert.rejects(reserve(pools[1]).reserve({...reservation,credential:'w1'}),/Reservation denied/);
+ await assert.rejects(createPublicationReservation({pool:pools[1],scope,authenticate:async()=>({...scope,id:'publication-other-manager',permission:'queue.manage'})}).reserve(reservation),/Reservation denied/);
  const attempts=await Promise.allSettled(pools.map(pool=>reserve(pool).reserve(reservation)));
  assert.equal(attempts.filter(x=>x.status==='fulfilled').length,1);
  assert.equal(attempts.find(x=>x.status==='fulfilled').value.executionAuthorized,false);
+ assert.deepEqual((await pools[0].query('SELECT reserved_by FROM engineering_team_publication_attempts WHERE binding=$1',[publicationBinding])).rows,[{reserved_by:'manager'}]);
  await assert.rejects(reserve(pools[1]).reserve(reservation),/Reservation denied/);
  const providerBudgetId=randomUUID();
  const providerManifest=createActivationManifest({scope,models:Object.fromEntries(sequence.map(r=>[r,'fixture'])),budgetId:providerBudgetId,paths:['src/example.js'],issue:42,runnerImage:'node@sha256:'+'a'.repeat(64),limits:{maxCalls:8,maxOutputTokens:256,maxSpendMicrousd:1000}});
