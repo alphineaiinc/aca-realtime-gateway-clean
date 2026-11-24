@@ -1,0 +1,22 @@
+name: ACA SEC09 execution proof
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened, labeled]
+permissions:
+  contents: read
+jobs:
+  proof:
+    if: github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.head.ref == 'aca-sec09-isolated-proxy-diagnostic'
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Harmless execution evidence
+        env:
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          EVENT_ACTION: ${{ github.event.action }}
+          ATTEMPT: ${{ github.run_attempt }}
+        run: |
+          printf 'SEC09_EXECUTION_PROOF head=%s action=%s attempt=%s\n' "$HEAD_SHA" "$EVENT_ACTION" "$ATTEMPT"
+          test "${#HEAD_SHA}" = 40
+          test "$ATTEMPT" -ge 1
