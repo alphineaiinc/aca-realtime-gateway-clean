@@ -31,3 +31,6 @@ Provider SDK-shaped transport, fixed-origin read-only GitHub HTTP transport, rol
 
 ## Controlled change proposal checkpoint
 Patch planner validates existing allowlisted JS file replacements against pinned source digests, developer-role ownership, size limits, duplicate and stale edit rejection. Draft workflow binds trusted fixture test results to patch evidence and generates draft PR data without write authority. Four negative/positive regression tests added. No actual code execution, GitHub write, provider-driven patch generation, independent review or sandbox is included. Next integrate structured developer model patch output, isolated executable tests and authorized draft-only publication; do not treat fixture passes as real tests.
+
+## Activation preparation checkpoint
+Cryptographic identity verification, durable approval records, GitHub read transport, developer patch adapter, trusted sandbox CI probe, monetary reservation ledger and inert runtime initialization are implemented. Trusted sandbox probe and Node CI passed at a776d48 run 45297144234. No generated code execution or draft publication transport yet. See EIGHT_AGENT_ACTIVATION_RUNBOOK.md for remaining finite gates. No production deployment, live provider requests, credentials or database changes.
