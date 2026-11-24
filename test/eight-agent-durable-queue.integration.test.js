@@ -300,9 +300,9 @@ test('isolated PostgreSQL queue: concurrent claims, retries, restart, expiry and
  assert.equal(unknownResume.taskId,unknownTask);
  assert.equal((await fixtureQueue.inspectWorkflowStep({scope,workflowId:unknownWorkflow.id,workflowStep:0,credential:'manager'})).state,'running');
  const publicationBinding='e'.repeat(64);
- const pub=await approval(pools[0]).request({scope,operation:'github.write',evidence:reconciliationBinding,credential:'manager'});
+ const pub=await approval(pools[0]).request({scope,operation:'github.write',evidence:publicationBinding,credential:'manager'});
  const reserve=pool=>createPublicationReservation({pool,scope,authenticate:async c=>identities.get(c)});
- const reservation={credential:'manager',approvalId:pub.id,binding:reconciliationBinding};
+ const reservation={credential:'manager',approvalId:pub.id,binding:publicationBinding};
  await assert.rejects(reserve(pools[0]).reserve(reservation),/Reservation denied/);
  await approval(pools[1]).recordDecision({scope,id:pub.id,binding:pub.binding,decision:'approved',credential:'owner'});
  await assert.rejects(reserve(pools[1]).reserve({...reservation,binding:'f'.repeat(64)}),/Reservation denied/);
@@ -311,7 +311,7 @@ test('isolated PostgreSQL queue: concurrent claims, retries, restart, expiry and
  const attempts=await Promise.allSettled(pools.map(pool=>reserve(pool).reserve(reservation)));
  assert.equal(attempts.filter(x=>x.status==='fulfilled').length,1);
  assert.equal(attempts.find(x=>x.status==='fulfilled').value.executionAuthorized,false);
- assert.deepEqual((await pools[0].query('SELECT reserved_by FROM engineering_team_publication_attempts WHERE binding=$1',[reconciliationBinding])).rows,[{reserved_by:'manager'}]);
+ assert.deepEqual((await pools[0].query('SELECT reserved_by FROM engineering_team_publication_attempts WHERE binding=$1',[publicationBinding])).rows,[{reserved_by:'manager'}]);
  await assert.rejects(reserve(pools[1]).reserve(reservation),/Reservation denied/);
  const providerBudgetId=randomUUID();
  const providerManifest=createActivationManifest({scope,models:Object.fromEntries(sequence.map(r=>[r,'fixture'])),budgetId:providerBudgetId,paths:['src/example.js'],issue:42,runnerImage:'node@sha256:'+'a'.repeat(64),limits:{maxCalls:8,maxOutputTokens:256,maxSpendMicrousd:1000}});
