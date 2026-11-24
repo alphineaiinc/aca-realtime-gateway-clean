@@ -28,6 +28,7 @@ test("actual ingress rejects exhaustion before authentication or callback parsin
  const send=(left,right)=>fetch(url,{method:"POST",headers:{"content-type":"application/json","x-forwarded-for":left+", "+right},body:'{"test":true}'});
  for(let i=0;i<300;i++){const r=await send("192.0.2."+(i%250+1),"198.51.100.1");assert.equal(r.status,200);assert.equal(await r.text(),'{"test":true}');}
  const ordinary=await fetch(url.replace("/twilio/callback","/ordinary"),{headers:{"x-forwarded-for":"198.51.100.1"}});assert.equal(ordinary.status,404);await ordinary.text();
+ const stripe=await fetch(url.replace("/twilio/callback","/api/stripe/webhook"),{headers:{"x-forwarded-for":"198.51.100.1"}});assert.equal(stripe.status,404);await stripe.text();
  const denied=await send("203.0.113.1","198.51.100.1");assert.equal(denied.status,429);await denied.text();assert.equal(reads,300);
  const other=await send("192.0.2.1","2001:db8:abcd:1234::1");assert.equal(other.status,200);await other.text();
 });
