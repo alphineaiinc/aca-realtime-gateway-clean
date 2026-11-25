@@ -18,49 +18,28 @@ jobs:
         with:
           node-version: '22'
           registry-url: https://registry.npmjs.org
-      - name: Capture existing dependency baseline
-        run: npm audit --omit=dev --json > baseline-audit.json || test -s baseline-audit.json
-      - name: Resolve stable SDK and exact lockfile
+      - name: Verify committed dependencies and regressions
         run: |
-          VERSION=1.32.2
-          echo "Resolved SDK: $VERSION"
-          npm install --package-lock-only --ignore-scripts --no-audit --no-fund --save-exact "@modelcontextprotocol/sdk@$VERSION"
-          npm audit fix --package-lock-only --ignore-scripts --no-fund || test -s package-lock.json
-          npm install --package-lock-only --ignore-scripts --no-audit --no-fund --save-exact nodemailer@10.6.1
           npm ci --ignore-scripts --no-audit --no-fund
-          node --test test/marketplace-mail-compat.test.js
           npm test
-          git diff -- package.json > dependency-manifest.diff
+          git diff --exit-code -- package.json package-lock.json
       - name: Dependency vulnerability assessment
+        run: npm audit --omit=dev --audit-level=high --json > marketplace-audit.json
+      - name: Generate exact revision marketplace acceptance bundle
         run: |
-          npm audit --omit=dev --audit-level=high --json > marketplace-audit.json
-      - name: Emit public dependency files for verified Git transfer
-        if: always()
-        run: |
-          node - <<'NODE'
-          const fs=require('node:fs');
-          const crypto=require('node:crypto');
-          for(const name of ['package.json','package-lock.json']){
-            const data=fs.readFileSync(name,'utf8');
-            const parsed=JSON.parse(data);
-            if(name==='package-lock.json'){
-              for(const p of Object.values(parsed.packages||{})){
-                if(p.resolved && !p.resolved.startsWith('https://registry.npmjs.org/'))throw Error('Unexpected registry');
-              }
-            }
-            console.log('ACA_FILE_HASH '+name+' '+crypto.createHash('sha256').update(data).digest('hex'));
-            for(let i=0;i<data.length;i+=2000)console.log('ACA_FILE_CHUNK '+name+' '+i+' '+JSON.stringify(data.slice(i,i+2000)));
-          }
-          NODE
+          mkdir -p marketplace-bundle
+          git archive HEAD src/marketplace docs/aca/chatgpt-marketplace.md docs/aca/marketplace-package-checklist.md package.json package-lock.json test/marketplace-mcp-authenticated.test.js test/marketplace-mail-compat.test.js | tar -x -C marketplace-bundle
+          git rev-parse HEAD > marketplace-bundle/REVISION
+          cp marketplace-audit.json marketplace-bundle/
+          tar -czf marketplace-acceptance.tar.gz -C marketplace-bundle .
+          sha256sum marketplace-acceptance.tar.gz > marketplace-acceptance.sha256
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: marketplace-sdk-lockfile
+          name: marketplace-acceptance
           path: |
-            package.json
-            package-lock.json
-            baseline-audit.json
+            marketplace-acceptance.tar.gz
+            marketplace-acceptance.sha256
             marketplace-audit.json
-            dependency-manifest.diff
           retention-days: 1
           if-no-files-found: error
