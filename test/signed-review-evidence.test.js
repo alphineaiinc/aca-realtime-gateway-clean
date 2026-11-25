@@ -44,3 +44,9 @@ test("S3-03 verifier rejects private key material and ambiguous key containers",
  for(const publicKey of [keys.privateKey,keys.privateKey.export({type:"pkcs8",format:"pem"}),{key:pem},Buffer.from(pem)])assert.equal(verifySignedReview({envelope:envelope(),publicKey,...scope}),null);
  assert.equal(verifySignedReview({envelope:envelope(),publicKey:keys.publicKey,...scope,headSha:[scope.headSha]}),null);
 });
+
+test("reject concatenated PEM blocks and trailing material",()=>{
+ const pem=keys.publicKey.export({type:"spki",format:"pem"});
+ const privatePem=keys.privateKey.export({type:"pkcs8",format:"pem"});
+ for(const publicKey of [pem+privatePem,pem+pem,pem+"trailing",pem+"\n"+privatePem])assert.equal(verifySignedReview({envelope:envelope(),publicKey,...scope}),null);
+});
