@@ -73,3 +73,21 @@ test("key revoked during review is rechecked",async()=>{
  const result=await observe({...base,github:fixture(),trustedReviewerId:77,trustedReviewerPublicKey:"fixture",trustedEvidenceDigestProvider:async()=>"b".repeat(64),trustedKeyStatusProvider:async()=>++checks===1?"active":"revoked",trustedReviewProvider:async()=>{calls++;return {};}});
  assert.equal(checks,2);assert.equal(calls,1);assert.notEqual(result.state,"ready_for_human_approval");
 });
+
+test("observer checks verified current failure recurrence before another correction",async()=>{
+ const run={id:99,workflow_id:5503,head_sha:sha,check_suite_id:88,run_attempt:1,status:"completed",conclusion:"failure"};
+ const checks=["Node tests","PostgreSQL ledger integration"].map((name,i)=>({id:100+i,name,head_sha:sha,status:"completed",conclusion:i?"success":"failure",app:{id:123},check_suite:{id:88}}));
+ for(const scenario of ["equal","different","missing","invalid","error"]){
+  const github=fixture();
+  github.rest.checks.listForRef=async()=>({data:{total_count:checks.length,check_runs:checks}});
+  github.rest.actions={listWorkflowRuns:async()=>({data:{total_count:1,workflow_runs:[run]}}),getWorkflowRun:async()=>({data:run})};
+  github.request=async(route,args)=>{assert.match(route,/attempts/);assert.equal(args.attempt_number,1);return {data:{total_count:checks.length,jobs:checks.map(c=>({id:c.id+100,run_id:99,run_attempt:1,head_sha:sha,check_run_url:"https://api.github.com/repos/acme/service/check-runs/"+c.id,name:c.name,status:c.status,conclusion:c.conclusion}))}};};
+  const client={query:async sql=>({rows:sql.includes("SELECT version")?[{version:1}]:sql.includes("SELECT sequence")?[{sequence:1,prior_head_sha:"b".repeat(40),resulting_head_sha:sha,failure_fingerprint:"ci:first-failure",event_id:"event-1",trusted_actor_id:123}]:[]})};
+  let calls=0;
+  const result=await observe({...base,github,authenticatedLedgerClient:client,trustedCiAppId:123,trustedCiWorkflowId:5503,...(scenario==="missing"?{}:{trustedFailureFingerprintProvider:async scope=>{calls++;assert.equal(scope.headSha,sha);assert.equal(scope.repositoryId,42);assert.equal(scope.checks[0].runAttempt,1);if(scenario==="error")throw Error("offline");return scenario==="equal"?"ci:first-failure":scenario==="different"?"ci:second-failure":"bad";}})});
+  assert.equal(calls,scenario==="missing"?0:1);
+  assert.equal(result.correction.allowed,scenario==="different",scenario);
+  assert.equal(result.state,scenario==="different"?"ci_failed":"blocked",scenario);
+  assert.equal(result.mergeAuthorized,false);
+ }
+});
