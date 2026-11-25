@@ -94,7 +94,7 @@ function evaluatePrSupervision(input = {}) {
 
   const correction = input.correction || {};
   if (!safeInteger(correction.attempts) ||
-      !safeInteger(correction.unchangedFailureCount)) {
+      !(safeInteger(correction.unchangedFailureCount)||(correction.attempts>0&&correction.unchangedFailureCount===null))) {
     return report(STATES.BLOCKED, ["unknown_correction_history"], ctx);
   }
   const remaining = Math.max(0, MAX_CORRECTIONS - correction.attempts);
@@ -129,7 +129,7 @@ function evaluatePrSupervision(input = {}) {
       "timed_out", "action_required"].includes(normalizeStatus(check.conclusion))));
   if (unknown) return report(STATES.BLOCKED, ["unknown_ci_conclusion"], ctx);
   if (failed) {
-    const exhausted = remaining === 0 || correction.unchangedFailureCount > 0;
+    const exhausted = remaining === 0 || correction.unchangedFailureCount === null || correction.unchangedFailureCount > 0;
     return report(exhausted ? STATES.BLOCKED : STATES.CI_FAILED,
       [exhausted ? "correction_escalation_required" : "ci_failure"],
       ctx, {allowed: !exhausted, remaining});
@@ -152,7 +152,7 @@ function evaluatePrSupervision(input = {}) {
     if (!safeInteger(review.findings) || review.findings === 0) {
       return report(STATES.BLOCKED, ["invalid_review_findings"], ctx);
     }
-    const exhausted = remaining === 0 || correction.unchangedFailureCount > 0;
+    const exhausted = remaining === 0 || correction.unchangedFailureCount === null || correction.unchangedFailureCount > 0;
     return report(exhausted ? STATES.BLOCKED : STATES.CORRECTION_NEEDED,
       [exhausted ? "correction_escalation_required" : "review_findings"],
       ctx, {allowed: !exhausted, remaining});
