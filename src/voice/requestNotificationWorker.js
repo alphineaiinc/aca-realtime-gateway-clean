@@ -19,7 +19,7 @@ INSERT INTO public.aca_request_email_reservations(request_id,tenant_id,recipient
  RETURNING request_id,tenant_id,recipient AS email,message_id`;
 async function deliverOne({pool,sendMail}) {
  // Real transport is disabled unless explicitly scoped to the controlled staging fixture.
- const staging=!sendMail || process.env.ACA_STAGING_EMAIL_ONLY==="true";
+ const staging=!sendMail || !process.env.NODE_TEST_CONTEXT || process.env.ACA_STAGING_EMAIL_ONLY==="true";
  const tenant=process.env.ACA_STAGING_EMAIL_TENANT_ID;
  const request=process.env.ACA_STAGING_EMAIL_REQUEST_ID;
  const recipient=process.env.ACA_STAGING_EMAIL_RECIPIENT;
