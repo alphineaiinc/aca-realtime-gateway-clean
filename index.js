@@ -1479,8 +1479,8 @@ server.listen(PORT, () => {
       process.env.ACA_STAGING_ACCEPTANCE_RUN === "true") {
     Promise.resolve().then(() => require("./src/voice/stagingEmailAcceptance").run({
       pool: require("./src/db/pool")
-    })).then(status => console.log("ACA staging email acceptance:", status))
-      .catch(() => console.warn("ACA staging email acceptance: failed"));
+    })).then(status => console.log("ACA_STAGING_EMAIL_ACCEPTANCE", { acceptanceOutcome: status }))
+      .catch(() => console.warn("ACA_STAGING_EMAIL_ACCEPTANCE", { acceptanceOutcome: "failed" }));
   }
 });
 
