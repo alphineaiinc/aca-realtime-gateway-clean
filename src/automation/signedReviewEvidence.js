@@ -24,7 +24,7 @@ function verifySignedReview({envelope,publicKey,repositoryId,prNumber,issueNumbe
     (record.status==="findings"&&record.findings===0))return null;
  try{
    if(publicKey instanceof KeyObject&&publicKey.type!=="public")return null;
-   if(typeof publicKey==="string"&&!/^-----BEGIN PUBLIC KEY-----\r?\n/.test(publicKey))return null;
+   if(typeof publicKey==="string"&&!/^-----BEGIN PUBLIC KEY-----\r?\n(?:[A-Za-z0-9+/]+={0,2}\r?\n)+-----END PUBLIC KEY-----\s*$/.test(publicKey))return null;
    if(!(publicKey instanceof KeyObject)&&typeof publicKey!=="string")return null;
    const key=publicKey instanceof KeyObject ? publicKey : createPublicKey(publicKey);
    if(key.asymmetricKeyType!=="ed25519")return null;
