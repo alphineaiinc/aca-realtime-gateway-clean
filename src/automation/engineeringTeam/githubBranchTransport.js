@@ -16,7 +16,8 @@ function createGitHubBranchTransport({token,scope,baseBranch='main',fetchImpl=gl
   return JSON.parse(Buffer.concat(chunks).toString('utf8'));
  }
  return Object.freeze({async create({files,plan}={}){
-  const spec=prepareBranch({scope:pinned,files,plan});
+  const inventory=Object.freeze(files.map(f=>Object.freeze({path:f.path,role:f.role,text:f.text})));
+  const spec=prepareBranch({scope:pinned,files:inventory,plan});
   const base=await call('/git/ref/heads/'+baseBranch,'GET');
   if(base.object?.sha!==pinned.sha)throw Error('Stale base');
   const parent=await call('/git/commits/'+pinned.sha,'GET');
@@ -35,7 +36,7 @@ function createGitHubBranchTransport({token,scope,baseBranch='main',fetchImpl=gl
     else{
      if(node.type!=='blob'||node.mode!=='100644')throw Error('File mode denied');
      const blob=await call('/git/blobs/'+node.sha,'GET');
-     const old=files.find(f=>f.path===entry.path);
+     const old=inventory.find(f=>f.path===entry.path);
      if(blob.sha!==node.sha||blob.encoding!=='base64'||typeof blob.content!=='string'||!Number.isSafeInteger(blob.size)||blob.size<0||blob.size>16000||Buffer.from(blob.content,'base64').compare(Buffer.from(old.text,'utf8'))!==0)throw Error('Source denied');
     }
    }
