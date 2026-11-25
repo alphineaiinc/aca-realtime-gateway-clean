@@ -37,3 +37,10 @@ test("Empty notification queue never initializes a provider",async()=>{
  assert.equal(await deliverOne({pool:{connect:async()=>client}}),false);
  assert.deepEqual(statements,[]); // No configured staging entitlement: no DB or provider access.
 });
+
+test("controlled staging disables shared login and onboarding transport before provider initialization",()=>{
+ for(const transport of ["gmail","smtp"]){
+  assert.throws(()=>createMailSender({...env,ACA_EMAIL_TRANSPORT:transport,ACA_STAGING_EMAIL_ONLY:"true"}),{message:"STAGING_AUTH_EMAIL_DISABLED"});
+ }
+ assert.equal(typeof createMailSender({...env,ACA_EMAIL_TRANSPORT:"gmail"}),"function");
+});
