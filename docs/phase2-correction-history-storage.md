@@ -45,3 +45,7 @@ an audit log separate from the mutable projection.
 
 No storage service or credentials are provisioned by this change. Integration
 requires an owner-approved storage choice and credentials scoped to the service.
+
+## Current-head failure recurrence and CI provenance
+
+The observer reads previous failure fingerprints from the authenticated ledger. After a prior correction, independently authenticated current failure evidence must establish recurrence before another correction is recommended. Equal fingerprints escalate; absent, invalid or unavailable fingerprints are unknown and deny further correction. A different verified fingerprint permits only the existing bounded policy. Successful CI and review need not manufacture a failure fingerprint. Both CI bridges use authenticated attempt-specific job inventories and re-read the workflow run; missing, stale or incomplete evidence fails closed. The trusted host must establish the fingerprint provider's identity and scope; this source change neither provisions nor activates it.
