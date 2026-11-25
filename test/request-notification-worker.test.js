@@ -102,3 +102,21 @@ test("commercial entitlement is disabled by default and fenced to service and da
  assert.ok(sql.includes("current_database() = $4::text AND current_database() <> 'aca_product_staging'"));
  }finally{keys.forEach((k,i)=>{if(old[i]===undefined)delete process.env[k];else process.env[k]=old[i];});}
 });
+
+test("invalid local transport leaves durable claim untouched and permits repaired delivery",async()=>{
+ const keys=["ACA_EMAIL_TRANSPORT","SMTP_HOST","SMTP_USER","SMTP_PASS","SMTP_FROM","GMAIL_CLIENT_ID","GMAIL_CLIENT_SECRET","GMAIL_REFRESH_TOKEN","GMAIL_FROM"];
+ const old=keys.map(k=>process.env[k]);
+ try{
+  keys.forEach(k=>delete process.env[k]);
+  const f=fixture();
+  for(const mode of ["smtp","gmail","invalid"]){
+   process.env.ACA_EMAIL_TRANSPORT=mode;
+   await assert.rejects(deliverOne({pool:f.pool}),{message:"REQUEST_TRANSPORT_CONFIGURATION_INVALID"});
+   assert.equal(f.state.reserved,false);
+   assert.equal(f.state.uncertain,false);
+   assert.equal(f.state.queries.length,0);
+  }
+  assert.equal(await deliverOne({pool:f.pool,sendMail:async mail=>({accepted:[mail.to]})}),true);
+  assert.equal(f.state.delivered,true);
+ }finally{keys.forEach((k,i)=>{if(old[i]===undefined)delete process.env[k];else process.env[k]=old[i];});}
+});
