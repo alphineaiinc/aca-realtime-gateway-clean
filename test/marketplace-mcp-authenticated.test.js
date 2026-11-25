@@ -5,28 +5,54 @@ const express=require("express");
 const jwt=require("jsonwebtoken");
 const {generateKeyPairSync}=require("node:crypto");
 const {createMarketplaceRouter}=require("../src/marketplace/mcpRouter");
-test("authenticated MCP initialization, discovery and profile invocation",async()=>{
+
+test("authenticated MCP exposes only schema-backed profile reads and isolates tenants",async()=>{
  const {Client}=await import("@modelcontextprotocol/sdk/client/index.js");
  const {StreamableHTTPClientTransport}=await import("@modelcontextprotocol/sdk/client/streamableHttp.js");
  const {privateKey,publicKey}=generateKeyPairSync("rsa",{modulusLength:2048});
  const resource="https://aca.example.invalid/mcp",issuer="https://auth.example.invalid";
- const token=jwt.sign({tenant_id:7,scope:"aca:profile:read aca:requests:count"},privateKey,{algorithm:"RS256",issuer,audience:resource,subject:"fixture@example.invalid",expiresIn:60});
- const pool={query:async(sql,args)=>{if(args[0]!==7||args[1]!=="fixture@example.invalid")return {rows:[]};return {rows:[sql.includes("count(*)")?{count:"2"}:{business_name:"Fixture",preferred_lang:"en",region:"CA"}]};}};
+ const pool={query:async(sql,args)=>{
+  assert.match(sql,/FROM public\.master_tenants WHERE id=\$1/);
+  assert.equal(args.length,1);
+  const records={7:{business_name:"Tenant Seven",preferred_lang:"en",region:"CA"},8:{business_name:"Tenant Eight",preferred_lang:"fr",region:"NG"}};
+  return {rows:records[args[0]]?[records[args[0]]]:[]};
+ }};
  const app=express();app.use(createMarketplaceRouter({enabled:true,resource,issuer,publicKey,pool}));
  const http=app.listen(0,"127.0.0.1");await new Promise(resolve=>http.once("listening",resolve));
- const client=new Client({name:"fixture",version:"1.0.0"});
+ const endpoint="http://127.0.0.1:"+http.address().port+"/mcp";
+ async function connect(tenantId,subject="fixture@example.invalid",signingKey=privateKey,scope="aca:profile:read"){
+  const token=jwt.sign({tenant_id:tenantId,scope},signingKey,{algorithm:"RS256",issuer,audience:resource,subject,expiresIn:60});
+  const client=new Client({name:"fixture-"+tenantId,version:"1.0.0"});
+  await client.connect(new StreamableHTTPClientTransport(new URL(endpoint),{requestInit:{headers:{Authorization:"Bearer "+token}}}));
+  return client;
+ }
  try{
- await client.connect(new StreamableHTTPClientTransport(new URL("http://127.0.0.1:"+http.address().port+"/mcp"),{requestInit:{headers:{Authorization:"Bearer "+token}}}));
- const tools=await client.listTools();assert.ok(tools.tools.some(t=>t.name==="aca_get_business_profile"));
- const profile=await client.callTool({name:"aca_get_business_profile",arguments:{}});assert.equal(JSON.parse(profile.content[0].text).business_name,"Fixture");
- const count=await client.callTool({name:"aca_get_request_count",arguments:{}});assert.equal(JSON.parse(count.content[0].text).request_count,"2");
- const restricted=jwt.sign({tenant_id:7,scope:"aca:profile:read"},privateKey,{algorithm:"RS256",issuer,audience:resource,subject:"fixture@example.invalid",expiresIn:60});
- const limited=new Client({name:"limited",version:"1.0.0"});
- try{await limited.connect(new StreamableHTTPClientTransport(new URL("http://127.0.0.1:"+http.address().port+"/mcp"),{requestInit:{headers:{Authorization:"Bearer "+restricted}}}));const denied=await limited.callTool({name:"aca_get_request_count",arguments:{}});assert.equal(denied.isError,true);}finally{await limited.close();}
- const countOnly=jwt.sign({tenant_id:7,scope:"aca:requests:count"},privateKey,{algorithm:"RS256",issuer,audience:resource,subject:"fixture@example.invalid",expiresIn:60});
- const counter=new Client({name:"counter",version:"1.0.0"});
- try{await counter.connect(new StreamableHTTPClientTransport(new URL("http://127.0.0.1:"+http.address().port+"/mcp"),{requestInit:{headers:{Authorization:"Bearer "+countOnly}}}));assert.equal((await counter.callTool({name:"aca_get_business_profile",arguments:{}})).isError,true);assert.equal(JSON.parse((await counter.callTool({name:"aca_get_request_count",arguments:{}})).content[0].text).request_count,"2");}finally{await counter.close();}
- const wrong=jwt.sign({tenant_id:8,scope:"aca:profile:read"},privateKey,{algorithm:"RS256",issuer,audience:resource,subject:"fixture@example.invalid",expiresIn:60});
- const rejected=await fetch("http://127.0.0.1:"+http.address().port+"/mcp",{method:"POST",headers:{Authorization:"Bearer "+wrong,"Content-Type":"application/json"},body:"{}"});assert.equal(rejected.status,401);
- }finally{await client.close();http.closeAllConnections();await new Promise(resolve=>http.close(resolve));}
+  const seven=await connect(7),eight=await connect(8);
+  try{
+   const sevenTools=await seven.listTools(),eightTools=await eight.listTools();
+   assert.deepEqual(sevenTools.tools.map(t=>t.name),["aca_get_business_profile"]);
+   assert.deepEqual(eightTools.tools.map(t=>t.name),["aca_get_business_profile"]);
+   const sevenProfile=JSON.parse((await seven.callTool({name:"aca_get_business_profile",arguments:{}})).content[0].text);
+   const eightProfile=JSON.parse((await eight.callTool({name:"aca_get_business_profile",arguments:{}})).content[0].text);
+   assert.equal(sevenProfile.business_name,"Tenant Seven");
+   assert.equal(eightProfile.business_name,"Tenant Eight");
+   assert.notEqual(sevenProfile.business_name,eightProfile.business_name);
+  }finally{await seven.close();await eight.close();}
+  const wrongAudience=jwt.sign({tenant_id:7,scope:"aca:profile:read"},privateKey,{algorithm:"RS256",issuer,audience:"https://other.example.invalid/mcp",subject:"fixture@example.invalid",expiresIn:60});
+  const denied=await fetch(endpoint,{method:"POST",headers:{Authorization:"Bearer "+wrongAudience,"Content-Type":"application/json"},body:"{}"});
+  assert.equal(denied.status,401);
+  const noScope=jwt.sign({tenant_id:7,scope:"aca:requests:count"},privateKey,{algorithm:"RS256",issuer,audience:resource,subject:"fixture@example.invalid",expiresIn:60});
+  const noScopeResponse=await fetch(endpoint,{method:"POST",headers:{Authorization:"Bearer "+noScope,"Content-Type":"application/json"},body:"{}"});
+  assert.equal(noScopeResponse.status,401);
+ }finally{http.closeAllConnections();await new Promise(resolve=>http.close(resolve));}
+});
+
+test("profile lookup fails closed when a tenant has no matching master record",async()=>{
+ const {privateKey,publicKey}=generateKeyPairSync("rsa",{modulusLength:2048});
+ const {verifyBusinessToken,createBusinessTools}=require("../src/marketplace/businessTools");
+ const resource="https://aca.example.invalid/mcp",issuer="https://auth.example.invalid";
+ const token=jwt.sign({tenant_id:999,scope:"aca:profile:read"},privateKey,{algorithm:"RS256",issuer,audience:resource,subject:"missing@example.invalid",expiresIn:60});
+ const identity=verifyBusinessToken({token,publicKey,issuer,audience:resource});
+ const read=createBusinessTools({pool:{query:async()=>({rows:[]})}});
+ await assert.rejects(read(identity),/PROFILE_UNAVAILABLE/);
 });
