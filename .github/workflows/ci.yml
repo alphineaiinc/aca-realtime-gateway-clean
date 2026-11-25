@@ -82,3 +82,4 @@ jobs:
         with:
           node-version: '22'
       - run: node integration/aca-hosted-acceptance.mjs
+      - run: node integration/aca-commercial-negative.mjs
