@@ -3,7 +3,7 @@ on:
   pull_request:
     branches: [main]
   push:
-    branches: [main, aca-phase2-reviewer-staging-secret-rollout]
+    branches: [main, aca-phase2-reviewer-staging-secret-rollout, aca-p2-b02-isolated-integration]
 permissions:
   contents: read
 concurrency:

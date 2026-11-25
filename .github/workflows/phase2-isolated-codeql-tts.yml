@@ -6,6 +6,8 @@ on:
       - 'tts.js'
       - 'src/voice/elevenLabsUrl.js'
       - '.github/workflows/phase2-isolated-codeql-tts.yml'
+  push:
+    branches: [aca-p2-b02-isolated-integration]
   workflow_dispatch:
 permissions:
   contents: read
