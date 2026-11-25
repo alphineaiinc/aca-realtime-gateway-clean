@@ -1,7 +1,7 @@
 name: ACA CI
 on:
   pull_request:
-    branches: [main]
+    branches: [main, aca-product-commercial-consolidation]
   push:
     branches: [main]
 permissions:
@@ -31,6 +31,9 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
       - name: Set up Node
         uses: actions/setup-node@v4
         with:
