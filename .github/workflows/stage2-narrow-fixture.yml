@@ -1,7 +1,7 @@
 name: Stage 2 narrow integration fixture
 on:
   push:
-    branches: [aca-p2-stage2-narrow-integration]
+    branches: [aca-p2-stage2-narrow-integration, aca-p2-stage2-on-demand]
 permissions:
   contents: read
 concurrency:

@@ -1,5 +1,6 @@
 name: Stage 2 restricted scheduled observation (draft)
 on:
+  workflow_dispatch:
   schedule:
     - cron: '17 * * * *'
 permissions:
@@ -11,7 +12,7 @@ concurrency:
   cancel-in-progress: false
 jobs:
   observe:
-    if: github.repository == 'alphineaiinc/aca-realtime-gateway-clean' && github.ref == 'refs/heads/main' && github.run_attempt == 1 && vars.ACA_STAGE2_ENABLED == 'true' && vars.ACA_STAGE2_APPROVED_CONFIG_SHA == github.sha
+    if: github.repository == 'alphineaiinc/aca-realtime-gateway-clean' && github.ref == 'refs/heads/main' && github.run_attempt == 1 && (github.event_name == 'workflow_dispatch' || (vars.ACA_STAGE2_ENABLED == 'true' && vars.ACA_STAGE2_APPROVED_CONFIG_SHA == github.sha))
     runs-on: ubuntu-latest
     timeout-minutes: 2
     steps:
@@ -29,7 +30,7 @@ jobs:
         run: |
           test "$(git -C config rev-parse HEAD)" = "$GITHUB_SHA"
           test "$(git -C manager rev-parse HEAD)" = "6678909c7e9e60c08b0bc56c150e9031900a3984"
-      - name: Bounded scheduled observation
+      - name: Bounded observation or disabled verification
         env:
           ACA_READ_TOKEN: ${{ github.token }}
           APPROVED: ${{ vars.ACA_STAGE2_APPROVED_CONFIG_SHA }}

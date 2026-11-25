@@ -10,3 +10,6 @@ In-flight GET may finish; no new GET after expiry. Duplicate distinct first-atte
 
 ## Fixture isolation
 Standard ACA CI discovers test/*.test.js; the dedicated pinned Manager fixture lives in fixtures/ and is explicitly invoked by stage2-narrow-fixture.yml with both exact checkouts. No assertion is skipped or weakened. Both standard PR CI and dedicated fixture must pass.
+
+## On-demand candidate
+Manual dispatch on main, first attempt only, shares the scheduled concurrency group and exact admission, stop, expiry and output controls. Disabled manual invocation must return denied without API observation. Manual success is not evidence of cron delivery. Existing owner permission, cancellation and scheduled acceptance requirements remain. New integrated SHA requires fresh configuration approval; old SHA must remain disabled. No activation or integration authorized by this draft.
