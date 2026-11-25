@@ -43,7 +43,22 @@ test("isolated product migration chain and verified onboarding",async()=>{
  await pool.query("UPDATE aca_notification_recipients SET is_active=TRUE WHERE tenant_id=$1",[tenantId]);
  await assert.rejects(deliverOne({pool,sendMail:async()=>({accepted:[]})}),/REQUEST_NOTIFICATION_FAILED/);
  assert.equal((await pool.query("SELECT delivered_at FROM aca_request_outbox WHERE request_id=$1",[id])).rows[0].delivered_at,null);
- assert.equal(await deliverOne({pool,sendMail}),true);
+ // Transport exception must release the lock and preserve the undelivered request.
+ await assert.rejects(deliverOne({pool,sendMail:async()=>{throw Error("simulated transport failure");}}),/REQUEST_NOTIFICATION_FAILED/);
+ assert.equal((await pool.query("SELECT delivered_at FROM aca_request_outbox WHERE request_id=$1",[id])).rows[0].delivered_at,null);
+ // Hold one simulated delivery open while a second worker attempts the same row.
+ let enter,release;
+ const entered=new Promise(r=>{enter=r;}),gate=new Promise(r=>{release=r;});
+ let concurrentSends=0;
+ const first=deliverOne({pool,sendMail:async mail=>{concurrentSends++;enter();await gate;return sendMail(mail);}});
+ try{
+ await Promise.race([entered,first.then(()=>{throw Error("worker exited before send");})]);
+ assert.equal(await deliverOne({pool,sendMail:async()=>{concurrentSends++;throw Error("duplicate send");}}),false);
+ }finally{release();await first;}
+ assert.equal(concurrentSends,1);
+ assert.ok((await pool.query("SELECT delivered_at FROM aca_request_outbox WHERE request_id=$1",[id])).rows[0].delivered_at);
+ console.log("Notification transport failure recovery and concurrent worker exclusion passed");
+ 
  assert.equal(await deliverOne({pool,sendMail}),false);assert.equal(sent,1);
  const other=await pool.query("INSERT INTO master_tenants(business_name) VALUES('Other disposable tenant') RETURNING id");
  await prepareRouting(pool,{tenantId:other.rows[0].id,workflowId:"generic",phoneNumber:"+14165550124"});
