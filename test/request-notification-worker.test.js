@@ -44,3 +44,20 @@ test("acknowledgement failure does not permit second send",async()=>{
  await assert.rejects(deliverOne({pool:f.pool,sendMail:async mail=>({accepted:[mail.to]})}),{message:"REQUEST_ACK_FAILED"});
  assert.equal(await deliverOne({pool:f.pool,sendMail:async()=>{throw Error("duplicate");}}),false);
 });
+
+test("staging scope binds exact recipient, tenant and request before provider access",async()=>{
+ const keys=["ACA_STAGING_EMAIL_ONLY","ACA_STAGING_EMAIL_TENANT_ID","ACA_STAGING_EMAIL_REQUEST_ID","ACA_STAGING_EMAIL_RECIPIENT"];
+ const previous=keys.map(k=>process.env[k]);
+ try{
+  process.env[keys[0]]="true";process.env[keys[1]]="7";process.env[keys[2]]="1";process.env[keys[3]]="business@example.test";
+  const f=fixture(false);
+  assert.equal(await deliverOne({pool:f.pool,sendMail:async()=>{throw Error("unexpected");}}),false);
+  const [sql,params]=f.state.queries[0];
+  assert.deepEqual(params,[true,"7","1","business@example.test"]);
+  assert.ok(sql.includes("current_database() = 'aca_product_staging'"));
+  assert.ok(sql.includes("r.email=$4::text"));
+  assert.ok(sql.includes("staging_attempt"));
+  delete process.env[keys[3]];
+  assert.equal(await deliverOne({pool:{connect:async()=>{throw Error("must not connect");}}}),false);
+ }finally{keys.forEach((k,i)=>{if(previous[i]===undefined)delete process.env[k];else process.env[k]=previous[i];});}
+});
