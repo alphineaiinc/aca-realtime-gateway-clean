@@ -5,7 +5,7 @@ test("isolated product migration chain and verified onboarding",async()=>{
  const pool=new Pool({connectionString:"postgres://onboarding_test:onboarding_test_only@localhost:5432/onboarding_test"});
  try{
  await pool.query("CREATE TABLE public.master_tenants(id INTEGER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,business_name TEXT,preferred_lang TEXT,region TEXT); CREATE TABLE public.billing_invoices(id INTEGER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,tenant_id INTEGER,amount_usd NUMERIC,status TEXT); CREATE TABLE public.analytics_events(id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,tenant_id INTEGER,event_type TEXT,quantity NUMERIC,unit TEXT,meta JSONB,created_at TIMESTAMP DEFAULT NOW());");
- for(const name of fs.readdirSync("migrations").filter(n=>/^0(0[7-9]|1[0-7])_.*\.sql$/.test(n)).sort())await pool.query(fs.readFileSync("migrations/"+name,"utf8"));
+ for(const name of fs.readdirSync("migrations").filter(n=>/^0(0[7-9]|1[0-8])_.*\.sql$/.test(n)).sort())await pool.query(fs.readFileSync("migrations/"+name,"utf8"));
  const {issueChallenge}=require("../src/security/onboardingChallenge");
  const {provisionVerifiedBusiness}=require("../src/security/provisionVerifiedBusiness");
  const {prepareRouting}=require("../src/security/prepareRouting");
@@ -41,11 +41,16 @@ test("isolated product migration chain and verified onboarding",async()=>{
  const sendMail=async mail=>{sent++;assert.equal(mail.to,email);assert.ok(!mail.text.includes("Disposable caller"));return {accepted:[email]};};
  assert.equal(await deliverOne({pool,sendMail}),false);assert.equal(sent,0);
  await pool.query("UPDATE aca_notification_recipients SET is_active=TRUE WHERE tenant_id=$1",[tenantId]);
- await assert.rejects(deliverOne({pool,sendMail:async()=>({accepted:[]})}),/REQUEST_NOTIFICATION_FAILED/);
- assert.equal((await pool.query("SELECT delivered_at FROM aca_request_outbox WHERE request_id=$1",[id])).rows[0].delivered_at,null);
- // Transport exception must release the lock and preserve the undelivered request.
- await assert.rejects(deliverOne({pool,sendMail:async()=>{throw Error("simulated transport failure");}}),/REQUEST_NOTIFICATION_FAILED/);
- assert.equal((await pool.query("SELECT delivered_at FROM aca_request_outbox WHERE request_id=$1",[id])).rows[0].delivered_at,null);
+ // A distinct disposable request exercises ambiguous delivery without clearing its tombstone.
+ const uncertainContext=await resolve({calledNumber:"+14165550123",callSid:"CA"+"b".repeat(32)});
+ const uncertainId=await saveConfirmedRequest(uncertainContext,intent.intent,slots,query);
+ // Temporarily exclude the success fixture from the queue.
+ await pool.query("UPDATE aca_request_outbox SET delivered_at=now() WHERE request_id=$1",[id]);
+ await assert.rejects(deliverOne({pool,sendMail:async()=>({accepted:[]})}),/REQUEST_NOTIFICATION_UNCERTAIN/);
+ assert.equal((await pool.query("SELECT state FROM aca_request_email_reservations WHERE request_id=$1",[uncertainId])).rows[0].state,"uncertain");
+ assert.equal((await pool.query("SELECT delivered_at FROM aca_request_outbox WHERE request_id=$1",[uncertainId])).rows[0].delivered_at,null);
+ assert.equal(await deliverOne({pool,sendMail:async()=>{throw Error("duplicate");}}),false);
+ await pool.query("UPDATE aca_request_outbox SET delivered_at=NULL WHERE request_id=$1",[id]);
  // Hold one simulated delivery open while a second worker attempts the same row.
  let enter,release;
  const entered=new Promise(r=>{enter=r;}),gate=new Promise(r=>{release=r;});
@@ -57,7 +62,7 @@ test("isolated product migration chain and verified onboarding",async()=>{
  }finally{release();await first;}
  assert.equal(concurrentSends,1);
  assert.ok((await pool.query("SELECT delivered_at FROM aca_request_outbox WHERE request_id=$1",[id])).rows[0].delivered_at);
- console.log("Notification transport failure recovery and concurrent worker exclusion passed");
+ console.log("Persistent uncertain reservation and concurrent worker exclusion passed");
  
  assert.equal(await deliverOne({pool,sendMail}),false);assert.equal(sent,1);
  const other=await pool.query("INSERT INTO master_tenants(business_name) VALUES('Other disposable tenant') RETURNING id");
@@ -149,7 +154,7 @@ try{
  const a=await login(email),b=await login(otherEmail);
  assert.equal((await request("/tenant/profile",a.token)).body.profile.tenant_id,tenantId);
  assert.equal((await request("/tenant/profile",b.token)).body.profile.tenant_id,otherContext.tenantId);
- assert.deepEqual((await request("/tenant/requests",a.token)).body.requests.map(x=>String(x.id)),[String(id)]);
+ assert.deepEqual((await request("/tenant/requests",a.token)).body.requests.map(x=>String(x.id)).sort(),[String(id),String(uncertainId)].sort());
  assert.deepEqual((await request("/tenant/requests",b.token)).body.requests.map(x=>String(x.id)),[String(otherId)]);
  const routingA=await request("/tenant/routing/status",a.token),routingB=await request("/tenant/routing/status",b.token);
  assert.equal(routingA.status,200);assert.equal(routingB.status,200);
