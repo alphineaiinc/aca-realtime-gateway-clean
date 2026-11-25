@@ -29,3 +29,11 @@ test("Gmail refuses unconfirmed send and incomplete config",async()=>{
  assert.throws(()=>createMailSender({ACA_EMAIL_TRANSPORT:"unknown"}),/EMAIL_TRANSPORT_INVALID/);
  assert.throws(()=>createMailSender({}),/SMTP_NOT_CONFIGURED/);
 });
+
+test("Empty notification queue never initializes a provider",async()=>{
+ const {deliverOne}=require("../src/voice/requestNotificationWorker");
+ const statements=[];
+ const client={query:async sql=>{statements.push(sql);return {rows:[]};},release(){statements.push("release");}};
+ assert.equal(await deliverOne({pool:{connect:async()=>client}}),false);
+ assert.equal(statements[0],"BEGIN");assert.equal(statements.at(-2),"COMMIT");assert.equal(statements.at(-1),"release");
+});
