@@ -59,3 +59,26 @@ test('invalid role output fails closed',async()=>{
  const {manager,task}=setup({'security-reviewer':async()=>({...fixture('security-reviewer'),approved:true})});
  await assert.rejects(manager.propose({taskId:task.id,role:'security-reviewer',action:'security-report'}));
 });
+
+test('offline lifecycle rejects malformed handoffs before downstream roles',async()=>{
+ for(const patch of [{taskId:'other'},{role:'devops'},{action:'merge'},{approval:true},{approval:undefined},{output:{approval:true}}]){
+  let calls=0;
+  const task={id:'fixture-task',product:'aca',repository:'fixture/aca',sha:'a'.repeat(40)};
+  const manager={propose:async({taskId,role,action})=>{calls++;return {taskId,role,action,approval:false,output:fixture(role),...patch};}};
+  await assert.rejects(runOfflineTeam({manager,task}));assert.equal(calls,1);
+ }
+});
+test('offline lifecycle rejects scope mutation during a handoff',async()=>{
+ for(const key of ['id','product','repository','sha']){
+  let calls=0;const task={id:'fixture-task',product:'aca',repository:'fixture/aca',sha:'a'.repeat(40)};
+  const manager={propose:async({taskId,role,action})=>{calls++;await Promise.resolve();task[key]='changed';return {taskId,role,action,approval:false,output:fixture(role)};}};
+  await assert.rejects(runOfflineTeam({manager,task}),/handoff denied/);assert.equal(calls,1);
+ }
+});
+test('offline lifecycle snapshots validated outputs and ignores extra envelope authority',async()=>{
+ const task={id:'fixture-task'};const outputs=[];
+ const manager={propose:async({taskId,role,action})=>{const output=fixture(role);outputs.push(output);return {taskId,role,action,output,approval:false,executionAuthorized:true};}};
+ const result=await runOfflineTeam({manager,task});assert.equal(result.proposals.length,8);assert.equal(result.releaseApproved,false);
+ outputs[0].sequence[0]='mutated';assert.notEqual(result.proposals[0].output.sequence[0],'mutated');
+ for(const p of result.proposals){assert.equal(p.approval,false);assert.equal(Object.hasOwn(p,'executionAuthorized'),false);assert.ok(Object.isFrozen(p));}
+});
