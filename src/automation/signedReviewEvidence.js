@@ -9,7 +9,7 @@ const positive=n=>Number.isSafeInteger(n)&&n>0;
  */
 function verifySignedReview({envelope,publicKey,repositoryId,prNumber,issueNumber,headSha,reviewerId,challenge}={}){
  if(!positive(repositoryId)||!positive(prNumber)||!positive(issueNumber)||!positive(reviewerId)||typeof challenge!=='string'||!/^[a-f0-9]{64}$/.test(challenge)||
-    !SHA.test(headSha||"")||!envelope||typeof envelope!=="object"||
+    (typeof headSha!=="string"||!SHA.test(headSha))||!envelope||typeof envelope!=="object"||
     typeof envelope.signature!=="string"||!(/^[a-fA-F0-9]{128}$/).test(envelope.signature))
    return null;
  const record=envelope.record;
@@ -23,8 +23,10 @@ function verifySignedReview({envelope,publicKey,repositoryId,prNumber,issueNumbe
     (record.status==="passed"&&record.findings!==0)||
     (record.status==="findings"&&record.findings===0))return null;
  try{
-   const key=publicKey instanceof KeyObject && publicKey.type==="public"
-     ? publicKey : createPublicKey(publicKey);
+   if(publicKey instanceof KeyObject&&publicKey.type!=="public")return null;
+   if(typeof publicKey==="string"&&!/^-----BEGIN PUBLIC KEY-----\r?\n/.test(publicKey))return null;
+   if(!(publicKey instanceof KeyObject)&&typeof publicKey!=="string")return null;
+   const key=publicKey instanceof KeyObject ? publicKey : createPublicKey(publicKey);
    if(key.asymmetricKeyType!=="ed25519")return null;
    const payload=Buffer.from(JSON.stringify([
      "aca-review-v2",record.repositoryId,record.prNumber,record.headSha,
