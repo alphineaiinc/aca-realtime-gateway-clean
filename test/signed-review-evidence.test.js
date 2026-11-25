@@ -37,3 +37,10 @@ test("v2 rejects expired future and overlong evidence and legacy signatures",()=
  const bytes=Buffer.from(JSON.stringify(["aca-review-v1",legacy.repositoryId,legacy.prNumber,legacy.headSha,legacy.reviewerId,legacy.status,legacy.findings]));
  assert.equal(verifySignedReview({envelope:{record:legacy,signature:sign(null,bytes,keys.privateKey).toString("hex")},publicKey:keys.publicKey,...scope}),null);
 });
+
+test("S3-03 verifier rejects private key material and ambiguous key containers",()=>{
+ const pem=keys.publicKey.export({type:"spki",format:"pem"});
+ assert.equal(verifySignedReview({envelope:envelope(),publicKey:pem,...scope}).status,"passed");
+ for(const publicKey of [keys.privateKey,keys.privateKey.export({type:"pkcs8",format:"pem"}),{key:pem},Buffer.from(pem)])assert.equal(verifySignedReview({envelope:envelope(),publicKey,...scope}),null);
+ assert.equal(verifySignedReview({envelope:envelope(),publicKey:keys.publicKey,...scope,headSha:[scope.headSha]}),null);
+});
