@@ -7,12 +7,18 @@ const { test } = require("node:test");
 
 const billingPath = require.resolve("../src/routes/billing");
 
-function loadBillingRouterWithMocks({ fsMock, verify, createArchive }) {
+function loadBillingRouterWithMocks({ fsMock, verify, createArchive, quotaHits = 1 }) {
   const originalLoad = Module._load;
   const jwtMock = {
     verify: verify || (() => ({ tenant_id: "tenant-default", partner_id: "partner-default" })),
   };
-  const poolMock = { query: async () => ({ rowCount: 0, rows: [] }) };
+  const poolMock = { query: async (sql, params) => {
+    assert.match(sql, /INSERT INTO aca_rate_limit_buckets/);
+    assert.equal(params[0], "billing");
+    assert.match(params[1], /^[a-f0-9]{64}$/);
+    assert.deepEqual(params.slice(2), [60000, 60]);
+    return { rowCount: 1, rows: [{ hits: quotaHits, retry_after: 60 }] };
+  } };
   const billingEngineMock = { generateInvoice: async () => ({}) };
   const paymentLoggerMock = { logPayment: () => {} };
 
@@ -37,10 +43,12 @@ function loadBillingRouterWithMocks({ fsMock, verify, createArchive }) {
 function getDownloadAllHandlers(router) {
   const layer = router.stack.find((entry) => entry.route && entry.route.path === "/download-all");
   assert.ok(layer, "download-all route must exist");
-  assert.equal(layer.route.stack.length, 2, "download-all route expected auth + handler");
+  assert.equal(layer.route.stack.length, 3, "download-all route expected auth + rate limit + handler");
+  assert.equal(layer.route.stack[1].handle.name, "postgresRateLimit");
   return {
     authenticate: layer.route.stack[0].handle,
-    handle: layer.route.stack[1].handle,
+    rateLimit: layer.route.stack[1].handle,
+    handle: layer.route.stack[2].handle,
   };
 }
 
@@ -94,13 +102,16 @@ test("billing download-all remains compatible with archiver v8 API", async () =>
       return archive;
     },
   });
-  const { authenticate, handle } = getDownloadAllHandlers(router);
+  const { authenticate, rateLimit, handle } = getDownloadAllHandlers(router);
   const req = { headers: { authorization: "Bearer synthetic" } };
   const res = createResponseRecorder();
 
   await new Promise((resolve, reject) => {
     authenticate(req, res, (err) => (err ? reject(err) : resolve()));
   });
+  let admitted = false;
+  await rateLimit(req, res, () => { admitted = true; });
+  assert.equal(admitted, true, "billing quota must admit before archive handler");
   await handle(req, res);
 
   assert.deepEqual(archiverCalls, [["zip", { zlib: { level: 9 } }]]);
@@ -133,15 +144,39 @@ test("billing download-all preserves archive error handling", async () => {
     verify: () => ({ tenant_id: "tenant-123", partner_id: "partner-123" }),
     createArchive: () => archive,
   });
-  const { authenticate, handle } = getDownloadAllHandlers(router);
+  const { authenticate, rateLimit, handle } = getDownloadAllHandlers(router);
   const req = { headers: { authorization: "Bearer synthetic" } };
   const res = createResponseRecorder();
 
   await new Promise((resolve, reject) => {
     authenticate(req, res, (err) => (err ? reject(err) : resolve()));
   });
+  let admitted = false;
+  await rateLimit(req, res, () => { admitted = true; });
+  assert.equal(admitted, true, "billing quota must admit before archive handler");
   await handle(req, res);
 
   assert.equal(res.statusCode, 500);
   assert.equal(res.ended, true);
+});
+
+test("billing download-all quota denial prevents archive creation", async () => {
+  const router = loadBillingRouterWithMocks({
+    fsMock: { existsSync: () => { throw Error("unexpected filesystem access"); }, mkdirSync: () => {} },
+    verify: () => ({ tenant_id: "tenant-123", partner_id: "partner-123" }),
+    quotaHits: 61,
+    createArchive: () => { throw Error("unexpected archive creation"); },
+  });
+  const { authenticate, rateLimit, handle } = getDownloadAllHandlers(router);
+  const req = { headers: { authorization: "Bearer synthetic" } };
+  const res = createResponseRecorder();
+  await new Promise((resolve, reject) => {
+    authenticate(req, res, (err) => (err ? reject(err) : resolve()));
+  });
+  let admitted = false;
+  await rateLimit(req, res, () => { admitted = true; });
+  if (admitted) await handle(req, res);
+  assert.equal(admitted, false);
+  assert.equal(res.statusCode, 429);
+  assert.equal(res.headers["Retry-After"], "60");
 });
