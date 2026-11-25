@@ -61,7 +61,7 @@ router.get("/profile", ingressRateLimit, requestLimit, verifiedBusiness, async (
 });
 
 const {issueLogin,redeemLogin}=require("../security/verifiedBusinessLogin");
-const {createSmtpSender}=require("../voice/requestNotificationWorker");
+const {createMailSender}=require("../voice/requestNotificationWorker");
 const loginWindows=new Map();
 function loginLimit(req,res,next){
  const now=Date.now(),key=req.ip||"unknown";
@@ -72,7 +72,7 @@ function loginLimit(req,res,next){
 }
 router.post("/login/start", ingressRateLimit, loginLimit,async(req,res)=>{
  if(process.env.ACA_VERIFIED_LOGIN_ENABLED!=="true")return res.status(503).json({ok:false,error:"Login unavailable"});
- try{await issueLogin({query:(...a)=>pool.query(...a),email:req.body?.email,sendMail:createSmtpSender()});}catch{}
+ try{await issueLogin({query:(...a)=>pool.query(...a),email:req.body?.email,sendMail:createMailSender()});}catch{}
  return res.status(202).json({ok:true,message:"If eligible, a sign-in code will be sent."});
 });
 router.post("/login/redeem", ingressRateLimit, loginLimit,async(req,res)=>{
@@ -111,7 +111,7 @@ router.post("/onboarding/start", ingressRateLimit, loginLimit,async(req,res)=>{
  try{
  const {token,challenge}=require("../security/onboardingChallenge").issueChallenge({email:req.body?.email,businessName:req.body?.business_name});
  await pool.query("INSERT INTO public.onboarding_challenges(token_hash,purpose,email,business_name,expires_at) VALUES($1,$2,$3,$4,$5)",[challenge.tokenHash,challenge.purpose,challenge.email,challenge.businessName,new Date(challenge.expiresAt)]);
- const result=await createSmtpSender()({to:challenge.email,subject:"Alphine AI onboarding verification",text:"Your onboarding code is "+token});
+ const result=await createMailSender()({to:challenge.email,subject:"Alphine AI onboarding verification",text:"Your onboarding code is "+token});
  if(!result?.accepted?.includes(challenge.email))throw Error();
  return res.status(202).json({ok:true});
  }catch{return res.status(400).json({ok:false,error:"Onboarding request unsuccessful"});}
