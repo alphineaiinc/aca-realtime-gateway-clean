@@ -12,7 +12,7 @@ const {readCorrectionHistory} = require("../../src/automation/postgresCorrection
 const {randomBytes} = require("node:crypto");
 const {validateDisposition} = require("../../src/automation/substantiveDisposition");
 const {verifiedRequiredChecks} = require("../../src/automation/verifiedCiEvidence");
-const {bindChecksToWorkflowRuns} = require("../../src/automation/ciWorkflowRunBinding");
+const {fetchBoundChecks} = require("../../src/automation/ciWorkflowRunBinding");
 
 function validNumber(value) {
   return Number.isSafeInteger(value) && value > 0;
@@ -32,7 +32,7 @@ function normalizeCheck(run, sha) {
 }
 async function observe({github, owner, repo, prNumber, issueNumber,
   authenticatedLedgerClient, trustedReviewProvider, trustedReviewerId,
-  trustedCiAppId, trustedCiWorkflowId, trustedReviewerPublicKey, trustedEvidenceDigestProvider, trustedKeyStatusProvider}) {
+  trustedCiAppId, trustedCiWorkflowId, trustedReviewerPublicKey, trustedEvidenceDigestProvider, trustedKeyStatusProvider, trustedFailureFingerprintProvider}) {
   if (!github?.rest || !owner || !repo || !validNumber(prNumber) || !validNumber(issueNumber)) {
     throw new Error("invalid_observer_arguments");
   }
@@ -62,19 +62,9 @@ async function observe({github, owner, repo, prNumber, issueNumber,
   });
   // Strict: pagination or incomplete check evidence cannot yield readiness.
   let runs = null;
-  if (validNumber(trustedCiWorkflowId) && checks.total_count <= 100 &&
-      typeof github.rest.actions?.listWorkflowRuns === "function") {
-    try {
-      const {data: workflowData} = await github.rest.actions.listWorkflowRuns({
-        owner,repo,workflow_id:trustedCiWorkflowId,head_sha:headSha,per_page:100
-      });
-      if (Array.isArray(workflowData.workflow_runs) &&
-          workflowData.total_count === workflowData.workflow_runs.length) {
-        runs = bindChecksToWorkflowRuns({checks:checks.check_runs,
-          workflowRuns:workflowData.workflow_runs,headSha,
-          trustedWorkflowId:trustedCiWorkflowId});
-      }
-    } catch { runs = null; }
+  if (checks.total_count <= 100) {
+    try { runs = await fetchBoundChecks({github,owner,repo,checks:checks.check_runs,headSha,trustedWorkflowId:trustedCiWorkflowId}); }
+    catch { runs = null; }
   }
   const requiredChecks = verifiedRequiredChecks({runs,totalCount:checks.total_count,
     headSha,requiredNames:["Node tests","PostgreSQL ledger integration"],
@@ -109,6 +99,14 @@ async function observe({github, owner, repo, prNumber, issueNumber,
         expected:{...scope,reviewerId:trustedReviewerId,evidenceSha256}});
       if (disposition) review = Object.freeze({headSha,status:disposition.status,findings:disposition.findings,independent:true,source:"trusted_review"});
     } catch { review = null; }
+  }
+  // A ledger records previous failures, not the independently observed current one.
+  // Never assume that recurrence is zero when a prior correction exists.
+  if (correction?.attempts > 0 && (requiredChecks?.some(c=>["failure","startup_failure"].includes(c.conclusion)) || review?.status==="findings")) {
+    try {
+      const fingerprint = typeof trustedFailureFingerprintProvider==="function" ? await trustedFailureFingerprintProvider(Object.freeze({repositoryId:repository.id,issueNumber,prNumber,headSha,checks:Object.freeze((requiredChecks||[]).map(c=>Object.freeze({...c}))),review})) : null;
+      correction = Object.freeze({...correction,unchangedFailureCount:typeof fingerprint==="string"&&fingerprint.length>=8&&fingerprint.length<=256&&typeof correction.lastFailureFingerprint==="string"?Number(fingerprint===correction.lastFailureFingerprint):null});
+    } catch { correction = Object.freeze({...correction,unchangedFailureCount:null}); }
   }
   return evaluatePrSupervision({
     issue: {number: issue.number, state: issue.state, eligible: eligibleIssue(issue)},
