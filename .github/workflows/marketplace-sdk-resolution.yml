@@ -20,11 +20,13 @@ jobs:
           registry-url: https://registry.npmjs.org
       - name: Resolve stable SDK and exact lockfile
         run: |
-          VERSION=$(npm view @modelcontextprotocol/sdk@latest version)
+          VERSION=1.32.2
           echo "Resolved SDK: $VERSION"
           npm install --package-lock-only --ignore-scripts --no-audit --no-fund --save-exact "@modelcontextprotocol/sdk@$VERSION"
           npm ci --ignore-scripts --no-audit --no-fund
           npm test
+      - name: Dependency vulnerability assessment
+        run: npm audit --omit=dev --audit-level=high
       - uses: actions/upload-artifact@v4
         with:
           name: marketplace-sdk-lockfile
