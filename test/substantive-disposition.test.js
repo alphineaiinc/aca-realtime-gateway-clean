@@ -33,3 +33,9 @@ test("verification boundary rejects private key objects and private PEM",()=>{
  assert.equal(check(signed,{publicKey:keys.privateKey.export({format:"pem",type:"pkcs8"})}),null);
  assert.equal(check(signed,{publicKey:keys.publicKey.export({format:"pem",type:"spki"})}).status,"passed");
 });
+
+test("reject concatenated PEM blocks and trailing material",()=>{
+ const pem=keys.publicKey.export({type:"spki",format:"pem"});
+ const privatePem=keys.privateKey.export({type:"pkcs8",format:"pem"});
+ for(const publicKey of [pem+privatePem,pem+pem,pem+"trailing",pem+"\n"+privatePem])assert.equal(check(envelope(),{publicKey}),null);
+});
