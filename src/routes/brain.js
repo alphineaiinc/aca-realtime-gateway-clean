@@ -16,6 +16,8 @@ const path = require("path");
 const crypto = require("crypto");
 const jwt = require("jsonwebtoken");
 const pool = require("../db/pool");
+const {createPostgresRateLimiter}=require("../middleware/postgresRateLimit");
+const brainLimit=createPostgresRateLimiter({pool,scope:"brain-query",max:30});
 const { synthesizeSpeech } = require("../../tts"); // ✅ TTS handler
 const { getTenantRegion } = require("../brain/utils/tenantContext"); // ✅ Tenant region helper
 
@@ -85,7 +87,8 @@ function verifyJwtAnySecret(token) {
   // 2) Demo secret fallback (optional)
   try {
     if (process.env.DEMO_JWT_SECRET) {
-      return jwt.verify(token, process.env.DEMO_JWT_SECRET);
+      const decoded = jwt.verify(token, process.env.DEMO_JWT_SECRET);
+      return decoded.role === "demo" || decoded.demo === true ? decoded : null;
     }
   } catch (e) {}
 
@@ -128,7 +131,13 @@ function deriveTenantIdFromJwt(decoded) {
   return n;
 }
 
-router.post("/query", async (req, res) => {
+function authorizeBrain(req,res,next) {
+  const resolvedId=deriveTenantIdFromJwt(verifyJwtAnySecret(extractToken(req)));
+  if (!resolvedId) return res.status(401).json({ok:false,error:"unauthorized"});
+  req.tenant_id=resolvedId;
+  return next();
+}
+router.post("/query", authorizeBrain, brainLimit, async (req, res) => {
   console.log("🟡 Story 2.9 adaptive tuning layer active");
 
   // ✅ Defensive: handle missing req.body safely

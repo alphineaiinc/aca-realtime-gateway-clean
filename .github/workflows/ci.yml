@@ -14,6 +14,16 @@ jobs:
     name: Node tests
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: aca_ci
+          POSTGRES_PASSWORD: disposable_ci_only
+          POSTGRES_DB: aca_rate_limit_ci
+        ports:
+          - 5432:5432
+        options: --health-cmd "pg_isready -U aca_ci -d aca_rate_limit_ci" --health-interval 5s --health-timeout 5s --health-retries 10
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -34,3 +44,10 @@ jobs:
           else
             node --test test/*.test.js
           fi
+      - name: Isolated PostgreSQL distributed rate limit test
+        env:
+          RUN_RATE_LIMIT_CI: '1'
+          RATE_LIMIT_CI_DATABASE_URL: postgresql://aca_ci:disposable_ci_only@127.0.0.1:5432/aca_rate_limit_ci
+        run: |
+          node -e "const {Client}=require('pg'); const c=new Client({connectionString:process.env.RATE_LIMIT_CI_DATABASE_URL}); (async()=>{await c.connect(); try {await c.query(require('fs').readFileSync('migrations/draft_aca_rate_limit_buckets.sql','utf8'));} finally {await c.end();}})().catch(e=>{console.error(e.message);process.exitCode=1;})"
+          node --test test/postgres-rate-limit.integration.test.js

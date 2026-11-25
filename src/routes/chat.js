@@ -6,6 +6,8 @@ const jwt = require("jsonwebtoken");
 const { retrieveAnswer } = require("../../retriever");
 
 const router = express.Router();
+const { createPostgresRateLimiter } = require("../middleware/postgresRateLimit");
+const sharedLimit = createPostgresRateLimiter({pool: require("../db/pool"), scope: "chat-rest", max: 20, windowMs: 60000});
 
 // -------------------------------
 // Security: small input limits
@@ -167,7 +169,7 @@ function authenticate(req, res, next) {
       }
 
       // Force demo tenant + role
-      req.tenant_id = cfg.tenantId || decoded.tenant_id;
+      req.tenant_id = cfg.tenantId;
       req.partner_id = null;
       req.role = "demo";
       req.demo_jti = decoded.demo_jti || decoded.jti || null;
@@ -184,7 +186,7 @@ function authenticate(req, res, next) {
     req.partner_id = decoded.partner_id;
     req.role = decoded.role;
 
-    if (!req.tenant_id && !req.partner_id) {
+    if (!req.tenant_id) {
       return res.status(401).json({ ok: false, error: "Unauthorized" });
     }
 
@@ -201,7 +203,7 @@ function authenticate(req, res, next) {
 // POST /api/chat
 // body: { session_id, locale, message }
 // -------------------------------
-router.post("/", authenticate, rateLimit, async (req, res) => {
+router.post("/", authenticate, sharedLimit, rateLimit, async (req, res) => {
   try {
     const session_id = String(req.body?.session_id || "webchat");
     const locale = String(req.body?.locale || "en-US");

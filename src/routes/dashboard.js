@@ -9,19 +9,25 @@ const path = require("path");
 const axios = require("axios");
 
 const router = express.Router();
+const { createPostgresRateLimiter } = require("../middleware/postgresRateLimit");
+const dashboardLimit = createPostgresRateLimiter({pool:require("../db/pool"),scope:"internal-dashboard",max:30,publicGlobal:true});
+// Disabled until a trusted operator authentication boundary is integrated.
+function requireVerifiedOperator(req,res,next) {
+  return res.status(403).json({error:"Verified operator access required"});
+}
 const LOG_PATH = path.join(__dirname, "../logs/response_tuning.log");
 
 // ----------------------------------------------------
 // Serve static dashboard UI
 // ----------------------------------------------------
-router.get("/", (req, res) => {
+router.get("/", dashboardLimit, (req, res) => {
   res.sendFile(path.join(__dirname, "../../public/dashboard/index.html"));
 });
 
 // ----------------------------------------------------
 // API endpoint — serve parsed adaptive-response log data
 // ----------------------------------------------------
-router.get("/data", (req, res) => {
+router.get("/data", requireVerifiedOperator, dashboardLimit, (req, res) => {
   try {
     res.set("Cache-Control", "no-store");
 
@@ -51,8 +57,8 @@ router.get("/data", (req, res) => {
 
     res.json({ entries });
   } catch (err) {
-    console.error("Dashboard API error:", err);
-    res.status(500).json({ error: err.message });
+    console.error("Dashboard API failed");
+    res.status(500).json({ error: "Dashboard unavailable" });
   }
 });
 
@@ -61,7 +67,7 @@ router.get("/data", (req, res) => {
 // Fetches diagnostics from /brain/diagnostics
 // so UI can display Brain status, uptime, memory, etc.
 // ----------------------------------------------------
-router.get("/brain-status", async (req, res) => {
+router.get("/brain-status", requireVerifiedOperator, dashboardLimit, async (req, res) => {
   try {
     res.set("Cache-Control", "no-store");
 
@@ -79,14 +85,12 @@ router.get("/brain-status", async (req, res) => {
       uptime_sec: diag.uptime_sec ?? 0,
       memory_mb: diag.memory_mb ?? 0,
       query_count: diag.query_count ?? 0,
-      hostname: diag.hostname ?? "unknown",
     });
   } catch (err) {
-    console.error("⚠️ Brain diagnostics fetch failed:", err.message);
+    console.error("Brain diagnostics unavailable");
     return res.status(500).json({
       ok: false,
       error: "Unable to fetch brain diagnostics",
-      details: err.message,
     });
   }
 });
