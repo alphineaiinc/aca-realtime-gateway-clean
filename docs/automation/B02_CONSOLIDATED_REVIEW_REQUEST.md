@@ -1,13 +1,12 @@
 # Consolidated independent review request — B02
 
-Prepared for owner submission to an independent reviewer. Review only, CAD $0 additional spend, no dispatch, signing, credentials, merge or deployment. No review was initiated by this document.
+Current review-only packet for owner authorization/submission to an independent reviewer. Review only, CAD $0 additional spend, no dispatch, signing, credentials, merge or deployment. No new review was initiated by this document.
 
 | PR | Exact head | Existing CI | Review scope |
 |---|---|---|---|
-| #21 | 6573bee1c668742259beee6768a5f91fc86090d9 | 45497692213 / 45497692429 / 45497692543 | Reviewer identity, signed evidence, trusted transport, observation permissions, stale evidence, bounded correction |
-| #142 | 1232e0590486f386cccc51b340b0b74cc4d5d288 | Exact-head CI 45535413496 completed/success; prior 45530365562 passed historical head | Role isolation, durable queue, approvals, incident recovery, budget, replay, publication evidence, all activation manifest code |
+| #21 | 7fec24c78f926d05abc66d3fc82d6a957d54f364 | 45546642503 / 45546642362 / 45546642615 all successful | Recheck attempt-specific CI provenance, raw REST check binding, failure recurrence; reviewer trust and remaining original security criteria |
+| #142 | 5a9de1e2f29ea34803733623b4f81e1fb04913f1 | 45545763831 success | Recheck source inventory snapshot, candidate-bound review authorization, output ceiling admission binding; original role/budget/publication criteria |
 | #146 | 90973dbc0a4355aaebb67112350974a8ad0b4914 | 45496287714 | Protected sandbox provenance, five authenticated fault outcomes, fail-closed teardown |
-| #150 | acd60d56916df8ed061cf3b454839a7b6c3aa5fb | 45494930061 | Test-only queue API-error and single-lock regression; verify no runtime changes |
 
 Verify each head before reviewing. Return reviewer identity, exact SHA, reviewed files, findings and severity with source locations, reproduction or reasoning, test evidence and explicit disposition. No approval inferred from CI or advisory review.
 
@@ -25,3 +24,6 @@ All six reported Copilot findings have existing source-level corrections identif
 
 ## Final development checkpoint
 #142 1232e0590486f386cccc51b340b0b74cc4d5d288: ACA CI 45535413496 completed/success, job 138940687872 Node tests and isolated engineering queue PostgreSQL integration both successful. No further source correction indicated by CI. Six historical findings await independent exact-head confirmation. No review dispatched; no operational clearance.
+
+## Current disposition — supersedes earlier snapshots
+#21 and #142 have six committed corrections to the latest Codex findings and passing exact-head CI; request independent confirmation of those fixes without rebuilding or repeating successful CI. #146 unchanged; previous code review no findings, but separate security disposition absent, preserve existing review. #150 accepted and merged 3f3e22948b3ac7ec809332196a016c1347c39d14, excluded from new review and reintegration. See updated B02_INTEGRATED_CANDIDATE_MANIFEST.md (commit 45efb091dd7c2d99c833212b5b81c4b94d4017d1) for bounded review-only and isolated candidate authorization. No approval or operational trust inferred, no reviewer request sent; CAD $0.
