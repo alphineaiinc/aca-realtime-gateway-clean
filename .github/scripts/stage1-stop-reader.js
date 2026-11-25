@@ -1,5 +1,5 @@
 'use strict';
-const repository='alphineaiinc/aca-realtime-gateway-clean', sha='6678909c7e9e60c08b0bc56c150e9031900a3984', issue=118;
+const repository='alphineaiinc/aca-realtime-gateway-clean', sha='6678909c7e9e60c08b0bc56c150e9031900a3984', issue=153;
 function stopReader(token,fetchImpl=globalThis.fetch){
  return async scope=>{
   if(scope.repository!==repository||scope.sha!==sha||scope.product!=='aca')return true;
