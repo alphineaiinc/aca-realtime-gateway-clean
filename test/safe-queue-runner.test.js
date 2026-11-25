@@ -424,3 +424,50 @@ test("clears revoked eligibility from multiple tracked task states, not just act
     assert.equal(hasLabel(revoked, LABELS.blocked), true);
   }
 });
+
+test("active-holder API failure halts reconciliation before admitting a waiting task", async () => {
+  const holder = createIssue(103, {
+    labels: [ALLOWLIST_LABEL, LABELS.active, LABELS.manualRequested],
+    assignees: ["Codex"],
+  });
+  const waiting = createIssue(104, {
+    labels: [ALLOWLIST_LABEL, LABELS.blocked],
+    assignees: ["Codex"],
+  });
+  const mock = createMockGithub([holder, waiting]);
+  const originalGet = mock.github.rest.issues.get;
+  mock.github.rest.issues.get = async (params) => {
+    if (params.issue_number === holder.number) {
+      const error = new Error("GitHub unavailable");
+      error.status = 503;
+      throw error;
+    }
+    return originalGet(params);
+  };
+  await assert.rejects(run({ github: mock.github, context: contextFor(waiting), core: coreLogger() }), /GitHub unavailable/);
+  assert.equal(hasLabel(holder, LABELS.active), true);
+  assert.equal(hasLabel(waiting, LABELS.active), false);
+  assert.equal(hasLabel(waiting, LABELS.manualRequested), false);
+  assert.equal(mock.calls.createComment, 0);
+});
+
+test("active-holder list failure cannot admit another task", async () => {
+  const holder = createIssue(105, {
+    labels: [ALLOWLIST_LABEL, LABELS.active, LABELS.manualRequested],
+    assignees: ["Codex"],
+  });
+  const waiting = createIssue(106, {
+    labels: [ALLOWLIST_LABEL, LABELS.blocked],
+    assignees: ["Codex"],
+  });
+  const mock = createMockGithub([holder, waiting]);
+  const originalList = mock.github.rest.issues.listForRepo;
+  mock.github.rest.issues.listForRepo = async (params) => {
+    if (params.labels === LABELS.active) throw new Error("Active inventory unavailable");
+    return originalList(params);
+  };
+  await assert.rejects(run({ github: mock.github, context: contextFor(waiting), core: coreLogger() }), /Active inventory unavailable/);
+  assert.equal(hasLabel(holder, LABELS.active), true);
+  assert.equal(hasLabel(waiting, LABELS.active), false);
+  assert.equal(mock.calls.createComment, 0);
+});
