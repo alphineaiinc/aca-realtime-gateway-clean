@@ -26,7 +26,9 @@ jobs:
           echo "Resolved SDK: $VERSION"
           npm install --package-lock-only --ignore-scripts --no-audit --no-fund --save-exact "@modelcontextprotocol/sdk@$VERSION"
           npm audit fix --package-lock-only --ignore-scripts --no-fund || test -s package-lock.json
+          npm install --package-lock-only --ignore-scripts --no-audit --no-fund --save-exact nodemailer@10.6.1
           npm ci --ignore-scripts --no-audit --no-fund
+          node --test test/marketplace-mail-compat.test.js
           npm test
           git diff -- package.json > dependency-manifest.diff
       - name: Dependency vulnerability assessment
