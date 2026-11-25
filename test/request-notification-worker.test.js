@@ -61,3 +61,12 @@ test("staging scope binds exact recipient, tenant and request before provider ac
   assert.equal(await deliverOne({pool:{connect:async()=>{throw Error("must not connect");}}}),false);
  }finally{keys.forEach((k,i)=>{if(previous[i]===undefined)delete process.env[k];else process.env[k]=previous[i];});}
 });
+
+test("injected runtime transport cannot bypass staging entitlement",async()=>{
+ const {spawnSync}=require("node:child_process");
+ const env={...process.env};
+ for(const k of ["NODE_TEST_CONTEXT","ACA_STAGING_EMAIL_ONLY","ACA_STAGING_EMAIL_TENANT_ID","ACA_STAGING_EMAIL_REQUEST_ID","ACA_STAGING_EMAIL_RECIPIENT"])delete env[k];
+ const script=`const {deliverOne}=require("./src/voice/requestNotificationWorker");deliverOne({pool:{connect:async()=>{throw Error("unexpected DB access")}},sendMail:async()=>{throw Error("unexpected provider access")}}).then(v=>{if(v!==false)process.exitCode=1}).catch(()=>{process.exitCode=1});`;
+ const result=spawnSync(process.execPath,["-e",script],{cwd:require("node:path").resolve(__dirname,".."),env,encoding:"utf8"});
+ assert.equal(result.status,0,result.stderr);
+});
