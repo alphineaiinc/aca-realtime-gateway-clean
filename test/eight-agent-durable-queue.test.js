@@ -118,3 +118,15 @@ test('completion and governance reject identity changes while waiting for scope 
   assert.equal(calls,2);
  }
 });
+
+test('cancel, expire and workflow inspection revalidate manager after scope lock',async()=>{
+ for(const operation of ['cancel','expire','inspectWorkflowStep'])for(const change of ['revoked','actor','permission','scope','unchanged']){
+  const actor={...scope,id:'manager',permission:'queue.manage'};let current=actor,calls=0;const queries=[];
+  const query=async sql=>{queries.push(sql);if(sql.startsWith('SELECT pg_advisory'))current=change==='revoked'?null:change==='actor'?{...actor,id:'substitute'}:change==='permission'?{...actor,permission:'denied'}:change==='scope'?{...actor,sha:'b'.repeat(40)}:actor;return {rowCount:1,rows:[{blocked:false,id:'fixture'}]};};
+  const queue=createDurableQueue({pool:{query,connect:async()=>({query,release(){}})},scopes:[scope],authenticate:async()=>{calls++;return current;}});
+  const invoke=()=>queue[operation]({scope,credential:'fixture',taskId:'fixture',workflowId:'fixture',workflowStep:0});
+  if(change==='unchanged'){await invoke();assert.ok(queries.includes('COMMIT'));}
+  else{await assert.rejects(invoke(),/Identity denied/);assert.ok(queries.includes('ROLLBACK'));assert.ok(!queries.some(q=>/^(WITH |SELECT t\.id)/.test(q)));assert.ok(!queries.includes('COMMIT'));}
+  assert.equal(calls,2);
+ }
+});
