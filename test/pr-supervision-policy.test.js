@@ -115,3 +115,10 @@ test("completed check without a conclusion fails closed", () => {
   input.ci.requiredChecks[0].conclusion=null;
   assert.equal(evaluatePrSupervision(input).state, STATES.BLOCKED);
 });
+
+test("unknown recurrence after prior correction denies further correction but does not prevent successful CI and review",()=>{
+ const input=base();input.correction={attempts:1,unchangedFailureCount:null};
+ assert.equal(evaluatePrSupervision(input).state,STATES.READY);
+ input.ci.requiredChecks[0].conclusion="failure";assert.equal(evaluatePrSupervision(input).correction.allowed,false);
+ input.ci.requiredChecks[0].conclusion="success";input.review.status="findings";input.review.findings=1;assert.equal(evaluatePrSupervision(input).correction.allowed,false);
+});
