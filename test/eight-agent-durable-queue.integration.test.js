@@ -736,7 +736,7 @@ test('isolated PostgreSQL queue: concurrent claims, retries, restart, expiry and
   await observer.query("CREATE POLICY ci_observer_ack_scope ON engineering_team_governance_acknowledgements FOR SELECT TO aca_ci_restricted_observer USING (EXISTS (SELECT 1 FROM engineering_team_governance_alerts a WHERE a.id=alert_id))");
   await observer.query('SET LOCAL ROLE aca_ci_restricted_observer');
   const {createRestrictedManagerRuntime}=require('../src/automation/engineeringTeam/restrictedManagerRuntime');
-  const runtime=createRestrictedManagerRuntime({scope:recoveryScope,issue:118,githubToken:'fixture-only-token',fetchImpl:async url=>new Response(JSON.stringify(url.includes('/issues/')?{number:118,state:'open',labels:[]}:{total_count:1,workflow_runs:[{id:1,name:'CI',status:'completed',conclusion:'success',head_sha:recoveryScope.sha}]})),readOnlyPool:observer});
+  const runtime=createRestrictedManagerRuntime({scope:recoveryScope,issue:118,githubToken:'fixture-only-token',fetchImpl:async url=>new Response(JSON.stringify(url.includes('/issues/')?{number:118,state:'open',labels:[]}:{total_count:1,workflow_runs:[{id:1,name:'CI',status:'completed',conclusion:'success',head_sha:recoveryScope.sha}]})),readStopState:async()=>false,readOnlyPool:{connect:async()=>({release(){},query:async(sql,args)=>{if(sql==='BEGIN READ ONLY'||sql==='COMMIT'||sql==='ROLLBACK'||sql.startsWith('SET LOCAL statement_timeout'))return {rows:[]};if(sql==='SHOW transaction_read_only')return {rows:[{transaction_read_only:'on'}]};return observer.query(sql,args);}})}});
   const report=await runtime.observe();
   assert.equal(report.status,'observed');
   assert.deepEqual(report.governance,{status:'observed',scope:'repository-wide',pending:4,partial:false});

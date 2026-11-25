@@ -1,10 +1,11 @@
 'use strict';
+const {createAuthenticatedObservation}=require('./authenticatedObservation');
 const {createArtifactDownloader}=require('./githubArtifactDownloader');
 const {createRestrictedManager}=require('./restrictedManager');
 const {createPostgresObservationStore}=require('./postgresObservationStore');
 const {createGitHubReadTransport}=require('./githubReadTransport');
 // A separate composition root for bounded observations.
-function createRestrictedManagerRuntime({scope,issue,githubToken,fetchImpl,readOnlyPool,observationPool,pushEvidence=false,artifactHost,readStopState}={}){
+function createRestrictedManagerRuntime({scope,issue,githubToken,fetchImpl,readOnlyPool,observationPool,pushEvidence=false,artifactHost,readStopState,eventSecret}={}){
  const pinned=Object.freeze({...scope});
  const transport=createGitHubReadTransport({token:githubToken,repository:pinned.repository,fetchImpl,downloadArtifact:artifactHost===undefined?undefined:createArtifactDownloader({repository:pinned.repository,token:githubToken,fetchImpl,artifactHost})});
  const observationTransport=pushEvidence?{readIssueStatus:transport.readIssueStatus,readCI:async s=>{const e=await transport.discoverPushEvidence(s);const d=JSON.parse(e.text);return {...e,text:JSON.stringify({runs:d.runs,total:d.runs.length})};}}:transport;
@@ -29,12 +30,14 @@ function createRestrictedManagerRuntime({scope,issue,githubToken,fetchImpl,readO
  const denied=()=>Object.freeze({scope:pinned,issue,status:'unavailable',executionAuthorized:false,writeAuthorized:false,deployAuthorized:false,paidProviderAuthorized:false});
  async function allowed(){try{return typeof readStopState==='function'&&await readStopState(pinned)===false;}catch{return false;}}
  async function observe(){if(!await allowed())return denied();const result=await manager.observe();return await allowed()?result:denied();}
- if(observationPool===undefined)return Object.freeze({observe});
+ if(observationPool===undefined){if(eventSecret!==undefined)throw Error('Durable event store required');return Object.freeze({observe});}
  const store=createPostgresObservationStore({pool:observationPool,scope:pinned,issue});
- return Object.freeze({observe,async observeEvent(eventKey){
+ async function observeEvent(eventKey){
   if(!await allowed())return denied();
   const result=await store.observeEvent(eventKey,observe);
   return await allowed()?result:denied();
- }});
+ }
+ if(eventSecret!==undefined)return Object.freeze({observe,deliver:createAuthenticatedObservation({secret:eventSecret,scope:pinned,observeEvent})});
+ return Object.freeze({observe,observeEvent});
 }
 module.exports={createRestrictedManagerRuntime};
