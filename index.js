@@ -1312,6 +1312,7 @@ app.get("/health", (req, res) => {
     res.status(200).json({
       ok: true,
       service: "ACA-Orchestrator",
+      ...(process.env.RENDER_SERVICE_ID === "srv-dc2ffvm8bjmc73fhn8j0" && /^[a-f0-9]{40}$/.test(process.env.RENDER_GIT_COMMIT || "") ? { revision: process.env.RENDER_GIT_COMMIT } : {}),
       environment: process.env.NODE_ENV || "production",
       ts: new Date().toISOString(),
     });
