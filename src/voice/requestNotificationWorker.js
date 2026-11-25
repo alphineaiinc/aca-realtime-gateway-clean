@@ -31,6 +31,10 @@ async function deliverOne({pool,sendMail}) {
  if(staging && (process.env.ACA_STAGING_EMAIL_ONLY!=="true" ||
    !/^[1-9][0-9]{0,17}$/.test(tenant||"") || !/^[1-9][0-9]{0,17}$/.test(request||"") ||
    !/^[^\s@,;<>]+@[^\s@,;<>]+\.[^\s@,;<>]+$/.test(recipient||""))) return false;
+ // Construct the local transport before consuming a durable entitlement.
+ let sender;
+ try{sender=sendMail||createNotificationSender();if(typeof sender!=="function")throw Error("INVALID_SENDER");}
+ catch{throw Error("REQUEST_TRANSPORT_CONFIGURATION_INVALID");}
  const client=await pool.connect();
  let row;
  try{
@@ -41,7 +45,7 @@ async function deliverOne({pool,sendMail}) {
  finally{client.release();}
  if(!row)return false;
  try{
-  const result=await (sendMail||createNotificationSender())({
+  const result=await sender({
    to:row.email,subject:"New Alphine AI customer request",
    text:"A new customer request is waiting in your Alphine AI account. Sign in to review it.",
    messageId:row.message_id
