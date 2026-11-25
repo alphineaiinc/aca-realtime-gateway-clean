@@ -4,10 +4,11 @@ const assert=require("node:assert/strict");
 const {bindChecksToWorkflowRuns}=require("../src/automation/ciWorkflowRunBinding");
 const {verifiedRequiredChecks}=require("../src/automation/verifiedCiEvidence");
 const sha="a".repeat(40),names=["Node tests","PostgreSQL ledger integration"];
-const checks=names.map(name=>({name,head_sha:sha,status:"completed",conclusion:"success",
+const checks=names.map((name,i)=>({id:100+i,name,head_sha:sha,status:"completed",conclusion:"success",
  app:{id:123},check_suite:{id:88}}));
-const workflowRuns=[{id:55,workflow_id:999,head_sha:sha,check_suite_id:88,run_attempt:1}];
-const args={checks,workflowRuns,headSha:sha,trustedWorkflowId:999};
+const workflowRuns=[{id:55,workflow_id:999,head_sha:sha,check_suite_id:88,run_attempt:1,status:"completed"}];
+const attemptJobs=checks.map(c=>({id:c.id+100,run_id:55,run_attempt:1,head_sha:sha,check_run_url:'https://api.github.com/repos/fixture/aca/check-runs/'+c.id,name:c.name,status:c.status,conclusion:c.conclusion}));
+const args={checks,workflowRuns,attemptJobs,headSha:sha,trustedWorkflowId:999};
 const verify=bound=>verifiedRequiredChecks({runs:bound,totalCount:2,headSha:sha,
  requiredNames:names,trustedAppId:123,trustedWorkflowId:999});
 test("binds two required checks to authenticated workflow suite",()=>{
@@ -26,4 +27,8 @@ test("rejects checks from mismatched check suites and forged app IDs",()=>{
  assert.equal(verify(bindChecksToWorkflowRuns({...args,checks:mismatch})),null);
  const spoof=[checks[0],{...checks[1],app:{id:999}}];
  assert.equal(verify(bindChecksToWorkflowRuns({...args,checks:spoof})),null);
+});
+
+test("stale successful checks cannot be rebound to a newer attempt",()=>{
+ for(const status of ["in_progress","completed"])assert.equal(verify(bindChecksToWorkflowRuns({...args,workflowRuns:[{...workflowRuns[0],run_attempt:2,status}]})),null);
 });
