@@ -2,7 +2,9 @@
 const test=require("node:test"),assert=require("node:assert/strict"),fs=require("node:fs");
 const {Pool}=require("pg");
 test("isolated product migration chain and verified onboarding",async()=>{
- const pool=new Pool({connectionString:"postgres://onboarding_test:onboarding_test_only@localhost:5432/onboarding_test"});
+ const bootstrap=new Pool({connectionString:"postgres://onboarding_test:onboarding_test_only@localhost:5432/onboarding_test"});
+ try{await bootstrap.query("CREATE DATABASE aca_product_staging");}finally{await bootstrap.end();}
+ const pool=new Pool({connectionString:"postgres://onboarding_test:onboarding_test_only@localhost:5432/aca_product_staging"});
  try{
  await pool.query("CREATE TABLE public.master_tenants(id INTEGER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,business_name TEXT,preferred_lang TEXT,region TEXT); CREATE TABLE public.billing_invoices(id INTEGER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,tenant_id INTEGER,amount_usd NUMERIC,status TEXT); CREATE TABLE public.analytics_events(id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,tenant_id INTEGER,event_type TEXT,quantity NUMERIC,unit TEXT,meta JSONB,created_at TIMESTAMP DEFAULT NOW());");
  for(const name of fs.readdirSync("migrations").filter(n=>/^0(0[7-9]|1[0-8])_.*\.sql$/.test(n)).sort())await pool.query(fs.readFileSync("migrations/"+name,"utf8"));
@@ -46,11 +48,15 @@ test("isolated product migration chain and verified onboarding",async()=>{
  const uncertainId=await saveConfirmedRequest(uncertainContext,intent.intent,slots,query);
  // Temporarily exclude the success fixture from the queue.
  await pool.query("UPDATE aca_request_outbox SET delivered_at=now() WHERE request_id=$1",[id]);
+ Object.assign(process.env,{ACA_STAGING_EMAIL_ONLY:"true",ACA_STAGING_EMAIL_TENANT_ID:String(tenantId),ACA_STAGING_EMAIL_REQUEST_ID:String(uncertainId),ACA_STAGING_EMAIL_RECIPIENT:email});
  await assert.rejects(deliverOne({pool,sendMail:async()=>({accepted:[]})}),/REQUEST_NOTIFICATION_UNCERTAIN/);
  assert.equal((await pool.query("SELECT state FROM aca_request_email_reservations WHERE request_id=$1",[uncertainId])).rows[0].state,"uncertain");
  assert.equal((await pool.query("SELECT delivered_at FROM aca_request_outbox WHERE request_id=$1",[uncertainId])).rows[0].delivered_at,null);
  assert.equal(await deliverOne({pool,sendMail:async()=>{throw Error("duplicate");}}),false);
  await pool.query("UPDATE aca_request_outbox SET delivered_at=NULL WHERE request_id=$1",[id]);
+ // Reset only the singleton marker in this disposable local database to exercise a second independent scenario; preserve the uncertain tombstone.
+ await pool.query("UPDATE public.aca_request_email_reservations SET staging_attempt=NULL WHERE request_id=$1",[uncertainId]);
+ process.env.ACA_STAGING_EMAIL_REQUEST_ID=String(id);
  // Hold one simulated delivery open while a second worker attempts the same row.
  let enter,release;
  const entered=new Promise(r=>{enter=r;}),gate=new Promise(r=>{release=r;});
@@ -68,6 +74,7 @@ test("isolated product migration chain and verified onboarding",async()=>{
  const capClient=await pool.connect();
  try {
   await capClient.query("BEGIN");
+  await capClient.query("UPDATE public.aca_request_email_reservations SET staging_attempt=NULL WHERE request_id=$1 AND tenant_id=$2",[id,tenantId]);
   await capClient.query("UPDATE public.aca_request_email_reservations SET staging_attempt=true WHERE request_id=$1 AND tenant_id=$2",[uncertainId,tenantId]);
   await capClient.query("SAVEPOINT cap_conflict");
   await assert.rejects(capClient.query("UPDATE public.aca_request_email_reservations SET staging_attempt=true WHERE request_id=$1 AND tenant_id=$2",[id,tenantId]),e=>e.code==="23505");
@@ -75,12 +82,12 @@ test("isolated product migration chain and verified onboarding",async()=>{
   assert.equal((await capClient.query("SELECT count(*)::int AS n FROM public.aca_request_email_reservations WHERE staging_attempt IS TRUE")).rows[0].n,1);
   await capClient.query("ROLLBACK");
  }finally{await capClient.query("ROLLBACK");capClient.release();}
- // Correct fixture configuration still cannot send from the non-staging CI database.
+ // Correct fixture configuration cannot resend a reserved request.
  const scopeKeys=["ACA_STAGING_EMAIL_ONLY","ACA_STAGING_EMAIL_TENANT_ID","ACA_STAGING_EMAIL_REQUEST_ID","ACA_STAGING_EMAIL_RECIPIENT"];
  const priorScope=scopeKeys.map(k=>process.env[k]);
  try{
   [ "true",String(tenantId),String(id),email ].forEach((v,i)=>process.env[scopeKeys[i]]=v);
-  assert.equal(await deliverOne({pool,sendMail:async()=>{throw Error("non-staging send");}}),false);
+  assert.equal(await deliverOne({pool,sendMail:async()=>{throw Error("duplicate send");}}),false);
  }finally{scopeKeys.forEach((k,i)=>{if(priorScope[i]===undefined)delete process.env[k];else process.env[k]=priorScope[i];});}
 
  
@@ -193,5 +200,5 @@ try{
  assert.equal((await request("/tenant/profile",a.token)).status,401);
  console.log("Authenticated HTTP acceptance: two identities, scoped profiles and requests, replay, mismatch and revocation passed");
 }finally{await new Promise(resolve=>server.close(resolve));if(previous)require.cache[poolPath]=previous;else delete require.cache[poolPath];delete process.env.JWT_SECRET;delete process.env.ACA_VERIFIED_LOGIN_ENABLED;}
- }finally{await pool.end();}
+ }finally{for(const k of ["ACA_STAGING_EMAIL_ONLY","ACA_STAGING_EMAIL_TENANT_ID","ACA_STAGING_EMAIL_REQUEST_ID","ACA_STAGING_EMAIL_RECIPIENT"])delete process.env[k];await pool.end();}
 });
