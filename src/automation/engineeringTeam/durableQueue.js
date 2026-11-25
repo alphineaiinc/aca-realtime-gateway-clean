@@ -35,6 +35,7 @@ function createDurableQueue({pool,scopes,authenticate,leaseSeconds=60,fixturePro
   async stop({scope,credential}){
    const params=checkScope(scope);const actor=await identity(credential,scope,null,'queue.manage');
    return guarded(params,async client=>{
+    if(await identity(credential,{product:params[0],repository:params[1],sha:params[2]},null,'queue.manage')!==actor)throw Error('Identity denied');
     const inserted=await client.query('INSERT INTO engineering_team_stops(product,repository,actor_id) VALUES ($1,$2,$3) ON CONFLICT DO NOTHING RETURNING product',[...params.slice(0,2),actor]);
     if(inserted.rowCount===1)await client.query("INSERT INTO engineering_team_governance_alerts(id,product,repository,event_type,actor_id) VALUES ($1,$2,$3,'stop.created',$4)",[randomUUID(),...params.slice(0,2),actor]);
     return true;
@@ -43,6 +44,7 @@ function createDurableQueue({pool,scopes,authenticate,leaseSeconds=60,fixturePro
   async quarantine({scope,role,credential}){
    const params=checkScope(scope);getRole(role);const actor=await identity(credential,scope,null,'queue.manage');
    return guarded(params,async client=>{
+    if(await identity(credential,{product:params[0],repository:params[1],sha:params[2]},null,'queue.manage')!==actor)throw Error('Identity denied');
     const inserted=await client.query('INSERT INTO engineering_team_quarantine(product,repository,role,actor_id) VALUES ($1,$2,$3,$4) ON CONFLICT DO NOTHING RETURNING role',[...params.slice(0,2),role,actor]);
     if(inserted.rowCount===1)await client.query("INSERT INTO engineering_team_governance_alerts(id,product,repository,event_type,role,actor_id) VALUES ($1,$2,$3,'quarantine.created',$4,$5)",[randomUUID(),...params.slice(0,2),role,actor]);
     return true;
@@ -98,6 +100,7 @@ function createDurableQueue({pool,scopes,authenticate,leaseSeconds=60,fixturePro
     if(Buffer.byteLength(fixtureBody)>32768||createHash('sha256').update(fixtureBody).digest('hex')!==evidenceSha256)throw Error('Fixture evidence denied');
    }
    return guarded(params,async client=>{
+    if(await identity(credential,{product:params[0],repository:params[1],sha:params[2]},role,'queue.work')!==worker)throw Error('Identity denied');
     await assertActive(client,params,role);
    const result=await client.query(`WITH task AS (UPDATE engineering_team_tasks SET state=CASE WHEN $8='failed' AND attempts<2 THEN 'queued' ELSE $8 END,worker_id=NULL,lease_id=NULL,lease_until=NULL WHERE product=$1 AND repository=$2 AND head_sha=$3 AND role=$4 AND worker_id=$5 AND id=$6 AND lease_id=$7 AND state='running' AND lease_until>clock_timestamp() RETURNING id,state), audit AS (INSERT INTO engineering_team_queue_audit(task_id,event) SELECT id,CASE WHEN state='queued' THEN 'retry' ELSE state END FROM task) SELECT state FROM task`,[...params,role,worker,taskId,leaseId,outcome]);
    if(result.rowCount!==1)throw Error('Lease denied');
