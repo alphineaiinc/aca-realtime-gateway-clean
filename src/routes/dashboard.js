@@ -9,6 +9,8 @@ const path = require("path");
 const axios = require("axios");
 
 const router = express.Router();
+const { rateLimit } = require("express-rate-limit");
+const dashboardIngress = rateLimit({windowMs:60000,limit:30,passOnStoreError:false});
 const { createPostgresRateLimiter } = require("../middleware/postgresRateLimit");
 const dashboardLimit = createPostgresRateLimiter({pool:require("../db/pool"),scope:"internal-dashboard",max:30,publicGlobal:true});
 // Disabled until a trusted operator authentication boundary is integrated.
@@ -20,14 +22,14 @@ const LOG_PATH = path.join(__dirname, "../logs/response_tuning.log");
 // ----------------------------------------------------
 // Serve static dashboard UI
 // ----------------------------------------------------
-router.get("/", dashboardLimit, (req, res) => {
+router.get("/", dashboardIngress, dashboardLimit, (req, res) => {
   res.sendFile(path.join(__dirname, "../../public/dashboard/index.html"));
 });
 
 // ----------------------------------------------------
 // API endpoint — serve parsed adaptive-response log data
 // ----------------------------------------------------
-router.get("/data", requireVerifiedOperator, dashboardLimit, (req, res) => {
+router.get("/data", dashboardIngress, requireVerifiedOperator, dashboardLimit, (req, res) => {
   try {
     res.set("Cache-Control", "no-store");
 
@@ -67,7 +69,7 @@ router.get("/data", requireVerifiedOperator, dashboardLimit, (req, res) => {
 // Fetches diagnostics from /brain/diagnostics
 // so UI can display Brain status, uptime, memory, etc.
 // ----------------------------------------------------
-router.get("/brain-status", requireVerifiedOperator, dashboardLimit, async (req, res) => {
+router.get("/brain-status", dashboardIngress, requireVerifiedOperator, dashboardLimit, async (req, res) => {
   try {
     res.set("Cache-Control", "no-store");
 

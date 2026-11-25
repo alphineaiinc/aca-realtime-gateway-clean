@@ -4,6 +4,9 @@
 // ---------------------------------------------------------------------------
 const express = require("express");
 const router = express.Router();
+const { rateLimit } = require("express-rate-limit");
+const { createPostgresRateLimiter } = require("../middleware/postgresRateLimit");
+const signupIngress = rateLimit({windowMs:60000,limit:10,passOnStoreError:false});
 const { Pool } = require("pg");
 const jwt = require("jsonwebtoken");
 const { randomBytes } = require("node:crypto");
@@ -17,10 +20,12 @@ const pool = new Pool({
   ssl: { rejectUnauthorized: true },
 });
 
+const signupDistributed = createPostgresRateLimiter({pool,scope:"public-signup",max:60,publicGlobal:true});
+
 // ---------------------------------------------------------------------------
 // 🔹 POST /public/signup — create a new tenant (business)
 // ---------------------------------------------------------------------------
-router.post("/public/signup", async (req, res) => {
+router.post("/public/signup", signupIngress, signupDistributed, async (req, res) => {
   const { email, business_name, contact_number } = req.body;
 
   if (!email || !business_name) {

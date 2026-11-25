@@ -2,6 +2,8 @@
 const express = require("express");
 const jwt = require("jsonwebtoken");
 const router = express.Router();
+const { rateLimit } = require("express-rate-limit");
+const envIngress = rateLimit({windowMs:60000,limit:10,passOnStoreError:false});
 const {createPostgresRateLimiter}=require("../middleware/postgresRateLimit");
 const envLimit=createPostgresRateLimiter({pool:require("../db/pool"),scope:"env-test",max:10});
 
@@ -27,7 +29,7 @@ function authenticateAdmin(req, res, next) {
   }
 }
 
-router.get("/env", authenticateAdmin, envLimit, (req, res) => {
+router.get("/env", envIngress, authenticateAdmin, envLimit, (req, res) => {
   try {
     // Only show presence, not full values
     res.json({
