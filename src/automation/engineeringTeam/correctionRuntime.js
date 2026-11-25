@@ -3,11 +3,12 @@ const {createPatchPlanner}=require('./patchPlanner');
 const {createCorrectionLoop}=require('./correctionLoop');
 function createCorrectionRuntime({scope,files,role,requiredChecks,runIsolated,proposeEdits,authorize,admitCycle,reviewCandidate,maxAttempts=2}={}){
  if(typeof admitCycle!=='function'||typeof reviewCandidate!=='function'||!['backend-developer','frontend-developer'].includes(role)||typeof runIsolated!=='function'||typeof proposeEdits!=='function'||!Array.isArray(requiredChecks)||!requiredChecks.length||requiredChecks.length>10||new Set(requiredChecks).size!==requiredChecks.length||requiredChecks.some(c=>typeof c!=='string'||!/^[a-z0-9-]{1,60}$/.test(c)))throw Error('Invalid correction runtime');
- const planner=createPatchPlanner({scope,files});
+ const pinned=Object.freeze({product:scope.product,repository:scope.repository,sha:scope.sha});
+ const planner=createPatchPlanner({scope:pinned,files});
  const checks=Object.freeze([...requiredChecks]);
  const candidates=new Map();
  const make=edits=>{const plan=planner.plan({role,edits});candidates.set(plan.evidenceSha256,plan);return plan;};
- const loop=createCorrectionLoop({scope,authorize,maxAttempts,
+ const loop=createCorrectionLoop({scope:pinned,authorize,maxAttempts,
   propose:async input=>make(await proposeEdits(input)),
   verify:async plan=>{
    const report=await runIsolated(Object.freeze({plan,checks,profile:'disposable-no-network-no-secrets',timeoutSeconds:30}));
@@ -27,7 +28,10 @@ function createCorrectionRuntime({scope,files,role,requiredChecks,runIsolated,pr
    if(outcome.state!=='candidate-passed')return outcome;
    const candidate=candidates.get(outcome.candidateDigest);
    if(!candidate||stopped)return Object.freeze({state:'unknown',attempts:outcome.attempts,releaseApproved:false});
-   const review=await reviewCandidate(Object.freeze({candidate,scope,mode:'offline-review-only'}));
+   let allowed=false;
+   try{allowed=await authorize(Object.freeze({scope:pinned,role:'security-reviewer',action:'review.simulate',evidenceSha256:candidate.evidenceSha256}))===true;}catch{}
+   if(!allowed||stopped)return Object.freeze({state:'review-blocked',attempts:outcome.attempts,releaseApproved:false,executionAuthorized:false});
+   const review=await reviewCandidate(Object.freeze({candidate,scope:pinned,mode:'offline-review-only'}));
    if(stopped||!review||review.role!=='security-reviewer'||review.disposition!=='recommend-review'||review.evidenceSha256!==candidate.evidenceSha256)return Object.freeze({state:'review-blocked',attempts:outcome.attempts,releaseApproved:false,executionAuthorized:false});
    return Object.freeze({...outcome,candidate,review:Object.freeze({role:review.role,disposition:review.disposition,evidenceSha256:review.evidenceSha256}),reviewRequired:false,executionAuthorized:false});
   }finally{candidates.clear();}
