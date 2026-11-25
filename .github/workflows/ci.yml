@@ -76,10 +76,21 @@ jobs:
     if: github.event_name == 'pull_request' && github.head_ref == 'aca-l1-integrated-routing-onboarding' && github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     timeout-minutes: 8
+    env:
+      ACA_EXPECTED_REVISION: ${{ github.event.pull_request.head.sha }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
+      - name: Initial attempt does not contact staging
+        if: github.run_attempt == 1
+        run: echo "Await verified deployment and authorized job rerun"
+      - run: node integration/aca-live-revision.mjs
+        if: github.run_attempt > 1
       - run: node integration/aca-hosted-acceptance.mjs
+        if: github.run_attempt > 1
       - run: node integration/aca-commercial-negative.mjs
+        if: github.run_attempt > 1
+      - run: node integration/aca-live-revision.mjs
+        if: github.run_attempt > 1 && always()
