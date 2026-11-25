@@ -1,5 +1,9 @@
 "use strict";
-const {test}=require("node:test");
+const {test,before,after}=require("node:test");
+const scope={ACA_STAGING_EMAIL_ONLY:"true",ACA_STAGING_EMAIL_TENANT_ID:"7",ACA_STAGING_EMAIL_REQUEST_ID:"1",ACA_STAGING_EMAIL_RECIPIENT:"business@example.test"};
+const saved=Object.fromEntries(Object.keys(scope).map(k=>[k,process.env[k]]));
+before(()=>Object.assign(process.env,scope));
+after(()=>{for(const k of Object.keys(scope)){if(saved[k]===undefined)delete process.env[k];else process.env[k]=saved[k];}});
 const assert=require("node:assert/strict");
 const {deliverOne}=require("../src/voice/requestNotificationWorker");
 function fixture(eligible=true){
@@ -67,6 +71,9 @@ test("injected runtime transport cannot bypass staging entitlement",async()=>{
  const env={...process.env};
  for(const k of ["NODE_TEST_CONTEXT","ACA_STAGING_EMAIL_ONLY","ACA_STAGING_EMAIL_TENANT_ID","ACA_STAGING_EMAIL_REQUEST_ID","ACA_STAGING_EMAIL_RECIPIENT"])delete env[k];
  const script=`const {deliverOne}=require("./src/voice/requestNotificationWorker");deliverOne({pool:{connect:async()=>{throw Error("unexpected DB access")}},sendMail:async()=>{throw Error("unexpected provider access")}}).then(v=>{if(v!==false)process.exitCode=1}).catch(()=>{process.exitCode=1});`;
- const result=spawnSync(process.execPath,["-e",script],{cwd:require("node:path").resolve(__dirname,".."),env,encoding:"utf8"});
- assert.equal(result.status,0,result.stderr);
+ for(const context of [undefined,"child-v8","forged"]){
+  if(context===undefined)delete env.NODE_TEST_CONTEXT;else env.NODE_TEST_CONTEXT=context;
+  const result=spawnSync(process.execPath,["-e",script],{cwd:require("node:path").resolve(__dirname,".."),env,encoding:"utf8"});
+  assert.equal(result.status,0,result.stderr);
+ }
 });
