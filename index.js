@@ -1473,6 +1473,17 @@ const PORT = process.env.PORT || 8080;
 
 // ✅ IMPORTANT: use server.listen (not app.listen) so express-ws works on the same server
 server.listen(PORT, () => {
+  if (process.env.ACA_PRODUCTION_EMAIL_SCHEDULER === "true" &&
+      process.env.RENDER_SERVICE_ID === "srv-d3rfh8umcj7s73cj28c0") {
+    const scheduler = require("./src/voice/commercialNotificationScheduler").start({
+      pool: require("./src/db/pool"),
+      onError: () => console.warn("ACA commercial notification failed")
+    });
+    server.once("close", () => { scheduler.stop(); });
+    process.once("SIGTERM", () => { scheduler.stop(); });
+    process.once("SIGINT", () => { scheduler.stop(); });
+  }
+
   console.log(`🧠 Orchestrator live on port ${PORT}`);
   // Staging-only startup hook; no public trigger and no automatic retry.
   if (process.env.RENDER_SERVICE_ID === "srv-dc2ffvm8bjmc73fhn8j0" &&
