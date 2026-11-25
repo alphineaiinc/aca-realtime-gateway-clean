@@ -12,7 +12,7 @@ function createDurableQueue({pool,scopes,authenticate,leaseSeconds=60,fixturePro
  async function identity(credential,scope,role,permission){
   const expectedScopeKey=scopeKey(scope);
   const actor=await authenticate(credential);
-  if(!actor||typeof actor.id!=='string'||!/^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,79}$/.test(actor.id)||actor.permission!==permission||scopeKey(actor)!==expectedScopeKey||(role!==null&&actor.role!==role))throw Error('Identity denied');
+  if(!actor||typeof actor.id!=='string'||!/^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,79}$/.test(actor.id)||actor.permission!==permission||scopeKey(actor)!==expectedScopeKey||(role===null?actor.role!==undefined:actor.role!==role))throw Error('Identity denied');
   return actor.id;
  }
  // Serialize governance changes and queue actions on a scope-specific transaction lock.
