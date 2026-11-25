@@ -16,6 +16,8 @@ test("Nodemailer rejects an untrusted SMTP TLS certificate", { timeout: 15000 },
   const certPath = path.join(tempDir, "server.crt");
   let server;
   let transport;
+  let secureConnections = 0;
+  let smtpBytes = 0;
   try {
     execFileSync("openssl", [
       "req", "-x509", "-newkey", "rsa:2048", "-nodes",
@@ -27,8 +29,9 @@ test("Nodemailer rejects an untrusted SMTP TLS certificate", { timeout: 15000 },
       key: fs.readFileSync(keyPath),
       cert: fs.readFileSync(certPath),
     }, (socket) => {
+      secureConnections++;
       socket.write("220 localhost ESMTP test\r\n");
-      socket.on("data", () => socket.end());
+      socket.on("data", (data) => { smtpBytes += data.length; socket.end(); });
     });
     await new Promise((resolve, reject) => {
       server.once("error", reject);
@@ -57,6 +60,8 @@ test("Nodemailer rejects an untrusted SMTP TLS certificate", { timeout: 15000 },
         return true;
       }
     );
+    assert.equal(secureConnections, 0, "untrusted TLS must not establish an SMTP session");
+    assert.equal(smtpBytes, 0, "no SMTP payload may reach the untrusted server");
   } finally {
     if (transport) transport.close();
     if (server) await new Promise((resolve) => server.close(resolve));
