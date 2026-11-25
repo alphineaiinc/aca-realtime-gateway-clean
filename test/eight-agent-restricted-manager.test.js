@@ -67,11 +67,11 @@ test('metadata-only GitHub transport omits issue body and uses GET with redirect
 test('restricted runtime composes only scoped GET and bounded SELECT observation',async()=>{
  const {createRestrictedManagerRuntime}=require('../src/automation/engineeringTeam/restrictedManagerRuntime');
  const calls=[];
- const runtime=createRestrictedManagerRuntime({scope,issue,githubToken:'fixture-token',
+ const runtime=createRestrictedManagerRuntime({scope,issue,readStopState:async()=>false,githubToken:'fixture-token',
   fetchImpl:async(url,options)=>{
    calls.push({url,method:options.method});
    return new Response(JSON.stringify(url.includes('/issues/')?{number:issue,state:'open',labels:[]}:{total_count:1,workflow_runs:[{id:1,name:'CI',status:'completed',conclusion:'success',head_sha:scope.sha}]}));
-  },readOnlyPool:{query:async(sql,args)=>{calls.push({sql,args});return {rows:[{pending:101}]};}}});
+  },readOnlyPool:{connect:async()=>({release(){},query:async(sql,args)=>{if(sql==='SHOW transaction_read_only')return {rows:[{transaction_read_only:'on'}]};if(sql.startsWith('SELECT')){calls.push({sql,args});return {rows:[{pending:101}]};}return {rows:[]};}})}});
  assert.deepEqual(Object.keys(runtime),['observe']);
  assert.equal(calls.length,0);
  const report=await runtime.observe();
@@ -98,14 +98,14 @@ test('one-shot manager observes once, never dispatches and never returns credent
  const {observeOnce}=require('../src/automation/engineeringTeam/restrictedManagerOnce');
  const env={ACA_RESTRICTED_MANAGER_ENABLED:'true',ACA_RESTRICTED_MANAGER_ISSUE:String(issue),ACA_RESTRICTED_MANAGER_PRODUCT:scope.product,ACA_RESTRICTED_MANAGER_REPOSITORY:scope.repository,ACA_RESTRICTED_MANAGER_HEAD_SHA:scope.sha,ACA_RESTRICTED_MANAGER_GITHUB_READ_TOKEN:'private-fixture-token'};
  const calls=[];
- const report=await observeOnce({env,fetchImpl:async(url,options)=>{
+ const report=await observeOnce({env,readStopState:async()=>false,fetchImpl:async(url,options)=>{
   calls.push({url,method:options.method});
   return new Response(JSON.stringify(url.includes('/issues/')?{number:issue,state:'open',labels:[]}:{total_count:1,workflow_runs:[{id:1,name:'CI',status:'completed',conclusion:'success',head_sha:scope.sha}]}));
  }});
  denied(report);assert.equal(report.status,'observed');assert.equal(calls.length,2);
  assert.ok(calls.every(c=>c.method==='GET'));
  assert.ok(!JSON.stringify(report).includes(env.ACA_RESTRICTED_MANAGER_GITHUB_READ_TOKEN));
- const failed=await observeOnce({env,fetchImpl:async()=>{throw Error('private-fixture-token');}});
+ const failed=await observeOnce({env,readStopState:async()=>false,fetchImpl:async()=>{throw Error('private-fixture-token');}});
  denied(failed);assert.equal(failed.status,'unavailable');assert.ok(!JSON.stringify(failed).includes('private-fixture-token'));
 });
 
@@ -129,11 +129,20 @@ test('restricted runtime isolates governance read failures and disabled entrypoi
  const {observeOnce}=require('../src/automation/engineeringTeam/restrictedManagerOnce');
  let requests=0,queries=0;
  const fetchImpl=async url=>{requests++;return new Response(JSON.stringify(url.includes('/issues/')?{number:issue,state:'open',labels:[]}:{total_count:1,workflow_runs:[{id:1,name:'CI',status:'completed',conclusion:'success',head_sha:scope.sha}]}));};
- const runtime=createRestrictedManagerRuntime({scope,issue,githubToken:'fixture-token',fetchImpl,readOnlyPool:{query:async()=>{queries++;throw Error('private database failure');}}});
+ const runtime=createRestrictedManagerRuntime({scope,issue,readStopState:async()=>false,githubToken:'fixture-token',fetchImpl,readOnlyPool:{connect:async()=>{queries++;throw Error('private database failure');}}});
  const report=await runtime.observe();
  denied(report);assert.equal(report.status,'observed');assert.deepEqual(report.governance,{status:'unavailable'});
  assert.equal(queries,1);assert.equal(requests,2);
  assert.ok(!JSON.stringify(report).includes('private database failure'));
  await assert.rejects(observeOnce({env:{ACA_RESTRICTED_MANAGER_ENABLED:'false'},fetchImpl}),/disabled/);
  assert.equal(requests,2);
+});
+
+test('one-shot manager fails closed without stop reader and suppresses output after stop',async()=>{
+ const {observeOnce}=require('../src/automation/engineeringTeam/restrictedManagerOnce');
+ const env={ACA_RESTRICTED_MANAGER_ENABLED:'true',ACA_RESTRICTED_MANAGER_ISSUE:String(issue),ACA_RESTRICTED_MANAGER_PRODUCT:scope.product,ACA_RESTRICTED_MANAGER_REPOSITORY:scope.repository,ACA_RESTRICTED_MANAGER_HEAD_SHA:scope.sha,ACA_RESTRICTED_MANAGER_GITHUB_READ_TOKEN:'fixture-token'};
+ let calls=0,stops=0;
+ const fetchImpl=async url=>{calls++;return new Response(JSON.stringify(url.includes('/issues/')?{number:issue,state:'open',labels:[]}:{total_count:1,workflow_runs:[{id:1,name:'CI',status:'completed',conclusion:'success',head_sha:scope.sha}]}));};
+ const missing=await observeOnce({env,fetchImpl});denied(missing);assert.equal(missing.status,'unavailable');assert.equal(calls,0);
+ const stopped=await observeOnce({env,fetchImpl,readStopState:async()=>++stops>1});denied(stopped);assert.equal(stopped.status,'unavailable');assert.equal(stops,2);assert.equal(calls,2);assert.equal(stopped.runs,undefined);
 });
