@@ -81,7 +81,8 @@ test("isolated product migration chain and verified onboarding",async()=>{
  await fixtureClient.query("BEGIN");
  const {workflowIds,buildWorkflowDefinition}=require("../src/voice/workflowDefinitionCatalog");
  const resolveFixture=createTenantResolver({query:fixtureClient.query.bind(fixtureClient)});
- assert.equal(workflowIds.length,12);
+ assert.equal(workflowIds.filter(id=>id!=="generic").length,12);
+ assert.equal(workflowIds.filter(id=>id==="generic").length,1);
  for(const [i,workflowId] of workflowIds.entries()){
  const schema=buildWorkflowDefinition(workflowId);
  const tenant=(await fixtureClient.query("INSERT INTO master_tenants(business_name) VALUES($1) RETURNING id",["Rollback fixture "+i])).rows[0].id;
@@ -104,7 +105,7 @@ test("isolated product migration chain and verified onboarding",async()=>{
  }
  await fixtureClient.query("ROLLBACK");
  assert.equal((await fixtureClient.query("SELECT count(*)::int AS n FROM master_tenants WHERE business_name LIKE 'Rollback fixture %'")).rows[0].n,0);
- console.log("All 12 workflow assignments, tenant isolation, durable request idempotency and rollback passed");
+ console.log("All 12 industry and generic workflow assignments, tenant isolation, durable request idempotency and rollback passed");
  }finally{await fixtureClient.query("ROLLBACK");fixtureClient.release();}
  
 // Real HTTP routes, actual disposable PostgreSQL, no external email.
