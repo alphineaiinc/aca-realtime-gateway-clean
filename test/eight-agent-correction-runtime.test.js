@@ -31,3 +31,8 @@ test('review mismatch blocks corrected candidate handoff',async()=>{
  const runtime=createCorrectionRuntime({...config,reviewCandidate:async()=>({role:'security-reviewer',disposition:'approved',evidenceSha256:'0'.repeat(64)}),proposeEdits:async()=>edits('fixed'),runIsolated:async input=>report(input,null)});
  assert.equal((await runtime.run({edits:edits('broken')})).state,'review-blocked');
 });
+
+test('fresh review authorization is candidate-bound and denial prevents handoff',async()=>{
+ const seen=[];const runtime=createCorrectionRuntime({...config,authorize:async input=>{seen.push(input);return input.action!=='review.simulate';},reviewCandidate:async()=>assert.fail('review called despite denial'),proposeEdits:async()=>edits('fixed'),runIsolated:async input=>report(input,null)});
+ const result=await runtime.run({edits:edits('broken')});assert.equal(result.state,'review-blocked');assert.equal(result.executionAuthorized,false);assert.equal(seen.length,2);assert.equal(seen[1].role,'security-reviewer');assert.equal(seen[1].action,'review.simulate');assert.equal(seen[1].evidenceSha256,seen[0].evidenceSha256);assert.deepEqual(seen[1].scope,scope);
+});
