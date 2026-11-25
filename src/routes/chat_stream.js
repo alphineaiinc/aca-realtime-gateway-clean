@@ -27,6 +27,8 @@ try {
 }
 
 const router = express.Router();
+const { createPostgresRateLimiter } = require("../middleware/postgresRateLimit");
+const sharedLimit = createPostgresRateLimiter({pool: require("../db/pool"), scope: "chat-stream", max: 20, windowMs: 60000});
 
 // ✅ Story 12.8 — cap JSON body size for this router (prevents abuse)
 try {
@@ -183,7 +185,7 @@ function authenticate(req, res, next) {
       const cfg = (typeof demoConfig === "function") ? demoConfig() : null;
 
       // If demoConfig exists and says disabled, enforce it. Otherwise, allow (env gating already exists).
-      if (cfg && cfg.enabled === false) {
+      if (!cfg || !cfg.enabled) {
         return res.status(401).json({ ok: false, error: "Unauthorized" });
       }
 
@@ -205,7 +207,7 @@ function authenticate(req, res, next) {
         ? envDemoTenant
         : (cfg && cfg.tenantId ? cfg.tenantId : null);
 
-      req.tenant_id = forcedTenant || decoded.tenant_id;
+      req.tenant_id = forcedTenant;
       req.partner_id = null;
       req.role = "demo";
       req.demo_jti = decoded.demo_jti || decoded.jti || null;
@@ -263,7 +265,7 @@ function* chunkText(text, chunkSize = 18) {
 // ---------------------------------------------------------------------------
 // POST /api/chat/session/clear
 // ---------------------------------------------------------------------------
-router.post("/chat/session/clear", authenticate, (req, res) => {
+router.post("/chat/session/clear", authenticate, sharedLimit, (req, res) => {
   try {
     const tenant_id = req.tenant_id;
     const session_id = (req.body && req.body.session_id) ? String(req.body.session_id) : "web";
@@ -282,7 +284,7 @@ router.post("/chat/session/clear", authenticate, (req, res) => {
 // ---------------------------------------------------------------------------
 // POST /api/chat/stream
 // ---------------------------------------------------------------------------
-router.post("/chat/stream", authenticate, async (req, res) => {
+router.post("/chat/stream", authenticate, sharedLimit, async (req, res) => {
   const tenant_id = req.tenant_id;
 
   // SSE headers (anti-buffer)

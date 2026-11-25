@@ -32,6 +32,157 @@ const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
 // Stripe webhook secret
 const endpointSecret = process.env.STRIPE_WEBHOOK_SECRET;
 
+// Instance-local duplicate suppression; durable cross-instance delivery is a separate release gate.
+const processing = new Set();
+const completed = new Map();
+const retentionMs = 24 * 60 * 60 * 1000;
+const maxEvents = 10000;
+
+async function deliverNotification(event, sendEmail) {
+    const type = event.type;
+    const data = event.data.object;
+
+    // 🔔 This is what we want to see in Render logs
+    console.log("🔔 Stripe webhook received:", type);
+
+    fs.appendFileSync(
+      logPath,
+      `[${new Date().toISOString()}] Webhook received: ${type}\n`
+    );
+
+      // =============================
+      // invoice.created
+      // =============================
+      if (type === "invoice.created") {
+        const email = data.customer_email;
+        if (email) {
+          await sendEmail(
+            email,
+            "Your Alphine AI Invoice is Ready",
+            tplInvoiceCreated(data),
+            "Your invoice has been created."
+          );
+          fs.appendFileSync(
+            logPath,
+            `[${new Date().toISOString()}] invoice.created → Email sent\n`
+          );
+        }
+      }
+
+      // =============================
+      // invoice.payment_succeeded
+      // =============================
+      if (type === "invoice.payment_succeeded") {
+        const email = data.customer_email;
+        if (email) {
+          await sendEmail(
+            email,
+            "Payment Successful — Alphine AI Invoice",
+            tplInvoicePaid(data),
+            "Your payment was successful."
+          );
+
+          fs.appendFileSync(
+            logPath,
+            `[${new Date().toISOString()}] invoice.payment_succeeded → Email sent\n`
+          );
+        }
+      }
+
+      // =============================
+      // invoice.payment_failed
+      // =============================
+      if (type === "invoice.payment_failed") {
+        const email = data.customer_email;
+        if (email) {
+          await sendEmail(
+            email,
+            "Payment Failed — Action Needed",
+            tplPaymentFailed(data),
+            "Your payment failed. Please update your billing information."
+          );
+
+          fs.appendFileSync(
+            logPath,
+            `[${new Date().toISOString()}] invoice.payment_failed → Email sent\n`
+          );
+        }
+      }
+
+      // =============================
+      // customer.subscription.updated
+      // =============================
+      if (type === "customer.subscription.updated") {
+        const email = event.data.object?.metadata?.customer_email;
+        if (email) {
+          await sendEmail(
+            email,
+            "Subscription Updated — Alphine AI",
+            tplSubscriptionRenewed(event.data.object),
+            "Your subscription has been updated."
+          );
+
+          fs.appendFileSync(
+            logPath,
+            `[${new Date().toISOString()}] subscription.updated → Email sent\n`
+          );
+        }
+      }
+
+      // =============================
+      // charge.refunded
+      // =============================
+      if (type === "charge.refunded") {
+        const email = data.billing_details?.email;
+        if (email) {
+          await sendEmail(
+            email,
+            "Refund Issued — Alphine AI",
+            tplRefundIssued(data),
+            "A refund has been issued to your account."
+          );
+
+          fs.appendFileSync(
+            logPath,
+            `[${new Date().toISOString()}] charge.refunded → Email sent\n`
+          );
+        }
+      }
+
+      // =============================
+      // custom mock partner payout (payout.paid)
+      // =============================
+      if (type === "payout.paid") {
+        const email = data.metadata?.partner_email;
+        if (email) {
+          await sendEmail(
+            email,
+            "Partner Payout Processed — Alphine AI",
+            tplPartnerPayout(data),
+            "Your payout has been processed."
+          );
+
+          fs.appendFileSync(
+            logPath,
+            `[${new Date().toISOString()}] partner.payout → Email sent\n`
+          );
+        }
+      }
+
+
+}
+
+const durableMode = process.env.STRIPE_DURABLE_RECEIPTS === '1';
+let durableProcessor;
+if (durableMode) {
+  const { createStripeEventReceiptStore } = require('../security/stripeEventReceipt');
+  const { createDurableStripeProcessor } = require('../security/durableStripeProcessor');
+  durableProcessor = createDurableStripeProcessor({
+    receipts: createStripeEventReceiptStore(require('../db/pool')),
+    deliver: event => deliverNotification(event, (...args) => sendBillingEmail(...args, { singleAttempt: true }))
+  });
+}
+
 // MUST use raw body for Stripe
 router.post(
   "/webhook",
@@ -49,152 +200,50 @@ router.post(
     } catch (err) {
       fs.appendFileSync(
         logPath,
-        `[${new Date().toISOString()}] Signature verification failed: ${err.message}\n`
+        `[${new Date().toISOString()}] Signature verification failed\n`
       );
-      console.error("❌ Stripe signature verification failed:", err.message);
-      return res.status(400).send(`Webhook Error: ${err.message}`);
+      console.error("Stripe signature verification failed");
+      return res.status(400).send("Webhook signature verification failed");
     }
 
-    const type = event.type;
-    const data = event.data.object;
-
-    // 🔔 This is what we want to see in Render logs
-    console.log("🔔 Stripe webhook received:", type);
-
-    fs.appendFileSync(
-      logPath,
-      `[${new Date().toISOString()}] Webhook received: ${type}\n`
-    );
-
+    const eventId = event.id;
+    if (typeof eventId !== "string" || !/^evt_[A-Za-z0-9_]{1,200}$/.test(eventId)) {
+      return res.status(400).send("Invalid webhook event");
+    }
+    if (durableMode) {
+      try {
+        const outcome = await durableProcessor(event);
+        if (outcome === 'completed') return res.json({ received: true });
+      } catch {
+        console.error("Stripe durable processing unavailable");
+      }
+      return res.status(503).send("Webhook temporarily unavailable");
+    }
+    const now = Date.now();
+    for (const [id, expiry] of completed) {
+      if (expiry <= now) completed.delete(id);
+    }
+    if (completed.has(eventId)) return res.json({ received: true });
+    if (processing.has(eventId) || processing.size >= 100 || completed.size + processing.size >= maxEvents) {
+      return res.status(503).send("Webhook temporarily unavailable");
+    }
+    processing.add(eventId);
     try {
-      // =============================
-      // invoice.created
-      // =============================
-      if (type === "invoice.created") {
-        const email = data.customer_email;
-        if (email) {
-          await sendBillingEmail(
-            email,
-            "Your Alphine AI Invoice is Ready",
-            tplInvoiceCreated(data),
-            "Your invoice has been created."
-          );
-          fs.appendFileSync(
-            logPath,
-            `[${new Date().toISOString()}] invoice.created → Email sent to ${email}\n`
-          );
-        }
-      }
-
-      // =============================
-      // invoice.payment_succeeded
-      // =============================
-      if (type === "invoice.payment_succeeded") {
-        const email = data.customer_email;
-        if (email) {
-          await sendBillingEmail(
-            email,
-            "Payment Successful — Alphine AI Invoice",
-            tplInvoicePaid(data),
-            "Your payment was successful."
-          );
-
-          fs.appendFileSync(
-            logPath,
-            `[${new Date().toISOString()}] invoice.payment_succeeded → Email sent to ${email}\n`
-          );
-        }
-      }
-
-      // =============================
-      // invoice.payment_failed
-      // =============================
-      if (type === "invoice.payment_failed") {
-        const email = data.customer_email;
-        if (email) {
-          await sendBillingEmail(
-            email,
-            "Payment Failed — Action Needed",
-            tplPaymentFailed(data),
-            "Your payment failed. Please update your billing information."
-          );
-
-          fs.appendFileSync(
-            logPath,
-            `[${new Date().toISOString()}] invoice.payment_failed → Email sent to ${email}\n`
-          );
-        }
-      }
-
-      // =============================
-      // customer.subscription.updated
-      // =============================
-      if (type === "customer.subscription.updated") {
-        const email = event.data.object?.metadata?.customer_email;
-        if (email) {
-          await sendBillingEmail(
-            email,
-            "Subscription Updated — Alphine AI",
-            tplSubscriptionRenewed(event.data.object),
-            "Your subscription has been updated."
-          );
-
-          fs.appendFileSync(
-            logPath,
-            `[${new Date().toISOString()}] subscription.updated → Email to ${email}\n`
-          );
-        }
-      }
-
-      // =============================
-      // charge.refunded
-      // =============================
-      if (type === "charge.refunded") {
-        const email = data.billing_details?.email;
-        if (email) {
-          await sendBillingEmail(
-            email,
-            "Refund Issued — Alphine AI",
-            tplRefundIssued(data),
-            "A refund has been issued to your account."
-          );
-
-          fs.appendFileSync(
-            logPath,
-            `[${new Date().toISOString()}] charge.refunded → Email to ${email}\n`
-          );
-        }
-      }
-
-      // =============================
-      // custom mock partner payout (payout.paid)
-      // =============================
-      if (type === "payout.paid") {
-        const email = data.metadata?.partner_email;
-        if (email) {
-          await sendBillingEmail(
-            email,
-            "Partner Payout Processed — Alphine AI",
-            tplPartnerPayout(data),
-            "Your payout has been processed."
-          );
-
-          fs.appendFileSync(
-            logPath,
-            `[${new Date().toISOString()}] partner.payout → Email to ${email}\n`
-          );
-        }
-      }
-
+    try {
+    await deliverNotification(event, sendBillingEmail);
     } catch (err) {
       fs.appendFileSync(
         logPath,
-        `[${new Date().toISOString()}] ERROR processing webhook: ${err.message}\n`
+        `[${new Date().toISOString()}] ERROR processing webhook\n`
       );
-      console.error("❌ Error processing Stripe webhook:", err);
+      console.error("Stripe webhook processing failed");
+      return res.status(503).send("Webhook processing failed");
     }
-
+    completed.set(eventId, Date.now() + retentionMs);
     res.json({ received: true });
+    } finally {
+      processing.delete(eventId);
+    }
   }
 );
 

@@ -7,7 +7,10 @@ const path = require("path");
 const { rankPartners } = require("../brain/utils/rewardEngine");
 const { encrypt } = require("../brain/utils/cryptoVault");
 
+const { createPostgresRateLimiter } = require("../middleware/postgresRateLimit");
+
 const router = express.Router();
+const partnerRateLimit = createPostgresRateLimiter({ pool, scope: "partner-leaderboard", windowMs: 60_000, max: 60 });
 
 // --- Logger (append-only) ---
 const LOG_DIR = path.resolve(__dirname, "../logs");
@@ -38,7 +41,7 @@ function requireAdmin(req, res, next) {
 }
 
 // --- GET /partner/leaderboard?scope=all|month|week&limit=50 ---
-router.get("/partner/leaderboard", authenticate, async (req, res) => {
+router.get("/partner/leaderboard", authenticate, partnerRateLimit, async (req, res) => {
   try {
     const scope = String(req.query.scope || "all").toLowerCase();
     const limit = Math.min(parseInt(req.query.limit || "50", 10), 200);
@@ -77,7 +80,7 @@ router.get("/partner/leaderboard", authenticate, async (req, res) => {
 });
 
 // --- POST /partner/payouts/request  body: { amount, method } ---
-router.post("/partner/payouts/request", authenticate, async (req, res) => {
+router.post("/partner/payouts/request", authenticate, partnerRateLimit, async (req, res) => {
   try {
     const partnerId = req.auth?.partner_id;
     if (!partnerId) return res.status(400).json({ ok: false, error: "No partner_id in token" });
@@ -108,7 +111,7 @@ router.post("/partner/payouts/request", authenticate, async (req, res) => {
 });
 
 // --- GET /partner/payouts/admin?status=pending (admin only) ---
-router.get("/partner/payouts/admin", authenticate, requireAdmin, async (req, res) => {
+router.get("/partner/payouts/admin", authenticate, partnerRateLimit, requireAdmin, async (req, res) => {
   try {
     const status = String(req.query.status || "pending");
     const { rows } = await pool.query(
@@ -127,7 +130,7 @@ router.get("/partner/payouts/admin", authenticate, requireAdmin, async (req, res
 });
 
 // --- POST /partner/payouts/admin/decision  body: { id, action, payout_reference } ---
-router.post("/partner/payouts/admin/decision", authenticate, requireAdmin, async (req, res) => {
+router.post("/partner/payouts/admin/decision", authenticate, partnerRateLimit, requireAdmin, async (req, res) => {
   try {
     const id = Number(req.body?.id);
     const action = String(req.body?.action || "").toLowerCase(); // approve|reject|paid

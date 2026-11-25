@@ -3,6 +3,9 @@ const express = require("express");
 const jwt = require("jsonwebtoken");
 const router = express.Router();
 const pool = require("../db/pool");
+const { createPostgresRateLimiter } = require("../middleware/postgresRateLimit");
+const provisionLimit = createPostgresRateLimiter({pool,scope:"tenant-provision",max:10,publicGlobal:true});
+const profileLimit = createPostgresRateLimiter({pool,scope:"tenant-profile",max:60});
 
 // ---------------------------------------------------------------------------
 // Utility: build safe insert for master_tenants based on actual columns
@@ -135,23 +138,28 @@ async function ensureDefaultEmbeddingSpace(client, tenantId) {
 // ---------------------------------------------------------------------------
 // POST /tenant/provision (secured via header API key)
 // ---------------------------------------------------------------------------
-router.post("/provision", async (req, res) => {
+function authorizeProvision(req,res,next) {
   const key = req.headers["x-api-key"] || "";
 
   if (!process.env.PROVISION_API_KEY || key !== process.env.PROVISION_API_KEY) {
     return res.status(401).json({ ok: false, error: "unauthorized" });
   }
 
+  return next();
+}
+router.post("/provision", authorizeProvision, provisionLimit, async (req,res) => {
   const businessName = req.body?.business_name || null;
 
+  let client;
   try {
-    await pool.query("BEGIN");
+    client = await pool.connect();
+    await client.query("BEGIN");
 
-    const tenantId = await insertTenantDynamic(pool, req.body);
-    await insertBusiness(pool, tenantId, businessName);
-    await ensureDefaultEmbeddingSpace(pool, tenantId);
+    const tenantId = await insertTenantDynamic(client, req.body || {});
+    await insertBusiness(client, tenantId, businessName);
+    await ensureDefaultEmbeddingSpace(client, tenantId);
 
-    await pool.query("COMMIT");
+    await client.query("COMMIT");
 
     return res.json({
       ok: true,
@@ -159,53 +167,29 @@ router.post("/provision", async (req, res) => {
       message: "Tenant provisioned successfully",
     });
   } catch (err) {
-    console.error("Provision error:", err);
-    await pool.query("ROLLBACK").catch(() => {});
+    console.error("Tenant provisioning failed");
+    if (client) await client.query("ROLLBACK").catch(() => {});
 
     return res.status(500).json({
       ok: false,
       error: "internal_error",
     });
+  } finally {
+    if (client) client.release();
   }
 });
 
 // ---------------------------------------------------------------------------
 // POST /tenant/login
 // ---------------------------------------------------------------------------
-router.post("/login", async (req, res) => {
-  try {
-    const tenantId = Number(req.body?.tenant_id);
-
-    if (!tenantId) {
-      return res.status(400).json({ ok: false, error: "tenant_id required" });
-    }
-
-    const { rows } = await pool.query(
-      `SELECT id FROM master_tenants WHERE id=$1`,
-      [tenantId]
-    );
-
-    if (rows.length === 0) {
-      return res.status(404).json({ ok: false, error: "tenant_not_found" });
-    }
-
-    const token = jwt.sign(
-      { tenant_id: tenantId },
-      process.env.JWT_SECRET,
-      { expiresIn: "12h" }
-    );
-
-    return res.json({ ok: true, token });
-  } catch (err) {
-    console.error("Login error:", err);
-    return res.status(500).json({ ok: false, error: "internal_error" });
-  }
+router.post("/login", (req, res) => {
+  return res.status(403).json({ ok: false, error: "Verified login required" });
 });
 
 // ---------------------------------------------------------------------------
 // GET /tenant/profile (JWT required)
 // ---------------------------------------------------------------------------
-router.get("/profile", async (req, res) => {
+function authorizeProfile(req,res,next) {
   try {
     const auth = req.headers.authorization || "";
 
@@ -216,8 +200,16 @@ router.get("/profile", async (req, res) => {
     const token = auth.slice(7).trim();
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
 
-    const tenantId = decoded.tenant_id;
-
+    if (!decoded.tenant_id || decoded.role === "demo" || decoded.demo === true) return res.status(401).json({ok:false,error:"unauthorized"});
+    req.tenant_id = decoded.tenant_id;
+    return next();
+  } catch {
+    return res.status(401).json({ok:false,error:"unauthorized"});
+  }
+}
+router.get("/profile", authorizeProfile, profileLimit, async (req,res) => {
+  try {
+    const tenantId = req.tenant_id;
     const { rows } = await pool.query(
       `SELECT t.id AS tenant_id,
               t.email,

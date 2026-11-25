@@ -6,6 +6,7 @@ const express = require("express");
 const router = express.Router();
 const { Pool } = require("pg");
 const jwt = require("jsonwebtoken");
+const { randomBytes } = require("node:crypto");
 
 // Load environment variables
 require("dotenv").config({ path: require("path").resolve(__dirname, "../../.env") });
@@ -13,7 +14,7 @@ require("dotenv").config({ path: require("path").resolve(__dirname, "../../.env"
 // Initialize PostgreSQL pool (Render + Neon connection)
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
-  ssl: { rejectUnauthorized: false },
+  ssl: { rejectUnauthorized: true },
 });
 
 // ---------------------------------------------------------------------------
@@ -26,8 +27,15 @@ router.post("/public/signup", async (req, res) => {
     return res.status(400).json({ ok: false, error: "Missing required fields" });
   }
 
+  const jwtSecret = process.env.TENANT_JWT_SECRET;
+  if (!jwtSecret) return res.status(503).json({ ok: false, error: "Authentication unavailable" });
+
+  let client;
+  let committed = false;
+  let discard = false;
   try {
-    const client = await pool.connect();
+    client = await pool.connect();
+    await client.query("BEGIN");
 
     // 1️⃣  Insert into master_tenants
     const insertTenant = `
@@ -35,8 +43,7 @@ router.post("/public/signup", async (req, res) => {
       VALUES ($1, $2, $3, $4, $5, $6, $7)
       RETURNING id, email, region, preferred_lang;
     `;
-    const jwtSecret = process.env.TENANT_JWT_SECRET || "alphine_tenant_jwt_2025_secure!";
-    const apiKey = "tenant_" + Math.random().toString(36).substring(2, 10);
+    const apiKey = "tenant_" + randomBytes(32).toString("hex");
     const result = await client.query(insertTenant, [
       email,
       contact_number || "",
@@ -62,9 +69,8 @@ router.post("/public/signup", async (req, res) => {
       [business_name, email, contact_number || ""]
     );
 
-    client.release();
-
-    console.log(`✅ Tenant created: ${tenant.email} (id=${tenant.id})`);
+    await client.query("COMMIT");
+    committed = true;
     res.json({
       ok: true,
       id: tenant.id,
@@ -76,8 +82,13 @@ router.post("/public/signup", async (req, res) => {
       source: "public",
     });
   } catch (err) {
-    console.error("❌ /public/signup failed:", err);
-    res.status(500).json({ ok: false, error: err.message });
+    if (client && !committed) {
+      try { await client.query("ROLLBACK"); } catch { discard = true; }
+    }
+    console.error("Public signup failed");
+    res.status(500).json({ ok: false, error: "Signup failed" });
+  } finally {
+    if (client) client.release(discard);
   }
 });
 
@@ -100,16 +111,11 @@ router.post("/public/login", async (req, res) => {
   if (!email) return res.status(400).json({ ok: false, error: "Missing email" });
 
   try {
-    const { rows } = await pool.query("SELECT id, email FROM master_tenants WHERE email = $1", [email]);
-    if (rows.length === 0) return res.status(404).json({ ok: false, error: "Tenant not found" });
-
-    const jwtSecret = process.env.TENANT_JWT_SECRET || "alphine_tenant_jwt_2025_secure!";
-    const token = jwt.sign({ tenant_id: rows[0].id, email: rows[0].email }, jwtSecret, { expiresIn: "1h" });
-
-    res.json({ ok: true, token, tenant_id: rows[0].id });
+    // Email possession has not been verified: never mint a tenant JWT here.
+    return res.status(403).json({ ok: false, error: "Verified login required" });
   } catch (err) {
-    console.error("❌ /public/login failed:", err);
-    res.status(500).json({ ok: false, error: err.message });
+    console.error("Public login failed");
+    res.status(500).json({ ok: false, error: "Login failed" });
   }
 });
 

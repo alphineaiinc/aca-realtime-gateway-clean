@@ -8,8 +8,10 @@ const { test } = require("node:test");
 const express = require("express");
 const jwt = require("jsonwebtoken");
 
-// Exercise the actual root middleware and route without importing index.js:
+// Exercise the actual admin-auth middleware and route without importing index.js:
 // importing the application starts services and opens a database connection.
+// The rate limiter is injected as a pass-through here; its behavior is covered
+// by dedicated limiter tests, while this test isolates the diagnostics auth boundary.
 const source = fs.readFileSync(path.join(__dirname, "../index.js"), "utf8");
 function section(start, end) {
   const first = source.indexOf(start);
@@ -33,6 +35,7 @@ test("Twilio diagnostics only reads transcripts for authenticated admins", async
       app,
       jwt,
       process: { env: { JWT_SECRET: secret } },
+      monitorLimit(_req, _res, next) { next(); },
       getTwilioDebugState() { reads += 1; return debug; },
     }
   );
