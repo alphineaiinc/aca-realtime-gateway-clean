@@ -1,28 +1,36 @@
 "use strict";
 // Explicit invocation only. Reservation commits BEFORE Gmail: an ambiguous send
 // is never automatically retried. Never treat Message-ID as provider idempotency.
-const {createHash}=require("node:crypto");
 const CLAIM=`WITH eligible AS (
  SELECT o.request_id,o.tenant_id,r.email
  FROM public.aca_request_outbox o
  JOIN public.aca_notification_recipients r ON r.tenant_id=o.tenant_id
  WHERE o.delivered_at IS NULL AND r.is_active AND r.verified_at IS NOT NULL
    AND r.email ~ '^[^[:space:]@,;<>]+@[^[:space:]@,;<>]+\\.[^[:space:]@,;<>]+$'
+   AND ($1::boolean IS FALSE OR (current_database() = 'aca_product_staging' AND o.tenant_id=$2::bigint AND o.request_id=$3::bigint AND r.email=$4::text))
    AND NOT EXISTS (SELECT 1 FROM public.aca_request_email_reservations s
      WHERE s.request_id=o.request_id AND s.tenant_id=o.tenant_id)
  ORDER BY o.created_at,o.request_id LIMIT 1
 )
-INSERT INTO public.aca_request_email_reservations(request_id,tenant_id,recipient,message_id)
+INSERT INTO public.aca_request_email_reservations(request_id,tenant_id,recipient,message_id,staging_attempt)
  SELECT request_id,tenant_id,email,
- '<aca-request-' || tenant_id::text || '-' || request_id::text || '@alphineai.com>'
+ '<aca-request-' || tenant_id::text || '-' || request_id::text || '@alphineai.com>',CASE WHEN $1::boolean THEN TRUE ELSE NULL END
  FROM eligible ON CONFLICT DO NOTHING
  RETURNING request_id,tenant_id,recipient AS email,message_id`;
 async function deliverOne({pool,sendMail}) {
+ // Real transport is disabled unless explicitly scoped to the controlled staging fixture.
+ const staging=!sendMail || process.env.ACA_STAGING_EMAIL_ONLY==="true";
+ const tenant=process.env.ACA_STAGING_EMAIL_TENANT_ID;
+ const request=process.env.ACA_STAGING_EMAIL_REQUEST_ID;
+ const recipient=process.env.ACA_STAGING_EMAIL_RECIPIENT;
+ if(staging && (process.env.ACA_STAGING_EMAIL_ONLY!=="true" ||
+   !/^[1-9][0-9]{0,17}$/.test(tenant||"") || !/^[1-9][0-9]{0,17}$/.test(request||"") ||
+   !/^[^\s@,;<>]+@[^\s@,;<>]+\.[^\s@,;<>]+$/.test(recipient||""))) return false;
  const client=await pool.connect();
  let row;
  try{
   // A single atomic statement commits the send entitlement before provider I/O.
-  const {rows}=await client.query(CLAIM);
+  const {rows}=await client.query(CLAIM,[staging,staging?tenant:null,staging?request:null,staging?recipient:null]);
   row=rows[0];
  }catch{throw Error("REQUEST_RESERVATION_FAILED");}
  finally{client.release();}
