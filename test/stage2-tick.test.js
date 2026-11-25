@@ -1,0 +1,9 @@
+'use strict';
+const test=require('node:test'),assert=require('node:assert/strict');
+const {tick}=require('../.github/scripts/stage2-tick');
+const context={event:'schedule',ref:'refs/heads/main',attempt:'1',repository:'alphineaiinc/aca-realtime-gateway-clean',approved:'a'.repeat(40),config:'a'.repeat(40),enabled:'true',expires:2000};
+const result={status:'observed',executionAuthorized:false,writeAuthorized:false,deployAuthorized:false,paidProviderAuthorized:false};
+test('bounded tick checks stop twice and invokes once',async()=>{let reads=0,calls=0;assert.deepEqual(await tick({context,clock:()=>1000,readStop:async()=>{reads++;return false},observe:async()=>{calls++;return result}}),result);assert.equal(reads,2);assert.equal(calls,1)});
+test('stop or failed admission prevents invocation',async()=>{for(const readStop of [async()=>true,async()=>null,async()=>{throw Error('offline')}])assert.deepEqual(await tick({context,clock:()=>1000,readStop,observe:()=>assert.fail()}),{status:'denied'});assert.deepEqual(await tick({context:{...context,attempt:'2'},clock:()=>1000,readStop:()=>assert.fail(),observe:()=>assert.fail()}),{status:'denied'})});
+test('stop or expiry during observation suppresses output',async()=>{let stop=false,now=1000;for(const expire of [false,true]){stop=false;now=1000;assert.deepEqual(await tick({context,clock:()=>now,readStop:async()=>stop,observe:async()=>{if(expire)now=2000;else stop=true;return result}}),{status:'denied'})}});
+test('reject privileged or incomplete output',async()=>{for(const k of ['executionAuthorized','writeAuthorized','deployAuthorized','paidProviderAuthorized'])await assert.rejects(tick({context,clock:()=>1000,readStop:async()=>false,observe:async()=>({...result,[k]:true})}),/denied/);await assert.rejects(tick({context,clock:()=>1000,readStop:async()=>false,observe:async()=>({status:'observed'})}),/denied/)});

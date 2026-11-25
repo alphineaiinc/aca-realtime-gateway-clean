@@ -4,6 +4,9 @@ on:
     branches: [aca-p2-stage2-continuous-observation]
 permissions:
   contents: read
+concurrency:
+  group: aca-stage2-admission-fixture
+  cancel-in-progress: false
 jobs:
   admission:
     runs-on: ubuntu-latest
@@ -13,4 +16,4 @@ jobs:
         with:
           ref: ${{ github.sha }}
           persist-credentials: false
-      - run: node --test test/stage2-admission.test.js
+      - run: node --test test/stage2-admission.test.js test/stage2-tick.test.js test/stage1-stop-reader.test.js

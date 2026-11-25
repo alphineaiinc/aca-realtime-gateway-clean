@@ -1,0 +1,3 @@
+# Stage 2 scheduler integration boundary
+
+The isolated fixture tests admission and bounded tick composition, not live scheduling. GitHub concurrency group serializes fixture runs, not durable deduplication. Production scheduler must use a separate constant concurrency group, first-attempt gate, exact pinned config checkout, independently approved expiry, and the accepted Manager entry point with pre/post live stop checks. No schedule installed on main. No persistent activation or credentials. Stage 1 marker must remain absent. Historical pinned CI is not current project-wide status. Independent review must evaluate scheduler host trust, separate Stage 2 control, replay and expiry semantics before live integration.
