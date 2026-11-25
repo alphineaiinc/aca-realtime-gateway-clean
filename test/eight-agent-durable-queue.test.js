@@ -90,3 +90,18 @@ test('role-bound identity cannot manage queue even with manager permission',asyn
  }
  assert.equal(queries,0);
 });
+
+test('queue admission rechecks identity after lock and rolls back revoked or substituted actors',async()=>{
+ for(const operation of ['enqueue','claim'])for(const change of ['revoked','actor','permission','scope','role','unchanged']){
+  const actor={...scope,id:'original',permission:operation==='enqueue'?'queue.manage':'queue.work',...(operation==='claim'?{role}:{})};
+  let current=actor,calls=0;const queries=[];
+  const query=async sql=>{queries.push(sql);if(sql.startsWith('SELECT pg_advisory')){
+   current=change==='revoked'?null:change==='actor'?{...actor,id:'substitute'}:change==='permission'?{...actor,permission:'denied'}:change==='scope'?{...actor,sha:'b'.repeat(40)}:change==='role'?{...actor,role:'qa-testing'}:actor;
+  }return {rowCount:1,rows:[{blocked:false,id:'fixture'}]};};
+  const queue=createDurableQueue({pool:{query,connect:async()=>({query,release(){}})},scopes:[scope],authenticate:async()=>{calls++;return current;}});
+  const invoke=()=>queue[operation]({scope,role,credential:'fixture'});
+  if(change==='unchanged'){await invoke();assert.ok(queries.some(q=>q.startsWith('WITH ')));assert.ok(queries.includes('COMMIT'));}
+  else{await assert.rejects(invoke(),/Identity denied/);assert.ok(queries.includes('ROLLBACK'));assert.ok(!queries.some(q=>q.startsWith('WITH ')));assert.ok(!queries.includes('COMMIT'));}
+  assert.equal(calls,2);
+ }
+});
