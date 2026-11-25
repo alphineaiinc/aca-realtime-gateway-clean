@@ -91,6 +91,28 @@ test('isolated PostgreSQL manager observation acceptance', {
     assert.equal(requests, 2);
   });
 
+  await t.test('stop denies cached replay without network access', async () => {
+    const event = randomUUID();
+    let stopped = false, requests = 0;
+    const runtime = createRestrictedManagerRuntime({
+      scope, issue, observationPool: pools[0], githubToken: 'fixture-token',
+      readStopState: async () => stopped,
+      fetchImpl: async url => {
+        requests++;
+        return new Response(JSON.stringify(url.includes('/issues/')
+          ? { number: issue, state: 'open', labels: [] }
+          : { total_count: 0, workflow_runs: [] }));
+      },
+    });
+    assert.equal((await runtime.observeEvent(event)).status, 'observed');
+    stopped = true;
+    assert.equal((await runtime.observeEvent(event)).status, 'unavailable');
+    assert.equal(requests, 2);
+    stopped = false;
+    assert.equal((await runtime.observeEvent(event)).replayed, true);
+    assert.equal(requests, 2);
+  });
+
   await t.test('rolls back invalid, oversized, and failed observations', async () => {
     const event = randomUUID();
     await assert.rejects(stores[0].observeEvent(event, async () => ({ ...observation, writeAuthorized: true })),
