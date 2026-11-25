@@ -5,6 +5,7 @@
  * Does not create issues, comments, agent tasks, merges or deployments.
  */
 const {verifiedRequiredChecks}=require("./verifiedCiEvidence");
+const {fetchBoundChecks}=require("./ciWorkflowRunBinding");
 const {coordinateCorrection}=require("./level2CorrectionCoordinator");
 const denied=reason=>Object.freeze({
  status:"blocked",reason,proposal:null,dispatched:false,
@@ -45,7 +46,8 @@ async function createLiveCiCorrectionPacket({github,owner,repo,repositoryId,prNu
   if(!Array.isArray(list?.check_runs)||!Number.isSafeInteger(list.total_count)||
      list.total_count!==list.check_runs.length||list.total_count>100)
    return denied("incomplete_ci_check_evidence");
-  const checks=verifiedRequiredChecks({runs:list.check_runs,
+  const bound=await fetchBoundChecks({github,owner,repo,checks:list.check_runs,headSha,trustedWorkflowId});
+  const checks=verifiedRequiredChecks({runs:bound,
    totalCount:list.total_count,headSha,requiredNames,trustedAppId,trustedWorkflowId});
   if(!checks)return denied("unverified_ci_check_provenance");
   const after=await getPr();
