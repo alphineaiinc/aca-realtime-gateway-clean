@@ -55,6 +55,26 @@ test("isolated product migration chain and verified onboarding",async()=>{
  assert.equal((await pool.query("SELECT count(*)::int AS n FROM aca_customer_requests WHERE id=$1 AND tenant_id=$2",[id,otherContext.tenantId])).rows[0].n,0);
  await assert.rejects(pool.query("INSERT INTO aca_request_outbox(request_id,tenant_id) VALUES($1,$2)",[id,other.rows[0].id]));
 
+// Real PostgreSQL permission denial with a transaction-local disposable role.
+ const permissionClient=await pool.connect();
+ try {
+ await permissionClient.query("BEGIN");
+ await permissionClient.query("CREATE ROLE aca_ci_acceptance_fixture NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE");
+ await permissionClient.query("GRANT USAGE ON SCHEMA public TO aca_ci_acceptance_fixture");
+ await permissionClient.query("GRANT SELECT ON public.master_tenants TO aca_ci_acceptance_fixture");
+ await permissionClient.query("SET LOCAL ROLE aca_ci_acceptance_fixture");
+ assert.equal((await permissionClient.query("SELECT current_user AS role")).rows[0].role,"aca_ci_acceptance_fixture");
+ assert.ok((await permissionClient.query("SELECT count(*) FROM public.master_tenants")).rows.length===1);
+ for(const sql of ["SELECT * FROM public.aca_business_identities","UPDATE public.master_tenants SET business_name='denied' WHERE false","DELETE FROM public.aca_customer_requests WHERE false","INSERT INTO public.aca_request_outbox(request_id,tenant_id) VALUES(0,0)"]){
+ await permissionClient.query("SAVEPOINT denied_operation");
+ await assert.rejects(permissionClient.query(sql),e=>e.code==="42501");
+ await permissionClient.query("ROLLBACK TO SAVEPOINT denied_operation");
+ }
+ await permissionClient.query("ROLLBACK");
+ assert.equal((await permissionClient.query("SELECT count(*)::int AS n FROM pg_roles WHERE rolname='aca_ci_acceptance_fixture'")).rows[0].n,0);
+ console.log("Disposable restricted role: permitted read, four denied operations, rollback passed");
+ }finally{await permissionClient.query("ROLLBACK");permissionClient.release();}
+ 
 // Exercise every authored workflow against real PostgreSQL inside a rollback-only transaction.
  const fixtureClient=await pool.connect();
  try {
