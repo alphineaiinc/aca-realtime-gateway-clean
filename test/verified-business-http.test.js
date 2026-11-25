@@ -3,11 +3,11 @@ const {test}=require("node:test");const assert=require("node:assert/strict");con
 const fs=require("node:fs"),vm=require("node:vm"),path=require("node:path");
 const {createRequire}=require("node:module");
 const secret="fixture-secret-".repeat(4);
-async function fixture(run){
+async function fixture(run,env={},overrides={}){
  const calls=[];const filename=path.resolve(__dirname,"../src/routes/tenant.js");const module={exports:{}};
  const real=createRequire(filename);
  const pool={query:async(sql,p)=>{calls.push([sql,p]);return {rows:sql.includes("aca_business_identities")?(p[1]===7?[{tenant_id:7}]:[]):[{id:1,details:{reason:"fixture"}}]}}};
- vm.runInNewContext(fs.readFileSync(filename,"utf8"),{module,exports:module.exports,require:n=>n==="../db/pool"?pool:real(n),process:{env:{JWT_SECRET:secret}},console,Buffer,Map,Date});
+ vm.runInNewContext(fs.readFileSync(filename,"utf8"),{module,exports:module.exports,require:n=>n==="../db/pool"?pool:Object.hasOwn(overrides,n)?overrides[n]:real(n),process:{env:{JWT_SECRET:secret,...env}},console,Buffer,Map,Date});
  const app=express();app.use(express.json());app.use("/tenant",module.exports);
  const server=app.listen(0,"127.0.0.1");await new Promise(r=>server.once("listening",r));
  try{await run("http://127.0.0.1:"+server.address().port,calls)}finally{await new Promise(r=>server.close(r))}
@@ -38,3 +38,21 @@ test("profile ingress is rate-limited before database access",()=>fixture(async(
  assert.equal(last.status,429);
  assert.ok(calls.length<=60); // 30 allowed requests, each performs identity and profile queries
 }));
+
+test("controlled notification mode prevents login and onboarding email dispatch over HTTP",async()=>{
+ const {createMailSender}=require("../src/voice/requestNotificationWorker");
+ let attempts=0;
+ const env={ACA_VERIFIED_LOGIN_ENABLED:"true",ACA_ONBOARDING_ENABLED:"true",PROVISION_API_KEY:"fixture-key",ACA_STAGING_EMAIL_ONLY:"true"};
+ await fixture(async(url,calls)=>{
+  const post=(route,body,headers={})=>fetch(url+"/tenant/"+route,{method:"POST",headers:{"Content-Type":"application/json",...headers},body:JSON.stringify(body)});
+  const login=await post("login/start",{email:"owner@example.test"});
+  assert.equal(login.status,202);
+  assert.equal(calls.length,0);
+  const denied=await post("onboarding/start",{email:"owner@example.test",business_name:"Fixture"});
+  assert.equal(denied.status,401);
+  assert.equal(calls.length,0);
+  const onboarding=await post("onboarding/start",{email:"owner@example.test",business_name:"Fixture"},{"x-api-key":"fixture-key"});
+  assert.equal(onboarding.status,400);
+  assert.equal(attempts,2);
+ },env,{"../voice/requestNotificationWorker":{createMailSender:()=>{attempts++;return createMailSender(env);}}});
+});
