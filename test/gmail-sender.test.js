@@ -35,5 +35,5 @@ test("Empty notification queue never initializes a provider",async()=>{
  const statements=[];
  const client={query:async sql=>{statements.push(sql);return {rows:[]};},release(){statements.push("release");}};
  assert.equal(await deliverOne({pool:{connect:async()=>client}}),false);
- assert.ok(statements[0].includes("INSERT INTO public.aca_request_email_reservations"));assert.equal(statements.at(-1),"release");
+ assert.deepEqual(statements,[]); // No configured staging entitlement: no DB or provider access.
 });
