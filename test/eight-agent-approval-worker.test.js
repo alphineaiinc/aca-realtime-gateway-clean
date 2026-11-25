@@ -40,3 +40,13 @@ test('queue worker does not release proposal after lease loss',async()=>{
  const {worker}=fixture({denyFinish:true});
  await assert.rejects(worker.runOnce({scope,role:'backend-developer',credential:'fixture'}),/Lease denied/);
 });
+
+test('S3-07 invalid and regressed approval clocks fail closed',async()=>{
+ let now=1000;const policy=createApprovalPolicy({clock:()=>now,ttlMs:1000,authenticate:async()=>({id:'owner',product:scope.product,repository:scope.repository,permission:'owner.approval'})});
+ const input={scope,operation:'queue.recover',evidence:'b'.repeat(64)};
+ const req=policy.request(input);
+ for(const invalid of [NaN,Infinity,-1,999,1000.5,2000]){
+  now=invalid;await assert.rejects(policy.recordDecision({id:req.id,binding:req.binding,decision:'approved'}));assert.equal(policy.executionAllowed(),false);
+ }
+ for(const invalid of [NaN,Infinity,-1,1000.5,Number.MAX_SAFE_INTEGER]){now=invalid;assert.throws(()=>policy.request(input),/clock/);}
+});
