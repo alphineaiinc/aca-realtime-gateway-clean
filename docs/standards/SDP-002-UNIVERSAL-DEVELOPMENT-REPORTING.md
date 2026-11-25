@@ -1,6 +1,6 @@
 # Alphine AI — Universal Development and Reporting Standard (SDP-002)
 
-Version 1.0 | Owner approved 2026-11-24 subject to compatibility verification | Working standard on draft PR #126; not merged or enforced branch policy.
+Version 1.1 | Owner approved 2026-11-24 subject to compatibility verification | Working standard on draft PR #126; not merged or enforced branch policy.
 
 ## Authority and compatibility
 Applies to all current and future Alphine AI projects. Companion to [SDP-001 v1.1](../PHASE2_STANDARD_DEVELOPMENT_PROCEDURE.md), reviewed at blob 9857107a88fbc01b991c054dc95bd61b3b472578. SDP-001 gates 0–5, per-item record, fail-closed rules, independent review, exact-head validation, stop conditions and specific owner authorization remain mandatory. In conflict apply the stricter restriction and escalate. This standard grants no operational permission.
@@ -39,3 +39,6 @@ Follow SDP-001 v1.1 and SDP-002 v1.0 at the approved repository revision. On Pro
 
 ## Adoption
 Owner approved conditional adoption on 2026-11-24. Compatibility verified against actual SDP-001 v1.1; no weakening of gates. Draft publication only; no merge/deployment or task baseline change. ChatGPT project instructions must be applied separately by owner; repository publication alone does not alter them.
+
+## v1.1 owner-approved reporting efficiency amendment
+Routine batch updates must be concise: actual deliverables and changed IDs, overall progress/counts, essential validation evidence, blockers/decisions, spend and next actionable Proceed control. Full eleven-section reporting, complete permanent checklist, story charts, daily accountability, roadmap and all DRS-001 metrics are mandatory at daily close (Goodnight), explicit full status/audit requests, or when material risk requires detail. This amendment supersedes conflicting per-batch presentation requirements, not evidence collection, tracker updates, security gates or authorization. Apply universally to all Alphine AI projects. Do not repeat unchanged detail in chat. Preserve full underlying evidence and daily records. Owner directive 2026-11-24.
