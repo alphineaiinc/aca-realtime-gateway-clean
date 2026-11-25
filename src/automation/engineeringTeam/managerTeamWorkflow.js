@@ -13,11 +13,12 @@ function createManagerTeamWorkflow({manager,maxRoles=8}={}){
    active=true;const results=[];
    try{
     const task=manager.createTask({product,repository,sha,subject});
+    if(!task||typeof task.id!=='string'||!task.id.trim())throw Error('Invalid task identity');
     for(const role of order){
      if(stopped)return Object.freeze({state:'stopped',completed:results.length,releaseApproved:false,executionAuthorized:false});
      const proposal=await manager.propose({taskId:task.id,role,action:getRole(role).action});
      if(stopped)return Object.freeze({state:'stopped',completed:results.length,releaseApproved:false,executionAuthorized:false});
-     if(!proposal||proposal.taskId!==task.id||proposal.role!==role||proposal.approval!==false)throw Error('Agent handoff denied');
+     if(!proposal||proposal.taskId!==task.id||proposal.role!==role||proposal.action!==getRole(role).action||proposal.approval!==false)throw Error('Agent handoff denied');
      results.push(Object.freeze({role,output:validateProposal(role,proposal.output),approval:false}));
     }
     return Object.freeze({state:'completed',taskId:task.id,completed:results.length,proposals:Object.freeze(results),releaseApproved:false,executionAuthorized:false});
