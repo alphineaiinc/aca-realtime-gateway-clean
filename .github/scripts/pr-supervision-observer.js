@@ -108,6 +108,10 @@ async function observe({github, owner, repo, prNumber, issueNumber,
       correction = Object.freeze({...correction,unchangedFailureCount:typeof fingerprint==="string"&&fingerprint.length>=8&&fingerprint.length<=256&&typeof correction.lastFailureFingerprint==="string"?Number(fingerprint===correction.lastFailureFingerprint):null});
     } catch { correction = Object.freeze({...correction,unchangedFailureCount:null}); }
   }
+  const {data: latestPr} = await github.rest.pulls.get({owner,repo,pull_number:prNumber});
+  if (!sameRepo(latestPr,repository.id) || latestPr.number!==pr.number ||
+      latestPr.head?.sha!==headSha || latestPr.state!==pr.state || latestPr.draft!==pr.draft)
+    throw new Error("stale_pr_observation");
   return evaluatePrSupervision({
     issue: {number: issue.number, state: issue.state, eligible: eligibleIssue(issue)},
     pr: {number: pr.number, state: pr.state, headSha, issueNumber, draft: pr.draft},
