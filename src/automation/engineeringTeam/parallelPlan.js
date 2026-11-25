@@ -16,9 +16,9 @@ function createParallelPlan({execute,maxParallel=2}={}){
      if(stopped)return Object.freeze({state:'stopped',completed:results.length,releaseApproved:false});
      const settled=await Promise.allSettled(stage.slice(i,i+maxParallel).map(async role=>{
       const proposal=await execute(Object.freeze({taskId,role,action:getRole(role).action,prior}));
-      if(!proposal||proposal.role!==role||proposal.approval!==false||proposal.taskId!==taskId)throw Error('Invalid proposal');
+      if(!proposal||proposal.role!==role||proposal.action!==getRole(role).action||proposal.approval!==false||proposal.taskId!==taskId)throw Error('Invalid proposal');
       const {validateProposal}=require('./contracts');
-      return Object.freeze({taskId,role,approval:false,output:validateProposal(role,proposal.output)});
+      return Object.freeze({taskId,role,action:getRole(role).action,approval:false,output:validateProposal(role,proposal.output)});
      }));
      if(stopped||settled.some(x=>x.status!=='fulfilled'))return Object.freeze({state:stopped?'stopped':'failed',completed:results.length,releaseApproved:false});
      results.push(...settled.map(x=>x.value));
