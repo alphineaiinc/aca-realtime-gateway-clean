@@ -11,20 +11,22 @@ const settings={owner:"alphineaiinc",repo:"aca-realtime-gateway-clean",
 const pr={number:21,state:"open",draft:false,head:{sha:head,repo:{id:repoId}},
  base:{sha:"b".repeat(40),repo:{id:repoId}}};
 const repo={id:repoId,full_name:"alphineaiinc/aca-realtime-gateway-clean"};
-function check(conclusion="failure"){return {name:"Node tests",status:"completed",conclusion,
+function check(conclusion="failure"){return {id:100,name:"Node tests",status:"completed",conclusion,
  head_sha:head,app:{id:15368},
- check_suite:{workflow_run:{workflow_id:5503,head_sha:head,id:99,run_attempt:1}}};}
+ check_suite:{id:88}};}
 function mock({initial=pr,after=initial,repos=repo,runs=[check()],totalCount=runs.length,
  fail=null}={}){
  const calls=[];let prs=0;
+ const run={id:99,workflow_id:5503,head_sha:head,check_suite_id:88,run_attempt:1,status:"completed",conclusion:runs[0]?.conclusion};
  const get=(kind,value)=>async params=>{calls.push({kind,params});
   if(kind===fail)throw Error("offline");return {data:value};};
  return {calls,github:{rest:{
   repos:{get:get("repository",repos)},
   pulls:{get:async params=>{calls.push({kind:"pull",params});if(fail==="pull")throw Error("offline");
    return {data:++prs===1?initial:after};}},
-  checks:{listForRef:get("checks",{check_runs:runs,total_count:totalCount})}
- }}};
+  checks:{listForRef:get("checks",{check_runs:runs,total_count:totalCount})},
+  actions:{listWorkflowRuns:get("workflows",{workflow_runs:[run],total_count:1}),getWorkflowRun:get("workflow",run)}
+ },request:async(route,params)=>{calls.push({kind:"attempt",params});assert.match(route,/attempts/);return {data:{total_count:runs.length,jobs:runs.map(c=>({id:200,run_id:99,run_attempt:1,head_sha:head,check_run_url:"https://api.github.com/repos/fixture/aca/check-runs/"+c.id,name:c.name,status:c.status,conclusion:c.conclusion}))}};}}};
 }
 test("verified failing CI yields bounded correction packet without dispatch",async()=>{
  const m=mock();
@@ -36,7 +38,7 @@ test("verified failing CI yields bounded correction packet without dispatch",asy
  assert.equal(p.dispatched,false);
  assert.equal(p.mergeAuthorized,false);
  assert.equal(p.deployAuthorized,false);
- assert.deepEqual(m.calls.map(x=>x.kind),["repository","pull","checks","pull"]);
+ assert.deepEqual(m.calls.map(x=>x.kind),["repository","pull","checks","workflows","attempt","workflow","pull"]);
 });
 test("CI passing but no independent review cannot grant readiness",async()=>{
  const m=mock({runs:[check("success")]});
