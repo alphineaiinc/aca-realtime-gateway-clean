@@ -14,3 +14,8 @@ CREATE TABLE IF NOT EXISTS public.aca_request_email_reservations (
 REVOKE ALL ON public.aca_request_email_reservations FROM PUBLIC;
 CREATE INDEX IF NOT EXISTS aca_request_email_reservations_state_idx
  ON public.aca_request_email_reservations(state,reserved_at);
+
+-- A single staging acceptance entitlement, never reset by the worker.
+ALTER TABLE public.aca_request_email_reservations ADD COLUMN IF NOT EXISTS staging_attempt boolean;
+CREATE UNIQUE INDEX IF NOT EXISTS aca_request_email_one_staging_attempt
+ ON public.aca_request_email_reservations(staging_attempt) WHERE staging_attempt IS TRUE;
