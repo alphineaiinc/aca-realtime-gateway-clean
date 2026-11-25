@@ -34,6 +34,24 @@ jobs:
       - name: Dependency vulnerability assessment
         run: |
           npm audit --omit=dev --audit-level=high --json > marketplace-audit.json
+      - name: Emit public dependency files for verified Git transfer
+        if: always()
+        run: |
+          node - <<'NODE'
+          const fs=require('node:fs');
+          const crypto=require('node:crypto');
+          for(const name of ['package.json','package-lock.json']){
+            const data=fs.readFileSync(name,'utf8');
+            const parsed=JSON.parse(data);
+            if(name==='package-lock.json'){
+              for(const p of Object.values(parsed.packages||{})){
+                if(p.resolved && !p.resolved.startsWith('https://registry.npmjs.org/'))throw Error('Unexpected registry');
+              }
+            }
+            console.log('ACA_FILE_HASH '+name+' '+crypto.createHash('sha256').update(data).digest('hex'));
+            for(let i=0;i<data.length;i+=2000)console.log('ACA_FILE_CHUNK '+name+' '+i+' '+JSON.stringify(data.slice(i,i+2000)));
+          }
+          NODE
       - uses: actions/upload-artifact@v4
         if: always()
         with:
