@@ -3,7 +3,7 @@ const {test}=require('node:test');
 const assert=require('node:assert/strict');
 const {createParallelPlan,stages}=require('../src/automation/engineeringTeam/parallelPlan');
 const {contract}=require('../src/automation/engineeringTeam/contracts');
-const proposal=({taskId,role})=>({taskId,role,approval:false,output:Object.fromEntries(contract(role).fields.map(f=>[f,['fixture']]))});
+const proposal=({taskId,role,action})=>({taskId,role,action,approval:false,output:Object.fromEntries(contract(role).fields.map(f=>[f,['fixture']]))});
 test('eight roles execute with stage barriers and at most two concurrent proposals',async()=>{
  let active=0,peak=0;const seen=[];
  const plan=createParallelPlan({execute:async input=>{
@@ -24,4 +24,14 @@ test('stop and overlapping runs are denied',async()=>{
  const plan=createParallelPlan({execute:async input=>{await wait;return proposal(input);}});
  const run=plan.run({taskId:'fixture'});await assert.rejects(plan.run({taskId:'other'}),/denied/);plan.stop();release();
  assert.equal((await run).state,'stopped');await assert.rejects(plan.run({taskId:'fixture'}),/denied/);
+});
+
+test('S3-04/06 rejects action substitution at every role and blocks downstream stages',async()=>{
+ for(const [index,stage] of stages.entries())for(const target of stage){
+  const seen=[];const plan=createParallelPlan({execute:async input=>{seen.push(input.role);return {...proposal(input),action:input.role===target?'merge':input.action};}});
+  const result=await plan.run({taskId:'fixture'});
+  assert.equal(result.state,'failed');assert.equal(result.releaseApproved,false);assert.equal(plan.executionAllowed(),false);
+  assert.equal(result.completed,stages.slice(0,index).flat().length);
+  for(const downstream of stages.slice(index+1).flat())assert.equal(seen.includes(downstream),false);
+ }
 });
