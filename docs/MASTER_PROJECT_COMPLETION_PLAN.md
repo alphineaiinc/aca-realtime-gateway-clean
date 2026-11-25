@@ -7,10 +7,10 @@ Original parent #4 defines four phases. #14/#16 Phase 1; #20/#23 supervision/cor
 
 ## Baseline accounting
 - P1: 3/4 closed; 1 implementation evidence, 0 open, 0 blocked.
-- P2: 2/34 closed; 23 implementation evidence, 1 open, 8 blocked.
+- P2: 2/34 closed; 24 implementation evidence, 0 open, 8 blocked.
 - P3: 1/3 closed; 0 implementation evidence, 2 open, 0 blocked.
 - P4: 0/3 closed; 0 implementation evidence, 1 open, 2 blocked.
-- Total 6/44 closed (13.6%); 38 outstanding, including 24 with implementation/partial evidence. Not an estimate of code written.
+- Total 6/44 closed (13.6%); 38 outstanding, including 25 with implementation/partial evidence. Not an estimate of code written.
 - Remaining effort estimate 67–144 engineering hours, sum of row ranges; planning assumption, not measured or promised; conditional defects, approval waiting, independent reviewer availability and cost/credential constraints may extend it. Estimates include verification of existing work, not rebuilding foundations.
 
 ## Permanent checklist
@@ -42,7 +42,7 @@ Original parent #4 defines four phases. #14/#16 Phase 1; #20/#23 supervision/cor
 | P2-20 | B | Operational sandbox provenance, teardown and fault acceptance | #146/#118; source CI only | P2-19 | 3–6 | Protected runner/image/workflow, all five fault outcomes, quarantine and no residual resources |
 | P2-21 | B | Staging isolation, database least privilege and authorized schema acceptance | #118 D; disposable CI not operational | P2-14,P2-12 | 3–6 | Effective roles/write denial, separation from production, authorized migration/rollback |
 | P2-22 | D | Operator runbook, observability, retention and trusted dependency/runtime baseline | #142 c213fa7 CI 45497328662 passed; reconciled runbook | P2-14 | 2–4 | Review current runbook, health, alerts, logs, Node/actions pins and rollback |
-| P2-23 | O | Exact-SHA dependency map and integrated release candidate | #118 C/D; inventory below | P1-04,P2-01..22 | 2–4 | Reconcile superseded drafts; no duplicate merges; all required CI and scans |
+| P2-23 | D | Exact-SHA dependency map and integrated release candidate | #118 C/D; inventory below | P1-04,P2-01..22 | 2–4 | Reconcile superseded drafts; no duplicate merges; all required CI and scans |
 | P2-24 | B | Independent final security review and disposition | #22/#24/#118; all three principal PR CI green only | P2-23 | 3–6 | Independent reviewer records exact SHA, findings and clearance; fix release blockers and re-review |
 | P2-25 | B | Owner-authorized integration, release and restricted Manager activation | #118 D/G; no authorization yet | P2-24,P2-20,P2-21 | 2–4 | Explicit merge/deploy/settings approvals; health and stop/rollback; no live activation before gates |
 | P2-26 | D | Project Manager: intake, dependencies, progress/escalation | #118 F; #142 offline role foundation | P2-14,P2-25 | 1–2 | Role-specific exact-SHA tests, identities, tool permissions and operational demonstration |
@@ -170,3 +170,6 @@ P2-03: #21 6573bee1c668742259beee6768a5f91fc86090d9 CI 45497692213, observer 454
 - Owner action 4 (later): separately authorize specific protected trust setup and isolated staging tests for P2-12/13/20/21 only after identity, scope, cost and rollback prerequisites are verified. No operational signing, credentials or migration authorized now.
 - B02 permitted preparation: P2-11 semantic review preparation, P2-23 exact-SHA dependency reconciliation and integrated candidate design (no merges). P2-24 final security disposition remains blocked. B01 outstanding gates carry forward, not waived. Do not repeat accepted checks or create new acceptance criteria.
 - Daily accountability: this execution is CI verification and handoff documentation, zero source/test commits, zero closures; no actual failure established at checkpoint. CAD $0; restrictions preserved; email deferred.
+
+## B02 preparation checkpoint — 2026-11-24
+P2-23 exact revision manifest 0e15b46b5c5a73e1957c623770b274c312ba3e55 pins 12 drafts, comparison bases and prior CI evidence; two observed overlapping paths (CI workflow and emailer). Proposed dependency order only; no combined candidate or mergeability verification. Advance O to D. P2-11 reviewer acceptance packet a0a8c258c696ade593ded7ac87e94d49813310e3 records exact #21 source boundary observations and independent review questions; remains D. No independent approval or operational trust established. All B01 gates carry forward. Current totals 6 C / 25 D / 3 O / 10 B = 44; 13.6% accepted, 70.5% evidence or accepted. Three preparation/documentation commits, no source fixes or new tests required/claimed in this preparation; no demonstrated new release defect corrected. CAD $0, no merges, deployments, migrations, credentials, signing or dispatch; email deferred.
