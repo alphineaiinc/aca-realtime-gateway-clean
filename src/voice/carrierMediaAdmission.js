@@ -24,7 +24,7 @@ function createCarrierMediaAdmission({authenticate,lookupBinding,store}){
  async consume(input,token){
   if(typeof token!=="string"||!/^[A-Za-z0-9_-]{43}$/.test(token))return null;
   const v=await verified(input);if(!v)return null;
-  return await store.consume({...v,tokenHash:digest(token)})===true?Object.freeze(v):null;
+  return await store.consume({...v,tokenHash:digest(token)})===true?Object.freeze({key:v.key,tenantId:v.tenantId}):null;
  }
  });
 }
