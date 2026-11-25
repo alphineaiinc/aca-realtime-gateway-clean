@@ -8,10 +8,12 @@ const enums = {
   workflowStatus: new Set(["idle", "collecting", "ready_for_confirmation", "completed", "handoff_required"]),
   branch: new Set(["main", "ack", "greeting"]),
   status: new Set(["queued", "initiated", "ringing", "in-progress", "completed", "busy", "failed", "no-answer", "canceled"]),
+  acceptanceOutcome: new Set(["disabled", "scope-denied", "transport-unconfigured", "database-denied", "fixture-denied", "oauth-denied", "ready", "sent", "not-claimed", "failed"]),
   streamEvent: new Set(["stream-started", "stream-stopped", "stream-error"]),
 };
 enums.previousState = enums.state;
 const diagnosticEvents = new Map([
+  ["ACA_STAGING_EMAIL_ACCEPTANCE", "ACA_STAGING_EMAIL_ACCEPTANCE"],
   ["TTS_PROVIDER_FAILURE", "TTS_PROVIDER_FAILURE"],
   ["❌ [stt] Streaming STT error:", "STT_PROVIDER_FAILURE"],
   ["❌ searchKB error (DB or embeddings):", "RETRIEVAL_FAILURE"],
