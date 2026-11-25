@@ -8,6 +8,7 @@ test("isolated product migration chain and verified onboarding",async()=>{
  try{
  await pool.query("CREATE TABLE public.master_tenants(id INTEGER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,business_name TEXT,preferred_lang TEXT,region TEXT); CREATE TABLE public.billing_invoices(id INTEGER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,tenant_id INTEGER,amount_usd NUMERIC,status TEXT); CREATE TABLE public.analytics_events(id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,tenant_id INTEGER,event_type TEXT,quantity NUMERIC,unit TEXT,meta JSONB,created_at TIMESTAMP DEFAULT NOW());");
  for(const name of fs.readdirSync("migrations").filter(n=>/^0(0[7-9]|1[0-8])_.*\.sql$/.test(n)).sort())await pool.query(fs.readFileSync("migrations/"+name,"utf8"));
+ await pool.query(fs.readFileSync("migrations/draft_onboarding_challenges.sql","utf8"));
  const {issueChallenge}=require("../src/security/onboardingChallenge");
  const {provisionVerifiedBusiness}=require("../src/security/provisionVerifiedBusiness");
  const {prepareRouting}=require("../src/security/prepareRouting");
@@ -82,6 +83,16 @@ test("isolated product migration chain and verified onboarding",async()=>{
   assert.equal((await capClient.query("SELECT count(*)::int AS n FROM public.aca_request_email_reservations WHERE staging_attempt IS TRUE")).rows[0].n,1);
   await capClient.query("ROLLBACK");
  }finally{await capClient.query("ROLLBACK");capClient.release();}
+ // Verify the same schema and entitlement cannot claim from a differently named database.
+ const nonStaging=new Pool({connectionString:"postgres://onboarding_test:onboarding_test_only@localhost:5432/onboarding_test"});
+ try{
+ await nonStaging.query("CREATE TABLE IF NOT EXISTS public.aca_request_outbox(request_id bigint,tenant_id bigint,delivered_at timestamptz,created_at timestamptz DEFAULT now()); CREATE TABLE IF NOT EXISTS public.aca_notification_recipients(tenant_id bigint,email text,is_active boolean,verified_at timestamptz);");
+ await nonStaging.query(fs.readFileSync("migrations/018_request_email_reservations.sql","utf8"));
+ await nonStaging.query("INSERT INTO public.aca_request_outbox(request_id,tenant_id) VALUES($1,$2)",[id,tenantId]);
+ await nonStaging.query("INSERT INTO public.aca_notification_recipients(tenant_id,email,is_active,verified_at) VALUES($1,$2,true,now())",[tenantId,email]);
+ assert.equal(await deliverOne({pool:nonStaging,sendMail:async()=>{throw Error("non-staging send");}}),false);
+ assert.equal((await nonStaging.query("SELECT count(*)::int AS n FROM public.aca_request_email_reservations")).rows[0].n,0);
+ }finally{await nonStaging.end();}
  // Correct fixture configuration cannot resend a reserved request.
  const scopeKeys=["ACA_STAGING_EMAIL_ONLY","ACA_STAGING_EMAIL_TENANT_ID","ACA_STAGING_EMAIL_REQUEST_ID","ACA_STAGING_EMAIL_RECIPIENT"];
  const priorScope=scopeKeys.map(k=>process.env[k]);
