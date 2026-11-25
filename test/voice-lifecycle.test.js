@@ -65,3 +65,24 @@ test("parallel sessions isolate interruption, transcript and terminal cleanup", 
  assert.equal(b.session.state,STATES.AWAITING_INPUT);
  }finally{a.controller.handleCallEnded(a.callSid);b.controller.handleCallEnded(b.callSid);}
 });
+
+test("controller latency counts only accepted speech starts and discards abandoned turns",async()=>{
+ const {getMetricsText}=require("../src/monitor/resilienceMetrics");
+ const count=()=>Number(getMetricsText().match(/aca_voice_response_ms_count (\d+)/)[1]);
+ const before=count();
+ for(const [i,mode] of ["success","cancel","failure","disconnect"].entries()){
+ const {controller:c,session:s,callSid}=await controllerSession(510+i);
+ try{
+ c.handleGreeting(callSid);c.handleSpeak(callSid);c.handleSpeechComplete(callSid);
+ assert.equal(c.handleTranscriptFinal(callSid,"fixture request").shouldProcess,true);
+ assert.ok(Number.isFinite(s.__responseStartedAt));
+ // Use the existing state transition for a composed response; no provider invocation.
+ assert.equal(require("../src/voice/stateMachine").transition(s,STATES.READY_TO_SPEAK,"fixture_reply"),true);
+ if(mode==="success"){assert.equal(c.handleSpeak(callSid),true);assert.equal(c.handleSpeak(callSid),false);}
+ if(mode==="cancel"){assert.equal(c.handleSpeechInterrupted(callSid),true);assert.equal(c.prepareSpeech(callSid),true);assert.equal(c.handleSpeak(callSid),true);}
+ if(mode==="failure"){assert.equal(c.handleSpeechFailed(callSid),true);assert.equal(c.prepareSpeech(callSid),true);assert.equal(c.handleSpeak(callSid),true);}
+ if(mode==="disconnect"){c.handleCallEnded(callSid);assert.equal(c.handleSpeak(callSid),false);}
+ assert.equal(count(),before+1);
+ }finally{c.handleCallEnded(callSid);}
+ }
+});
