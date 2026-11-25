@@ -14,6 +14,20 @@ jobs:
     name: Node tests
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: aca_ci
+          POSTGRES_PASSWORD: disposable-ci-only
+          POSTGRES_DB: aca_sandbox_receipt_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U aca_ci -d aca_sandbox_receipt_ci"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -34,3 +48,39 @@ jobs:
           else
             node --test test/*.test.js
           fi
+      - name: Disposable sandbox receipt PostgreSQL integration
+        env:
+          RUN_SANDBOX_RECEIPT_CI: '1'
+          SANDBOX_RECEIPT_CI_DATABASE_URL: postgresql://aca_ci:disposable-ci-only@127.0.0.1:5432/aca_sandbox_receipt_ci
+        run: node --test test/protected-sandbox-receipts.integration.test.js
+
+  # Candidate-controlled smoke only. NOT an independent or protected attestation.
+  fixed-fixture-container-smoke:
+    name: Fixed fixture container smoke (unreviewed)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Pull exact development image
+        run: docker pull node@sha256:be979e5523c76fa4d5ca4ebd3099078f220aa47ec39c48ad5b5df9314debd6eb
+      - name: Execute fixed fixture only
+        env:
+          FIXTURE_IMAGE: node@sha256:be979e5523c76fa4d5ca4ebd3099078f220aa47ec39c48ad5b5df9314debd6eb
+          HARNESS_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          node - <<'NODE'
+          const {createFixedSandboxHarness}=require('./src/automation/protectedSandbox/fixedHarness');
+          (async()=>{
+            const report=await createFixedSandboxHarness({image:process.env.FIXTURE_IMAGE,harnessSha:process.env.HARNESS_SHA}).run();
+            console.log(JSON.stringify(report));
+            if(report.status!=='passed'||report.cleanupConfirmed!==true||report.executionAuthorized!==false)process.exitCode=1;
+          })().catch(()=>{process.exitCode=1;});
+          NODE
