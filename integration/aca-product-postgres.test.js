@@ -92,6 +92,25 @@ test("isolated product migration chain and verified onboarding",async()=>{
  await nonStaging.query("INSERT INTO public.aca_notification_recipients(tenant_id,email,is_active,verified_at) VALUES($1,$2,true,now())",[tenantId,email]);
  assert.equal(await deliverOne({pool:nonStaging,sendMail:async()=>{throw Error("non-staging send");}}),false);
  assert.equal((await nonStaging.query("SELECT count(*)::int AS n FROM public.aca_request_email_reservations")).rows[0].n,0);
+ const commercialKeys=["ACA_STAGING_EMAIL_ONLY","ACA_PRODUCTION_EMAIL_ENABLED","RENDER_SERVICE_ID","ACA_PRODUCTION_EMAIL_DATABASE","ACA_STAGING_ACCEPTANCE_RUN","ACA_STAGING_ACCEPTANCE_SEND"];
+ const savedCommercial=commercialKeys.map(k=>process.env[k]);
+ try{
+ commercialKeys.forEach(k=>delete process.env[k]);
+ Object.assign(process.env,{ACA_PRODUCTION_EMAIL_ENABLED:"true",RENDER_SERVICE_ID:"srv-d3rfh8umcj7s73cj28c0",ACA_PRODUCTION_EMAIL_DATABASE:"wrong_database"});
+ assert.equal(await deliverOne({pool:nonStaging,sendMail:async()=>{throw Error("wrong database");}}),false);
+ process.env.ACA_PRODUCTION_EMAIL_DATABASE="onboarding_test";
+ assert.equal(await deliverOne({pool,sendMail:async()=>{throw Error("staging crossover");}}),false);
+ let commercialSends=0;
+ const sender=async mail=>{commercialSends++;assert.equal(mail.to,email);return {accepted:[email]};};
+ const outcomes=await Promise.all([deliverOne({pool:nonStaging,sendMail:sender}),deliverOne({pool:nonStaging,sendMail:sender})]);
+ assert.equal(outcomes.filter(Boolean).length,1);
+ assert.equal(commercialSends,1);
+ const ledger=await nonStaging.query("SELECT state,staging_attempt FROM public.aca_request_email_reservations");
+ assert.deepEqual(ledger.rows,[{state:"sent",staging_attempt:null}]);
+ assert.ok((await nonStaging.query("SELECT delivered_at FROM public.aca_request_outbox WHERE request_id=$1 AND tenant_id=$2",[id,tenantId])).rows[0].delivered_at);
+ assert.equal(await deliverOne({pool:nonStaging,sendMail:sender}),false);
+ console.log("Commercial database fencing and concurrent single delivery passed");
+ }finally{commercialKeys.forEach((k,i)=>{if(savedCommercial[i]===undefined)delete process.env[k];else process.env[k]=savedCommercial[i];});}
  }finally{await nonStaging.end();}
  // Correct fixture configuration cannot resend a reserved request.
  const scopeKeys=["ACA_STAGING_EMAIL_ONLY","ACA_STAGING_EMAIL_TENANT_ID","ACA_STAGING_EMAIL_REQUEST_ID","ACA_STAGING_EMAIL_RECIPIENT"];
