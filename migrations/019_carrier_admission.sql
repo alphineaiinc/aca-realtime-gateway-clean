@@ -16,3 +16,16 @@ CREATE TABLE public.aca_carrier_grants (
  FOREIGN KEY(carrier,account_id,called_number) REFERENCES public.aca_carrier_bindings(carrier,account_id,called_number)
 );
 REVOKE ALL ON public.aca_carrier_bindings,public.aca_carrier_grants FROM PUBLIC;
+
+-- Invalidate outstanding grants on revocation or tenant reassignment, including reactivation.
+CREATE FUNCTION public.aca_invalidate_carrier_grants() RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN
+ IF OLD.active IS DISTINCT FROM NEW.active OR OLD.tenant_id IS DISTINCT FROM NEW.tenant_id THEN
+  UPDATE public.aca_carrier_grants SET expires_at=LEAST(expires_at,clock_timestamp())
+   WHERE carrier=OLD.carrier AND account_id=OLD.account_id AND called_number=OLD.called_number AND consumed_at IS NULL;
+ END IF;
+ RETURN NEW;
+END;
+$$;
+CREATE TRIGGER aca_carrier_binding_changed AFTER UPDATE OF active,tenant_id ON public.aca_carrier_bindings
+ FOR EACH ROW EXECUTE FUNCTION public.aca_invalidate_carrier_grants();
