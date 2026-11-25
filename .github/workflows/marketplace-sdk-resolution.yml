@@ -18,6 +18,8 @@ jobs:
         with:
           node-version: '22'
           registry-url: https://registry.npmjs.org
+      - name: Capture existing dependency baseline
+        run: npm audit --omit=dev --json > baseline-audit.json || test -s baseline-audit.json
       - name: Resolve stable SDK and exact lockfile
         run: |
           VERSION=1.32.2
@@ -26,12 +28,16 @@ jobs:
           npm ci --ignore-scripts --no-audit --no-fund
           npm test
       - name: Dependency vulnerability assessment
-        run: npm audit --omit=dev --audit-level=high
+        run: |
+          npm audit --omit=dev --audit-level=high --json > marketplace-audit.json
       - uses: actions/upload-artifact@v4
+        if: always()
         with:
           name: marketplace-sdk-lockfile
           path: |
             package.json
             package-lock.json
+            baseline-audit.json
+            marketplace-audit.json
           retention-days: 1
           if-no-files-found: error
