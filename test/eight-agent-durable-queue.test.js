@@ -81,3 +81,12 @@ test('durable approval owner decision rejects scope mutation during asynchronous
  await assert.rejects(approval.recordDecision({scope:mutable,id:'123e4567-e89b-42d3-a456-426614174000',binding:'b'.repeat(64),credential:'credential',decision:'approved'}),/Identity denied/);
  assert.equal(queries.length,0);
 });
+
+test('role-bound identity cannot manage queue even with manager permission',async()=>{
+ let queries=0;
+ const queue=createDurableQueue({pool:{query:async()=>{queries++;throw Error('unexpected query');},connect:async()=>{queries++;throw Error('unexpected connection');}},scopes:[scope],authenticate:async()=>({...scope,id:'worker',role,permission:'queue.manage'})});
+ for(const operation of ['enqueue','inspectWorkflowStep','expire','cancel','stop','quarantine']){
+  await assert.rejects(queue[operation]({scope,role,credential:'fixture',taskId:'fixture',workflowId:'fixture',workflowStep:0}),/Identity denied/);
+ }
+ assert.equal(queries,0);
+});
