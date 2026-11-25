@@ -37,6 +37,8 @@ test("isolated product migration chain and verified onboarding",async()=>{
  const revoked={...carrierCall,callId:"fixture-3"},revokedToken=await admission.issue(revoked);
  await pool.query("UPDATE aca_carrier_bindings SET active=false");
  assert.equal(await admission.consume(revoked,revokedToken),null);
+ await pool.query("UPDATE aca_carrier_bindings SET active=true");
+ assert.equal(await admission.consume(revoked,revokedToken),null);
  console.log("Carrier durable admission concurrency, expiry and revocation passed");
  const {deliverOne}=require("../src/voice/requestNotificationWorker");
  const {createTenantResolver}=require("../src/voice/tenantResolver");
