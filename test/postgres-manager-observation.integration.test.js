@@ -80,7 +80,7 @@ test('isolated PostgreSQL manager observation acceptance', {
       return new Response(JSON.stringify(payload));
     };
     const runtimes = pools.map(observationPool => createRestrictedManagerRuntime({
-      scope, issue, observationPool, githubToken: 'fixture-token', fetchImpl,
+      scope, issue, observationPool, readStopState:async()=>false, githubToken: 'fixture-token', fetchImpl,
     }));
     assert.equal(requests, 0);
     const first = await runtimes[0].observeEvent(event);
