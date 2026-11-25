@@ -721,14 +721,14 @@ test('isolated PostgreSQL queue: concurrent claims, retries, restart, expiry and
  assert.equal((await pools[1].query('SELECT state FROM engineering_team_tasks WHERE id=$1',[productATask])).rows[0].state,'queued');
  assert.equal((await pools[1].query('SELECT state FROM engineering_team_tasks WHERE id=$1',[productBTask])).rows[0].state,'succeeded');
 
- // Exercise actual read-only runtime transaction separately from the disposable role transaction.
+ // Exercise actual read-only restrictedRuntime transaction separately from the disposable role transaction.
   const {createRestrictedManagerRuntime}=require('../src/automation/engineeringTeam/restrictedManagerRuntime');
-  const runtime=createRestrictedManagerRuntime({scope:recoveryScope,issue:118,githubToken:'fixture-only-token',fetchImpl:async url=>new Response(JSON.stringify(url.includes('/issues/')?{number:118,state:'open',labels:[]}:{total_count:1,workflow_runs:[{id:1,name:'CI',status:'completed',conclusion:'success',head_sha:recoveryScope.sha}]})),readOnlyPool:pools[1],readStopState:async()=>false});
-  const report=await runtime.observe();
-  assert.equal(report.status,'observed');
-  assert.deepEqual(report.governance,{status:'observed',scope:'repository-wide',pending:4,partial:false});
-  assert.equal(report.executionAuthorized,false);
-  assert.equal(report.writeAuthorized,false);
+  const restrictedRuntime=createRestrictedManagerRuntime({scope:recoveryScope,issue:118,githubToken:'fixture-only-token',fetchImpl:async url=>new Response(JSON.stringify(url.includes('/issues/')?{number:118,state:'open',labels:[]}:{total_count:1,workflow_runs:[{id:1,name:'CI',status:'completed',conclusion:'success',head_sha:recoveryScope.sha}]})),readOnlyPool:pools[1],readStopState:async()=>false});
+  const restrictedReport=await restrictedRuntime.observe();
+  assert.equal(restrictedReport.status,'observed');
+  assert.deepEqual(restrictedReport.governance,{status:'observed',scope:'repository-wide',pending:4,partial:false});
+  assert.equal(restrictedReport.executionAuthorized,false);
+  assert.equal(restrictedReport.writeAuthorized,false);
  // Disposable CI privilege proof: a non-login observer role can read only
  // governance rows in its fixed product/repository and cannot mutate anything.
  const observer=await pools[0].connect();
