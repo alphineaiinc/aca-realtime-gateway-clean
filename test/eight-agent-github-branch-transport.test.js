@@ -7,13 +7,14 @@ const scope={product:'aca',repository:'fixture/aca',sha:'a'.repeat(40)};
 const files=[{path:'src/example.js',text:'module.exports=1;',role:'backend-developer'}];
 const plan=createPatchPlanner({scope,files}).plan({role:'backend-developer',edits:[{path:files[0].path,beforeSha256:digest(files[0].text),replacement:'module.exports=2;'}]});
 const [rootTree,subtree,blobSha,newTree,newCommit]=['b','c','d','e','f'].map(c=>c.repeat(40));
-function fixture({allow=true,symlink=false,stale=false,changed=false,fail=false}={}){
+function fixture({allow=true,symlink=false,stale=false,changed=false,fail=false,substitute=false}={}){
  const calls=[];let bases=0;
  const transport=createGitHubBranchTransport({token:'fixture',scope,admit:async()=>allow,fetchImpl:async(url,options)=>{
   const path=url.replace('https://api.github.com/repos/fixture/aca','');
   const method=options.method;const body=options.body?JSON.parse(options.body):null;
   calls.push({path,method,body});assert.equal(options.redirect,'error');
   let value;
+  if(path==='/git/ref/heads/main'&&substitute)files[0].text='substituted';
   if(path==='/git/ref/heads/main')value={object:{sha:(stale||(changed&&++bases>1))?newCommit:scope.sha}};
   else if(path==='/git/commits/'+scope.sha)value={sha:scope.sha,tree:{sha:rootTree}};
   else if(path==='/git/trees/'+rootTree)value={sha:rootTree,truncated:false,tree:[{path:'src',mode:'040000',type:'tree',sha:subtree}]};
@@ -40,4 +41,9 @@ test('stale base, symlink and denied admission never write',async()=>{
 test('changed base prevents ref creation and ambiguous mutation is not retried',async()=>{
  const f=fixture({changed:true});await assert.rejects(f.transport.create({files,plan}),/reconcile/);assert.equal(f.calls.some(c=>c.path==='/git/refs'),false);
  const g=fixture({fail:true});await assert.rejects(g.transport.create({files,plan}),/reconcile/);assert.equal(g.calls.filter(c=>c.path==='/git/refs').length,1);
+});
+
+test('caller inventory substitution during GET cannot authorize a mismatched source',async()=>{
+ const original=files[0].text;const f=fixture({substitute:true});
+ try{await assert.rejects(f.transport.create({files,plan}),/Source denied/);assert.equal(f.calls.some(c=>c.method!=='GET'),false);}finally{files[0].text=original;}
 });
