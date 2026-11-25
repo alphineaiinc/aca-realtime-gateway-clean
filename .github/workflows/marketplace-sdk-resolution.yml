@@ -25,8 +25,10 @@ jobs:
           VERSION=1.32.2
           echo "Resolved SDK: $VERSION"
           npm install --package-lock-only --ignore-scripts --no-audit --no-fund --save-exact "@modelcontextprotocol/sdk@$VERSION"
+          npm audit fix --package-lock-only --ignore-scripts --no-fund || test -s package-lock.json
           npm ci --ignore-scripts --no-audit --no-fund
           npm test
+          git diff -- package.json > dependency-manifest.diff
       - name: Dependency vulnerability assessment
         run: |
           npm audit --omit=dev --audit-level=high --json > marketplace-audit.json
@@ -39,5 +41,6 @@ jobs:
             package-lock.json
             baseline-audit.json
             marketplace-audit.json
+            dependency-manifest.diff
           retention-days: 1
           if-no-files-found: error
