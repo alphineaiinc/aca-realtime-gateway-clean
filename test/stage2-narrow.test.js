@@ -1,0 +1,10 @@
+'use strict';
+const test=require('node:test'),assert=require('node:assert/strict');
+const {run}=require('../.github/scripts/stage2-runtime');
+const {admit}=require('../.github/scripts/stage2-admission');
+const {observeOnce}=require('../../manager/src/automation/engineeringTeam/restrictedManagerOnce');
+const config='a'.repeat(40),start=3000,expires=5000,controlVersion=1000;
+const context={event:'schedule',ref:'refs/heads/main',attempt:'1',repository:'alphineaiinc/aca-realtime-gateway-clean',approved:config,config,enabled:'true',start,expires,controlVersion};
+const base={number:153,state:'open',updated_at:new Date(controlVersion).toISOString(),body:'<!-- aca-stage2:enable:'+config+':'+start+':'+expires+' -->',labels:[{name:'aca:auto/blocked'}]};
+test('admission denies future, expired, oversized, rerun and wrong SHA',()=>{assert.equal(admit({...context,now:4000}),true);for(const p of [{now:2999},{now:5000},{expires:86403001},{attempt:'2'},{approved:'b'.repeat(40)},{controlVersion:3000}])assert.equal(admit({...context,now:4000,...p}),false)});
+test('actual pinned entry point: expiry at inner read and restored marker denied',async()=>{for(const mode of ['expiry','restore','ok']){let now=4000,reads=0,gets=0;const result=await run({context,token:'fixture',clock:()=>now,observeOnce,fetchImpl:async(url,o)=>{assert.equal(o.method,'GET');if(url.endsWith('/issues/153')){reads++;if(mode==='expiry'&&reads===2)now=5000;return new Response(JSON.stringify({...base,updated_at:mode==='restore'?new Date(4000).toISOString():base.updated_at}));}gets++;return new Response(JSON.stringify(url.endsWith('/issues/118')?{number:118,state:'open',labels:[]}:{workflow_runs:[],total_count:0}));}});if(mode==='ok'){assert.equal(result.status,'observed');assert.equal(gets,2);}else{assert.equal(result.status,'denied');assert.equal(gets,0);}}});

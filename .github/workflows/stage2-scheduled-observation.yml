@@ -1,0 +1,46 @@
+name: Stage 2 restricted scheduled observation (draft)
+on:
+  schedule:
+    - cron: '17 * * * *'
+permissions:
+  contents: read
+  issues: read
+  actions: read
+concurrency:
+  group: aca-stage2-restricted-observation
+  cancel-in-progress: false
+jobs:
+  observe:
+    if: github.repository == 'alphineaiinc/aca-realtime-gateway-clean' && github.ref == 'refs/heads/main' && github.run_attempt == 1 && vars.ACA_STAGE2_ENABLED == 'true' && vars.ACA_STAGE2_APPROVED_CONFIG_SHA == github.sha
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+          path: config
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: 6678909c7e9e60c08b0bc56c150e9031900a3984
+          persist-credentials: false
+          path: manager
+      - name: Verify pinned checkouts
+        run: |
+          test "$(git -C config rev-parse HEAD)" = "$GITHUB_SHA"
+          test "$(git -C manager rev-parse HEAD)" = "6678909c7e9e60c08b0bc56c150e9031900a3984"
+      - name: Bounded scheduled observation
+        env:
+          ACA_READ_TOKEN: ${{ github.token }}
+          APPROVED: ${{ vars.ACA_STAGE2_APPROVED_CONFIG_SHA }}
+          ENABLED: ${{ vars.ACA_STAGE2_ENABLED }}
+          START: ${{ vars.ACA_STAGE2_START_MS }}
+          CONTROL_VERSION: ${{ vars.ACA_STAGE2_CONTROL_VERSION_MS }}
+          EXPIRES: ${{ vars.ACA_STAGE2_EXPIRES_MS }}
+        run: |
+          node <<'NODE'
+          const {run}=require('./config/.github/scripts/stage2-runtime');
+          const {observeOnce}=require('./manager/src/automation/engineeringTeam/restrictedManagerOnce');
+          const e=process.env;
+          run({context:{event:e.GITHUB_EVENT_NAME,ref:e.GITHUB_REF,attempt:e.GITHUB_RUN_ATTEMPT,repository:e.GITHUB_REPOSITORY,approved:e.APPROVED,config:e.GITHUB_SHA,enabled:e.ENABLED,start:Number(e.START),controlVersion:Number(e.CONTROL_VERSION),expires:Number(e.EXPIRES)},token:e.ACA_READ_TOKEN,observeOnce}).then(r=>console.log(JSON.stringify({...r,ciEvidence:'historical-pinned-manager-sha'}))).catch(()=>{process.exitCode=1});
+          NODE
