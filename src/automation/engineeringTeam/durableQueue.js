@@ -66,9 +66,10 @@ function createDurableQueue({pool,scopes,authenticate,leaseSeconds=60,fixturePro
    });
   },
   async inspectWorkflowStep({scope,workflowId,workflowStep,credential}){
-   const params=checkScope(scope);await identity(credential,scope,null,'queue.manage');
+   const params=checkScope(scope);const actor=await identity(credential,scope,null,'queue.manage');
    if(typeof workflowId!=='string'||!Number.isSafeInteger(workflowStep)||workflowStep<0||workflowStep>=sequence.length)throw Error('Workflow inspection denied');
    return guarded(params,async client=>{
+    if(await identity(credential,{product:params[0],repository:params[1],sha:params[2]},null,'queue.manage')!==actor)throw Error('Identity denied');
     await assertActive(client,params,sequence[workflowStep]);
     const result=await client.query(`SELECT t.id,t.role,t.state,t.attempts,t.lease_until,
       EXISTS(SELECT 1 FROM engineering_team_proposal_receipts r WHERE r.task_id=t.id) AS has_receipt
@@ -113,14 +114,20 @@ function createDurableQueue({pool,scopes,authenticate,leaseSeconds=60,fixturePro
    });
   },
   async expire({scope,credential}){
-   const params=checkScope(scope);await identity(credential,scope,null,'queue.manage');
-   const result=await pool.query(`WITH candidate AS (SELECT id FROM engineering_team_tasks WHERE product=$1 AND repository=$2 AND head_sha=$3 AND state='running' AND lease_until<=clock_timestamp() ORDER BY lease_until LIMIT 100 FOR UPDATE SKIP LOCKED), task AS (UPDATE engineering_team_tasks t SET state='failed',worker_id=NULL,lease_id=NULL,lease_until=NULL FROM candidate c WHERE t.id=c.id RETURNING t.id), audit AS (INSERT INTO engineering_team_queue_audit(task_id,event) SELECT id,'expired' FROM task) SELECT id FROM task`,params);
+   const params=checkScope(scope);const actor=await identity(credential,scope,null,'queue.manage');
+   return guarded(params,async client=>{
+    if(await identity(credential,{product:params[0],repository:params[1],sha:params[2]},null,'queue.manage')!==actor)throw Error('Identity denied');
+   const result=await client.query(`WITH candidate AS (SELECT id FROM engineering_team_tasks WHERE product=$1 AND repository=$2 AND head_sha=$3 AND state='running' AND lease_until<=clock_timestamp() ORDER BY lease_until LIMIT 100 FOR UPDATE SKIP LOCKED), task AS (UPDATE engineering_team_tasks t SET state='failed',worker_id=NULL,lease_id=NULL,lease_until=NULL FROM candidate c WHERE t.id=c.id RETURNING t.id), audit AS (INSERT INTO engineering_team_queue_audit(task_id,event) SELECT id,'expired' FROM task) SELECT id FROM task`,params);
    return result.rowCount;
+   });
   },
   async cancel({scope,credential,taskId}){
-   const params=checkScope(scope);await identity(credential,scope,null,'queue.manage');
-   const result=await pool.query(`WITH task AS (UPDATE engineering_team_tasks SET state='cancelled',worker_id=NULL,lease_id=NULL,lease_until=NULL WHERE product=$1 AND repository=$2 AND head_sha=$3 AND id=$4 AND state IN ('queued','running') RETURNING id), audit AS (INSERT INTO engineering_team_queue_audit(task_id,event) SELECT id,'cancelled' FROM task) SELECT id FROM task`,[...params,taskId]);
+   const params=checkScope(scope);const actor=await identity(credential,scope,null,'queue.manage');
+   return guarded(params,async client=>{
+    if(await identity(credential,{product:params[0],repository:params[1],sha:params[2]},null,'queue.manage')!==actor)throw Error('Identity denied');
+   const result=await client.query(`WITH task AS (UPDATE engineering_team_tasks SET state='cancelled',worker_id=NULL,lease_id=NULL,lease_until=NULL WHERE product=$1 AND repository=$2 AND head_sha=$3 AND id=$4 AND state IN ('queued','running') RETURNING id), audit AS (INSERT INTO engineering_team_queue_audit(task_id,event) SELECT id,'cancelled' FROM task) SELECT id FROM task`,[...params,taskId]);
    return result.rowCount===1;
+   });
   }
  });
 }
