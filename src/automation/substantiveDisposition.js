@@ -13,7 +13,7 @@ function validateDisposition({envelope,publicKey,expected,now=Math.floor(Date.no
  if(!Number.isSafeInteger(now)||!Number.isSafeInteger(r.issuedAt)||!Number.isSafeInteger(r.expiresAt)||r.issuedAt>now||r.expiresAt<=now||r.expiresAt-r.issuedAt>120)return null;
  if(!["passed","findings","blocked"].includes(r.status)||!Number.isSafeInteger(r.findings)||r.findings<0||(r.status==="passed"&&r.findings!==0)||(r.status==="findings"&&r.findings===0))return null;
  if(publicKey instanceof KeyObject&&publicKey.type!=="public")return null;
- if(typeof publicKey==="string"&&!/^-----BEGIN PUBLIC KEY-----\r?\n/.test(publicKey))return null;
+ if(typeof publicKey==="string"&&!/^-----BEGIN PUBLIC KEY-----\r?\n(?:[A-Za-z0-9+/]+={0,2}\r?\n)+-----END PUBLIC KEY-----\s*$/.test(publicKey))return null;
  if(!(publicKey instanceof KeyObject)&&typeof publicKey!=="string")return null;
  const key=publicKey instanceof KeyObject?publicKey:createPublicKey(publicKey);
  if(key.asymmetricKeyType!=="ed25519"||!verify(null,Buffer.from(JSON.stringify(["aca-substantive-disposition-v1",...fields.map(k=>r[k])])),key,Buffer.from(envelope.signature,"hex")))return null;
