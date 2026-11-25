@@ -8,31 +8,14 @@ const fs = require("fs");
 const path = require("path");
 const archiver = require("archiver");   // ensure available
 
+const { createPostgresRateLimiter } = require("../middleware/postgresRateLimit");
+
 const router = express.Router();
+const billingRateLimit = createPostgresRateLimiter({ pool, scope: "billing", windowMs: 60_000, max: 60 });
 
 
-// ---------------------------------------------------------------------
-// Simple in-memory rate limiter per partner for /pay (3 reqs / 10s)
-// ---------------------------------------------------------------------
-const RATE_WINDOW_MS = 10_000;
-const RATE_MAX = 3;
-const rateBucket = new Map(); // partner_id -> {count, resetAt}
-
-function rateLimit(req, res, next) {
-  const pid = req.partner_id || "anon";
-  const now = Date.now();
-  const bucket = rateBucket.get(pid) || { count: 0, resetAt: now + RATE_WINDOW_MS };
-  if (now > bucket.resetAt) {
-    bucket.count = 0;
-    bucket.resetAt = now + RATE_WINDOW_MS;
-  }
-  bucket.count += 1;
-  rateBucket.set(pid, bucket);
-  if (bucket.count > RATE_MAX) {
-    return res.status(429).json({ ok: false, error: "Rate limit exceeded. Try again shortly." });
-  }
-  next();
-}
+// Stricter payment-write budget, in addition to the general billing budget.
+const paymentRateLimit = createPostgresRateLimiter({ pool, scope: "billing-payment", windowMs: 10_000, max: 3 });
 
 // ---------------------------------------------------------------------
 // Middleware: partner / tenant JWT auth
@@ -52,7 +35,7 @@ function authenticate(req, res, next) {
 // ---------------------------------------------------------------------
 // POST /api/billing/generate – create invoice
 // ---------------------------------------------------------------------
-router.post("/generate", authenticate, async (req, res) => {
+router.post("/generate", authenticate, billingRateLimit, async (req, res) => {
   try {
     const { usage_minutes, ai_tokens } = req.body;
     const invoice = await generateInvoice(
@@ -73,7 +56,7 @@ router.post("/generate", authenticate, async (req, res) => {
 // ---------------------------------------------------------------------
 // GET /api/billing/history – list invoices
 // ---------------------------------------------------------------------
-router.get("/history", authenticate, async (req, res) => {
+router.get("/history", authenticate, billingRateLimit, async (req, res) => {
   try {
     const { status, from, to } = req.query;
     const where = ["tenant_id = $1"];
@@ -103,7 +86,7 @@ router.get("/history", authenticate, async (req, res) => {
 // ---------------------------------------------------------------------
 // POST /api/billing/pay – mark invoice paid (rate-limited)
 // ---------------------------------------------------------------------
-router.post("/pay", authenticate, rateLimit, async (req, res) => {
+router.post("/pay", authenticate, billingRateLimit, paymentRateLimit, async (req, res) => {
   try {
     const { invoice_id, payment_method = "mock", notes = "" } = req.body;
     if (!invoice_id) return res.status(400).json({ ok: false, error: "invoice_id required" });
@@ -163,7 +146,7 @@ router.post("/pay", authenticate, rateLimit, async (req, res) => {
 // ---------------------------------------------------------------------
 // GET /api/billing/status/:id – single invoice
 // ---------------------------------------------------------------------
-router.get("/status/:id", authenticate, async (req, res) => {
+router.get("/status/:id", authenticate, billingRateLimit, async (req, res) => {
   try {
     const invoiceId = parseInt(req.params.id);
     const result = await pool.query(
@@ -185,7 +168,7 @@ router.get("/status/:id", authenticate, async (req, res) => {
 // ---------------------------------------------------------------------
 // GET /api/billing/stats – totals + monthly series
 // ---------------------------------------------------------------------
-router.get("/stats", authenticate, async (req, res) => {
+router.get("/stats", authenticate, billingRateLimit, async (req, res) => {
   try {
     const totals = await pool.query(
       `SELECT
@@ -227,7 +210,7 @@ router.get("/stats", authenticate, async (req, res) => {
 // ---------------------------------------------------------------------
 // GET /api/billing/summary – alias for /stats (Story 11.7)
 // ---------------------------------------------------------------------
-router.get("/summary", authenticate, async (req, res) => {
+router.get("/summary", authenticate, billingRateLimit, async (req, res) => {
   try {
     const totals = await pool.query(
       `SELECT
@@ -269,7 +252,7 @@ router.get("/summary", authenticate, async (req, res) => {
 // ---------------------------------------------------------------------
 // GET /api/billing/export – CSV export of invoices for tenant
 // ---------------------------------------------------------------------
-router.get("/export", authenticate, async (req, res) => {
+router.get("/export", authenticate, billingRateLimit, async (req, res) => {
   try {
     const result = await pool.query(
       `SELECT id, tenant_id, partner_id, amount_usd, status, payment_method,
@@ -301,7 +284,7 @@ router.get("/export", authenticate, async (req, res) => {
 // ---------------------------------------------------------------------
 // POST /api/billing/email/:id – mock email sender
 // ---------------------------------------------------------------------
-router.post("/email/:id", authenticate, async (req, res) => {
+router.post("/email/:id", authenticate, billingRateLimit, async (req, res) => {
   try {
     const id = parseInt(req.params.id);
     const q = await pool.query(
@@ -321,7 +304,7 @@ router.post("/email/:id", authenticate, async (req, res) => {
 // ---------------------------------------------------------------------
 // GET /api/billing/download-all  –  returns ZIP of all invoices for tenant
 // ---------------------------------------------------------------------
-router.get("/download-all", authenticate, async (req, res) => {
+router.get("/download-all", authenticate, billingRateLimit, async (req, res) => {
   try {
     const invoiceDir = path.join(__dirname, "../../public/invoices", String(req.tenant_id));
     if (!fs.existsSync(invoiceDir)) {

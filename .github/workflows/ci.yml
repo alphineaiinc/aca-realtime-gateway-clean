@@ -3,7 +3,7 @@ on:
   pull_request:
     branches: [main]
   push:
-    branches: [main]
+    branches: [main, aca-phase2-reviewer-staging-secret-rollout, aca-p2-b02-isolated-integration]
 permissions:
   contents: read
 concurrency:
@@ -34,3 +34,200 @@ jobs:
           else
             node --test test/*.test.js
           fi
+  postgres-ledger-integration:
+    name: PostgreSQL ledger integration
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: aca_test
+          POSTGRES_PASSWORD: aca_test_only
+          POSTGRES_DB: aca_automation_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U aca_test -d aca_automation_test"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      ACA_TEST_DATABASE_URL: postgresql://aca_test:aca_test_only@localhost:5432/aca_automation_test
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Install dependencies
+        run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Run isolated PostgreSQL integration
+        run: |
+          node --test test/postgres-correction-ledger.integration.test.js
+          node --test test/postgres-role-isolation.integration.test.js
+          node --test test/postgres-repository-rls.integration.test.js
+
+  stripe-receipt-integration:
+    name: stripe-receipt integration
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: aca_ci
+          POSTGRES_PASSWORD: disposable_ci_only
+          POSTGRES_DB: aca_stripe_ci
+        ports:
+          - 5432:5432
+        options: --health-cmd "pg_isready -U aca_ci -d aca_stripe_ci" --health-interval 5s --health-timeout 5s --health-retries 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Install dependencies
+        run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Isolated Stripe receipt PostgreSQL integration
+        env:
+          RUN_STRIPE_RECEIPT_CI: '1'
+          STRIPE_RECEIPT_CI_URL: postgresql://aca_ci:disposable_ci_only@127.0.0.1:5432/aca_stripe_ci
+        run: node --test test/stripe-event-receipt.integration.test.js
+
+  upload-admission-integration:
+    name: upload-admission integration
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: aca_ci
+          POSTGRES_PASSWORD: disposable-ci-only
+          POSTGRES_DB: aca_upload_admission_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U aca_ci -d aca_upload_admission_ci"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Install dependencies
+        run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Isolated upload admission PostgreSQL integration
+        env:
+          RUN_UPLOAD_ADMISSION_CI: '1'
+          UPLOAD_ADMISSION_CI_DATABASE_URL: postgresql://aca_ci:disposable-ci-only@127.0.0.1:5432/aca_upload_admission_ci
+        run: node --test test/upload-admission.integration.test.js
+
+  distributed-rate-limit-integration:
+    name: distributed-rate-limit integration
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: aca_ci
+          POSTGRES_PASSWORD: disposable_ci_only
+          POSTGRES_DB: aca_rate_limit_ci
+        ports:
+          - 5432:5432
+        options: --health-cmd "pg_isready -U aca_ci -d aca_rate_limit_ci" --health-interval 5s --health-timeout 5s --health-retries 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Install dependencies
+        run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Isolated PostgreSQL distributed rate limit test
+        env:
+          RUN_RATE_LIMIT_CI: '1'
+          RATE_LIMIT_CI_DATABASE_URL: postgresql://aca_ci:disposable_ci_only@127.0.0.1:5432/aca_rate_limit_ci
+        run: |
+          node -e "const {Client}=require('pg'); const c=new Client({connectionString:process.env.RATE_LIMIT_CI_DATABASE_URL}); (async()=>{await c.connect(); try {await c.query(require('fs').readFileSync('migrations/draft_aca_rate_limit_buckets.sql','utf8'));} finally {await c.end();}})().catch(e=>{console.error(e.message);process.exitCode=1;})"
+          node --test test/postgres-rate-limit.integration.test.js
+
+  engineering-queue-integration:
+    name: engineering-queue integration
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: aca_ci
+          POSTGRES_PASSWORD: disposable-ci-only
+          POSTGRES_DB: aca_engineering_queue_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U aca_ci -d aca_engineering_queue_ci"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Install dependencies
+        run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Isolated engineering queue PostgreSQL integration
+        env:
+          RUN_ENGINEERING_QUEUE_CI: '1'
+          ENGINEERING_QUEUE_CI_DATABASE_URL: postgresql://aca_ci:disposable-ci-only@127.0.0.1:5432/aca_engineering_queue_ci
+        run: node --test test/eight-agent-durable-queue.integration.test.js
+
+  manager-observation-integration:
+    name: PostgreSQL manager observation acceptance
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: aca_ci
+          POSTGRES_PASSWORD: disposable_ci_only
+          POSTGRES_DB: aca_manager_observation_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U aca_ci -d aca_manager_observation_ci"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Install dependencies
+        run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Verify observation concurrency and replay against PostgreSQL
+        env:
+          RUN_MANAGER_OBSERVATION_CI: '1'
+          MANAGER_OBSERVATION_CI_DATABASE_URL: postgresql://aca_ci:disposable_ci_only@127.0.0.1:5432/aca_manager_observation_ci
+        run: node --test test/postgres-manager-observation.integration.test.js
+
+  # Protected sandbox attestation remains disabled pending independent trust acceptance.

@@ -1,0 +1,60 @@
+name: Phase 2 Isolated CodeQL TTS Scan
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'tts.js'
+      - 'src/voice/elevenLabsUrl.js'
+      - '.github/workflows/phase2-isolated-codeql-tts.yml'
+  push:
+    branches: [aca-p2-b02-isolated-integration]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  isolated-codeql:
+    name: Offline JavaScript CodeQL SARIF (no upload)
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download standalone CodeQL CLI and queries
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl --fail --location --retry 3 --silent --show-error \
+            https://github.com/github/codeql-cli-binaries/releases/latest/download/codeql-linux64.zip \
+            -o /tmp/codeql-linux64.zip
+          unzip -q /tmp/codeql-linux64.zip -d /tmp
+          /tmp/codeql/codeql version
+          /tmp/codeql/codeql pack download codeql/javascript-queries
+      - name: Build isolated JavaScript analysis database
+        shell: bash
+        run: |
+          set -euo pipefail
+          /tmp/codeql/codeql database create /tmp/aca-codeql-db \
+            --language=javascript-typescript \
+            --source-root=. \
+            --overwrite
+      - name: Analyze without uploading findings
+        shell: bash
+        run: |
+          set -euo pipefail
+          /tmp/codeql/codeql database analyze /tmp/aca-codeql-db \
+            codeql/javascript-queries \
+            --format=sarif-latest \
+            --output=codeql-isolated.sarif \
+            --threads=2
+          jq -r '
+            [.runs[].results[]? | select(.ruleId == "js/request-forgery")] | length
+            | "js/request-forgery results: " + tostring
+          ' codeql-isolated.sarif
+          echo "::notice::This is an isolated analysis; no findings are uploaded or dismissed."
+      - name: Upload isolated SARIF evidence artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: phase2-isolated-codeql-tts-sarif
+          path: codeql-isolated.sarif
+          if-no-files-found: warn
+          retention-days: 14

@@ -9,6 +9,8 @@ const pool = require("../db/pool");
 const { synthesizeSpeech } = require("../../tts");
 
 const router = express.Router();
+const { createPostgresRateLimiter } = require("../middleware/postgresRateLimit");
+const sharedLimit = createPostgresRateLimiter({pool: require("../db/pool"), scope: "voice-api", max: 30, windowMs: 60000});
 
 // Ensure JSON bodies are parsed for this router
 router.use(express.json());
@@ -90,7 +92,7 @@ function normalizeProfilePayload(body = {}) {
 // GET /api/voice/profile
 // (mounted in index.js as app.use("/api/voice", router))
 // ---------------------------------------------------------------------------
-router.get("/profile", authenticate, async (req, res) => {
+router.get("/profile", authenticate, sharedLimit, async (req, res) => {
   const tenantId = req.tenant_id;
 
   try {
@@ -141,7 +143,7 @@ router.get("/profile", authenticate, async (req, res) => {
 // ---------------------------------------------------------------------------
 // POST /api/voice/profile
 // ---------------------------------------------------------------------------
-router.post("/profile", authenticate, async (req, res) => {
+router.post("/profile", authenticate, sharedLimit, async (req, res) => {
   const tenantId = req.tenant_id;
   const payload = normalizeProfilePayload(req.body || {});
   const now = new Date().toISOString();
@@ -266,7 +268,7 @@ router.post("/profile", authenticate, async (req, res) => {
 // POST /api/voice/preview – generate an audio preview via ElevenLabs
 // (mounted at /api/voice → final path /api/voice/preview)
 // ---------------------------------------------------------------------------
-router.post("/preview", authenticate, async (req, res) => {
+router.post("/preview", authenticate, sharedLimit, async (req, res) => {
   const tenantId = req.tenant_id;
   const { text, profile } = req.body || {};
 
@@ -274,7 +276,7 @@ router.post("/preview", authenticate, async (req, res) => {
     const trimmedText =
       typeof text === "string" ? text.trim() : "";
 
-    if (!trimmedText) {
+    if (!trimmedText || trimmedText.length > 2000) {
       return res
         .status(400)
         .json({ ok: false, error: "Missing or empty 'text' in request body" });

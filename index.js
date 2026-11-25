@@ -915,6 +915,22 @@ const http = require("http"); // ✅ Needed so express-ws binds to the same serv
 const cors = require("cors");
 const bodyParser = require("body-parser");
 const app = express();
+app.set("trust proxy", require("./src/security/proxyPolicy").proxyPolicy(process.env.ACA_TRUSTED_PROXY_CIDRS || ""));
+// Global bounded ingress before parsers, authentication and expensive handlers.
+const { rateLimit: recognizedRateLimit } = require("express-rate-limit");
+const { ingressLimit: boundedIngress } = require("./src/security/ingressLimit");
+// Separate bounded budgets for provider callback namespaces; no authentication bypass.
+const ingressClass = req => /^\/twilio(?:\/|$)/i.test(req.path) ? "twilio" : /^\/api\/stripe(?:\/|$)/i.test(req.path) ? "stripe" : "ordinary";
+const ordinaryIngress = boundedIngress({max: 300, windowMs: 60000});
+const twilioIngress = boundedIngress({max: 300, windowMs: 60000});
+const stripeIngress = boundedIngress({max: 300, windowMs: 60000});
+const ingressBudgets = {ordinary:ordinaryIngress,twilio:twilioIngress,stripe:stripeIngress};
+// Independent process-local emergency ceilings; do not depend on forwarded identity.
+// Keep existing per-IP budgets and isolate provider classes.
+const aggregateIngressBudgets = Object.fromEntries(["ordinary","twilio","stripe"].map(kind=>[kind,boundedIngress({max: 3000, windowMs: 60000, globalBudget:true})]));
+app.use((req,res,next)=>aggregateIngressBudgets[ingressClass(req)](req,res,next));
+app.use((req,res,next)=>ingressBudgets[ingressClass(req)](req,res,next));
+app.use(recognizedRateLimit({windowMs: 60000, limit: 300, standardHeaders: "draft-8", legacyHeaders: false, passOnStoreError: false, keyGenerator: req => (ingressClass(req)+":")+require("express-rate-limit").ipKeyGenerator(req.ip)}));
 
 // ✅ Story 12.8 — security headers + origin allowlist guard (fail-closed in prod)
 try {
@@ -1003,6 +1019,7 @@ function createRateLimiter({ windowMs, max, keyFn }) {
 
       const existing = hits.get(key);
       if (!existing || now - existing.windowStart >= windowMs) {
+        if (!existing && hits.size >= 10000) return res.status(503).json({ok:false,error:"rate_limit_capacity"});
         hits.set(key, { count: 1, windowStart: now });
         return next();
       }
@@ -1018,12 +1035,17 @@ function createRateLimiter({ windowMs, max, keyFn }) {
 
       return next();
     } catch (err) {
-      console.warn("⚠️ rate limiter error:", err.message);
-      return next();
+      console.warn("Rate limiter unavailable");
+      return res.status(503).json({ok:false,error:"rate_limit_unavailable"});
     }
   };
 }
 
+const {createPostgresRateLimiter}=require("./src/middleware/postgresRateLimit");
+const monitorLimit=createPostgresRateLimiter({pool:require("./src/db/pool"),scope:"admin-monitor",max:30});
+const uploadIngressLimit=createRateLimiter({windowMs:60000,max:10,keyFn:req=>req.ip || "unknown"});
+const stripeIngressLimit=createRateLimiter({windowMs:60000,max:600,keyFn:()=> "stripe-webhook"});
+const manifestLimit=createRateLimiter({windowMs:60000,max:120,keyFn:()=> "manifest"});
 const publicRateLimit = createRateLimiter({
   windowMs: 60 * 1000,
   max: 20,
@@ -1035,7 +1057,7 @@ const demoRateLimit = createRateLimiter({
   max: 10,
   keyFn: (req) => {
     const auth = req.headers.authorization || "";
-    return `${req.ip || "unknown"}:${auth.slice(0, 80)}`;
+    return req.ip || "unknown";
   },
 });
 
@@ -1044,7 +1066,7 @@ const authRateLimit = createRateLimiter({
   max: 30,
   keyFn: (req) => {
     const auth = req.headers.authorization || "";
-    return `${req.ip || "unknown"}:${auth.slice(0, 80)}`;
+    return req.ip || "unknown";
   },
 });
 
@@ -1179,7 +1201,7 @@ try {
 }
 
 // Trust Render proxy and log runtime roots once
-app.set("trust proxy", 1);
+// Proxy trust configured once at application initialization.
 console.log("🧭 process.cwd():", process.cwd());
 console.log("🧭 __dirname:", __dirname);
 
@@ -1191,7 +1213,7 @@ const {
 app.use("/twilio", twilioRouter);
 console.log("✅ Mounted /twilio routes");
 
-app.get("/monitor/twilio-debug", requireAdmin, (req, res) => {
+app.get("/monitor/twilio-debug", requireAdmin, monitorLimit, (req, res) => {
   try {
     return res.status(200).json({
       ok: true,
@@ -1268,7 +1290,7 @@ console.log(
 // ---------------------------------------------------------------------------
 const wellKnownAbsolute = path.resolve(__dirname, "public", "wellknown");
 
-app.get("/.well-known/ai-plugin.json", (req, res) => {
+app.get("/.well-known/ai-plugin.json", manifestLimit, (req, res) => {
   const filePath = path.join(wellKnownAbsolute, "ai-plugin.json");
   console.log("➡️  [.well-known] serving:", filePath);
   res.sendFile(filePath, (err) => {
@@ -1279,7 +1301,7 @@ app.get("/.well-known/ai-plugin.json", (req, res) => {
   });
 });
 
-app.get("/.well-known/openapi.yaml", (req, res) => {
+app.get("/.well-known/openapi.yaml", manifestLimit, (req, res) => {
   const filePath = path.join(wellKnownAbsolute, "openapi.yaml");
   console.log("➡️  [.well-known] serving:", filePath);
   res.sendFile(filePath, (err) => {
@@ -1291,7 +1313,7 @@ app.get("/.well-known/openapi.yaml", (req, res) => {
 });
 
 // 🔒 Regex catch-all for any .well-known/*
-app.get(/^\/\.well-known\/(.+)$/i, (req, res) => {
+app.get(/^\/\.well-known\/(.+)$/i, manifestLimit, (req, res) => {
   const requested = (req.params[0] || "").toString();
   const safeName = requested.replace(/[^a-zA-Z0-9._-]/g, "");
   const filePath = path.join(wellKnownAbsolute, safeName);
@@ -1316,6 +1338,7 @@ app.get(/^\/\.well-known\/(.+)$/i, (req, res) => {
 console.log("✅ .well-known bound to:", wellKnownAbsolute);
 
 // Stripe Webhook Route (Story 11.6)
+app.use("/api/stripe/webhook", stripeIngressLimit);
 app.use("/api/stripe", require("./src/routes/stripeWebhook"));
 
 // also expose everything under /public normally
@@ -1389,7 +1412,7 @@ app.get("/health", (req, res) => {
   }
 });
 
-app.get("/monitor/resilience", requireAdmin, (req, res) => {
+app.get("/monitor/resilience", requireAdmin, monitorLimit, (req, res) => {
   res.set("Content-Type", "text/plain; version=0.0.4");
   res.send(getMetricsText());
 });
@@ -1416,6 +1439,7 @@ try {
 
 try {
   const uploadKnowledgeRoutes = require("./src/routes/uploadKnowledge");
+  app.use("/tenant/upload-knowledge", uploadIngressLimit);
   app.use("/", uploadKnowledgeRoutes);
   console.log("✅ Mounted /tenant/upload-knowledge");
 } catch (err) {
@@ -1463,7 +1487,7 @@ try {
 // ============================================================
 // === Story 9.6 — Global Matrix Health Endpoint ===
 // ============================================================
-app.get("/monitor/deploy-matrix", requireAdmin, async (req, res) => {
+app.get("/monitor/deploy-matrix", requireAdmin, monitorLimit, async (req, res) => {
   try {
     const dashboardUrl =
       process.env.DASHBOARD_URL || "https://alphine-dashboard.vercel.app";

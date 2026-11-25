@@ -1,0 +1,41 @@
+'use strict';
+const {randomUUID}=require('node:crypto');
+// Fixture evidence only; no provider billing verification or execution grant.
+function createProviderOutcome({pool,scope,authenticate,costEnvelope}={}){
+ if(typeof pool?.connect!=='function'||typeof authenticate!=='function'||!scope?.product||!scope?.repository||! /^[a-f0-9]{40}$/.test(scope.sha))throw Error('Invalid outcome configuration');
+ if(costEnvelope!==undefined&&(!costEnvelope||costEnvelope.executionAuthorized!==false||typeof costEnvelope.assessUsage!=='function'||typeof costEnvelope.budgetId!=='string'||! /^[a-f0-9]{64}$/.test(costEnvelope.evidenceSha256)))throw Error('Invalid outcome cost envelope');
+ const assess=costEnvelope?.assessUsage;
+ const budgetId=costEnvelope?.budgetId;
+ const costDigest=costEnvelope?.evidenceSha256??null;
+ const pinned=Object.freeze({...scope});
+ const allowed=a=>a&&typeof a.id==='string'&&/^[a-zA-Z0-9_.-]{1,80}$/.test(a.id)&&a.permission==='owner.approval'&&a.role===undefined&&a.product===pinned.product&&a.repository===pinned.repository&&a.sha===pinned.sha;
+ return Object.freeze({async record({credential,binding,usage=null}={}){
+  if(typeof binding!=='string'||! /^[a-f0-9]{64}$/.test(binding))throw Error('Outcome denied');
+  const u=usage===null?null:structuredClone(usage);
+  if(u!==null&&(!u||!(costEnvelope?[u.inputTokens,u.outputTokens]:[u.inputTokens,u.outputTokens,u.actualMicrousd]).every(x=>Number.isSafeInteger(x)&&x>=0&&x<=2147483647)))throw Error('Invalid usage');
+  const actor=await authenticate(credential);if(!allowed(actor))throw Error('Outcome denied');
+  const actorId=actor.id;
+  const client=await pool.connect();let discard=false;
+  try{
+   await client.query('BEGIN');
+   await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))',[JSON.stringify([pinned.product,pinned.repository])]);
+   const fresh=await authenticate(credential);if(!allowed(fresh)||fresh.id!==actorId)throw Error('Outcome denied');
+   const attempt=await client.query('SELECT reserved_microusd,model,budget_id,cost_evidence_sha256 FROM engineering_team_provider_attempts WHERE binding=$1 AND product=$2 AND repository=$3 AND head_sha=$4',[binding,pinned.product,pinned.repository,pinned.sha]);
+   if(attempt.rowCount!==1)throw Error('Outcome denied');
+   if(assess&&attempt.rows[0].budget_id!==budgetId)throw Error('Outcome budget denied');
+   if(attempt.rows[0].cost_evidence_sha256!==costDigest)throw Error('Outcome cost evidence denied');
+   const assessed=u===null?null:assess?assess(attempt.rows[0].model,u):u;
+   if(assessed!==null&&(!Number.isSafeInteger(assessed.actualMicrousd)||assessed.actualMicrousd<0||assessed.actualMicrousd>2147483647))throw Error('Invalid assessed usage');
+   const outcome=assessed===null?'unknown':assessed.breach===true&&costEnvelope!==undefined||BigInt(assessed.actualMicrousd)>BigInt(attempt.rows[0].reserved_microusd)?'breach':'completed';
+   const result=await client.query('INSERT INTO engineering_team_provider_outcomes(binding,outcome,input_tokens,output_tokens,actual_microusd,recorded_by) VALUES($1,$2,$3,$4,$5,$6) ON CONFLICT DO NOTHING RETURNING binding',[binding,outcome,assessed?.inputTokens??null,assessed?.outputTokens??null,assessed?.actualMicrousd??null,actorId]);
+   if(result.rowCount!==1)throw Error('Outcome already recorded');
+   if(outcome!=='completed'){
+    const stopped=await client.query('INSERT INTO engineering_team_stops(product,repository,actor_id) VALUES($1,$2,$3) ON CONFLICT DO NOTHING RETURNING product',[pinned.product,pinned.repository,actorId]);
+    if(stopped.rowCount===1)await client.query("INSERT INTO engineering_team_governance_alerts(id,product,repository,event_type,actor_id) VALUES ($1,$2,$3,'stop.created',$4)",[randomUUID(),pinned.product,pinned.repository,actorId]);
+   }
+   await client.query('COMMIT');
+   return Object.freeze({outcome,executionAuthorized:false});
+  }catch(e){try{await client.query('ROLLBACK');}catch{discard=true;}throw e;}finally{client.release(discard);}
+ }});
+}
+module.exports={createProviderOutcome};

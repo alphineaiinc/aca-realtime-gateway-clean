@@ -1,6 +1,8 @@
 const express = require("express");
 const router = express.Router();
 const pool = require("../db/pool");
+const { createPostgresRateLimiter } = require("../middleware/postgresRateLimit");
+const routeLimit = createPostgresRateLimiter({pool, scope: "voice-profile", max: 60});
 const jwt = require("jsonwebtoken");
 const fs = require("fs");
 const path = require("path");
@@ -20,7 +22,7 @@ function verifyToken(req, res, next) {
 }
 
 // Save or update preferred voice
-router.post("/tenant/voice-profile", verifyToken, async (req, res) => {
+router.post("/tenant/voice-profile", verifyToken, routeLimit, async (req, res) => {
   const { preferred_voice } = req.body;
   const tenant_id = req.tenant?.tenant_id;
   if (!tenant_id) return res.status(400).json({ ok: false, error: "Missing tenant_id in token" });
@@ -37,7 +39,7 @@ router.post("/tenant/voice-profile", verifyToken, async (req, res) => {
 });
 
 // Retrieve preferred voice
-router.get("/tenant/voice-profile", verifyToken, async (req, res) => {
+router.get("/tenant/voice-profile", verifyToken, routeLimit, async (req, res) => {
   const tenant_id = req.tenant?.tenant_id;
   try {
     const result = await pool.query("SELECT preferred_voice FROM master_tenants WHERE id = $1", [tenant_id]);

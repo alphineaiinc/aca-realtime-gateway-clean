@@ -11,6 +11,8 @@ const pool = require("../db/pool");
 const { recordEvent } = require("../analytics/eventCollector.js");
 
 const router = express.Router();
+const { createPostgresRateLimiter } = require("../middleware/postgresRateLimit");
+const routeLimit = createPostgresRateLimiter({pool, scope: "partner-payout", max: 10});
 
 // -----------------------------
 // 🔐 Strict Auth Middleware
@@ -44,7 +46,7 @@ function requireAdmin(req, res, next) {
 // ============================================================
 // POST /api/partner/payout
 // ============================================================
-router.post("/partner/payout", authenticate, requireAdmin, async (req, res) => {
+router.post("/partner/payout", authenticate, requireAdmin, routeLimit, async (req, res) => {
   try {
     const { amount, currency = "USD", provider = "stripe" } = req.body;
 
@@ -115,7 +117,7 @@ router.post("/partner/payout", authenticate, requireAdmin, async (req, res) => {
 // ============================================================
 // GET /api/partner/payouts
 // ============================================================
-router.get("/partner/payouts", authenticate, async (req, res) => {
+router.get("/partner/payouts", authenticate, routeLimit, async (req, res) => {
   try {
     const role = String(req.user?.role || "").toLowerCase();
     const partner_id = req.user.partner_id;
