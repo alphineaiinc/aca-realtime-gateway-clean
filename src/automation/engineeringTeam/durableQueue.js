@@ -49,8 +49,9 @@ function createDurableQueue({pool,scopes,authenticate,leaseSeconds=60,fixturePro
    });
   },
   async enqueue({scope,role,credential,workflowId,workflowStep}){
-   const params=checkScope(scope);getRole(role);await identity(credential,scope,null,'queue.manage');
+   const params=checkScope(scope);getRole(role);const actor=await identity(credential,scope,null,'queue.manage');
    return guarded(params,async client=>{
+    if(await identity(credential,{product:params[0],repository:params[1],sha:params[2]},null,'queue.manage')!==actor)throw Error('Identity denied');
     await assertActive(client,params,role);
    const id=randomUUID();
    if(workflowId!==undefined||workflowStep!==undefined){
@@ -79,6 +80,7 @@ function createDurableQueue({pool,scopes,authenticate,leaseSeconds=60,fixturePro
   async claim({scope,role,credential,expectedTaskId}){
    const params=checkScope(scope);getRole(role);const worker=await identity(credential,scope,role,'queue.work');const lease=randomUUID();
    return guarded(params,async client=>{
+    if(await identity(credential,{product:params[0],repository:params[1],sha:params[2]},role,'queue.work')!==worker)throw Error('Identity denied');
     await assertActive(client,params,role);
    const result=await client.query(`WITH candidate AS (SELECT id FROM engineering_team_tasks WHERE product=$1 AND repository=$2 AND head_sha=$3 AND role=$4 AND state='queued' AND attempts<2 AND (($8::uuid IS NULL AND workflow_id IS NULL) OR id=$8::uuid) ORDER BY created_at,id LIMIT 1 FOR UPDATE SKIP LOCKED), task AS (UPDATE engineering_team_tasks t SET state='running',attempts=attempts+1,worker_id=$5,lease_id=$6,lease_until=clock_timestamp()+make_interval(secs=>$7) FROM candidate c WHERE t.id=c.id RETURNING t.id,t.lease_id,t.attempts,t.lease_until), audit AS (INSERT INTO engineering_team_queue_audit(task_id,event) SELECT id,'claimed' FROM task) SELECT * FROM task`,[...params,role,worker,lease,leaseSeconds,expectedTaskId??null]);
    return result.rows[0]||null;
