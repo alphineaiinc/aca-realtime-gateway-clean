@@ -34,8 +34,8 @@ jobs:
               return r.json();
             };
             const control=await get('/issues/153');
-            if(control.number!==153||control.state!=='open'||!Array.isArray(control.labels)||!control.labels.some(l=>l.name==='aca:auto/blocked')||control.labels.some(l=>l.name==='aca:stage1/enabled'))throw Error('Control not disabled');
-            if(await stopReader(token)(scope)!==true)throw Error('Stop failed');
+            if(control.number!==153||control.state!=='open'||!Array.isArray(control.labels)||!control.labels.some(l=>l.name==='aca:auto/blocked')||control.labels.some(l=>l.name==='aca:stage1/enabled')||typeof control.body!=='string'||control.body.includes('<!-- aca-stage1:enable:'))throw Error('Control not disabled');
+            if(await stopReader(token,process.env.GITHUB_SHA)(scope)!==true)throw Error('Stop failed');
             const tracker=await get('/issues/118');
             const runs=await get('/actions/runs?head_sha='+scope.sha+'&per_page=20');
             if(tracker.number!==118||!Array.isArray(runs.workflow_runs)||!runs.workflow_runs.length||runs.workflow_runs.some(r=>r.head_sha!==scope.sha))throw Error('Read evidence denied');
@@ -44,7 +44,7 @@ jobs:
           main().catch(()=>{process.exitCode=1;});
           NODE
   observe:
-    if: github.repository == 'alphineaiinc/aca-realtime-gateway-clean' && github.ref == 'refs/heads/aca-p2-stage1-activation' && vars.ACA_STAGE1_APPROVED_CONFIG_SHA == github.sha
+    if: github.repository == 'alphineaiinc/aca-realtime-gateway-clean' && github.ref == 'refs/heads/aca-p2-stage1-activation' && vars.ACA_STAGE1_APPROVED_CONFIG_SHA == github.sha && github.run_attempt == 1
     runs-on: ubuntu-latest
     timeout-minutes: 2
     steps:
@@ -71,7 +71,7 @@ jobs:
           const {observeOnce}=require('./manager/src/automation/engineeringTeam/restrictedManagerOnce');
           const {stopReader}=require('./config/.github/scripts/stage1-stop-reader');
           const token=process.env.ACA_READ_TOKEN;
-          observeOnce({env:{ACA_RESTRICTED_MANAGER_ENABLED:'true',ACA_RESTRICTED_MANAGER_ISSUE:'118',ACA_RESTRICTED_MANAGER_PRODUCT:'aca',ACA_RESTRICTED_MANAGER_REPOSITORY:'alphineaiinc/aca-realtime-gateway-clean',ACA_RESTRICTED_MANAGER_HEAD_SHA:'6678909c7e9e60c08b0bc56c150e9031900a3984',ACA_RESTRICTED_MANAGER_GITHUB_READ_TOKEN:token},readStopState:stopReader(token)}).then(result=>{
+          observeOnce({env:{ACA_RESTRICTED_MANAGER_ENABLED:'true',ACA_RESTRICTED_MANAGER_ISSUE:'118',ACA_RESTRICTED_MANAGER_PRODUCT:'aca',ACA_RESTRICTED_MANAGER_REPOSITORY:'alphineaiinc/aca-realtime-gateway-clean',ACA_RESTRICTED_MANAGER_HEAD_SHA:'6678909c7e9e60c08b0bc56c150e9031900a3984',ACA_RESTRICTED_MANAGER_GITHUB_READ_TOKEN:token},readStopState:stopReader(token,process.env.GITHUB_SHA)}).then(result=>{
             if(result.status!=='observed'||result.executionAuthorized!==false||result.writeAuthorized!==false||result.deployAuthorized!==false||result.paidProviderAuthorized!==false)throw Error('Observation denied');
             console.log(JSON.stringify(result));
           }).catch(()=>{process.exitCode=1;});
