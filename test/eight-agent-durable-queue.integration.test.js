@@ -40,6 +40,13 @@ test('isolated PostgreSQL queue: concurrent claims, retries, restart, expiry and
  assert.equal(admissions.filter(Boolean).length,1);
  assert.equal(await admission(pools[1])(event),false);
  assert.equal(await admission(pools[1])({...event,attempt:2}),true);
+ // The exact same CI delivery is independently admitted once for another product.
+ const productScope={...scope,product:'fixture-other-product'};
+ const productAdmission=pool=>createCiEventAdmission({pool,scope:productScope,workflowId:42,authenticate:async()=>({...productScope,id:'manager',permission:'queue.manage'}),credential:'fixture'});
+ assert.equal(await productAdmission(pools[0])({...event,scope:productScope}),true);
+ assert.equal(await productAdmission(pools[1])({...event,scope:productScope}),false);
+ assert.equal(await admission(pools[0])(event),false);
+
  const stopScope={...scope,repository:'fixture/stopped'};
  const stoppedAdmission=createCiEventAdmission({pool:pools[0],scope:stopScope,workflowId:42,authenticate:async()=>({...stopScope,id:'manager',permission:'queue.manage'}),credential:'fixture'});
  await pools[0].query('INSERT INTO engineering_team_stops(product,repository,actor_id) VALUES ($1,$2,$3)',[stopScope.product,stopScope.repository,'manager']);
@@ -250,6 +257,15 @@ test('isolated PostgreSQL queue: concurrent claims, retries, restart, expiry and
  assert.equal(restartResult.state,'completed');
  assert.equal(replayedPreparationCalls,0);
  assert.equal(restartResult.changeEvidenceSha256,runtimeResult.changeEvidenceSha256);
+ // Simulate a separate completed team whose preparation was admitted but whose
+ // result was lost before persistence. No restarted fixture may replay it.
+ const unknownPreparationWorkflow=await ledger(pools[0]).create('manager',{subject:'Unknown preparation fixture',developerRole:'backend-developer'});
+ await pools[0].query('UPDATE engineering_team_workflows SET next_step=8 WHERE id=$1',[unknownPreparationWorkflow.id]);
+ const preparationAdmissions=await Promise.all(pools.map(pool=>ledger(pool).beginPreparation({credential:'manager',id:unknownPreparationWorkflow.id})));
+ assert.deepEqual(preparationAdmissions.map(x=>x.state).sort(),['needs-reconciliation','started']);
+ const unknownPreparationRetry=await ledger(pools[1]).beginPreparation({credential:'manager',id:unknownPreparationWorkflow.id});
+ assert.equal(unknownPreparationRetry.state,'needs-reconciliation');
+
  await assert.rejects(runtime.run(runtimeInput),/Fixture runtime denied/);
  // A role-level policy closure pauses at the exact next step; reopening policy resumes
  // from durable handoffs without replaying the already completed roles.
