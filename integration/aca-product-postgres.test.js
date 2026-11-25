@@ -63,6 +63,26 @@ test("isolated product migration chain and verified onboarding",async()=>{
  assert.equal(concurrentSends,1);
  assert.ok((await pool.query("SELECT delivered_at FROM aca_request_outbox WHERE request_id=$1",[id])).rows[0].delivered_at);
  console.log("Persistent uncertain reservation and concurrent worker exclusion passed");
+ // Real PostgreSQL enforces the singleton staging attempt across distinct requests.
+ // Roll back this synthetic cap exercise; no provider or hosted database is contacted.
+ const capClient=await pool.connect();
+ try {
+  await capClient.query("BEGIN");
+  await capClient.query("UPDATE public.aca_request_email_reservations SET staging_attempt=true WHERE request_id=$1 AND tenant_id=$2",[uncertainId,tenantId]);
+  await capClient.query("SAVEPOINT cap_conflict");
+  await assert.rejects(capClient.query("UPDATE public.aca_request_email_reservations SET staging_attempt=true WHERE request_id=$1 AND tenant_id=$2",[id,tenantId]),e=>e.code==="23505");
+  await capClient.query("ROLLBACK TO SAVEPOINT cap_conflict");
+  assert.equal((await capClient.query("SELECT count(*)::int AS n FROM public.aca_request_email_reservations WHERE staging_attempt IS TRUE")).rows[0].n,1);
+  await capClient.query("ROLLBACK");
+ }finally{await capClient.query("ROLLBACK");capClient.release();}
+ // Correct fixture configuration still cannot send from the non-staging CI database.
+ const scopeKeys=["ACA_STAGING_EMAIL_ONLY","ACA_STAGING_EMAIL_TENANT_ID","ACA_STAGING_EMAIL_REQUEST_ID","ACA_STAGING_EMAIL_RECIPIENT"];
+ const priorScope=scopeKeys.map(k=>process.env[k]);
+ try{
+  [ "true",String(tenantId),String(id),email ].forEach((v,i)=>process.env[scopeKeys[i]]=v);
+  assert.equal(await deliverOne({pool,sendMail:async()=>{throw Error("non-staging send");}}),false);
+ }finally{scopeKeys.forEach((k,i)=>{if(priorScope[i]===undefined)delete process.env[k];else process.env[k]=priorScope[i];});}
+
  
  assert.equal(await deliverOne({pool,sendMail}),false);assert.equal(sent,1);
  const other=await pool.query("INSERT INTO master_tenants(business_name) VALUES('Other disposable tenant') RETURNING id");
