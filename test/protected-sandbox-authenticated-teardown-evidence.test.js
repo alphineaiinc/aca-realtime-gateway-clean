@@ -44,7 +44,7 @@ test('offline acceptance verifies both exact key pins and still denies operation
  input.keyStatus=async scope=>{calls.push(scope);assert.ok(Object.isFrozen(scope));return 'active';};
  const result=await assessAuthenticatedRuntimeEvidence(input);
  assert.equal(result.authenticated,true);assert.equal(result.accepted,false);assert.equal(result.executionAuthorized,false);assert.equal(result.attestation,false);
- assert.deepEqual(calls,['runner','publisher'].map(role=>({role,authority:trust[role].authority,fingerprint:trust[role].fingerprint})));
+ assert.deepEqual(calls,['runner','publisher','runner','publisher'].map(role=>({role,authority:trust[role].authority,fingerprint:trust[role].fingerprint})));
 });
 test('offline acceptance rejects revoked, unknown, missing and unavailable key status',async()=>{
  for(const role of ['runner','publisher'])for(const status of ['revoked',null,undefined,'unknown',true]){
@@ -68,7 +68,7 @@ test('offline acceptance rechecks expiry after asynchronous key status lookup',a
 test('offline acceptance snapshots caller evidence and trust across asynchronous status checks',async()=>{
  const input=integrationInput();let calls=0;
  input.keyStatus=async scope=>{calls++;if(scope.role==='runner'){input.expected.runId=999;input.runner.record.lifecycle='running';input.publisher.signature='0'.repeat(128);input.trust.publisher.authority='changed';}return 'active';};
- const r=await assessAuthenticatedRuntimeEvidence(input);assert.equal(calls,2);assert.equal(r.authenticated,true);assert.equal(r.accepted,false);assert.equal(r.executionAuthorized,false);
+ const r=await assessAuthenticatedRuntimeEvidence(input);assert.equal(calls,4);assert.equal(r.authenticated,true);assert.equal(r.accepted,false);assert.equal(r.executionAuthorized,false);
 });
 test('offline acceptance denies invalid baseline and unauthenticated claims before key lookup',async()=>{
  for(const change of [input=>{input.evidence.faults.daemonUnavailable='unknown';},input=>{input.publisher.signature='0'.repeat(128);}]){const input=integrationInput();change(input);let calls=0;input.keyStatus=async()=>{calls++;return 'active';};const r=await assessAuthenticatedRuntimeEvidence(input);assert.equal(calls,0);assert.equal(r.authenticated,false);assert.equal(r.accepted,false);}
@@ -77,4 +77,13 @@ test('offline acceptance denies invalid baseline and unauthenticated claims befo
 test('all five fault outcomes must be authenticated and complete',()=>{
  for(const name of faultNames){const runner=envelope('runner');runner.record.faults[name]='unknown';assert.equal(check({runner}).authenticated,false);const faults={...envelope('runner').record.faults};delete faults[name];assert.equal(check({runner:envelope('runner',{faults})}).authenticated,false);}
  const runner=envelope('runner');runner.record.faults.extra='denied-and-reconciled';assert.equal(check({runner}).authenticated,false);
+});
+
+test('S3-02 denies runner key revoked between asynchronous publisher and final key checks',async()=>{
+ const input=integrationInput(),calls=[];
+ input.keyStatus=async scope=>{calls.push(scope.role);return calls.length===3&&scope.role==='runner'?'revoked':'active';};
+ const result=await assessAuthenticatedRuntimeEvidence(input);
+ assert.deepEqual(calls,['runner','publisher','runner']);
+ assert.equal(result.authenticated,false);assert.equal(result.accepted,false);
+ assert.equal(result.executionAuthorized,false);assert.match(result.reason,/key inactive/);
 });
