@@ -45,3 +45,23 @@ test("TTS failure recovers listening; terminal and unprepared sessions cannot se
   c.handleCallEnded(callSid); assert.equal(c.prepareSpeech(callSid), false); assert.equal(c.handleSpeak(callSid), false);
   assert.equal(store.getSession(callSid), undefined);
 });
+
+test("parallel sessions isolate interruption, transcript and terminal cleanup", async () => {
+ const a=await controllerSession(504),b=await controllerSession(505);
+ try {
+ for(const x of [a,b]){x.controller.handleGreeting(x.callSid);assert.equal(x.controller.prepareSpeech(x.callSid),true);assert.equal(x.controller.handleSpeak(x.callSid),true);}
+ assert.equal(a.controller.handleSpeechInterrupted(a.callSid),true);
+ assert.equal(a.session.state,STATES.LISTENING);
+ assert.equal(b.session.state,STATES.SPEAKING);
+ assert.equal(b.session.isSpeaking,true);
+ a.controller.handleTranscriptPartial(a.callSid,"fixture A");
+ assert.equal(a.session.partialTranscript,"fixture A");
+ assert.notEqual(b.session.partialTranscript,"fixture A");
+ a.controller.handleCallEnded(a.callSid);
+ assert.equal(store.getSession(a.callSid),undefined);
+ assert.equal(store.getSession(b.callSid),b.session);
+ assert.equal(a.controller.handleSpeechComplete(a.callSid),false);
+ assert.equal(b.controller.handleSpeechComplete(b.callSid),true);
+ assert.equal(b.session.state,STATES.AWAITING_INPUT);
+ }finally{a.controller.handleCallEnded(a.callSid);b.controller.handleCallEnded(b.callSid);}
+});
