@@ -72,6 +72,9 @@ function loginLimit(req,res,next){
 }
 router.post("/login/start", ingressRateLimit, loginLimit,async(req,res)=>{
  if(process.env.ACA_VERIFIED_LOGIN_ENABLED!=="true")return res.status(503).json({ok:false,error:"Login unavailable"});
+ if(process.env.RENDER_SERVICE_ID==="srv-dc2ffvm8bjmc73fhn8j0"){
+  if(process.env.ACA_STAGING_LOGIN_EMAIL!=="contact@alphineai.com"||req.body?.email!==process.env.ACA_STAGING_LOGIN_EMAIL)return res.status(202).json({ok:true,message:"If eligible, a sign-in code will be sent."});
+ }
  try{await issueLogin({query:(...a)=>pool.query(...a),email:req.body?.email,sendMail:createMailSender()});}catch{}
  return res.status(202).json({ok:true,message:"If eligible, a sign-in code will be sent."});
 });
