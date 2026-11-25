@@ -3,7 +3,7 @@ const {createRestrictedManager}=require('./restrictedManager');
 const {createGitHubReadTransport}=require('./githubReadTransport');
 // A separate composition root. No mutable queue, worker, database writer,
 // scheduler, provider, credential issuer or publication client is constructed.
-function createRestrictedManagerRuntime({scope,issue,githubToken,fetchImpl,readOnlyPool}={}){
+function createRestrictedManagerRuntime({scope,issue,githubToken,fetchImpl,readOnlyPool,readStopState}={}){
  const pinned=Object.freeze({...scope});
  const transport=createGitHubReadTransport({token:githubToken,repository:pinned.repository,fetchImpl});
  if(readOnlyPool!==undefined&&typeof readOnlyPool?.query!=='function')throw Error('Read-only pool required');
@@ -14,6 +14,16 @@ function createRestrictedManagerRuntime({scope,issue,githubToken,fetchImpl,readO
   if(!Number.isSafeInteger(n)||n<0||n>101)throw Error('Alert count denied');
   return Object.freeze({...pinned,pending:Math.min(n,100),partial:n>100});
  };
- return createRestrictedManager({scope:pinned,issue,transport,readAlertSummary});
+ if(readStopState!==undefined&&typeof readStopState!=='function')throw Error('Invalid stop reader');
+ const manager=createRestrictedManager({scope:pinned,issue,transport,readAlertSummary});
+ return Object.freeze({async observe(){
+  const denied=()=>Object.freeze({scope:pinned,issue,status:'unavailable',executionAuthorized:false,writeAuthorized:false,deployAuthorized:false,paidProviderAuthorized:false});
+  try{
+   if(!readStopState||await readStopState(pinned)!==false)return denied();
+   const result=await manager.observe();
+   if(await readStopState(pinned)!==false)return denied();
+   return result;
+  }catch{return denied();}
+ }});
 }
 module.exports={createRestrictedManagerRuntime};
