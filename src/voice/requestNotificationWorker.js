@@ -7,7 +7,7 @@ const CLAIM=`WITH eligible AS (
  JOIN public.aca_notification_recipients r ON r.tenant_id=o.tenant_id
  WHERE o.delivered_at IS NULL AND r.is_active AND r.verified_at IS NOT NULL
    AND r.email ~ '^[^[:space:]@,;<>]+@[^[:space:]@,;<>]+\\.[^[:space:]@,;<>]+$'
-   AND ($1::boolean IS FALSE OR (current_database() = 'aca_product_staging' AND o.tenant_id=$2::bigint AND o.request_id=$3::bigint AND r.email=$4::text))
+   AND (($1::boolean IS FALSE AND current_database() = $4::text AND current_database() <> 'aca_product_staging') OR ($1::boolean IS TRUE AND current_database() = 'aca_product_staging' AND o.tenant_id=$2::bigint AND o.request_id=$3::bigint AND r.email=$4::text))
    AND NOT EXISTS (SELECT 1 FROM public.aca_request_email_reservations s
      WHERE s.request_id=o.request_id AND s.tenant_id=o.tenant_id)
  ORDER BY o.created_at,o.request_id LIMIT 1
@@ -18,8 +18,13 @@ INSERT INTO public.aca_request_email_reservations(request_id,tenant_id,recipient
  FROM eligible ON CONFLICT DO NOTHING
  RETURNING request_id,tenant_id,recipient AS email,message_id`;
 async function deliverOne({pool,sendMail}) {
- // Real transport is disabled unless explicitly scoped to the controlled staging fixture.
- const staging=true;
+ // Commercial delivery requires explicit release configuration and the pinned service.
+ const staging=process.env.ACA_STAGING_EMAIL_ONLY==="true";
+ const database=process.env.ACA_PRODUCTION_EMAIL_DATABASE;
+ if(!staging && (process.env.ACA_PRODUCTION_EMAIL_ENABLED!=="true" ||
+   process.env.RENDER_SERVICE_ID!=="srv-d3rfh8umcj7s73cj28c0" ||
+   !/^[a-zA-Z0-9_]{1,63}$/.test(database||"") || database==="aca_product_staging" ||
+   process.env.ACA_STAGING_ACCEPTANCE_RUN==="true" || process.env.ACA_STAGING_ACCEPTANCE_SEND==="true")) return false;
  const tenant=process.env.ACA_STAGING_EMAIL_TENANT_ID;
  const request=process.env.ACA_STAGING_EMAIL_REQUEST_ID;
  const recipient=process.env.ACA_STAGING_EMAIL_RECIPIENT;
@@ -30,7 +35,7 @@ async function deliverOne({pool,sendMail}) {
  let row;
  try{
   // A single atomic statement commits the send entitlement before provider I/O.
-  const {rows}=await client.query(CLAIM,[staging,staging?tenant:null,staging?request:null,staging?recipient:null]);
+  const {rows}=await client.query(CLAIM,[staging,staging?tenant:null,staging?request:null,staging?recipient:database]);
   row=rows[0];
  }catch{throw Error("REQUEST_RESERVATION_FAILED");}
  finally{client.release();}
