@@ -7,7 +7,9 @@ function stopReader(token,fetchImpl=globalThis.fetch){
    const res=await fetchImpl('https://api.github.com/repos/'+repository+'/issues/'+issue,{method:'GET',redirect:'error',signal:AbortSignal.timeout(5000),headers:{Authorization:'Bearer '+token,Accept:'application/vnd.github+json'}});
    if(!res.ok)return true;
    const d=await res.json();
-   return d.number!==issue||d.state!=='open'||!Array.isArray(d.labels)||!d.labels.some(l=>l.name==='aca:stage1/enabled')||d.labels.some(l=>['aca:stage1/stop','aca:auto/blocked'].includes(l.name));
+   // Coding admission must remain denied on this dedicated control record.
+   // Only the separate Stage 1 enable/stop labels govern observation.
+   return d.number!==issue||d.state!=='open'||!Array.isArray(d.labels)||!d.labels.some(l=>l.name==='aca:stage1/enabled')||!d.labels.some(l=>l.name==='aca:auto/blocked')||d.labels.some(l=>['aca:stage1/stop','aca:auto/docs-test'].includes(l.name));
   }catch{return true;}
  };
 }
