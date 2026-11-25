@@ -1,6 +1,6 @@
 'use strict';
 // Trusted host configuration only. Fixed HTTPS origin; no model-supplied URL.
-function createGitHubReadTransport({token,repository,fetchImpl=globalThis.fetch,timeoutMs=10000}={}){
+function createGitHubReadTransport({token,repository,fetchImpl=globalThis.fetch,timeoutMs=10000,downloadArtifact}={}){
  if(typeof token!=='string'||!token||/[\r\n]/.test(token)||typeof repository!=='string'||! /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(repository)||repository.split('/').some(p=>p==='.'||p==='..')||typeof fetchImpl!=='function'||!Number.isSafeInteger(timeoutMs)||timeoutMs<1000||timeoutMs>30000)throw Error('Invalid GitHub configuration');
  const pinnedRepository=repository;
  function base(s){if(!s||s.repository!==pinnedRepository||! /^[a-f0-9]{40}$/.test(s.sha))throw Error('Repository scope denied');return 'https://api.github.com/repos/'+pinnedRepository;}
@@ -56,6 +56,18 @@ function createGitHubReadTransport({token,repository,fetchImpl=globalThis.fetch,
    if(!Array.isArray(data.artifacts)||data.total_count!==data.artifacts.length||data.artifacts.length>20)throw Error("Incomplete artifact inventory");
    const artifacts=data.artifacts.map(a=>{if(a.expired!==false||a.workflow_run?.id!==runId||a.workflow_run?.head_sha!==s.sha||!Number.isSafeInteger(a.id)||a.id<1||!/^sha256:[a-f0-9]{64}$/.test(a.digest))throw Error("Artifact provenance denied");return {id:a.id,name:a.name,digest:a.digest,size:a.size_in_bytes};});
    return Object.freeze({repository:s.repository,sha:s.sha,text:bounded(JSON.stringify({runId,artifacts}))});
+  },
+  async readVerifiedPushArtifact(s,runId,artifactId){
+   base(s);
+   if(typeof downloadArtifact!=='function'||!Number.isSafeInteger(artifactId)||artifactId<1)throw Error('Artifact downloader unavailable');
+   const inventory=JSON.parse((await this.readPushArtifacts(s,runId)).text);
+   const matches=inventory.artifacts.filter(a=>a.id===artifactId);
+   if(matches.length!==1)throw Error('Artifact selection denied');
+   const a=matches[0];
+   if(!Number.isSafeInteger(a.size)||a.size<1||a.size>8388608)throw Error('Artifact size denied');
+   const bytes=await downloadArtifact(Object.freeze({repository:pinnedRepository,sha:s.sha,runId,artifactId,maxBytes:a.size}));
+   if(!Buffer.isBuffer(bytes)||bytes.length!==a.size||'sha256:'+require('node:crypto').createHash('sha256').update(bytes).digest('hex')!==a.digest)throw Error('Artifact integrity denied');
+   return Object.freeze({repository:pinnedRepository,sha:s.sha,runId,artifactId,digest:a.digest,bytes:Buffer.from(bytes)});
   },
   async readCI(s){
    const data=await get(base(s)+'/actions/runs?head_sha='+s.sha+'&per_page=20');
