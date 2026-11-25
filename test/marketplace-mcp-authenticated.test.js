@@ -20,5 +20,8 @@ test("authenticated MCP initialization, discovery and profile invocation",async(
  const tools=await client.listTools();assert.ok(tools.tools.some(t=>t.name==="aca_get_business_profile"));
  const profile=await client.callTool({name:"aca_get_business_profile",arguments:{}});assert.equal(JSON.parse(profile.content[0].text).business_name,"Fixture");
  const count=await client.callTool({name:"aca_get_request_count",arguments:{}});assert.equal(JSON.parse(count.content[0].text).request_count,"2");
+ const restricted=jwt.sign({tenant_id:7,scope:"aca:profile:read"},privateKey,{algorithm:"RS256",issuer,audience:resource,subject:"fixture@example.invalid",expiresIn:60});
+ const limited=new Client({name:"limited",version:"1.0.0"});
+ try{await limited.connect(new StreamableHTTPClientTransport(new URL("http://127.0.0.1:"+http.address().port+"/mcp"),{requestInit:{headers:{Authorization:"Bearer "+restricted}}}));const denied=await limited.callTool({name:"aca_get_request_count",arguments:{}});assert.equal(denied.isError,true);}finally{await limited.close();}
  }finally{await client.close();http.closeAllConnections();await new Promise(resolve=>http.close(resolve));}
 });
