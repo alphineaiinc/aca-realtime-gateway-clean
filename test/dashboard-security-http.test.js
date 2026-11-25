@@ -22,5 +22,6 @@ test('dashboard diagnostic endpoints deny access before filesystem or network op
  const response=await fetch('http://127.0.0.1:'+server.address().port+route,{headers:{authorization:'Bearer unverified','x-role':'admin'}});
  assert.equal(response.status,403);assert.equal((await response.json()).error,'Verified operator access required');
  }
+ for(let i=0;i<29;i++){const response=await fetch('http://127.0.0.1:'+server.address().port+'/data');await response.arrayBuffer();if(i===28)assert.equal(response.status,429);}
  assert.equal(io,0);
 });
