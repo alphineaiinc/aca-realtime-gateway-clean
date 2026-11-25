@@ -83,3 +83,11 @@ test('ambiguous durable reservation never reaches provider or retries',async()=>
  assert.equal(reservations,1);
  assert.equal(t.usage().calls,0);
 });
+
+test('admission for 256 output tokens cannot be replayed for 4000',async()=>{
+ let approvedDigest,providerCalls=0;const request={role:'devops',mode:'proposal-only',input:'{}',instructions:'fixture',schema:{type:'object'}};
+ const small=createOpenAITransport({models,maxOutputTokens:256,authorize:async()=>true,budget:{async reserve(input){assert.equal(input.maxOutputTokens,256);approvedDigest=input.requestDigest;return {executionAuthorized:true,requestDigest:approvedDigest,binding:'a'.repeat(64)};},async consume(input){assert.equal(input.maxOutputTokens,256);return true;}},client:{responses:{create:async payload=>{assert.equal(payload.max_output_tokens,256);return {status:'completed',usage:{input_tokens:1,output_tokens:1},output_text:'{}'};}}}});
+ await small.generate(request);
+ const large=createOpenAITransport({models,maxOutputTokens:4000,authorize:async()=>true,budget:{async reserve(input){assert.equal(input.maxOutputTokens,4000);assert.notEqual(input.requestDigest,approvedDigest);return {executionAuthorized:true,requestDigest:approvedDigest,binding:'a'.repeat(64)};},async consume(){assert.fail('replayed admission consumed');}},client:{responses:{create:async()=>{providerCalls++;return {status:'completed',usage:{input_tokens:1,output_tokens:3000},output_text:'{}'};}}}});
+ await assert.rejects(large.generate(request),/Provider request failed/);assert.equal(providerCalls,0);
+});
