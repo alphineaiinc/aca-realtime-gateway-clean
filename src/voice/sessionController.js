@@ -533,6 +533,7 @@ function handleTranscriptFinal(callSid, text) {
   cancelSpeech(callSid);
   if (!transition(session, STATES.PROCESSING, "final_transcript_received")) return { shouldProcess: false };
   session.isProcessing = true;
+  session.__responseStartedAt = require("node:perf_hooks").performance.now();
 
   return {
     shouldProcess: true,
@@ -1265,6 +1266,7 @@ function cancelSpeech(callSid) {
   const session = getSession(callSid);
   if (!session) return false;
   session.__speechOwner = null;
+  session.__responseStartedAt = undefined;
   if ([STATES.READY_TO_SPEAK, STATES.SPEAKING, STATES.PROCESSING].includes(session.state)) {
     if (!transition(session, STATES.LISTENING, "speech_cancelled")) return false;
   }
@@ -1277,6 +1279,10 @@ function handleSpeak(callSid, owner) {
   if (!session || session.state !== STATES.READY_TO_SPEAK || (owner !== undefined && !isSpeechCurrent(callSid, owner))) return false;
   if (!transition(session, STATES.SPEAKING, "tts_start")) return false;
   session.isSpeaking = true;
+  if (Number.isFinite(session.__responseStartedAt)) {
+    require("../monitor/resilienceMetrics").observeVoiceResponseMs(require("node:perf_hooks").performance.now()-session.__responseStartedAt);
+    session.__responseStartedAt = undefined;
+  }
   return true;
 }
 function handleSpeechFailed(callSid, owner) {
@@ -1286,6 +1292,7 @@ function handleSpeechFailed(callSid, owner) {
       (owner !== undefined && !isSpeechCurrent(callSid, owner))) return false;
   if (!transition(session, STATES.LISTENING, "tts_failed")) return false;
   session.__speechOwner = null;
+  session.__responseStartedAt = undefined;
   session.isSpeaking = false;
   return true;
 }
