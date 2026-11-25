@@ -27,11 +27,12 @@ test("Twilio diagnostics only reads transcripts for authenticated admins", async
   };
   let reads = 0;
   vm.runInNewContext(
-    section("function requireAdmin(req, res, next) {", "function createRateLimiter(") +
+    section("function requireAdmin(req, res, next) {", "// Bounded pre-authentication IP budgets") +
       "\n" + section('app.get("/monitor/twilio-debug",', 'console.log("✅ Mounted /monitor/twilio-debug");'),
     {
       app,
       jwt,
+      monitorRateLimit: require("../src/security/ingressLimit").ingressLimit({max:30}),
       process: { env: { JWT_SECRET: secret } },
       getTwilioDebugState() { reads += 1; return debug; },
     }
@@ -70,5 +71,10 @@ test("Twilio diagnostics only reads transcripts for authenticated admins", async
     assert.equal(response.status, 200);
     assert.deepEqual(await response.json(), { ok: true, debug });
     assert.equal(reads, 1);
+  });
+  await t.test("pre-auth budget denies further requests without reading diagnostics", async () => {
+    for (let i=0;i<22;i++) assert.equal((await fetch(url)).status,401);
+    assert.equal((await fetch(url,{headers:{authorization:`Bearer ${sign({role:"admin"})}`}})).status,429);
+    assert.equal(reads,1);
   });
 });

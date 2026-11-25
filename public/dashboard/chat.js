@@ -28,7 +28,7 @@
 
   const sid =
     localStorage.getItem(sidKey) ||
-    ("webchat_" + Math.random().toString(16).slice(2) + "_" + Date.now());
+    ("webchat_" + globalThis.crypto.randomUUID());
 
   localStorage.setItem(sidKey, sid);
   if (sessionIdEl) sessionIdEl.textContent = sid;
