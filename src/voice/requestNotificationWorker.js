@@ -25,4 +25,9 @@ function createSmtpSender(env=process.env){
  const transport=require("nodemailer").createTransport({host:env.SMTP_HOST,port:Number(env.SMTP_PORT||465),secure:true,tls:{rejectUnauthorized:true},auth:{user:env.SMTP_USER,pass:env.SMTP_PASS},connectionTimeout:5000,greetingTimeout:5000,socketTimeout:10000});
  return mail=>transport.sendMail({...mail,from:env.SMTP_FROM});
 }
-module.exports={deliverOne,createSmtpSender};
+function createMailSender(env=process.env){
+ if(env.ACA_EMAIL_TRANSPORT==="gmail")return require("./gmailSender").createGmailSender(env);
+ if(!env.ACA_EMAIL_TRANSPORT||env.ACA_EMAIL_TRANSPORT==="smtp")return createSmtpSender(env);
+ throw Error("EMAIL_TRANSPORT_INVALID");
+}
+module.exports={deliverOne,createSmtpSender,createMailSender};
