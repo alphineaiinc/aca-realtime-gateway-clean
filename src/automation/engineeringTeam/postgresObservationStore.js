@@ -14,7 +14,16 @@ function createPostgresObservationStore({ pool, scope, issue } = {}) {
     throw new Error('Invalid PostgreSQL observation scope');
   }
 
-  return Object.freeze({ async observeEvent(eventKey, observe) {
+  return Object.freeze({ async dueEvents() {
+    const client=await pool.connect();
+    try {
+      const {rows}=await client.query(`SELECT event_key FROM engineering_team_manager_observations
+        WHERE product=$1 AND repository=$2 AND head_sha=$3 AND issue=$4
+        AND observation IS NULL AND attempts BETWEEN 1 AND 2 AND next_attempt_at<=clock_timestamp()
+        ORDER BY next_attempt_at,event_key LIMIT 10`,[product,repository,sha,issue]);
+      return rows.map(row=>row.event_key);
+    } finally {client.release();}
+  }, async observeEvent(eventKey, observe) {
     if (typeof eventKey !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9_.:-]{0,159}$/.test(eventKey) ||
         typeof observe !== 'function') {
       throw new Error('Invalid observation event');

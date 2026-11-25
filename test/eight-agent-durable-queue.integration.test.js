@@ -734,15 +734,17 @@ test('isolated PostgreSQL queue: concurrent claims, retries, restart, expiry and
   await observer.query('ALTER TABLE engineering_team_governance_acknowledgements ENABLE ROW LEVEL SECURITY');
   await observer.query("CREATE POLICY ci_observer_alert_scope ON engineering_team_governance_alerts FOR SELECT TO aca_ci_restricted_observer USING (product='aca' AND repository='fixture/recovery')");
   await observer.query("CREATE POLICY ci_observer_ack_scope ON engineering_team_governance_acknowledgements FOR SELECT TO aca_ci_restricted_observer USING (EXISTS (SELECT 1 FROM engineering_team_governance_alerts a WHERE a.id=alert_id))");
-  await observer.query('SET LOCAL ROLE aca_ci_restricted_observer');
+  await observer.query('COMMIT');
+  await observer.query('SET ROLE aca_ci_restricted_observer');
   const {createRestrictedManagerRuntime}=require('../src/automation/engineeringTeam/restrictedManagerRuntime');
-  const runtime=createRestrictedManagerRuntime({scope:recoveryScope,issue:118,githubToken:'fixture-only-token',fetchImpl:async url=>new Response(JSON.stringify(url.includes('/issues/')?{number:118,state:'open',labels:[]}:{total_count:1,workflow_runs:[{id:1,name:'CI',status:'completed',conclusion:'success',head_sha:recoveryScope.sha}]})),readStopState:async()=>false,readOnlyPool:{connect:async()=>({release(){},query:async(sql,args)=>{if(sql==='BEGIN READ ONLY'||sql==='COMMIT'||sql==='ROLLBACK'||sql.startsWith('SET LOCAL statement_timeout'))return {rows:[]};if(sql==='SHOW transaction_read_only')return {rows:[{transaction_read_only:'on'}]};return observer.query(sql,args);}})}});
+  const runtime=createRestrictedManagerRuntime({scope:recoveryScope,issue:118,githubToken:'fixture-only-token',fetchImpl:async url=>new Response(JSON.stringify(url.includes('/issues/')?{number:118,state:'open',labels:[]}:{total_count:1,workflow_runs:[{id:1,name:'CI',status:'completed',conclusion:'success',head_sha:recoveryScope.sha}]})),readStopState:async()=>false,readOnlyPool:{connect:async()=>({release(){},query:(sql,args)=>observer.query(sql,args)})}});
   const report=await runtime.observe();
   assert.equal(report.status,'observed');
   assert.deepEqual(report.governance,{status:'observed',scope:'repository-wide',pending:4,partial:false});
   assert.equal(report.executionAuthorized,false);
   assert.equal(report.writeAuthorized,false);
   assert.equal((await observer.query('SELECT count(*)::int AS n FROM engineering_team_governance_alerts WHERE repository=$1',[productAScope.repository])).rows[0].n,0);
+  await observer.query('BEGIN');
   for(const sql of ['SELECT * FROM engineering_team_tasks','SELECT actor_id FROM engineering_team_governance_alerts','DELETE FROM engineering_team_governance_alerts','UPDATE engineering_team_governance_acknowledgements SET alert_id=alert_id']){
    await observer.query('SAVEPOINT denied_operation');
    await assert.rejects(observer.query(sql),e=>e.code==='42501');
@@ -751,7 +753,14 @@ test('isolated PostgreSQL queue: concurrent claims, retries, restart, expiry and
   }
  } finally {
   await observer.query('ROLLBACK');
-  observer.release();
+  await observer.query('RESET ROLE');
+  await observer.query('DROP POLICY IF EXISTS ci_observer_ack_scope ON engineering_team_governance_acknowledgements');
+  await observer.query('DROP POLICY IF EXISTS ci_observer_alert_scope ON engineering_team_governance_alerts');
+  await observer.query('ALTER TABLE engineering_team_governance_acknowledgements DISABLE ROW LEVEL SECURITY');
+  await observer.query('ALTER TABLE engineering_team_governance_alerts DISABLE ROW LEVEL SECURITY');
+  await observer.query('DROP OWNED BY aca_ci_restricted_observer');
+  await observer.query('DROP ROLE aca_ci_restricted_observer');
+  observer.release(true);
  }
  // SEC-09: durable publication reconciliation is requester-, approval-, and
  // exact-revision-bound; replay is idempotent and evidence is append-only.

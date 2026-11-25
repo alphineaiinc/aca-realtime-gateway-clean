@@ -67,13 +67,16 @@ test('isolated PostgreSQL manager observation acceptance', {
     const burst = () => Promise.all(Array.from({length:12},(_,i)=>(i%2?recreated:stores[0]).observeEvent(event,unavailable)));
     assert.ok((await burst()).every(r=>r.status==='deferred'&&r.attempts===1));
     assert.equal(calls,1);
+    assert.ok(!(await recreated.dueEvents()).includes(event));
     await advance(5);
+    assert.ok((await recreated.dueEvents()).includes(event));
     assert.equal((await burst()).filter(r=>!r.replayed).length,1);
     assert.equal(calls,2);
     assert.ok((await burst()).every(r=>r.status==='deferred'&&r.attempts===2));
     await advance(10);
     assert.equal((await burst()).filter(r=>!r.replayed).length,1);
     assert.equal(calls,3);
+    assert.ok(!(await recreated.dueEvents()).includes(event));
     assert.deepEqual(await recreated.observeEvent(event, () => assert.fail('exhausted event executed')), {
       status: 'exhausted', replayed: true, attempts: 3,
     });

@@ -37,7 +37,16 @@ function createRestrictedManagerRuntime({scope,issue,githubToken,fetchImpl,readO
   const result=await store.observeEvent(eventKey,observe);
   return await allowed()?result:denied();
  }
- if(eventSecret!==undefined)return Object.freeze({observe,deliver:createAuthenticatedObservation({secret:eventSecret,scope:pinned,observeEvent})});
- return Object.freeze({observe,observeEvent});
+ async function recoverDue(){
+  if(!await allowed())return denied();
+  const results=[];
+  for(const key of await store.dueEvents()){
+   if(!await allowed())return denied();
+   results.push(await observeEvent(key));
+  }
+  return await allowed()?Object.freeze({status:'recovery-complete',count:results.length}):denied();
+ }
+ if(eventSecret!==undefined)return Object.freeze({observe,recoverDue,deliver:createAuthenticatedObservation({secret:eventSecret,scope:pinned,observeEvent})});
+ return Object.freeze({observe,observeEvent,recoverDue});
 }
 module.exports={createRestrictedManagerRuntime};
