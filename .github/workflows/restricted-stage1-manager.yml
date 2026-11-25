@@ -1,0 +1,41 @@
+name: Restricted Stage 1 Manager (review hold)
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+  issues: read
+  actions: read
+jobs:
+  observe:
+    if: github.repository == 'alphineaiinc/aca-realtime-gateway-clean' && github.ref == 'refs/heads/aca-p2-b02-isolated-integration' && vars.ACA_STAGE1_APPROVED_CONFIG_SHA == github.sha
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+          path: config
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: 6678909c7e9e60c08b0bc56c150e9031900a3984
+          persist-credentials: false
+          path: manager
+      - name: Verify pinned source and stop-reader regression
+        run: |
+          test "$(git -C manager rev-parse HEAD)" = "6678909c7e9e60c08b0bc56c150e9031900a3984"
+          test "$(git -C config rev-parse HEAD)" = "$GITHUB_SHA"
+          node --test config/test/stage1-stop-reader.test.js
+      - name: Bounded observation
+        env:
+          ACA_READ_TOKEN: ${{ github.token }}
+        run: |
+          node <<'NODE'
+          const {observeOnce}=require('./manager/src/automation/engineeringTeam/restrictedManagerOnce');
+          const {stopReader}=require('./config/.github/scripts/stage1-stop-reader');
+          const token=process.env.ACA_READ_TOKEN;
+          observeOnce({env:{ACA_RESTRICTED_MANAGER_ENABLED:'true',ACA_RESTRICTED_MANAGER_ISSUE:'118',ACA_RESTRICTED_MANAGER_PRODUCT:'aca',ACA_RESTRICTED_MANAGER_REPOSITORY:'alphineaiinc/aca-realtime-gateway-clean',ACA_RESTRICTED_MANAGER_HEAD_SHA:'6678909c7e9e60c08b0bc56c150e9031900a3984',ACA_RESTRICTED_MANAGER_GITHUB_READ_TOKEN:token},readStopState:stopReader(token)}).then(result=>{
+            if(result.status!=='observed'||result.executionAuthorized!==false||result.writeAuthorized!==false||result.deployAuthorized!==false||result.paidProviderAuthorized!==false)throw Error('Observation denied');
+            console.log(JSON.stringify(result));
+          }).catch(()=>{process.exitCode=1;});
+          NODE
