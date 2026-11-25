@@ -37,6 +37,26 @@ function createGitHubReadTransport({token,repository,fetchImpl=globalThis.fetch,
    if(data.number!==s.issue||data.pull_request||!['open','closed'].includes(data.state)||!Array.isArray(data.labels)||data.labels.length>100||data.labels.some(l=>typeof l?.name!=='string'||l.name.length>100))throw Error('Issue status denied');
    return Object.freeze({repository:s.repository,issue:s.issue,state:data.state,labels:Object.freeze(data.labels.map(l=>l.name))});
   },
+  async discoverPushEvidence(s){
+   const root=base(s); const runs=[]; const seen=new Set();
+   for(let page=1;page<=5;page++){
+    const data=await get(root+"/actions/runs?head_sha="+s.sha+"&event=push&per_page=20&page="+page);
+    if(!Array.isArray(data.workflow_runs)||data.workflow_runs.length>20||!Number.isSafeInteger(data.total_count)||data.total_count<0||data.total_count>100)throw Error("CI inventory denied");
+    for(const x of data.workflow_runs){if(x.head_sha!==s.sha||x.event!=="push"||!Number.isSafeInteger(x.id)||x.id<1||seen.has(x.id))throw Error("CI provenance denied");seen.add(x.id);runs.push({id:x.id,name:x.name,status:x.status,conclusion:x.conclusion,head_sha:x.head_sha});}
+    if(runs.length===data.total_count)break;
+    if(data.workflow_runs.length!==20||page===5)throw Error("Incomplete CI inventory");
+   }
+   return Object.freeze({repository:s.repository,sha:s.sha,text:bounded(JSON.stringify({runs,event:"push"}))});
+  },
+  async readPushArtifacts(s,runId){
+   const root=base(s);if(!Number.isSafeInteger(runId)||runId<1)throw Error("Invalid run");
+   const run=await get(root+"/actions/runs/"+runId);
+   if(run.id!==runId||run.head_sha!==s.sha||run.event!=="push"||run.status!=="completed"||run.conclusion!=="success")throw Error("Run provenance denied");
+   const data=await get(root+"/actions/runs/"+runId+"/artifacts?per_page=20");
+   if(!Array.isArray(data.artifacts)||data.total_count!==data.artifacts.length||data.artifacts.length>20)throw Error("Incomplete artifact inventory");
+   const artifacts=data.artifacts.map(a=>{if(a.expired!==false||a.workflow_run?.id!==runId||a.workflow_run?.head_sha!==s.sha||!Number.isSafeInteger(a.id)||a.id<1||!/^sha256:[a-f0-9]{64}$/.test(a.digest))throw Error("Artifact provenance denied");return {id:a.id,name:a.name,digest:a.digest,size:a.size_in_bytes};});
+   return Object.freeze({repository:s.repository,sha:s.sha,text:bounded(JSON.stringify({runId,artifacts}))});
+  },
   async readCI(s){
    const data=await get(base(s)+'/actions/runs?head_sha='+s.sha+'&per_page=20');
    if(!Array.isArray(data.workflow_runs)||data.workflow_runs.some(x=>x.head_sha!==s.sha))throw Error('CI revision denied');
