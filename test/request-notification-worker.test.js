@@ -77,3 +77,28 @@ test("injected runtime transport cannot bypass staging entitlement",async()=>{
   assert.equal(result.status,0,result.stderr);
  }
 });
+
+test("commercial entitlement is disabled by default and fenced to service and database",async()=>{
+ const keys=["ACA_STAGING_EMAIL_ONLY","ACA_PRODUCTION_EMAIL_ENABLED","RENDER_SERVICE_ID","ACA_PRODUCTION_EMAIL_DATABASE","ACA_STAGING_ACCEPTANCE_RUN","ACA_STAGING_ACCEPTANCE_SEND"];
+ const old=keys.map(k=>process.env[k]);
+ try{
+ keys.forEach(k=>delete process.env[k]);
+ const denied={connect:async()=>{throw Error("unexpected database access");}};
+ assert.equal(await deliverOne({pool:denied}),false);
+ process.env.ACA_PRODUCTION_EMAIL_ENABLED="true";
+ process.env.ACA_PRODUCTION_EMAIL_DATABASE="commercial_test";
+ assert.equal(await deliverOne({pool:denied}),false);
+ process.env.RENDER_SERVICE_ID="srv-d3rfh8umcj7s73cj28c0";
+ process.env.ACA_PRODUCTION_EMAIL_DATABASE="aca_product_staging";
+ assert.equal(await deliverOne({pool:denied}),false);
+ process.env.ACA_PRODUCTION_EMAIL_DATABASE="commercial_test";
+ process.env.ACA_STAGING_ACCEPTANCE_SEND="true";
+ assert.equal(await deliverOne({pool:denied}),false);
+ delete process.env.ACA_STAGING_ACCEPTANCE_SEND;
+ const f=fixture(false);
+ assert.equal(await deliverOne({pool:f.pool,sendMail:async()=>{throw Error("unexpected send");}}),false);
+ const [sql,params]=f.state.queries[0];
+ assert.deepEqual(params,[false,null,null,"commercial_test"]);
+ assert.ok(sql.includes("current_database() = $4::text AND current_database() <> 'aca_product_staging'"));
+ }finally{keys.forEach((k,i)=>{if(old[i]===undefined)delete process.env[k];else process.env[k]=old[i];});}
+});
