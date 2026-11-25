@@ -13,7 +13,7 @@ async function deliverOne({pool,sendMail}) {
   const row=rows[0];
   if(!/^[^\s@,;<>]+@[^\s@,;<>]+\.[^\s@,;<>]+$/.test(row.email)) throw Error("INVALID_RECIPIENT");
   // No customer PII in email; authenticated business access is required to view details.
-  const result=await sendMail({to:row.email,subject:"New Alphine AI customer request",text:"A new customer request is waiting in your Alphine AI account. Sign in to review it.",messageId:"<aca-request-"+row.request_id+"@alphineai.com>"});
+  const result=await (sendMail||createMailSender())({to:row.email,subject:"New Alphine AI customer request",text:"A new customer request is waiting in your Alphine AI account. Sign in to review it.",messageId:"<aca-request-"+row.request_id+"@alphineai.com>"});
   if(!Array.isArray(result?.accepted)||!result.accepted.includes(row.email)) throw Error("DELIVERY_NOT_ACCEPTED");
   await client.query("UPDATE public.aca_request_outbox SET delivered_at=NOW() WHERE request_id=$1 AND tenant_id=$2",[row.request_id,row.tenant_id]);
   await client.query("COMMIT");return true;
