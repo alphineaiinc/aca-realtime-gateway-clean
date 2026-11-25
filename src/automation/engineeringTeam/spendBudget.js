@@ -5,7 +5,7 @@ function createSpendBudget({pool,product,repository,budgetId,ceilings}={}){
  if(!pool||typeof pool.query!=='function'||typeof product!=='string'||!product||typeof repository!=='string'||!repository||typeof budgetId!=='string'||! /^[a-f0-9-]{36}$/.test(budgetId)||!ceilings||!Object.keys(ceilings).length||Object.keys(ceilings).length>8||Object.values(ceilings).some(x=>!Number.isSafeInteger(x)||x<1||x>10000000))throw Error('Invalid spend budget');
  const rates=Object.freeze({...ceilings});
  return Object.freeze({async reserve({model}={}){
-  if(!Object.hasOwn(rates,model))throw Error('Unknown model ceiling');
+  if(typeof model!=='string'||!Object.hasOwn(rates,model))throw Error('Unknown model ceiling');
   const amount=rates[model];
   if(typeof pool.connect!=='function')throw Error('Transactional spend pool required');
   const client=await pool.connect();let discard=false;
