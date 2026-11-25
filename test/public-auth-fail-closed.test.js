@@ -10,7 +10,9 @@ function harness(secret) {
   let queries = 0, signed = 0, connects = 0;
   const pool = { connect: async () => { connects++; throw new Error('Not needed'); }, query: async () => { queries++; return { rows: [{ id: 'victim' }] }; } };
   const mocks = {
-    express: { Router: () => ({ post: (route, handler) => { routes[route] = handler; }, get() {} }) },
+    'express-rate-limit': {rateLimit:()=> (req,res,next)=>next()},
+    '../middleware/postgresRateLimit': {createPostgresRateLimiter:()=> (req,res,next)=>next()},
+    express: { Router: () => ({ post: (route, ...handlers) => { routes[route] = handlers.at(-1); }, get() {} }) },
     pg: { Pool: class { constructor() { return pool; } } },
     jsonwebtoken: { sign: () => { signed++; return 'forged-token'; } },
     'node:crypto': { randomBytes: () => Buffer.alloc(32, 1) },

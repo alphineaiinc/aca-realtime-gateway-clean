@@ -8,7 +8,7 @@ const express=require('express');
 test('dashboard diagnostic endpoints deny access before filesystem or network operations',async t=>{
  let io=0;
  const context={__dirname:path.join(__dirname,'../src/routes'),module:{exports:{}},require(n){
- if(n==='express')return express;if(n==='path')return path;
+ if(n==='express-rate-limit')return require(n); if(n==='express')return express;if(n==='path')return path;
  if(n==='fs')return {existsSync(){io++;throw Error('unexpected read');}};
  if(n==='axios')return {get(){io++;throw Error('unexpected request');}};
  if(n==='../db/pool')return {};
