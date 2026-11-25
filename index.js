@@ -915,6 +915,22 @@ const http = require("http"); // ✅ Needed so express-ws binds to the same serv
 const cors = require("cors");
 const bodyParser = require("body-parser");
 const app = express();
+app.set("trust proxy", require("./src/security/proxyPolicy").proxyPolicy(process.env.ACA_TRUSTED_PROXY_CIDRS || ""));
+// Global bounded ingress before parsers, authentication and expensive handlers.
+const { rateLimit: recognizedRateLimit } = require("express-rate-limit");
+const { ingressLimit: boundedIngress } = require("./src/security/ingressLimit");
+// Separate bounded budgets for provider callback namespaces; no authentication bypass.
+const ingressClass = req => /^\/twilio(?:\/|$)/i.test(req.path) ? "twilio" : /^\/api\/stripe(?:\/|$)/i.test(req.path) ? "stripe" : "ordinary";
+const ordinaryIngress = boundedIngress({max: 300, windowMs: 60000});
+const twilioIngress = boundedIngress({max: 300, windowMs: 60000});
+const stripeIngress = boundedIngress({max: 300, windowMs: 60000});
+const ingressBudgets = {ordinary:ordinaryIngress,twilio:twilioIngress,stripe:stripeIngress};
+// Independent process-local emergency ceilings; do not depend on forwarded identity.
+// Keep existing per-IP budgets and isolate provider classes.
+const aggregateIngressBudgets = Object.fromEntries(["ordinary","twilio","stripe"].map(kind=>[kind,boundedIngress({max: 3000, windowMs: 60000, globalBudget:true})]));
+app.use((req,res,next)=>aggregateIngressBudgets[ingressClass(req)](req,res,next));
+app.use((req,res,next)=>ingressBudgets[ingressClass(req)](req,res,next));
+app.use(recognizedRateLimit({windowMs: 60000, limit: 300, standardHeaders: "draft-8", legacyHeaders: false, passOnStoreError: false, keyGenerator: req => (ingressClass(req)+":")+require("express-rate-limit").ipKeyGenerator(req.ip)}));
 
 // ✅ Story 12.8 — security headers + origin allowlist guard (fail-closed in prod)
 try {
@@ -1185,7 +1201,7 @@ try {
 }
 
 // Trust Render proxy and log runtime roots once
-app.set("trust proxy", 1);
+// Proxy trust configured once at application initialization.
 console.log("🧭 process.cwd():", process.cwd());
 console.log("🧭 __dirname:", __dirname);
 
