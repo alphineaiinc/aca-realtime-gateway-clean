@@ -36,6 +36,12 @@ async function assessAuthenticatedRuntimeEvidence({expected,evidence,challenge,r
  const pin=pins[role];
  if(await keyStatus(Object.freeze({role,authority:pin.authority,fingerprint:pin.fingerprint}))!=='active')return deny('key inactive or unavailable');
  }
+ // Revalidate both independent pins after the asynchronous lookups: a previously
+ // active runner key may be revoked while the publisher key is being queried.
+ for(const role of ['runner','publisher']){
+ const pin=pins[role];
+ if(await keyStatus(Object.freeze({role,authority:pin.authority,fingerprint:pin.fingerprint}))!=='active')return deny('key inactive or unavailable');
+ }
  const final=verifyTeardownEvidence(input);
  if(!final.authenticated||final.evidenceDigest!==initial.evidenceDigest)return deny('evidence expired or changed');
  return Object.freeze({accepted:false,authenticated:true,reason:'independent operational acceptance required',evidenceDigest:final.evidenceDigest,executionAuthorized:false,attestation:false});
