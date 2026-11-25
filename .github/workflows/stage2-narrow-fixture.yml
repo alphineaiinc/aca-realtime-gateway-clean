@@ -25,4 +25,4 @@ jobs:
       - run: |
           test "$(git -C manager rev-parse HEAD)" = "6678909c7e9e60c08b0bc56c150e9031900a3984"
           test "$(git -C config rev-parse HEAD)" = "$GITHUB_SHA"
-          node --test config/test/stage2-narrow.test.js
+          node --test config/fixtures/stage2-narrow.test.js
