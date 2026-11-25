@@ -10,3 +10,5 @@ CREATE TABLE IF NOT EXISTS engineering_team_manager_observations (
   ),
   PRIMARY KEY (product, repository, head_sha, issue, event_key)
 );
+
+ALTER TABLE engineering_team_manager_observations ADD COLUMN IF NOT EXISTS next_attempt_at timestamptz;

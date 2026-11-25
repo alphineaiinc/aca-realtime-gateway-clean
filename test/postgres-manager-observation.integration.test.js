@@ -59,10 +59,21 @@ test('isolated PostgreSQL manager observation acceptance', {
     assert.equal((await stores[0].observeEvent(event, unavailable)).attempts, 1);
     assert.equal((await stores[0].observeEvent(randomUUID(), async () => observation)).status, 'observed');
     const recreated = createPostgresObservationStore({ pool: pools[1], scope, issue });
-    const results = await Promise.all(Array.from({ length: 12 }, (_, index) =>
-      (index % 2 ? recreated : stores[0]).observeEvent(event, unavailable)));
-    assert.equal(calls, 3);
-    assert.equal(results.filter(result => result.replayed).length, 10);
+    const advance = async minutes => {
+      const {rows:[row]}=await pools[0].query('SELECT extract(epoch FROM (next_attempt_at-clock_timestamp())) AS remaining FROM engineering_team_manager_observations WHERE event_key=$1',[event]);
+      assert.ok(Number(row.remaining)>minutes*60-10 && Number(row.remaining)<=minutes*60);
+      await pools[0].query("UPDATE engineering_team_manager_observations SET next_attempt_at=clock_timestamp()-interval '1 second' WHERE event_key=$1",[event]);
+    };
+    const burst = () => Promise.all(Array.from({length:12},(_,i)=>(i%2?recreated:stores[0]).observeEvent(event,unavailable)));
+    assert.ok((await burst()).every(r=>r.status==='deferred'&&r.attempts===1));
+    assert.equal(calls,1);
+    await advance(5);
+    assert.equal((await burst()).filter(r=>!r.replayed).length,1);
+    assert.equal(calls,2);
+    assert.ok((await burst()).every(r=>r.status==='deferred'&&r.attempts===2));
+    await advance(10);
+    assert.equal((await burst()).filter(r=>!r.replayed).length,1);
+    assert.equal(calls,3);
     assert.deepEqual(await recreated.observeEvent(event, () => assert.fail('exhausted event executed')), {
       status: 'exhausted', replayed: true, attempts: 3,
     });

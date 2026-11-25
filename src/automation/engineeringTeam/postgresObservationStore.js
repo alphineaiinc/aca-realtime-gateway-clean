@@ -32,7 +32,7 @@ function createPostgresObservationStore({ pool, scope, issue } = {}) {
         INSERT INTO engineering_team_manager_observations (product,repository,head_sha,issue,event_key)
         VALUES ($1,$2,$3,$4,$5) ON CONFLICT DO NOTHING`, key);
       const { rows: [row] } = await client.query(`
-        SELECT attempts, observation FROM engineering_team_manager_observations
+        SELECT attempts, observation, (next_attempt_at > clock_timestamp()) AS deferred FROM engineering_team_manager_observations
         WHERE product=$1 AND repository=$2 AND head_sha=$3 AND issue=$4 AND event_key=$5
         FOR UPDATE`, key);
 
@@ -41,6 +41,8 @@ function createPostgresObservationStore({ pool, scope, issue } = {}) {
         result = { status: 'observed', replayed: true, attempts: row.attempts, observation: row.observation };
       } else if (row.attempts >= maxAttempts) {
         result = { status: 'exhausted', replayed: true, attempts: row.attempts };
+      } else if (row.deferred === true) {
+        result = { status: 'deferred', replayed: true, attempts: row.attempts };
       } else {
         // The callback performs read-only observation. Its unavailable result consumes an attempt.
         const observation = await observe();
@@ -61,7 +63,8 @@ function createPostgresObservationStore({ pool, scope, issue } = {}) {
         }
         const attempts = row.attempts + 1;
         await client.query(`
-          UPDATE engineering_team_manager_observations SET attempts=$6, observation=$7::jsonb
+          UPDATE engineering_team_manager_observations SET attempts=$6, observation=$7::jsonb,
+            next_attempt_at=CASE WHEN $7::jsonb IS NULL AND $6 < 3 THEN clock_timestamp() + make_interval(mins => $6 * 5) ELSE NULL END
           WHERE product=$1 AND repository=$2 AND head_sha=$3 AND issue=$4 AND event_key=$5`,
         [...key, attempts, serialized]);
         result = serialized === null
