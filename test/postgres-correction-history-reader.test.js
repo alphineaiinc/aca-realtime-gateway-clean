@@ -17,7 +17,7 @@ function fake(header,events){
 test("authenticated adapter reads consistent single-event ledger",async()=>{
  const {client,queries}=fake([{version:1}],[event]);
  assert.deepEqual(await readCorrectionHistory(client,id),{
- attempts:1,unchangedFailureCount:0,lastResultingHeadSha:b,
+ attempts:1,unchangedFailureCount:null,lastResultingHeadSha:b,
  lastFailureFingerprint:"ci:failure:first"});
  assert.match(queries[0],/REPEATABLE READ READ ONLY/);
  assert.equal(queries.at(-1),"COMMIT");
