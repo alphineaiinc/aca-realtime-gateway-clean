@@ -14,13 +14,13 @@ function createOpenAITransport({client,models,authorize,maxCalls=8,maxOutputToke
   if(halted||active||calls>=maxCalls)throw Error('Provider budget denied');
   active=true;
   try{
-   const requestDigest=require('./patchPlanner').digest(JSON.stringify({role:snapshot.role,mode:snapshot.mode,input:snapshot.input,instructions:snapshot.instructions,schema:snapshot.schema,model:selected[snapshot.role]}));
-   const reservation=await budget.reserve({requestDigest,model:selected[snapshot.role],role:snapshot.role});
+   const requestDigest=require('./patchPlanner').digest(JSON.stringify({role:snapshot.role,mode:snapshot.mode,input:snapshot.input,instructions:snapshot.instructions,schema:snapshot.schema,model:selected[snapshot.role],max_output_tokens:maxOutputTokens}));
+   const reservation=await budget.reserve({requestDigest,model:selected[snapshot.role],role:snapshot.role,maxOutputTokens});
    if(!reservation||reservation.executionAuthorized!==true||reservation.requestDigest!==requestDigest||typeof reservation.binding!=='string'||!/^[a-f0-9]{64}$/.test(reservation.binding))throw Error('Request-bound provider reservation denied');
    // Re-evaluate policy after the durable reservation and immediately before the external side effect.
    // A revoked reservation remains consumed; it is never refunded or automatically retried.
    if(await authorize(snapshot.role)!==true)throw Error('Provider authorization revoked');
-   if(await budget.consume({binding:reservation.binding,requestDigest,role:snapshot.role,model:selected[snapshot.role]})!==true)throw Error('Provider reservation consumption denied');
+   if(await budget.consume({binding:reservation.binding,requestDigest,role:snapshot.role,model:selected[snapshot.role],maxOutputTokens})!==true)throw Error('Provider reservation consumption denied');
    calls++;
    const result=await client.responses.create({model:selected[snapshot.role],instructions:snapshot.instructions,input:snapshot.input,store:false,max_output_tokens:maxOutputTokens,text:{format:{type:'json_schema',name:'engineering_proposal',strict:true,schema:snapshot.schema}}},{timeout:timeoutMs,maxRetries:0});
    if(!Number.isSafeInteger(result?.usage?.input_tokens)||result.usage.input_tokens<0||!Number.isSafeInteger(result?.usage?.output_tokens)||result.usage.output_tokens<0)throw Error('Usage unavailable');
