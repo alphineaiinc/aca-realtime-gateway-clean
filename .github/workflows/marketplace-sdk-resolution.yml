@@ -20,9 +20,7 @@ jobs:
           registry-url: https://registry.npmjs.org
       - name: Resolve compatible transitive security updates
         run: |
-          npm install --package-lock-only --ignore-scripts --no-audit --no-fund
-          npm update google-gax rimraf glob minimatch --package-lock-only --ignore-scripts --no-audit --no-fund
-          npm audit fix --package-lock-only --ignore-scripts --no-fund
+          npm audit fix --ignore-scripts --no-fund
           npm ci --ignore-scripts --no-audit --no-fund
           npm ls --depth=0
           npm test
