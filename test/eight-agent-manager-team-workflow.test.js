@@ -33,9 +33,36 @@ test('S3-01 rejects unbound manager task identities before any proposal handoff'
 test('S3-01 rejects mismatched role action in agent proposal and stops subsequent handoffs',async()=>{
  let calls=0;
  const manager={
-  createTask:()=>({id:'offline-fixture-task'}),
+  createTask:scope=>({...scope,id:'offline-fixture-task'}),
   propose:async({taskId,role})=>{calls++;return {taskId,role,action:'untrusted-action',output:fixture(role),approval:false};}
  };
  const result=await createManagerTeamWorkflow({manager}).run(input);
  assert.equal(result.state,'failed');assert.equal(result.completed,0);assert.equal(calls,1);assert.equal(result.releaseApproved,false);assert.equal(result.executionAuthorized,false);
+});
+
+test('S3-01 rejects missing or mismatched product, repository and SHA before proposals',async()=>{
+ for(const key of ['product','repository','sha']){
+  for(const value of [undefined,'other',null]){
+   let calls=0;
+   const manager={createTask:scope=>({...scope,id:'bound-task',[key]:value}),propose:async()=>{calls++;throw Error('unexpected');}};
+   const result=await createManagerTeamWorkflow({manager}).run(input);
+   assert.equal(result.state,'failed');assert.equal(result.completed,0);assert.equal(calls,0);assert.equal(result.executionAuthorized,false);
+  }
+ }
+});
+test('S3-01 rejects invalid requested scope without creating a task',async()=>{
+ for(const patch of [{sha:undefined},{sha:'bad'},{repository:'not-a-repo'},{product:{}}]){
+  let calls=0;
+  const manager={createTask:()=>{calls++;throw Error('unexpected');},propose:async()=>{throw Error('unexpected');}};
+  const result=await createManagerTeamWorkflow({manager}).run({...input,...patch});
+  assert.equal(result.state,'failed');assert.equal(calls,0);
+ }
+});
+test('S3-01 rejects scope or task identity mutation during an asynchronous handoff',async()=>{
+ for(const [key,value] of [['id','other-task'],['product','other'],['repository','fixture/other'],['sha','b'.repeat(40)]]){
+  let task,calls=0;
+  const manager={createTask:scope=>(task={...scope,id:'bound-task'}),propose:async({taskId,role,action})=>{calls++;await Promise.resolve();task[key]=value;return {taskId,role,action,output:fixture(role),approval:false};}};
+  const result=await createManagerTeamWorkflow({manager}).run(input);
+  assert.equal(result.state,'failed');assert.equal(result.completed,0);assert.equal(calls,1);assert.equal(result.releaseApproved,false);assert.equal(result.executionAuthorized,false);
+ }
 });
