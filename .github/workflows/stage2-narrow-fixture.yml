@@ -1,0 +1,28 @@
+name: Stage 2 narrow integration fixture
+on:
+  push:
+    branches: [aca-p2-stage2-narrow-integration, aca-p2-stage2-on-demand]
+permissions:
+  contents: read
+concurrency:
+  group: aca-stage2-narrow-fixture
+  cancel-in-progress: false
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.sha }}
+          path: config
+          persist-credentials: false
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: 6678909c7e9e60c08b0bc56c150e9031900a3984
+          path: manager
+          persist-credentials: false
+      - run: |
+          test "$(git -C manager rev-parse HEAD)" = "6678909c7e9e60c08b0bc56c150e9031900a3984"
+          test "$(git -C config rev-parse HEAD)" = "$GITHUB_SHA"
+          node --test config/fixtures/stage2-narrow.test.js
