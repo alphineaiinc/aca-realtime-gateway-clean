@@ -8,7 +8,7 @@
   },
   "dependencies": {
     "@google-cloud/speech": "^7.2.1",
-    "archiver": "^7.0.1",
+    "archiver": "^8.0.0",
     "axios": "^1.13.2",
     "body-parser": "^2.2.2",
     "compression": "^1.8.1",
@@ -19,7 +19,7 @@
     "express-ws": "^5.0.2",
     "jsonwebtoken": "^9.0.3",
     "multer": "^2.0.2",
-    "nodemailer": "^7.0.12",
+    "nodemailer": "^10.6.1",
     "openai": "^6.16.0",
     "pdf-lib": "^1.17.1",
     "pdf-parse": "^2.4.5",
@@ -30,5 +30,13 @@
     "winston": "^3.19.0",
     "winston-daily-rotate-file": "^5.0.0",
     "ws": "^8.19.0"
+  },
+  "overrides": {
+    "archiver": {
+      "readdir-glob": "4.0.0"
+    },
+    "readdir-glob": {
+      "minimatch": "11.0.1"
+    }
   }
 }
