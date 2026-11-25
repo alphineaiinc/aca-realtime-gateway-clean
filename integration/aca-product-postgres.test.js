@@ -55,6 +55,38 @@ test("isolated product migration chain and verified onboarding",async()=>{
  assert.equal((await pool.query("SELECT count(*)::int AS n FROM aca_customer_requests WHERE id=$1 AND tenant_id=$2",[id,otherContext.tenantId])).rows[0].n,0);
  await assert.rejects(pool.query("INSERT INTO aca_request_outbox(request_id,tenant_id) VALUES($1,$2)",[id,other.rows[0].id]));
 
+// Exercise every authored workflow against real PostgreSQL inside a rollback-only transaction.
+ const fixtureClient=await pool.connect();
+ try {
+ await fixtureClient.query("BEGIN");
+ const {workflowIds,buildWorkflowDefinition}=require("../src/voice/workflowDefinitionCatalog");
+ const resolveFixture=createTenantResolver({query:fixtureClient.query.bind(fixtureClient)});
+ assert.equal(workflowIds.length,12);
+ for(const [i,workflowId] of workflowIds.entries()){
+ const schema=buildWorkflowDefinition(workflowId);
+ const tenant=(await fixtureClient.query("INSERT INTO master_tenants(business_name) VALUES($1) RETURNING id",["Rollback fixture "+i])).rows[0].id;
+ const phone="+1202555"+String(100+i).padStart(4,"0");
+ await fixtureClient.query("INSERT INTO voice_workflow_definitions(workflow_id,version,schema_json,is_active) VALUES($1,$2,$3,true) ON CONFLICT(workflow_id,version) DO UPDATE SET is_active=true",[workflowId,schema.version,JSON.stringify(schema)]);
+ await fixtureClient.query("INSERT INTO tenant_workflow_configs(tenant_id,workflow_id,workflow_version,is_active) VALUES($1,$2,$3,true)",[tenant,workflowId,schema.version]);
+ await fixtureClient.query("INSERT INTO tenant_phone_numbers(phone_number,tenant_id,is_active) VALUES($1,$2,true)",[phone,tenant]);
+ const input={calledNumber:phone,callSid:"CA"+i.toString(16).padStart(32,"0")};
+ const ctx=await resolveFixture(input);
+ assert.equal(ctx.ok,true);assert.equal(ctx.tenantId,tenant);assert.equal(ctx.clusterId,workflowId);
+ assert.equal((await resolveFixture({...input,tenantId:tenantId})).reason,"UNTRUSTED_IDENTIFIER");
+ const intent=ctx.schema.intents[0], values=Object.fromEntries(intent.required_slots.map(k=>[k,"Fixture "+k]));
+ const q=fixtureClient.query.bind(fixtureClient);
+ const saved=await saveConfirmedRequest(ctx,intent.intent,values,q);
+ assert.equal(await saveConfirmedRequest(ctx,intent.intent,values,q),saved);
+ assert.equal((await q("SELECT count(*)::int AS n FROM aca_request_outbox WHERE request_id=$1 AND tenant_id=$2",[saved,tenant])).rows[0].n,1);
+ assert.equal((await q("SELECT count(*)::int AS n FROM aca_customer_requests WHERE id=$1 AND tenant_id=$2",[saved,tenantId])).rows[0].n,0);
+ await q("UPDATE tenant_workflow_configs SET is_active=false WHERE tenant_id=$1",[tenant]);
+ assert.equal((await resolveFixture(input)).reason,"INACTIVE_WORKFLOW");
+ }
+ await fixtureClient.query("ROLLBACK");
+ assert.equal((await fixtureClient.query("SELECT count(*)::int AS n FROM master_tenants WHERE business_name LIKE 'Rollback fixture %'")).rows[0].n,0);
+ console.log("All 12 workflow assignments, tenant isolation, durable request idempotency and rollback passed");
+ }finally{await fixtureClient.query("ROLLBACK");fixtureClient.release();}
+ 
 // Real HTTP routes, actual disposable PostgreSQL, no external email.
 const crypto=require("node:crypto"),jwt=require("jsonwebtoken"),express=require("express");
 const secret=crypto.randomBytes(48).toString("hex");
