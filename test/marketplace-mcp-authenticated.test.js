@@ -11,7 +11,7 @@ test("authenticated MCP initialization, discovery and profile invocation",async(
  const {privateKey,publicKey}=generateKeyPairSync("rsa",{modulusLength:2048});
  const resource="https://aca.example.invalid/mcp",issuer="https://auth.example.invalid";
  const token=jwt.sign({tenant_id:7,scope:"aca:profile:read aca:requests:count"},privateKey,{algorithm:"RS256",issuer,audience:resource,subject:"fixture@example.invalid",expiresIn:60});
- const pool={query:async(sql,args)=>{assert.deepEqual(args,[7,"fixture@example.invalid"]);return {rows:[sql.includes("count(*)")?{count:"2"}:{business_name:"Fixture",preferred_lang:"en",region:"CA"}]};}};
+ const pool={query:async(sql,args)=>{if(args[0]!==7||args[1]!=="fixture@example.invalid")return {rows:[]};return {rows:[sql.includes("count(*)")?{count:"2"}:{business_name:"Fixture",preferred_lang:"en",region:"CA"}]};}};
  const app=express();app.use(createMarketplaceRouter({enabled:true,resource,issuer,publicKey,pool}));
  const http=app.listen(0,"127.0.0.1");await new Promise(resolve=>http.once("listening",resolve));
  const client=new Client({name:"fixture",version:"1.0.0"});
@@ -23,5 +23,10 @@ test("authenticated MCP initialization, discovery and profile invocation",async(
  const restricted=jwt.sign({tenant_id:7,scope:"aca:profile:read"},privateKey,{algorithm:"RS256",issuer,audience:resource,subject:"fixture@example.invalid",expiresIn:60});
  const limited=new Client({name:"limited",version:"1.0.0"});
  try{await limited.connect(new StreamableHTTPClientTransport(new URL("http://127.0.0.1:"+http.address().port+"/mcp"),{requestInit:{headers:{Authorization:"Bearer "+restricted}}}));const denied=await limited.callTool({name:"aca_get_request_count",arguments:{}});assert.equal(denied.isError,true);}finally{await limited.close();}
+ const countOnly=jwt.sign({tenant_id:7,scope:"aca:requests:count"},privateKey,{algorithm:"RS256",issuer,audience:resource,subject:"fixture@example.invalid",expiresIn:60});
+ const counter=new Client({name:"counter",version:"1.0.0"});
+ try{await counter.connect(new StreamableHTTPClientTransport(new URL("http://127.0.0.1:"+http.address().port+"/mcp"),{requestInit:{headers:{Authorization:"Bearer "+countOnly}}}));assert.equal((await counter.callTool({name:"aca_get_business_profile",arguments:{}})).isError,true);assert.equal(JSON.parse((await counter.callTool({name:"aca_get_request_count",arguments:{}})).content[0].text).request_count,"2");}finally{await counter.close();}
+ const wrong=jwt.sign({tenant_id:8,scope:"aca:profile:read"},privateKey,{algorithm:"RS256",issuer,audience:resource,subject:"fixture@example.invalid",expiresIn:60});
+ const rejected=await fetch("http://127.0.0.1:"+http.address().port+"/mcp",{method:"POST",headers:{Authorization:"Bearer "+wrong,"Content-Type":"application/json"},body:"{}"});assert.equal(rejected.status,401);
  }finally{await client.close();http.closeAllConnections();await new Promise(resolve=>http.close(resolve));}
 });
