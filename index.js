@@ -1474,6 +1474,14 @@ const PORT = process.env.PORT || 8080;
 // ✅ IMPORTANT: use server.listen (not app.listen) so express-ws works on the same server
 server.listen(PORT, () => {
   console.log(`🧠 Orchestrator live on port ${PORT}`);
+  // Staging-only startup hook; no public trigger and no automatic retry.
+  if (process.env.RENDER_SERVICE_ID === "srv-dc2ffvm8bjmc73fhn8j0" &&
+      process.env.ACA_STAGING_ACCEPTANCE_RUN === "true") {
+    Promise.resolve().then(() => require("./src/voice/stagingEmailAcceptance").run({
+      pool: require("./src/db/pool")
+    })).then(status => console.log("ACA staging email acceptance:", status))
+      .catch(() => console.warn("ACA staging email acceptance: failed"));
+  }
 });
 
 // NOTE: We intentionally do NOT call bindWebSocket(server) here.
