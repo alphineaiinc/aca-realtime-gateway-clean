@@ -42,7 +42,7 @@ async function readCorrectionHistory(client,{repositoryId,issueNumber,prNumber}=
      seenEvents.add(e.event_id);lastSha=e.resulting_head_sha;
    }
    await client.query("COMMIT");
-   return Object.freeze({attempts:version,unchangedFailureCount:0,
+   return Object.freeze({attempts:version,unchangedFailureCount:version===0?0:null,
      lastResultingHeadSha:lastSha,
      lastFailureFingerprint:events.rows.at(-1)?.failure_fingerprint??null});
  }catch(error){
