@@ -29,3 +29,15 @@ test("forked PR is not a trusted repository head",()=>{
 test("check normalization preserves original head SHA for stale-evidence detection",()=>{
   assert.equal(normalizeCheck({name:"Node tests",head_sha:"old",status:"completed",conclusion:"success"},"new").headSha,"old");
 });
+
+test("observer fails closed when PR changes during evidence collection",async()=>{
+ for(const change of ["head","closed","draft","repo","unchanged"]){
+  const {github}=fixture();let reads=0,changed=false;
+  const get=github.rest.pulls.get,checks=github.rest.checks.listForRef;
+  github.rest.checks.listForRef=async args=>{changed=true;return checks(args);};
+  github.rest.pulls.get=async()=>{reads++;const result=await get();if(changed){const pr=result.data;if(change==="head")pr.head.sha="new";if(change==="closed")pr.state="closed";if(change==="draft")pr.draft=true;if(change==="repo")pr.head.repo.id=99;}return result;};
+  const run=()=>observe({github,owner:"acme",repo:"service",prNumber:21,issueNumber:20});
+  if(change==="unchanged")assert.equal((await run()).mergeAuthorized,false);else await assert.rejects(run(),/stale_pr_observation/);
+  assert.equal(reads,2);
+ }
+});
