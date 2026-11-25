@@ -36,7 +36,7 @@ async function deliverOne({pool,sendMail}) {
  finally{client.release();}
  if(!row)return false;
  try{
-  const result=await (sendMail||createMailSender())({
+  const result=await (sendMail||createNotificationSender())({
    to:row.email,subject:"New Alphine AI customer request",
    text:"A new customer request is waiting in your Alphine AI account. Sign in to review it.",
    messageId:row.message_id
@@ -73,6 +73,11 @@ function createSmtpSender(env=process.env){
  return mail=>transport.sendMail({...mail,from:env.SMTP_FROM});
 }
 function createMailSender(env=process.env){
+ // Login/onboarding must not consume the controlled notification acceptance budget.
+ if(env.ACA_STAGING_EMAIL_ONLY==="true")throw Error("STAGING_AUTH_EMAIL_DISABLED");
+ return createNotificationSender(env);
+}
+function createNotificationSender(env=process.env){
  if(env.ACA_EMAIL_TRANSPORT==="gmail")return require("./gmailSender").createGmailSender(env);
  if(!env.ACA_EMAIL_TRANSPORT||env.ACA_EMAIL_TRANSPORT==="smtp")return createSmtpSender(env);
  throw Error("EMAIL_TRANSPORT_INVALID");
