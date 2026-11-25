@@ -66,3 +66,16 @@ test('secondary cleanup never upgrades residual state to acceptance',()=>{
  assert.equal(calls.length,8);assert.equal(calls[6].args.join(' '),'rm -f '+id);
  assert.equal(calls[7].args.join(' '),'ps -aq --no-trunc --filter id='+id);
 });
+
+test('malformed Docker response envelopes fail closed and still attempt cleanup',()=>{
+ for(const stdout of [undefined,null,42,{}]){
+  const s=sequence();s[1]={status:0,stdout,stderr:''};s.splice(2,2);
+  const {api,calls}=harness(s);assert.throws(()=>api.run(api.imagePin),/Configuration denied/);
+  assert.equal(calls.length,4);assert.equal(calls[2].args.join(' '),'rm -f '+id);
+ }
+});
+test('successful exit without textual removal evidence cannot pass fixture',()=>{
+ const s=sequence();s[4]={status:0,stderr:''};s.push(good(id),good(''));
+ const {api,calls}=harness(s);assert.throws(()=>api.run(api.imagePin),/Removal unresolved/);
+ assert.equal(calls.length,8);
+});

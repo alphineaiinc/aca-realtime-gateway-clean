@@ -15,7 +15,7 @@ function execute(image,mode){
  const name='alphine-fixture-'+randomUUID();
  args.splice(1,0,'--name',name);
  const call=(args,timeout=5000)=>spawnSync('/usr/bin/docker',args,{encoding:'utf8',timeout,maxBuffer:8192,env:{PATH:'/usr/bin:/bin',HOME:'/nonexistent',DOCKER_HOST:'unix:///var/run/docker.sock'}});
- const ok=r=>Boolean(r)&&!r.error&&!r.signal&&r.status===0&&r.stderr==='';
+ const ok=r=>Boolean(r)&&!r.error&&!r.signal&&r.status===0&&typeof r.stdout==='string'&&r.stderr==='';
  const created=call(args,15000);
  if(!ok(created)||!/^[a-f0-9]{64}\n?$/.test(created.stdout)){
   const removed=call(['rm','-f',name]);
