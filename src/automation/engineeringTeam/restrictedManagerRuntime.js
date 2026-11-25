@@ -1,10 +1,10 @@
 'use strict';
 const {createArtifactDownloader}=require('./githubArtifactDownloader');
 const {createRestrictedManager}=require('./restrictedManager');
+const {createPostgresObservationStore}=require('./postgresObservationStore');
 const {createGitHubReadTransport}=require('./githubReadTransport');
-// A separate composition root. No mutable queue, worker, database writer,
-// scheduler, provider, credential issuer or publication client is constructed.
-function createRestrictedManagerRuntime({scope,issue,githubToken,fetchImpl,readOnlyPool,pushEvidence=false,artifactHost}={}){
+// A separate composition root for bounded observations.
+function createRestrictedManagerRuntime({scope,issue,githubToken,fetchImpl,readOnlyPool,observationPool,pushEvidence=false,artifactHost}={}){
  const pinned=Object.freeze({...scope});
  const transport=createGitHubReadTransport({token:githubToken,repository:pinned.repository,fetchImpl,downloadArtifact:artifactHost===undefined?undefined:createArtifactDownloader({repository:pinned.repository,token:githubToken,fetchImpl,artifactHost})});
  const observationTransport=pushEvidence?{readIssueStatus:transport.readIssueStatus,readCI:async s=>{const e=await transport.discoverPushEvidence(s);const d=JSON.parse(e.text);return {...e,text:JSON.stringify({runs:d.runs,total:d.runs.length})};}}:transport;
@@ -16,6 +16,9 @@ function createRestrictedManagerRuntime({scope,issue,githubToken,fetchImpl,readO
   if(!Number.isSafeInteger(n)||n<0||n>101)throw Error('Alert count denied');
   return Object.freeze({...pinned,pending:Math.min(n,100),partial:n>100});
  };
- return createRestrictedManager({scope:pinned,issue,transport:observationTransport,readAlertSummary});
+ const manager=createRestrictedManager({scope:pinned,issue,transport:observationTransport,readAlertSummary});
+ if(observationPool===undefined)return manager;
+ const store=createPostgresObservationStore({pool:observationPool,scope:pinned,issue});
+ return Object.freeze({...manager,observeEvent:eventKey=>store.observeEvent(eventKey,manager.observe)});
 }
 module.exports={createRestrictedManagerRuntime};

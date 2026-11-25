@@ -309,3 +309,18 @@ The disposable PostgreSQL integration now wires `createGitHubPublicationEvidence
 
 ## B01 current runbook disposition — 2026-11-24
 This section supersedes pending-status statements in historical checkpoints, not the acceptance gates. PR #142 source revision 65ae91f1dd17d1af34b131ebe7a681b69d3aede6 passed ACA CI 45490929492. PR #21 source revision 9e08c5ed9f914707e3e1fd66c76d32d334b14f11 passed ACA CI 45496697851, observer 45496697925 and HTTP smoke 45496697798; subsequent CI wake-up changes require fresh CI. PR #146 source revision fe977b3b64ad3540cf9f5568b29da7f847520138 passed CI 45487768540; later documentation revision does not inherit exact-head clearance. The five sandbox fault outcomes are signed in the offline v2 envelope, but no operational provenance or teardown acceptance is established. Observer reconciliation is draft-only, including hourly, manual, PR/review and CI completion wake-ups; no credentials or live admission are enabled. Correction remains human-actionable and bounded, never autonomous dispatch. Before activation verify effective roles, independent signer custody, trusted runtime/image, actual billing and stop/revocation, logs/redaction/retention, recovery and rollback. If any gate is unknown, retain HOLD; no production changes or implied approval. Historical CI results apply only to their stated revisions. CAD $0 additional spending.
+
+### Isolated manager observation acceptance
+
+The restricted runtime accepts an explicit `observationPool` for event-based
+observation. A trusted caller supplies a stable event identifier across retries.
+PostgreSQL serializes each product, repository, head SHA, issue and event key.
+Replays return the stored observation or exhausted status. Unavailable
+observations consume a maximum of three attempts per key. The existing hourly
+fallback remains independent of the event store.
+
+ACA CI applies the draft migration to a disposable PostgreSQL 17 database.
+Acceptance covers concurrent callers from independent pools, persistent retry
+budgets, replay without repeating GitHub metadata reads, and transaction
+rollback. The one-shot entrypoint and scheduled observer keep their existing
+configuration. Agent Manager activation remains on HOLD.
