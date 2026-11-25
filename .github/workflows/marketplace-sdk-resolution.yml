@@ -18,32 +18,30 @@ jobs:
         with:
           node-version: '22'
           registry-url: https://registry.npmjs.org
-      - name: Resolve compatible transitive security updates
+      - name: Install the exact committed dependency lockfile
         run: |
-          npm audit fix --ignore-scripts --no-fund
           npm ci --ignore-scripts --no-audit --no-fund
           npm ls --depth=0
-          npm test
-      - name: Enforce zero moderate-or-higher production advisories
-        run: npm audit --omit=dev --audit-level=moderate --json > marketplace-audit.json
-      - name: Emit verified lockfile chunks for source-control commit
+      - name: Audit the exact committed dependency tree
+        run: npm audit --audit-level=moderate --json > marketplace-audit.json
+      - name: Run regression suite against the committed dependency tree
+        run: npm test
+      - name: Emit verified lockfile digest and audit summary
         run: |
           node - <<'NODE'
           const fs=require('node:fs');
           const crypto=require('node:crypto');
           const data=fs.readFileSync('package-lock.json','utf8');
           console.log('ACA_LOCK_SHA256 '+crypto.createHash('sha256').update(data).digest('hex'));
-          for(let i=0;i<data.length;i+=2000)console.log('ACA_LOCK_CHUNK '+i+' '+JSON.stringify(data.slice(i,i+2000)));
           const audit=JSON.parse(fs.readFileSync('marketplace-audit.json','utf8'));
           console.log('ACA_AUDIT_SUMMARY '+JSON.stringify(audit.metadata?.vulnerabilities || {}));
           NODE
       - name: Generate exact revision marketplace acceptance bundle
         run: |
           mkdir -p marketplace-bundle
-          git archive HEAD src/marketplace docs/aca/chatgpt-marketplace.md docs/aca/marketplace-package-checklist.md package.json test/marketplace-mcp-authenticated.test.js test/marketplace-mail-compat.test.js test/marketplace-dependency-surface.test.js | tar -x -C marketplace-bundle
-          cp package-lock.json marketplace-bundle/package-lock.json
-          git rev-parse HEAD > marketplace-bundle/REVISION
+          git archive HEAD src/marketplace src/brain/utils/sttGoogle.js docs/aca/chatgpt-marketplace.md docs/aca/marketplace-package-checklist.md package.json package-lock.json test/marketplace-mcp-authenticated.test.js test/marketplace-mail-compat.test.js test/marketplace-dependency-surface.test.js | tar -x -C marketplace-bundle
           cp marketplace-audit.json marketplace-bundle/
+          git rev-parse HEAD > marketplace-bundle/REVISION
           tar -czf marketplace-acceptance.tar.gz -C marketplace-bundle .
           sha256sum marketplace-acceptance.tar.gz > marketplace-acceptance.sha256
       - uses: actions/upload-artifact@v4
