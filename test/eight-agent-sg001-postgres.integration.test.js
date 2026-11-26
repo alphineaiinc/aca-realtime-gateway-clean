@@ -44,7 +44,14 @@ test('SG001 isolated PostgreSQL preparation ledger: concurrent insert, restart, 
  assert.equal((await recorders[0].record({runId,envelope:{...observed,resource:'wrong'}})).status,'denied');
  assert.equal((await recorders[0].record({runId,envelope:{...observed,actor:'wrong'}})).status,'denied');
  assert.equal((await recorders[0].record({runId,envelope:{...observed,observedAt:stopEvidence.observedAt-1}})).status,'denied');
- const cleanup=await Promise.all(recorders.map(r=>r.record({runId,envelope:observed})));
+ const expired=createPilotTeardownRecorder({pool:pools[0],verifyEvidence,clock:()=>receipt.cleanup.deadline});
+ assert.equal((await expired.record({runId,envelope:observed})).status,'denied');
+ await pools[0].query("UPDATE sg001_pilot_stop SET receipt=jsonb_set(receipt,'{preparationBinding}',to_jsonb($2::text)) WHERE run_id=$1",[runId,'d'.repeat(64)]);
+ assert.equal((await recorders[0].record({runId,envelope:observed})).status,'denied');
+ await pools[0].query("UPDATE sg001_pilot_stop SET receipt=jsonb_set(receipt,'{preparationBinding}',to_jsonb($2::text)) WHERE run_id=$1",[runId,receipt.binding]);
+ const afterRun=createPilotTeardownRecorder({pool:pools[0],verifyEvidence,clock:()=>receipt.runEnd+1});
+ assert.equal((await afterRun.record({runId,envelope:{...observed,actor:'wrong'}})).status,'denied');
+ const cleanup=await Promise.all([afterRun,recorders[1]].map(r=>r.record({runId,envelope:{...observed,observedAt:observed.observedAt}})));
  assert.equal(cleanup.filter(r=>r.status==='cleanup-evidence-recorded').length,1);
  assert.equal((await recorders[0].record({runId,envelope:observed})).status,'denied');
  assert.equal((await pools[1].query('SELECT receipt FROM sg001_pilot_teardown WHERE run_id=$1',[runId])).rows[0].receipt.releaseAuthorized,false);
