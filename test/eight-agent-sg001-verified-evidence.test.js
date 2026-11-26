@@ -18,3 +18,14 @@ test('verified composition does not accept caller evidence or authorize executio
  const result=await recorder.record({scope:{runId:'r1'},credential:'invalid',approval:{authorized:true},evidence:{isolated:true}});
  assert.equal(result.status,'denied');assert.equal(loaded,1);assert.equal(authenticated,0);assert.equal(recorder.executionAllowed(),false);
 });
+
+test('pilot identity requires dedicated audience and denies malformed credentials',async()=>{
+ const {createPilotOwnerVerifier}=require('../src/automation/engineeringTeam/pilotVerifiedEvidence');
+ const {publicKey}=generateKeyPairSync('rsa',{modulusLength:2048});
+ const config={publicKey:publicKey.export({type:'spki',format:'pem'}),issuer:'fixture',audience:'sg001-pilot-preparation-v1',principals:[{id:'owner',permission:'owner.approval',product:'development-automation',repository:'alphineaiinc/aca-realtime-gateway-clean',sha:'a'.repeat(40)}],isRevoked:async()=>false};
+ assert.throws(()=>createPilotOwnerVerifier({...config,audience:'generic'}));
+ assert.throws(()=>createPilotOwnerVerifier({...config,principals:[{...config.principals[0],product:'aca'}]}));
+ const verify=createPilotOwnerVerifier(config);
+ assert.equal(await verify('invalid','a'.repeat(64)),null);
+ assert.equal(await verify('invalid',undefined),null);
+});
