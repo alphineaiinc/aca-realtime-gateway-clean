@@ -10,7 +10,7 @@ function createPersistentBudget({pool,verifyEvidence,clock=Date.now}={}){
  if(typeof pool?.connect!=='function'||typeof verifyEvidence!=='function'||typeof clock!=='function')throw Error('Missing trusted dependencies');
  return Object.freeze({async reserve(input){
   const request=structuredClone(input);
-  const client=await pool.connect();let discard=false;
+  const client=await pool.connect();let discard=false,commitAttempted=false;
   try{
    await client.query('BEGIN');
    // Global lock across providers, repositories and calendar months in this database.
@@ -27,9 +27,11 @@ function createPersistentBudget({pool,verifyEvidence,clock=Date.now}={}){
    const next=reserveMonthly({state,request,now:fresh});
    const update=await client.query('UPDATE da_monthly_budget_disabled SET state=$2::jsonb WHERE month=$1',[month,JSON.stringify(next)]);
    if(update.rowCount!==1)throw Error('Ledger update denied');
+   commitAttempted=true;
    await client.query('COMMIT');
    return Object.freeze({reserved:true,id:request.id,executionAuthorized:false});
   }catch(error){
+   if(commitAttempted)discard=true;
    try{await client.query('ROLLBACK');}catch{discard=true;}
    // Ambiguous commit must be reconciled externally; never automatically replay or release.
    throw error;
