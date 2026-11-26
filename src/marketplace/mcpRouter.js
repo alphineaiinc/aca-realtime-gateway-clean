@@ -2,7 +2,7 @@
 const express=require("express");
 const {createResourceMetadata}=require("./resourceMetadata");
 const {verifyBusinessToken,createBusinessTools}=require("./businessTools");
-const {rateLimitIP}=require("../brain/utils/rateLimiters");
+const {rateLimit}=require("express-rate-limit");
 function createMarketplaceRouter(config={}){
  const router=express.Router();
  if(config.enabled!==true){router.all(["/mcp","/.well-known/oauth-protected-resource/mcp"],(_req,res)=>res.status(404).end());return router;}
@@ -11,7 +11,7 @@ function createMarketplaceRouter(config={}){
  const getBusinessProfile=createBusinessTools({pool:config.pool});
  const resourceMetadata=new URL("/.well-known/oauth-protected-resource"+new URL(config.resource).pathname,config.resource).href;
  router.get("/.well-known/oauth-protected-resource/mcp",metadata);
- router.post("/mcp",rateLimitIP({windowMs:60_000,max:60,keyPrefix:"marketplace_mcp"}),express.json({limit:"32kb"}),async(req,res)=>{
+ router.post("/mcp",rateLimit({windowMs:60_000,limit:60,standardHeaders:"draft-8",legacyHeaders:false,message:{ok:false,error:"rate_limited"}}),express.json({limit:"32kb"}),async(req,res)=>{
   res.set("Cache-Control","no-store");
   if(req.headers.origin&&req.headers.origin!==config.allowedOrigin)return res.status(403).end();
   const match=/^Bearer ([A-Za-z0-9._-]{1,8192})$/.exec(req.headers.authorization||"");
