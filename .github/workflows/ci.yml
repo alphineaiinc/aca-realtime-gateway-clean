@@ -3,7 +3,7 @@ on:
   pull_request:
     branches: [main]
   push:
-    branches: [main]
+    branches: [main, aca-stage3-disabled-integration-b49]
 permissions:
   contents: read
 concurrency:
@@ -14,6 +14,20 @@ jobs:
     name: Node tests
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: aca_ci
+          POSTGRES_PASSWORD: disposable-ci-only
+          POSTGRES_DB: aca_engineering_queue_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U aca_ci -d aca_engineering_queue_ci"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -34,3 +48,43 @@ jobs:
           else
             node --test test/*.test.js
           fi
+      - name: Isolated engineering queue PostgreSQL integration
+        env:
+          RUN_ENGINEERING_QUEUE_CI: '1'
+          ENGINEERING_QUEUE_CI_DATABASE_URL: postgresql://aca_ci:disposable-ci-only@127.0.0.1:5432/aca_engineering_queue_ci
+        run: node --test test/eight-agent-durable-queue.integration.test.js
+
+  # Trusted sandbox attestation is intentionally disabled until its harness is supplied by a protected revision.
+  postgres-ledger-integration:
+    name: PostgreSQL ledger integration
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: aca_test
+          POSTGRES_PASSWORD: aca_test_only
+          POSTGRES_DB: aca_automation_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U aca_test -d aca_automation_test"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      ACA_TEST_DATABASE_URL: postgresql://aca_test:aca_test_only@localhost:5432/aca_automation_test
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Install dependencies
+        run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Run isolated PostgreSQL integration
+        run: |
+          node --test test/postgres-correction-ledger.integration.test.js
+          node --test test/postgres-role-isolation.integration.test.js
+          node --test test/postgres-repository-rls.integration.test.js
