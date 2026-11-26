@@ -1,12 +1,12 @@
 name: ACA candidate CodeQL evidence
 on:
   pull_request:
-    branches: [main]
+    branches: [main, aca-product-commercial-consolidation]
 permissions:
   contents: read
 jobs:
   analyze:
-    if: github.head_ref == 'aca-product-commercial-consolidation' && github.event.pull_request.head.repo.full_name == github.repository
+    if: (github.head_ref == 'aca-product-commercial-consolidation' || github.head_ref == 'aca-chatgpt-marketplace') && github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
