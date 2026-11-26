@@ -1,7 +1,7 @@
 name: ACA CI
 on:
   pull_request:
-    branches: [main, aca-product-commercial-consolidation, aca-chatgpt-marketplace]
+    branches: [main, aca-product-commercial-consolidation, aca-chatgpt-marketplace, aca-marketplace-operational-integration]
   push:
     branches: [main, aca-marketplace-operational-integration]
 permissions:
@@ -11,6 +11,7 @@ concurrency:
   cancel-in-progress: true
 jobs:
   node-tests:
+    if: github.event_name != 'pull_request' || github.base_ref != 'aca-marketplace-operational-integration' || (github.head_ref == 'aca-cm-001-final-inactive' && github.event.pull_request.head.repo.full_name == github.repository)
     name: Node tests
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -76,7 +77,7 @@ jobs:
           node --test integration/aca-commercial-postgres.test.js
   hosted-staging:
     name: Hosted ACA staging acceptance
-    if: github.event_name == 'pull_request' && github.head_ref == 'aca-l1-integrated-routing-onboarding' && github.event.pull_request.head.repo.full_name == github.repository
+    if: github.event_name == 'pull_request' && github.base_ref == 'main' && github.head_ref == 'aca-l1-integrated-routing-onboarding' && github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     timeout-minutes: 8
     env:

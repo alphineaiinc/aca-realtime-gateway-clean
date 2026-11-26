@@ -1,14 +1,14 @@
 name: ACA candidate CodeQL evidence
 on:
   pull_request:
-    branches: [main, aca-product-commercial-consolidation, aca-chatgpt-marketplace]
+    branches: [main, aca-product-commercial-consolidation, aca-chatgpt-marketplace, aca-marketplace-operational-integration]
   push:
     branches: [aca-marketplace-operational-integration]
 permissions:
   contents: read
 jobs:
   analyze:
-    if: (github.event_name == 'push' && github.ref == 'refs/heads/aca-marketplace-operational-integration') || ((github.head_ref == 'aca-product-commercial-consolidation' || github.head_ref == 'aca-chatgpt-marketplace' || github.head_ref == 'aca-marketplace-operational-integration') && github.event.pull_request.head.repo.full_name == github.repository)
+    if: (github.event_name == 'push' && github.ref == 'refs/heads/aca-marketplace-operational-integration') || ((github.head_ref == 'aca-product-commercial-consolidation' || github.head_ref == 'aca-chatgpt-marketplace' || github.head_ref == 'aca-marketplace-operational-integration' || (github.base_ref == 'aca-marketplace-operational-integration' && github.head_ref == 'aca-cm-001-final-inactive')) && github.event.pull_request.head.repo.full_name == github.repository)
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:

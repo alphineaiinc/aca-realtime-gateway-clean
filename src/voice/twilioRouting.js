@@ -135,10 +135,10 @@ function createTwilioRouting({ query, resolve, env = process.env }) {
   }
   return { voiceWebhook, consumeStart, statusCallback };
 }
-let service;
+let registry;
 function getRouting() {
-  if (!service) service = createTwilioRouting({ query: (...args) => require("../db/pool").query(...args),
-    resolve: require("./tenantResolver").resolveTenantFromVoiceContext });
-  return service;
+  if (!registry) registry = require("./carrierRegistry").createCarrierRegistry([{id:"twilio", ...createTwilioRouting({ query: (...args) => require("../db/pool").query(...args),
+    resolve: require("./tenantResolver").resolveTenantFromVoiceContext })}]);
+  return registry.get("twilio");
 }
 module.exports = { createTwilioRouting, getRouting };

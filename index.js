@@ -886,13 +886,7 @@ if (prior && prior.activeSessions) {
 }
 
 // Graceful snapshot on shutdown/crash
-process.on("SIGINT", () => {
-  try {
-    if (typeof saveSession === "function") saveSession(global.__ACA_STATE__);
-  } finally {
-    process.exit(0);
-  }
-});
+
 process.on("uncaughtException", (err) => {
   console.error(err);
   try {
@@ -1012,6 +1006,24 @@ const monitorRateLimit = createIngressLimit({ windowMs: 60000, max: 30 });
 
 // ✅ Story 12.5/12.6 — Create HTTP server EARLY so express-ws binds correctly
 const server = http.createServer(app);
+let commercialScheduler;
+const upgradedSockets = new Set();
+server.on("upgrade", (_request, socket) => {
+  upgradedSockets.add(socket);
+  socket.once("close", () => upgradedSockets.delete(socket));
+});
+const shutdown = require("./src/voice/boundedShutdown").createShutdown({
+  stop: () => commercialScheduler?.stop(),
+  close: () => new Promise((resolve, reject) => {
+    server.close(error => error && error.code !== "ERR_SERVER_NOT_RUNNING" ? reject(error) : resolve());
+    for (const socket of upgradedSockets) socket.destroy();
+  }),
+  snapshot: () => { if (typeof saveSession === "function") return saveSession(global.__ACA_STATE__); },
+  end: () => require("./src/db/pool").end(),
+  exit: code => process.exit(code)
+});
+process.on("SIGINT", shutdown);
+process.on("SIGTERM", shutdown);
 
 // ✅ Optional compression (Render-safe). If not installed, we continue without it.
 let compression = null;
@@ -1477,13 +1489,11 @@ const PORT = process.env.PORT || 8080;
 server.listen(PORT, () => {
   if (process.env.ACA_PRODUCTION_EMAIL_SCHEDULER === "true" &&
       process.env.RENDER_SERVICE_ID === "srv-d3rfh8umcj7s73cj28c0") {
-    const scheduler = require("./src/voice/commercialNotificationScheduler").start({
+    commercialScheduler = require("./src/voice/commercialNotificationScheduler").start({
       pool: require("./src/db/pool"),
       onError: () => console.warn("ACA commercial notification failed")
     });
-    server.once("close", () => { scheduler.stop(); });
-    process.once("SIGTERM", () => { scheduler.stop(); });
-    process.once("SIGINT", () => { scheduler.stop(); });
+    server.once("close", () => { commercialScheduler.stop(); });
   }
 
   console.log(`🧠 Orchestrator live on port ${PORT}`);

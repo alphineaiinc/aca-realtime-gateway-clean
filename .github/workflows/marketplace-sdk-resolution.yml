@@ -1,12 +1,12 @@
 name: Marketplace SDK resolution
 on:
   pull_request:
-    branches: [aca-product-commercial-consolidation]
+    branches: [aca-product-commercial-consolidation, aca-marketplace-operational-integration]
 permissions:
   contents: read
 jobs:
   resolve:
-    if: github.head_ref == 'aca-chatgpt-marketplace' && github.event.pull_request.head.repo.full_name == github.repository
+    if: (github.head_ref == 'aca-chatgpt-marketplace' || (github.base_ref == 'aca-marketplace-operational-integration' && github.head_ref == 'aca-cm-001-final-inactive')) && github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
