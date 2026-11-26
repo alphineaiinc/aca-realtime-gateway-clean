@@ -61,7 +61,7 @@ test("profile lookup fails closed when a tenant has no matching master record",a
 
 test("marketplace MCP ingress uses maintained Express rate limiting",async()=>{
  const source=fs.readFileSync(require.resolve("../src/marketplace/mcpRouter"),"utf8");
- assert.match(source,/router\\.post\\(["\']\\/mcp["\'],rateLimit\\(/);
+ assert.ok(source.includes('router.post("/mcp",rateLimit('));
  const app=express();
  app.get("/limited",rateLimit({windowMs:60_000,limit:1,standardHeaders:"draft-8",legacyHeaders:false,message:{ok:false,error:"rate_limited"}}),(_req,res)=>res.status(200).json({ok:true}));
  const http=app.listen(0,"127.0.0.1");await new Promise(resolve=>http.once("listening",resolve));
