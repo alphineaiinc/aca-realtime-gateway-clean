@@ -60,11 +60,13 @@ async function deliverOne({pool,sendMail}) {
   const client=await pool.connect();
   try{
    await client.query("BEGIN");
-   await client.query(`UPDATE public.aca_request_email_reservations
+   const reservationAck=await client.query(`UPDATE public.aca_request_email_reservations
      SET state='sent',finished_at=now()
      WHERE request_id=$1 AND tenant_id=$2 AND state='reserved'`,[row.request_id,row.tenant_id]);
-   await client.query(`UPDATE public.aca_request_outbox SET delivered_at=now()
+   if(reservationAck.rowCount!==1)throw Error("REQUEST_ACK_FAILED");
+   const outboxAck=await client.query(`UPDATE public.aca_request_outbox SET delivered_at=now()
      WHERE request_id=$1 AND tenant_id=$2 AND delivered_at IS NULL`,[row.request_id,row.tenant_id]);
+   if(outboxAck.rowCount!==1)throw Error("REQUEST_ACK_FAILED");
    await client.query("COMMIT");
   }catch{try{await client.query("ROLLBACK");}catch{}throw Error("REQUEST_ACK_FAILED");}
   finally{client.release();}
