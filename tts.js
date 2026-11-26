@@ -104,7 +104,13 @@ const DEFAULT_VOICE_ID = "21m00Tcm4TlvDq8ikWAM";
 
 function resolveVoiceId(langCode, voiceProfile, explicitVoiceId) {
   if (typeof explicitVoiceId === "string" && explicitVoiceId.trim()) {
-    return explicitVoiceId.trim();
+    const candidate = explicitVoiceId.trim();
+    if (!/^[A-Za-z0-9_-]{1,128}$/.test(candidate)) {
+      const error = new TypeError("Invalid ElevenLabs voice identifier");
+      error.code = "ERR_INVALID_TTS_OPTION";
+      throw error;
+    }
+    return candidate;
   }
 
   if (voiceProfile && typeof voiceProfile.voice_id === "string") {
@@ -511,6 +517,13 @@ async function synthesizeWithOpenAI(text, langCode = "en-US", options = {}) {
 // ElevenLabs TTS branch (kept for later switch-back)
 // ------------------------------------------------------
 async function synthesizeWithElevenLabs(text, langCode = "en-US", options = {}) {
+  const allowedFormats = new Set(["ulaw_8000", "mp3_22050_32", "mp3_44100_128"]);
+  const requestedFormat = options && options.outputFormat ? options.outputFormat : "ulaw_8000";
+  if (!allowedFormats.has(requestedFormat)) {
+    const error = new TypeError("Unsupported ElevenLabs output format");
+    error.code = "ERR_INVALID_TTS_OPTION";
+    throw error;
+  }
   const rawApiKey = process.env.ELEVENLABS_API_KEY;
   const apiKey = normalizeApiKey(rawApiKey);
 
@@ -581,6 +594,8 @@ async function synthesizeWithElevenLabs(text, langCode = "en-US", options = {}) 
           "Content-Type": "application/json",
         },
         responseType: "arraybuffer",
+        maxRedirects: 0,
+        timeout: 15000,
       }
     );
 
@@ -628,6 +643,7 @@ async function synthesizeSpeech(text, langCode = "en-US", options = {}) {
     if (provider === "elevenlabs") return await synthesizeWithElevenLabs(text, langCode, options);
     return await synthesizeWithOpenAI(text, langCode, options);
   } catch (error) {
+    if (error && error.code === "ERR_INVALID_TTS_OPTION") throw error;
     throw ttsFailure(provider, error);
   }
 }
