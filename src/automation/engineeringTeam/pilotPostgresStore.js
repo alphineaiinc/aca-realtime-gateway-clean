@@ -10,6 +10,7 @@ function createPilotPostgresStore({pool}={}){
  await client.query('BEGIN ISOLATION LEVEL SERIALIZABLE');
  await client.query('SELECT pg_advisory_xact_lock(hashtext($1),hashtext($2))',['sg001-preparation-v1',runId]);
  const tx=Object.freeze({
+ async readEvidence(){const r=await client.query('SELECT envelope FROM sg001_pilot_evidence WHERE run_id=$1 AND revoked=false FOR UPDATE',[runId]);return r.rows[0]?.envelope??null;},
  async read(){const r=await client.query('SELECT receipt FROM sg001_pilot_preparation WHERE run_id=$1',[runId]);return r.rows[0]?.receipt??null;},
  async insert(r){
  if(r?.runId!==runId||r.domain!=='sg001-pilot-preparation-record-v1'||r.status!=='recorded-preparation'||r.executionAuthorized!==false||r.releaseAuthorized!==false||typeof r.binding!=='string'||!/^[a-f0-9]{64}$/.test(r.binding))throw Error('Invalid non-authorizing receipt');
