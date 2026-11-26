@@ -47,3 +47,18 @@ const cases={
 for(const [name,mutate] of Object.entries(cases))test('deny '+name,()=>{const x=fixture();mutate(x);const r=evaluatePilotPreparation(x);assert.equal(r.status,'denied');assert.equal(r.executionAuthorized,false);assert.equal(r.releaseAuthorized,false);});
 test('missing input fails closed',()=>assert.equal(evaluatePilotPreparation().status,'denied'));
 test('cleanup obligation survives run expiry but never authorizes side effects',()=>{const x=fixture(),plan=x.approval.cleanup;const input={binding:plan.binding,plan,now:x.approval.end,resource:plan.resource,actor:plan.actor};const r=describeCleanup(input);assert.equal(r.status,'cleanup-obligation');assert.equal(r.executionAuthorized,false);assert.equal(r.releaseAuthorized,false);assert.equal(describeCleanup({...input,now:plan.deadline}).status,'quarantine-escalate');assert.equal(describeCleanup({...input,resource:'other'}).status,'denied');assert.equal(describeCleanup({...input,actor:'other'}).status,'denied');});
+
+test('canonical registry roles are accepted and old aliases denied',()=>{
+ for(const role of Object.keys(require('../src/automation/engineeringTeam/registry').roles)){
+ const x=fixture();x.scope.role=role;
+ const binding=createHash('sha256').update(JSON.stringify(['sg001-pilot-preparation-v1',...Object.values(x.scope)])).digest('hex');
+ x.approval.binding=binding;x.approval.cleanup.binding=binding;x.evidence.binding=binding;
+ assert.equal(evaluatePilotPreparation(x).status,'preparation-consistent',role);
+ }
+ for(const role of ['architect','backend','frontend','qa','security']){
+ const x=fixture();x.scope.role=role;
+ const binding=createHash('sha256').update(JSON.stringify(['sg001-pilot-preparation-v1',...Object.values(x.scope)])).digest('hex');
+ x.approval.binding=binding;x.approval.cleanup.binding=binding;x.evidence.binding=binding;
+ assert.equal(evaluatePilotPreparation(x).status,'denied',role);
+ }
+});
