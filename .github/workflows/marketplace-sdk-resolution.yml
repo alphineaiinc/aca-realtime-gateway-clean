@@ -39,11 +39,24 @@ jobs:
       - name: Generate exact revision marketplace acceptance bundle
         run: |
           mkdir -p marketplace-bundle
-          git archive HEAD .github/workflows/marketplace-sdk-resolution.yml plugin.json src/marketplace src/brain/utils/sttGoogle.js docs/aca/chatgpt-marketplace.md docs/aca/marketplace-package-checklist.md package.json package-lock.json test/marketplace-mcp-authenticated.test.js test/marketplace-business-tools.test.js test/marketplace-submission-metadata.test.js test/marketplace-resource-metadata.test.js test/marketplace-mail-compat.test.js test/marketplace-dependency-surface.test.js | tar -x -C marketplace-bundle
+          git archive HEAD .github/workflows/marketplace-sdk-resolution.yml plugin.json src/marketplace src/brain/utils/sttGoogle.js src/brain/utils/rateLimiters.js docs/aca/chatgpt-marketplace.md docs/aca/marketplace-package-checklist.md package.json package-lock.json test/marketplace-mcp-authenticated.test.js test/marketplace-business-tools.test.js test/marketplace-submission-metadata.test.js test/marketplace-resource-metadata.test.js test/marketplace-mail-compat.test.js test/marketplace-dependency-surface.test.js | tar -x -C marketplace-bundle
           cp marketplace-audit.json marketplace-bundle/
           git rev-parse HEAD > marketplace-bundle/REVISION
           tar -czf marketplace-acceptance.tar.gz -C marketplace-bundle .
           sha256sum marketplace-acceptance.tar.gz > marketplace-acceptance.sha256
+      - name: Reproduce acceptance tests from the extracted package
+        run: |
+          mkdir marketplace-bundle-validation
+          tar -xzf marketplace-acceptance.tar.gz -C marketplace-bundle-validation
+          cd marketplace-bundle-validation
+          npm ci --ignore-scripts --no-audit --no-fund
+          node --test \
+            test/marketplace-mcp-authenticated.test.js \
+            test/marketplace-business-tools.test.js \
+            test/marketplace-submission-metadata.test.js \
+            test/marketplace-resource-metadata.test.js \
+            test/marketplace-mail-compat.test.js \
+            test/marketplace-dependency-surface.test.js
       - uses: actions/upload-artifact@v4
         if: success()
         with:
