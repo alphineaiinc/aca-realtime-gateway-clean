@@ -13,6 +13,9 @@ test("protected resource metadata is disabled by default and HTTPS-only",async()
  assert.equal((await fetch(base+"/disabled")).status,404);
  const response=await fetch(base+"/.well-known/oauth-protected-resource/mcp");
  assert.equal(response.status,200);assert.equal(response.headers.get("cache-control"),"no-store");
- assert.deepEqual((await response.json()).authorization_servers,["https://issuer.example.invalid"]);
+ const body=await response.json();
+ assert.deepEqual(body.authorization_servers,["https://issuer.example.invalid"]);
+ assert.deepEqual(body.scopes_supported,["aca:profile:read"]);
+ assert.deepEqual(body.bearer_methods_supported,["header"]);
  }finally{await new Promise(resolve=>server.close(resolve));}
 });
