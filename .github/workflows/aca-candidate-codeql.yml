@@ -8,7 +8,7 @@ permissions:
   contents: read
 jobs:
   analyze:
-    if: (github.event_name == 'push' && github.ref == 'refs/heads/aca-marketplace-operational-integration') || ((github.head_ref == 'aca-product-commercial-consolidation' || github.head_ref == 'aca-chatgpt-marketplace' || github.head_ref == 'aca-marketplace-operational-integration' || github.head_ref == 'aca-cm001-notification-ack') && github.event.pull_request.head.repo.full_name == github.repository)
+    if: (github.event_name == 'push' && github.ref == 'refs/heads/aca-marketplace-operational-integration') || ((github.head_ref == 'aca-product-commercial-consolidation' || github.head_ref == 'aca-chatgpt-marketplace' || github.head_ref == 'aca-marketplace-operational-integration' || github.head_ref == 'aca-cm001-notification-ack' || github.head_ref == 'aca-cm001-gmail-response-validation') && github.event.pull_request.head.repo.full_name == github.repository)
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
