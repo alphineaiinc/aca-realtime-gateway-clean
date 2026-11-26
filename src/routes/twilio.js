@@ -394,12 +394,14 @@ function sendTwilioFrame(ws, frame) {
     const done = (error) => {
       if (settled) return;
       settled = true;
+      clearTimeout(deadline);
       ws.removeListener("close", closed);
       ws.removeListener("error", failed);
       if (error) reject(new Error("STREAM_SEND_FAILED")); else resolve();
     };
     const closed = () => done(new Error("STREAM_CLOSED"));
     const failed = () => done(new Error("STREAM_SEND_FAILED"));
+    const deadline = setTimeout(() => done(new Error("STREAM_SEND_TIMEOUT")), 5000);
     ws.once("close", closed); ws.once("error", failed);
     try { ws.send(JSON.stringify(frame), done); } catch { done(new Error("STREAM_SEND_FAILED")); }
   });
