@@ -1,0 +1,29 @@
+'use strict';
+// INACTIVE REVIEW SOURCE ONLY. No runner, process spawning, Docker invocation or entry point.
+// Future trusted host must independently verify all evidence and implement the reviewed adapter.
+// This module returns descriptive plans only; it never grants execution or deletion authority.
+const {createHash}=require('node:crypto');
+const SOURCE='37f9a5327e99f78c3e6208cfba9aaf87c1c15aad';
+const BLOB='edea7595d7f1ea53f2c9657bea0bc936bd5eff64';
+const IMAGE='node@sha256:be979e5523c76fa4d5ca4ebd3099078f220aa47ec39c48ad5b5df9314debd6eb';
+const denied=reason=>Object.freeze({status:'denied',reason,executionAuthorized:false,releaseAuthorized:false,attestation:false});
+const exactId=x=>typeof x==='string'&&/^[a-f0-9]{64}$/.test(x);
+const scopeKey=x=>typeof x==='string'&&/^[1-9][0-9]{0,19}$/.test(x);
+function binding({runId,attempt,nonce}={}){
+ if(!scopeKey(runId)||!scopeKey(attempt)||typeof nonce!=='string'||!/^[a-f0-9]{32}$/.test(nonce))return null;
+ return createHash('sha256').update(JSON.stringify(['sg001-fixture-draft-v1',SOURCE,BLOB,IMAGE,runId,attempt,nonce])).digest('hex');
+}
+function describeFixture(scope){
+ const key=binding(scope);
+ if(!key)return denied('invalid-scope');
+ return Object.freeze({status:'inactive-plan',binding:key,name:'alphine-sg001-'+key,ownerLabel:key,sourceSha:SOURCE,harnessBlob:BLOB,image:IMAGE,platform:'linux/amd64',controls:Object.freeze({uid:65534,network:'none',readOnly:true,capDrop:'ALL',noNewPrivileges:true,pids:32,memoryMiB:128,swapTotalMiB:128,cpus:0.5,tmpfsMiB:8}),executionAuthorized:false,releaseAuthorized:false,attestation:false});
+}
+// No prefix sweeps, wildcard deletion, name-only removal or ambiguous retry.
+// Even a matching plan is not authorization: authoritative host inspection,
+// separately approved teardown and independent observation remain mandatory.
+function describeCleanup({scope,record,inspection}={}){
+ const key=binding(scope);
+ if(!key||!exactId(record?.containerId)||record.binding!==key||inspection?.id!==record.containerId||inspection?.ownerLabel!==key||inspection?.name!=='/alphine-sg001-'+key)return denied('ownership-unverified-quarantine');
+ return Object.freeze({status:'inactive-cleanup-plan',binding:key,exactContainerId:record.containerId,allowedAction:'remove-exact-owned-container-only',requiresSeparateApproval:true,requiresIndependentAbsenceAndRunnerDisposal:true,executionAuthorized:false,releaseAuthorized:false,attestation:false});
+}
+module.exports={describeFixture,describeCleanup};

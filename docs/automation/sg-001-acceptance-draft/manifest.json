@@ -1,0 +1,58 @@
+{
+  "status": "DRAFT_NO_EXECUTION",
+  "project": "development-automation",
+  "repository": "alphineaiinc/aca-realtime-gateway-clean",
+  "sourceSha": "37f9a5327e99f78c3e6208cfba9aaf87c1c15aad",
+  "sourceHarness": {
+    "path": "scripts/protected-sandbox/fixtureHarness.js",
+    "gitBlob": "edea7595d7f1ea53f2c9657bea0bc936bd5eff64"
+  },
+  "image": {
+    "reference": "node@sha256:be979e5523c76fa4d5ca4ebd3099078f220aa47ec39c48ad5b5df9314debd6eb",
+    "platform": "linux/amd64",
+    "publisherProvenance": null,
+    "platformManifestDigest": null,
+    "independentVerificationReceipt": null
+  },
+  "workflow": {
+    "active": false,
+    "trigger": null,
+    "runner": "dedicated-disposable",
+    "permissions": {},
+    "oidc": false,
+    "secrets": false,
+    "checkoutCandidate": false
+  },
+  "limits": {
+    "uid": 65534,
+    "network": "none",
+    "rootReadOnly": true,
+    "capabilities": "none",
+    "pids": 32,
+    "memoryMiB": 128,
+    "swapTotalMiB": 128,
+    "cpus": 0.5,
+    "tmpfsMiB": 8,
+    "proposedExecutionMinutes": 15,
+    "proposedCleanupMinutes": 15
+  },
+  "authorization": {
+    "ownerApproval": null,
+    "runId": null,
+    "attempt": null,
+    "startUtc": null,
+    "endUtc": null,
+    "cleanupDeadlineUtc": null,
+    "actor": null,
+    "observer": null,
+    "resourceIds": [],
+    "effectivePermissionReceipt": null,
+    "cleanupPermissionReceipt": null,
+    "zeroCostReceipt": null,
+    "independentAssessment": null,
+    "sg001ApplicabilityReceipt": null
+  },
+  "executionAuthorized": false,
+  "releaseAuthorized": false,
+  "attestation": false
+}
