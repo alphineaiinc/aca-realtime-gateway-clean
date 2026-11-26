@@ -12,7 +12,7 @@ function createPilotStopRecorder({pool,verifyEvidence,clock=Date.now}={}){
  c=await pool.connect();await c.query('BEGIN ISOLATION LEVEL SERIALIZABLE');
  await c.query('SELECT pg_advisory_xact_lock(hashtext($1),hashtext($2))',['sg001-preparation-v1',runId]);
  const r=(await c.query('SELECT receipt FROM sg001_pilot_preparation WHERE run_id=$1',[runId])).rows[0]?.receipt;
- if(!r||r.executionAuthorized!==false||r.releaseAuthorized!==false||!r.cleanup)throw Error('Missing preparation');
+ if(!r||r.domain!=='sg001-pilot-preparation-record-v1'||r.status!=='recorded-preparation'||r.runId!==runId||r.executionAuthorized!==false||r.releaseAuthorized!==false||!r.cleanup)throw Error('Missing preparation');
  const binding=createHash('sha256').update(JSON.stringify([domain,runId,r.binding,r.ownerId])).digest('hex');
  const e=await verifyEvidence(envelope,'stop',binding);
  if(!e||e.runId!==runId||e.preparationBinding!==r.binding||e.ownerId!==r.ownerId||e.stop!==true||!Number.isSafeInteger(e.observedAt)||e.observedAt>clock())throw Error('Stop evidence denied');
