@@ -8,6 +8,8 @@ const { resolveTenantFromVoiceContext } = require("./tenantResolver");
 const { loadClusterSchema } = require("./clusterSchemaLoader");
 const { extractWorkflowTurn } = require("./workflowExtractor");
 const { computeWorkflowState } = require("./workflowStateEngine");
+const { saveConfirmedIntake } = require("./confirmedIntakeStore");
+const pool = require("../db/pool");
 const { composeReply } = require("./workflowReplyComposer");
 
 const {
@@ -1342,6 +1344,13 @@ async function handleCallerTurn({ callSid, businessId = null, transcript, meta =
   }
 
   const utterance = normalizeText(transcript);
+  if (session.workflowStatus === "request_recorded") {
+    return {
+      shouldSpeak: true,
+      replyText: "Your request has been recorded for the business to review. Thank you for calling.",
+      replyType: "closing",
+    };
+  }
   session.lastCallerText = utterance;
 
   const askingPhoneConfirm =
@@ -1424,6 +1433,52 @@ if (isClosing) {
       replyText: getPremiumPrompt("error", session) || "Sorry — something went wrong. Please try again.",
       replyType: "error",
     };
+  }
+
+  // Only an explicit reply to our prior confirmation question can persist intake.
+  // Resolve the tenant first on every turn; do not trust client-provided IDs.
+  if (session.awaitingExplicitConfirmation) {
+    const identityMatches =
+      String(session.confirmationTenantId) === String(routing.tenantId) &&
+      String(session.confirmationClusterId) === String(routing.clusterId);
+    if (!identityMatches) {
+      session.awaitingExplicitConfirmation = false;
+      return { shouldSpeak: true, replyText: "I'm sorry, I couldn't verify this request. Please call again.", replyType: "error" };
+    }
+    const requiredMissing = getMissingRequiredSlots(session.businessType || "generic", session.slots || {});
+    if (requiredMissing.length) {
+      session.awaitingExplicitConfirmation = false;
+      return {
+        shouldSpeak: true,
+        replyText: getPremiumNextSlotQuestion(session.businessType || "generic", requiredMissing[0], session),
+        replyType: "missing_detail",
+      };
+    }
+    if (/^(?:yes|yeah|yep|correct|that's correct|that is correct|confirmed|confirm|absolutely|right|yes please)[.! ]*$/i.test(utterance)) {
+      session.awaitingExplicitConfirmation = false;
+      try {
+        await saveConfirmedIntake(pool, {
+          confirmed: true, tenantId: routing.tenantId, callSid,
+          clusterId: routing.clusterId, intent: session.active_intent,
+          slots: session.slots,
+        });
+        session.workflowStatus = "request_recorded";
+        return {
+          shouldSpeak: true,
+          replyText: "Thank you. I've recorded your request for the business to review. This is not a confirmed appointment.",
+          replyType: "request_recorded",
+        };
+      } catch (err) {
+        logError(callSid, "Confirmed request could not be saved", { error: err.message });
+        return {
+          shouldSpeak: true,
+          replyText: "I'm sorry, I couldn't save your request. Please contact the business directly.",
+          replyType: "error",
+        };
+      }
+    }
+    // A correction or unrelated response must be handled by the normal extractor.
+    session.awaitingExplicitConfirmation = false;
   }
 
   session.tenantId = routing.tenantId || null;
@@ -1676,6 +1731,9 @@ if (coreComplete && !has("name")) {
 ) {
   session.lastAskedSlot = null;
   session.confirmationBlocked = false;
+  session.awaitingExplicitConfirmation = true;
+  session.confirmationTenantId = session.tenantId;
+  session.confirmationClusterId = session.clusterId;
 
   const replyText = buildConfirmationReplyFromSession(session);
 
