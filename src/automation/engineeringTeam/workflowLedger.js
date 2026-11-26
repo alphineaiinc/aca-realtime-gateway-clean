@@ -9,13 +9,15 @@ function createWorkflowLedger({pool,scope,authenticate}={}){
  const params=[pinned.product,pinned.repository,pinned.sha];
  async function auth(credential){
   const a=await authenticate(credential);
-  if(!a||a.permission!=='queue.manage'||a.role!==undefined||a.product!==pinned.product||a.repository!==pinned.repository||a.sha!==pinned.sha)throw Error('Workflow identity denied');
+  if(!a||typeof a.id!=='string'||!/^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,79}$/.test(a.id)||a.permission!=='queue.manage'||a.role!==undefined||a.product!==pinned.product||a.repository!==pinned.repository||a.sha!==pinned.sha)throw Error('Workflow identity denied');
+  return a.id;
  }
- async function guarded(work){
+ async function guarded(credential,actor,work){
   const client=await pool.connect();let discard=false;
   try{
    await client.query('BEGIN');
    await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))',[JSON.stringify(params.slice(0,2))]);
+   if(await auth(credential)!==actor)throw Error('Workflow identity denied');
    const result=await work(client);
    await client.query('COMMIT');return result;
   }catch(e){try{await client.query('ROLLBACK');}catch{discard=true;}throw e;}
@@ -37,9 +39,9 @@ function createWorkflowLedger({pool,scope,authenticate}={}){
    return Object.freeze({subject:result.rows[0].subject,developerRole:result.rows[0].developer_role});
   },
   async advance({credential,id,step,taskId}){
-   await auth(credential);
+   const actor=await auth(credential);
    if(!Number.isSafeInteger(step)||step<0||step>=sequence.length)throw Error('Invalid workflow step');
-   return guarded(async client=>{
+   return guarded(credential,actor,async client=>{
    const result=await client.query(`WITH advanced AS (
  UPDATE engineering_team_workflows w SET next_step=next_step+1
  WHERE w.id=$1 AND w.product=$2 AND w.repository=$3 AND w.head_sha=$4 AND w.next_step=$5
@@ -77,8 +79,8 @@ function createWorkflowLedger({pool,scope,authenticate}={}){
    }));
   },
   async beginPreparation({credential,id}){
-   await auth(credential);
-   return guarded(async client=>{
+   const actor=await auth(credential);
+   return guarded(credential,actor,async client=>{
     const workflow=await client.query('SELECT next_step FROM engineering_team_workflows WHERE id=$1 AND product=$2 AND repository=$3 AND head_sha=$4 FOR UPDATE',[id,...params]);
     if(workflow.rowCount!==1||workflow.rows[0].next_step!==8)throw Error('Preparation requires completed team workflow');
     const inserted=await client.query("INSERT INTO engineering_team_preparation_attempts(workflow_id,product,repository,head_sha,state) VALUES($1,$2,$3,$4,'started') ON CONFLICT DO NOTHING RETURNING workflow_id",[id,...params]);
@@ -92,12 +94,12 @@ function createWorkflowLedger({pool,scope,authenticate}={}){
    });
   },
   async completePreparation({credential,id,result}){
-   await auth(credential);
+   const actor=await auth(credential);
    if(!result||typeof result!=='object'||Array.isArray(result))throw Error('Invalid preparation result');
    const serialized=JSON.stringify(result);
    if(typeof serialized!=='string'||Buffer.byteLength(serialized)>131072)throw Error('Preparation result exceeds fixture limit');
    const resultSha256=createHash('sha256').update(serialized).digest('hex');
-   return guarded(async client=>{
+   return guarded(credential,actor,async client=>{
     const updated=await client.query("UPDATE engineering_team_preparation_attempts SET state='completed',result_json=$5,result_sha256=$6,completed_at=clock_timestamp() WHERE workflow_id=$1 AND product=$2 AND repository=$3 AND head_sha=$4 AND state='started' RETURNING workflow_id",[id,...params,serialized,resultSha256]);
     if(updated.rowCount!==1)throw Error('Preparation completion denied');
     return Object.freeze({state:'completed',workflowId:id,resultSha256});

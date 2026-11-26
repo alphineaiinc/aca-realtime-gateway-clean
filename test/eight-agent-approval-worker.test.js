@@ -50,3 +50,23 @@ test('S3-07 invalid and regressed approval clocks fail closed',async()=>{
  }
  for(const invalid of [NaN,Infinity,-1,1000.5,Number.MAX_SAFE_INTEGER]){now=invalid;assert.throws(()=>policy.request(input),/clock/);}
 });
+
+test('worker pins lease scope across asynchronous payload loading',async()=>{
+ for(const phase of ['claim','load']){
+  const original={...scope},mutable={...scope},other={product:'other',repository:'fixture/other',sha:'b'.repeat(40)};
+  const calls=[];let proposed=0;
+  const queue={async claim(x){calls.push(x.scope);if(phase==='claim')Object.assign(mutable,other);return {id:'fixture-task',lease_id:'fixture-lease'};},async finish(x){calls.push(x.scope);assert.equal(x.outcome,'failed');return 'queued';}};
+  const manager={createTask(){proposed++;throw Error('unexpected');},propose:async()=>{throw Error('unexpected');}};
+  const worker=createQueueWorker({queue,manager,loadTask:async x=>{assert.deepEqual(x.scope,original);if(phase==='load')Object.assign(mutable,other);return {id:x.id,...other,subject:'wrong scope'};}});
+  const result=await worker.runOnce({scope:mutable,role:'backend-developer',credential:'fixture'});
+  assert.equal(result.state,'queued');assert.equal(proposed,0);assert.equal(calls.length,2);for(const s of calls){assert.deepEqual(s,original);assert.ok(Object.isFrozen(s));}
+ }
+});
+test('worker retains original scope for valid proposal and completion after caller mutation',async()=>{
+ const mutable={...scope},calls=[];
+ const queue={async claim(x){calls.push(x.scope);return {id:'fixture-task',lease_id:'fixture-lease'};},async finish(x){calls.push(x.scope);assert.equal(x.outcome,'succeeded');return 'succeeded';}};
+ const manager={createTask(x){assert.equal(x.product,scope.product);assert.equal(x.repository,scope.repository);assert.equal(x.sha,scope.sha);return {...x,id:'local-task'};},async propose(x){return {...x,approval:false};}};
+ const worker=createQueueWorker({queue,manager,loadTask:async x=>{Object.assign(mutable,{product:'other',repository:'fixture/other',sha:'b'.repeat(40)});return {id:x.id,...scope,subject:'fixture'};}});
+ assert.equal((await worker.runOnce({scope:mutable,role:'backend-developer',credential:'fixture'})).state,'succeeded');
+ for(const s of calls)assert.deepEqual(s,scope);
+});
