@@ -11,7 +11,7 @@ function createInterlock({pool, keys, clock = Date.now}) {
  return Object.freeze({async reconcile(envelope) {
   const proof = structuredClone(envelope);
   return serialize(pool, client => transaction(client, async () => {
-   const current = await readInterlock(client);
+   const current = await readInterlock(client, {lock: true});
    if (current.pending === null) throw Error('No reconcilable operation');
    const pending = JSON.parse(current.pending);
    if (!pending?.operationId || !Number.isSafeInteger(pending.preparedAt)) throw Error('Invalid pending evidence');
@@ -23,13 +23,14 @@ function createInterlock({pool, keys, clock = Date.now}) {
     version: current.version, pendingDigest: ledgerDigest(pending), ledgerDigest: digest,
     reservationsRetained: true, ledgerReconciled: true
    }, now);
-   if (payload.issuedAt < pending.preparedAt || now - payload.issuedAt > MAX_PROOF_AGE_MS || pending.overrun !== false ||
+   const expiresAt = Math.min(payload.expiresAt, payload.issuedAt + MAX_PROOF_AGE_MS);
+   if (payload.issuedAt < pending.preparedAt || now >= expiresAt || pending.overrun !== false ||
        !Object.values(ledgers).every(state => state.reconciled === true) ||
        !((payload.outcome === 'committed' && digest === pending.after) ||
          (payload.outcome === 'not-committed' && digest === pending.before))) {
     throw Error('Reconciliation uncertainty');
    }
-   await changeInterlock(client, current, null);
+   await changeInterlock(client, current, null, {expiresAt});
    return {reconciled: true, executionAuthorized: false};
   }));
  }});

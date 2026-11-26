@@ -2,8 +2,9 @@
 
 const schemaSQL = 'CREATE TABLE da_budget_interlock_disabled (singleton boolean PRIMARY KEY CHECK(singleton), version bigint NOT NULL CHECK(version>=0), pending text);';
 
-async function readInterlock(client) {
- const result = await client.query('SELECT version,pending FROM da_budget_interlock_disabled WHERE singleton=true');
+async function readInterlock(client, {lock = false} = {}) {
+ const result = await client.query('SELECT version,pending FROM da_budget_interlock_disabled WHERE singleton=true' +
+  (lock ? ' FOR UPDATE' : ''));
  if (result.rowCount !== 1) throw Error('Missing interlock');
  const {version: raw, pending} = result.rows[0];
  const version = Number(raw);
@@ -13,12 +14,14 @@ async function readInterlock(client) {
  return {version, pending};
 }
 
-async function changeInterlock(client, current, pending) {
+async function changeInterlock(client, current, pending, {expiresAt} = {}) {
  const version = current.version + 1;
  if (!Number.isSafeInteger(version)) throw Error('Interlock version exhausted');
  const result = await client.query(
-  'UPDATE da_budget_interlock_disabled SET version=$1,pending=$2 WHERE singleton=true AND version=$3 AND pending IS NOT DISTINCT FROM $4',
-  [version, pending, current.version, current.pending]
+  'UPDATE da_budget_interlock_disabled SET version=$1,pending=$2 WHERE singleton=true AND version=$3 AND pending IS NOT DISTINCT FROM $4' +
+   (expiresAt === undefined ? '' : ' AND extract(epoch FROM clock_timestamp()) * 1000 < $5::numeric'),
+  expiresAt === undefined ? [version, pending, current.version, current.pending]
+   : [version, pending, current.version, current.pending, expiresAt]
  );
  if (result.rowCount !== 1) throw Error('Interlock conflict');
  return {version, pending};
@@ -54,8 +57,9 @@ async function transaction(client, work) {
  }
 }
 
-async function readLedgers(client) {
- const result = await client.query('SELECT month,state FROM da_monthly_budget_disabled ORDER BY month');
+async function readLedgers(client, {lock = false} = {}) {
+ const result = await client.query('SELECT month,state FROM da_monthly_budget_disabled ORDER BY month' +
+  (lock ? ' FOR UPDATE' : ''));
  for (const {month, state} of result.rows) {
   if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(month) || state?.month !== month || !Array.isArray(state.entries)) {
    throw Error('Invalid ledger');

@@ -25,29 +25,4 @@ function ledgerDigest(ledger) {
  return createHash('sha256').update(canonicalJSON(ledger)).digest('hex');
 }
 
-// Append-only observation. An overrun keeps the global interlock pending.
-async function recordSettlement({pool, keys, envelope, month, id, clock = Date.now}) {
- const {mutateLedger} = require('./persistentMonthlyBudgetDisabled');
- const {entryTotal} = require('./aggregateMonthlyBudgetDisabled');
- const proof = structuredClone(envelope);
- const pins = Object.freeze({...keys});
- await mutateLedger(pool, {kind: 'settlement', id, month}, ledgers => {
-  const state = Object.hasOwn(ledgers, month) && ledgers[month];
-  const entry = state && state.entries.find(candidate => candidate.id === id);
-  if (!entry || state.reconciled !== true) throw Error('Missing reservation');
-  const {payload, digest} = authenticate(proof, pins, {
-   kind: 'settlement', month, id, currency: 'CAD', reservationDigest: entry.evidenceSha256,
-   ledgerDigest: ledgerDigest(ledgers)
-  }, clock());
-  if (!Number.isSafeInteger(payload.actualCents) || payload.actualCents < 0) throw Error('Invalid settlement');
-  const records = state.settlementObservations || [];
-  if (records.some(record => record.id === id)) throw Error('Settlement already recorded');
-  const overrun = payload.actualCents > entryTotal(entry);
-  const next = {...state, reconciled: !overrun, executionAuthorized: false,
-   settlementObservations: [...records, {id, digest, actualCents: payload.actualCents}]};
-  return {updates: {[month]: next}, evidenceDigest: digest, expiresAt: payload.expiresAt, overrun};
- }, clock);
- return {recorded: true, executionAuthorized: false};
-}
-
-module.exports = {authenticate, ledgerDigest, recordSettlement};
+module.exports = {authenticate, ledgerDigest};
