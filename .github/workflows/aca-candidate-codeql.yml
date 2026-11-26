@@ -1,18 +1,20 @@
 name: ACA candidate CodeQL evidence
 on:
   pull_request:
-    branches: [main, aca-product-commercial-consolidation]
+    branches: [main, aca-product-commercial-consolidation, aca-chatgpt-marketplace]
+  push:
+    branches: [aca-marketplace-operational-integration]
 permissions:
   contents: read
 jobs:
   analyze:
-    if: (github.head_ref == 'aca-product-commercial-consolidation' || github.head_ref == 'aca-chatgpt-marketplace') && github.event.pull_request.head.repo.full_name == github.repository
+    if: (github.event_name == 'push' && github.ref == 'refs/heads/aca-marketplace-operational-integration') || ((github.head_ref == 'aca-product-commercial-consolidation' || github.head_ref == 'aca-chatgpt-marketplace' || github.head_ref == 'aca-marketplace-operational-integration') && github.event.pull_request.head.repo.full_name == github.repository)
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.pull_request.head.sha }}
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
           persist-credentials: false
       - name: Record exact candidate
         run: git rev-parse HEAD

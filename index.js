@@ -946,6 +946,8 @@ try {
   );
 }
 
+require("./src/marketplace/runtimePools").mountRuntimeMarketplace(app, process.env);
+
 // ✅ Story 12.8 — Marketplace Plugin (.well-known) Binding
 const wellKnownPath = path.join(__dirname, "public", "wellknown");
 app.use("/.well-known", express.static(wellKnownPath));

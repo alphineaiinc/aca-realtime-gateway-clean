@@ -178,7 +178,7 @@ router.post("/chat/session/clear", ingressRateLimit, sharedIpLimit, authenticate
     const sid = session_id.length > 128 ? session_id.slice(0, 128) : session_id;
 
     clearSession(tenant_id, sid);
-    console.log(`[chat_stream] session cleared tenant=${tenant_id} session=${sid}`);
+    console.log("CHAT_STREAM_SESSION_CLEARED");
     return res.json({ ok: true, cleared: true, tenant_id, session_id: sid });
   } catch (err) {
     return res.status(500).json({ ok: false, error: "Failed to clear session" });
@@ -257,7 +257,7 @@ router.post("/chat/stream", ingressRateLimit, sharedIpLimit, authenticate, async
     // ✅ Story 12.8 — sanitize locale
     const locale = normalizeLocale(locale_raw);
 
-    console.log(`[chat_stream] start ${reqId} tenant=${tenant_id} session=${session_id} locale=${locale}`);
+    console.log("CHAT_STREAM_STARTED");
 
     const message = messageRaw.trim();
     if (!message) {
@@ -308,7 +308,7 @@ const result = await retrieveAnswer(brainInput, tenant_id, locale, session_id);
 
 
     if (clientClosed || res.writableEnded) {
-      console.log(`[chat_stream] client closed early ${reqId} tenant=${tenant_id} session=${session_id}`);
+      console.log("CHAT_STREAM_CLIENT_CLOSED");
       clearInterval(heartbeat);
       return res.end();
     }
@@ -338,12 +338,12 @@ const result = await retrieveAnswer(brainInput, tenant_id, locale, session_id);
       console.warn("⚠️ [chat_stream] pushTurn(assistant) failed:", e?.message || e);
     }
 
-    console.log(`[chat_stream] done ${reqId} tenant=${tenant_id} session=${session_id}`);
+    console.log("CHAT_STREAM_COMPLETED");
 
     clearInterval(heartbeat);
     return res.end();
   } catch (err) {
-    console.log(`[chat_stream] error ${reqId} tenant=${tenant_id} msg=${err?.message || "unknown"}`);
+    console.log("CHAT_STREAM_FAILED");
 
     try {
       sseEvent(res, "error", err?.message || "Server error");
