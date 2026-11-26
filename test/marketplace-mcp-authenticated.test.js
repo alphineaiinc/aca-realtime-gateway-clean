@@ -61,7 +61,7 @@ test("profile lookup fails closed when a tenant has no matching master record",a
 
 test("marketplace MCP ingress is rate-limited and rejects excess requests",()=>{
  const source=fs.readFileSync(require.resolve("../src/marketplace/mcpRouter"),"utf8");
- assert.match(source,/router\.use\(["']\/mcp["'],rateLimitIP\(/);
+ assert.match(source,/router\.post\(["']\/mcp["'],rateLimitIP\(/);
  const limit=rateLimitIP({windowMs:60_000,max:1,keyPrefix:"marketplace_mcp_regression"});
  const req={ip:"198.51.100.77"};
  let status=200,body=null,continued=0;
