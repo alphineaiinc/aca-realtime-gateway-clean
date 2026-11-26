@@ -5,7 +5,7 @@ const express=require("express");
 const jwt=require("jsonwebtoken");
 const {generateKeyPairSync}=require("node:crypto");
 const {createMarketplaceRouter}=require("../src/marketplace/mcpRouter");
-const {rateLimitIP}=require("../src/brain/utils/rateLimiters");
+const {rateLimit}=require("express-rate-limit");
 const fs=require("node:fs");
 
 test("authenticated MCP exposes only schema-backed profile reads and isolates tenants",async()=>{
@@ -59,17 +59,17 @@ test("profile lookup fails closed when a tenant has no matching master record",a
  await assert.rejects(read(identity),/PROFILE_UNAVAILABLE/);
 });
 
-test("marketplace MCP ingress is rate-limited and rejects excess requests",()=>{
+test("marketplace MCP ingress uses maintained Express rate limiting",async()=>{
  const source=fs.readFileSync(require.resolve("../src/marketplace/mcpRouter"),"utf8");
- assert.match(source,/router\.post\(["']\/mcp["'],rateLimitIP\(/);
- const limit=rateLimitIP({windowMs:60_000,max:1,keyPrefix:"marketplace_mcp_regression"});
- const req={ip:"198.51.100.77"};
- let status=200,body=null,continued=0;
- const res={setHeader(){},status(code){status=code;return this;},json(value){body=value;return this;}};
- limit(req,res,()=>{continued++;});
- assert.equal(continued,1);
- limit(req,res,()=>{continued++;});
- assert.equal(status,429);
- assert.deepEqual(body,{ok:false,error:"rate_limited"});
- assert.equal(continued,1);
+ assert.match(source,/router\\.post\\(["\']\\/mcp["\'],rateLimit\\(/);
+ const app=express();
+ app.get("/limited",rateLimit({windowMs:60_000,limit:1,standardHeaders:"draft-8",legacyHeaders:false,message:{ok:false,error:"rate_limited"}}),(_req,res)=>res.status(200).json({ok:true}));
+ const http=app.listen(0,"127.0.0.1");await new Promise(resolve=>http.once("listening",resolve));
+ try{
+  const endpoint="http://127.0.0.1:"+http.address().port+"/limited";
+  const first=await fetch(endpoint),second=await fetch(endpoint);
+  assert.equal(first.status,200);
+  assert.equal(second.status,429);
+  assert.deepEqual(await second.json(),{ok:false,error:"rate_limited"});
+ }finally{http.closeAllConnections();await new Promise(resolve=>http.close(resolve));}
 });
