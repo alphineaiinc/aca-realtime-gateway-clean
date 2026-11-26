@@ -17,7 +17,7 @@ function createPilotTeardownRecorder({pool,verifyEvidence,clock=Date.now}={}){
  const plan=r.cleanup;
  if(!plan||typeof plan.resource!=='string'||typeof plan.actor!=='string'||!Number.isSafeInteger(plan.deadline)||!Number.isSafeInteger(r.runEnd)||plan.deadline<r.runEnd)throw Error('Missing approved cleanup plan');
  const stop=(await c.query('SELECT receipt FROM sg001_pilot_stop WHERE run_id=$1',[runId])).rows[0]?.receipt;
- if(!stop||stop.preparationBinding!==r.binding||!Number.isSafeInteger(stop.observedAt))throw Error('Missing verified stop');
+ if(!stop||stop.domain!=='sg001-pilot-stop-record-v1'||stop.status!=='stop-recorded'||stop.runId!==runId||stop.executionAuthorized!==false||stop.releaseAuthorized!==false||stop.binding!==hash(['sg001-pilot-stop-record-v1',runId,r.binding,r.ownerId])||stop.preparationBinding!==r.binding||!Number.isSafeInteger(stop.observedAt)||stop.observedAt>clock())throw Error('Missing verified stop');
  const binding=hash([domain,runId,r.binding,plan.resource,plan.actor,plan.deadline,stop.binding]);
  const evidence=await verifyEvidence(envelope,'teardown',binding);
  if(!evidence||evidence.runId!==runId||evidence.preparationBinding!==r.binding||evidence.stopped!==true||evidence.accessRevoked!==true||evidence.resourceRemoved!==true||evidence.independentlyObserved!==true||typeof evidence.observationDigest!=='string'||!/^[a-f0-9]{64}$/.test(evidence.observationDigest)||!Number.isSafeInteger(evidence.observedAt)||evidence.observedAt>clock()||evidence.observedAt<stop.observedAt||evidence.observedAt>=plan.deadline||clock()>=plan.deadline||evidence.resource!==plan.resource||evidence.actor!==plan.actor||evidence.stopBinding!==stop.binding)throw Error('Unverified cleanup');
