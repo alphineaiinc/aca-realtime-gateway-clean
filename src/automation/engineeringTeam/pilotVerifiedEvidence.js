@@ -1,7 +1,7 @@
 'use strict';
 const {createHash,createPublicKey,verify}=require('node:crypto');
-const {createPilotPreparationRecorder}=require('./pilotPreparationRecorder');
-const DOMAIN='sg001-pilot-evidence-v1';
+const {createPilotPreparationRecorder,canonicalJson}=require('./pilotPreparationRecorder');
+const DOMAIN='sg001-pilot-evidence-v2';
 const hash=x=>createHash('sha256').update(JSON.stringify(x)).digest('hex');
 const hex=x=>typeof x==='string'&&/^[a-f0-9]{64}$/.test(x);
 const keys=(x,k)=>x&&typeof x==='object'&&!Array.isArray(x)&&Object.keys(x).sort().join(',')===k.split(',').sort().join(',');
@@ -15,9 +15,10 @@ function createPilotEvidenceVerifier({publicKey,issuer,clock=Date.now,isRevoked}
  if(!keys(r,'domain,issuer,kind,binding,issuedAt,expiresAt,body')||r.domain!==DOMAIN||r.issuer!==issuer||r.kind!==kind||!hex(binding)||r.binding!==binding||
  !Number.isSafeInteger(r.issuedAt)||!Number.isSafeInteger(r.expiresAt)||r.expiresAt<=r.issuedAt||r.expiresAt-r.issuedAt>300000||r.issuedAt>clock()||r.expiresAt<=clock()||
  typeof signature!=='string'||!/^[a-f0-9]{128}$/.test(signature))return null;
- const payload=JSON.stringify([DOMAIN,issuer,kind,binding,r.issuedAt,r.expiresAt,r.body]);
+ const payload=canonicalJson([DOMAIN,issuer,kind,binding,r.issuedAt,r.expiresAt,r.body]);
  if(!verify(null,Buffer.from(payload),key,Buffer.from(signature,'hex'))||await isRevoked(issuer)!==false||r.expiresAt<=clock())return null;
- return JSON.parse(payload)[6];
+ const body=JSON.parse(payload)[6];
+ return kind==='preparation'?{approval:body?.approval,evidence:body?.evidence,expiresAt:r.expiresAt}:body;
  }catch{return null;}
  };
 }
@@ -65,4 +66,4 @@ function createDisabledPilotComposition({pool,identity,preparationEvidence,stopE
  const recorder=createVerifiedPilotRecorder({store:createPilotPostgresStore({pool}),authenticate:createPilotOwnerVerifier(identity),verifyEvidence:prep,loadEvidence:tx=>tx.readEvidence(),clock});
  return Object.freeze({record:recorder.record,stop:createPilotStopRecorder({pool,verifyEvidence:stop,clock}).record,recordCleanup:createPilotTeardownRecorder({pool,verifyEvidence:cleanup,clock}).record,executionAllowed:()=>false});
 }
-module.exports={createPilotEvidenceVerifier,createVerifiedPilotRecorder,createDisabledPilotComposition,createPilotOwnerVerifier};
+module.exports={createPilotEvidenceVerifier,createVerifiedPilotRecorder,createDisabledPilotComposition,createPilotOwnerVerifier,canonicalJson};
