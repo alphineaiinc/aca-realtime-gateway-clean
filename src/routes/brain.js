@@ -8,12 +8,11 @@
 // ===============================================
 const express = require("express");
 const router = express.Router();
+const ingressRateLimit = require('../security/ingressLimit').ingressLimit({ max: 30 });
+const sharedIpLimit = require('../middleware/postgresRateLimit').createPostgresRateLimiter({ pool: require('../db/pool'), scope: 'brain-ip', max: 30, ipBased: true });
 router.use(express.json()); // ✅ Ensure JSON body parsing for /brain routes
 
 const OpenAI = require("openai");
-const fs = require("fs");
-const path = require("path");
-const crypto = require("crypto");
 const jwt = require("jsonwebtoken");
 const pool = require("../db/pool");
 const { synthesizeSpeech } = require("../../tts"); // ✅ TTS handler
@@ -30,13 +29,6 @@ const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 console.log("🔥 Story 2.9 adaptive router executing");
 console.log("🧪 12.8.3 ORCH brain.js active build=2026-02-24T03:40Z");
 
-const LOG_PATH = path.join(__dirname, "..", "logs", "response_tuning.log");
-try {
-  const logDir = path.dirname(LOG_PATH);
-  if (!fs.existsSync(logDir)) fs.mkdirSync(logDir, { recursive: true });
-} catch (e) {
-  console.warn("⚠️ Log dir check failed:", e.message);
-}
 
 // ✅ Story 12.8 — basic abuse control on /brain/query (IP-based)
 if (typeof rateLimitIP === "function") {
@@ -56,13 +48,6 @@ if (typeof rateLimitIP === "function") {
 // - demo tokens can be verified with DEMO_JWT_SECRET
 // - demo tokens force tenant_id = DEMO_TENANT_ID (env)
 // ---------------------------------------------------------
-function safeHash(value) {
-  try {
-    return crypto.createHash("sha256").update(String(value)).digest("hex").slice(0, 16);
-  } catch {
-    return "hash_error";
-  }
-}
 
 function extractToken(req) {
   // Authorization: Bearer ...
@@ -128,7 +113,7 @@ function deriveTenantIdFromJwt(decoded) {
   return n;
 }
 
-router.post("/query", async (req, res) => {
+router.post("/query", ingressRateLimit, sharedIpLimit, async (req, res) => {
   console.log("🟡 Story 2.9 adaptive tuning layer active");
 
   // ✅ Defensive: handle missing req.body safely
@@ -302,20 +287,8 @@ Be friendly and concise. If unsure, add something like
   }
 });
 
-async function logAdaptiveResponse(query, response, confidence, id, lang) {
-  try {
-    const q = typeof query === "string" ? query : String(query || "");
-    const r = typeof response === "string" ? response : String(response || "");
-
-    const logEntry =
-      `[${new Date().toISOString()}] tenant=${id} lang=${lang} confidence=${confidence}` +
-      ` q_len=${q.length} r_len=${r.length}` +
-      ` q_hash=${safeHash(q)} r_hash=${safeHash(r)}\n`;
-
-    await fs.promises.appendFile(LOG_PATH, logEntry, { encoding: "utf8" });
-  } catch (err) {
-    console.error("⚠️ Log write failed:", err.message);
-  }
+async function logAdaptiveResponse() {
+  console.log("BRAIN_ADAPTIVE_RESPONSE_COMPLETED");
 }
 
 module.exports = router;

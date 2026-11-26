@@ -1,0 +1,24 @@
+"use strict";
+const test=require("node:test"),assert=require("node:assert/strict"),vm=require("node:vm"),fs=require("node:fs");
+test("dashboard account switching discards stale tenant responses and logout clears data",async()=>{
+ const nodes=new Map(),calls=[],pending=[];
+ const el=id=>{if(!nodes.has(id))nodes.set(id,{value:"",textContent:"",hidden:true,addEventListener(type,fn){this[type]=fn;}});return nodes.get(id);};
+ const response=data=>({ok:true,json:async()=>data});
+ const fetch=async(path,opts)=>{calls.push({path,opts});if(path.endsWith("/redeem"))return response({token:JSON.parse(opts.body).token});return new Promise(resolve=>pending.push({path,resolve}));};
+ vm.runInNewContext(fs.readFileSync("public/dashboard/business.js","utf8"),{document:{getElementById:el},fetch});
+ const submit=id=>el(id).submit({preventDefault(){}});
+ const tick=()=>new Promise(resolve=>setImmediate(resolve));
+ el("code").value="tenant-a";const a=submit("redeem");await tick();
+ assert.equal(pending.length,3);
+ el("code").value="tenant-b";const b=submit("redeem");await tick();
+ assert.equal(pending.length,6);
+ const finish=(start,label)=>{for(const p of pending.slice(start,start+3))p.resolve(response({profile:label,routing:label,requests:label}));};
+ finish(3,"business B");await b;
+ assert.equal(el("profile").textContent,JSON.stringify("business B"));assert.equal(el("account").hidden,false);
+ finish(0,"business A");await a;
+ assert.equal(el("profile").textContent,JSON.stringify("business B"));
+ assert.deepEqual(calls.filter(c=>c.opts.headers.Authorization).map(c=>c.opts.headers.Authorization),["Bearer tenant-a","Bearer tenant-a","Bearer tenant-a","Bearer tenant-b","Bearer tenant-b","Bearer tenant-b"]);
+ el("logout").onclick();assert.equal(el("account").hidden,true);
+ for(const id of ["profile","routing","requests"])assert.equal(el(id).textContent,"");
+ await el("refresh").onclick();assert.equal(el("status").textContent,"Sign in required");
+});

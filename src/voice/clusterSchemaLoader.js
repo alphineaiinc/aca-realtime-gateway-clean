@@ -1,166 +1,41 @@
 "use strict";
 
-const path = require("path");
-const fs = require("fs");
-const dotenv = require("dotenv");
-
-dotenv.config({ path: path.resolve(process.cwd(), ".env") });
-
-let pool = null;
-try {
-  pool = require("../db/pool");
-} catch (err) {
-  try {
-    pool = require("../../aca-orchestrator/src/db/pool");
-  } catch (innerErr) {
-    console.warn("[clusterSchemaLoader] DB pool module not found in default locations");
+// Full workflow schemas, never slot-intake profiles or an industry fallback.
+const name = /^[a-z][a-z0-9_]{0,63}$/;
+const plain = (v) => v && typeof v === "object" && !Array.isArray(v);
+function validateWorkflowSchema(schema) {
+  if (!plain(schema) || !name.test(schema.cluster_id || "") ||
+      !Number.isInteger(schema.version) || schema.version < 1 ||
+      !plain(schema.slot_definitions) || !Array.isArray(schema.intents) || !schema.intents.length ||
+      !plain(schema.intake_profile) || !Array.isArray(schema.intake_profile.required) ||
+      !Array.isArray(schema.intake_profile.optional) || !plain(schema.intake_profile.slotQuestions)) {
+    throw new Error("INVALID_WORKFLOW_SCHEMA");
   }
-}
-
-function buildNeutralFallbackSchema(clusterId = "generic_service") {
-  return {
-    cluster_id: clusterId,
-    version: 1,
-    intents: [],
-    slot_definitions: {},
-    voice_rules: {
-      max_words: 22,
-      avoid_repetition: true,
-      single_question_only: true
-    },
-    workflow_rules: {
-      require_allowed_intent: true,
-      allow_intent_switch: true,
-      require_schema_slots_only: true
-    }
-  };
-}
-
-function normalizeSchema(rawSchema, clusterId) {
-  if (!rawSchema || typeof rawSchema !== "object") {
-    return buildNeutralFallbackSchema(clusterId);
+  const slots = Object.keys(schema.slot_definitions);
+  if (!slots.length || slots.some((s) => !name.test(s) || !plain(schema.slot_definitions[s]) ||
+      !["string", "integer", "number", "date", "time", "phone"].includes(schema.slot_definitions[s].type))) {
+    throw new Error("INVALID_WORKFLOW_SCHEMA");
   }
-
-  return {
-    cluster_id: rawSchema.cluster_id || clusterId || "generic_service",
-    version: rawSchema.version || 1,
-    intents: Array.isArray(rawSchema.intents) ? rawSchema.intents : [],
-    slot_definitions:
-      rawSchema.slot_definitions && typeof rawSchema.slot_definitions === "object"
-        ? rawSchema.slot_definitions
-        : {},
-    voice_rules: {
-      max_words: rawSchema.voice_rules?.max_words || 22,
-      avoid_repetition:
-        typeof rawSchema.voice_rules?.avoid_repetition === "boolean"
-          ? rawSchema.voice_rules.avoid_repetition
-          : true,
-      single_question_only:
-        typeof rawSchema.voice_rules?.single_question_only === "boolean"
-          ? rawSchema.voice_rules.single_question_only
-          : true
-    },
-    workflow_rules: {
-      require_allowed_intent:
-        typeof rawSchema.workflow_rules?.require_allowed_intent === "boolean"
-          ? rawSchema.workflow_rules.require_allowed_intent
-          : true,
-      allow_intent_switch:
-        typeof rawSchema.workflow_rules?.allow_intent_switch === "boolean"
-          ? rawSchema.workflow_rules.allow_intent_switch
-          : true,
-      require_schema_slots_only:
-        typeof rawSchema.workflow_rules?.require_schema_slots_only === "boolean"
-          ? rawSchema.workflow_rules.require_schema_slots_only
-          : true
-    }
-  };
-}
-
-async function loadClusterSchemaFromDb(clusterId) {
-  if (!clusterId || !pool || !pool.query) return null;
-
-  const queryVariants = [
-    `
-      SELECT
-        cluster_id,
-        version,
-        schema_json
-      FROM cluster_schemas
-      WHERE cluster_id = $1
-        AND COALESCE(is_active, true) = true
-      ORDER BY version DESC
-      LIMIT 1
-    `,
-    `
-      SELECT
-        id AS cluster_id,
-        version,
-        schema_json
-      FROM clusters
-      WHERE id = $1
-      LIMIT 1
-    `
-  ];
-
-  for (const sql of queryVariants) {
-    try {
-      const result = await pool.query(sql, [clusterId]);
-      const row = result.rows[0];
-      if (row) {
-        return normalizeSchema(
-          row.schema_json || row.schema || {},
-          row.cluster_id || clusterId
-        );
-      }
-    } catch (err) {
-      console.warn("[clusterSchemaLoader] DB schema lookup skipped:", err.message);
-    }
+  const validSlots = (list) => Array.isArray(list) && new Set(list).size === list.length &&
+    list.every((s) => slots.includes(s));
+  const intents = new Set();
+  for (const intent of schema.intents) {
+    if (!plain(intent) || !name.test(intent.intent || "") || intents.has(intent.intent) ||
+        !validSlots(intent.required_slots) || !intent.required_slots.length ||
+        !validSlots(intent.optional_slots) || !validSlots(intent.confirmation_slots) ||
+        !intent.confirmation_slots.length) throw new Error("INVALID_WORKFLOW_SCHEMA");
+    intents.add(intent.intent);
   }
-
-  return null;
+  if (!validSlots(schema.intake_profile.required) || !schema.intake_profile.required.length ||
+      !validSlots(schema.intake_profile.optional) ||
+      slots.some((s) => typeof schema.intake_profile.slotQuestions[s] !== "string" ||
+        !schema.intake_profile.slotQuestions[s].trim())) throw new Error("INVALID_WORKFLOW_SCHEMA");
+  return schema;
 }
-
-function tryReadLocalSchemaFile(clusterId) {
-  if (!clusterId) return null;
-
-  const candidatePaths = [
-    path.resolve(process.cwd(), "config", "clusters", `${clusterId}.json`),
-    path.resolve(process.cwd(), "src", "config", "clusters", `${clusterId}.json`),
-    path.resolve(__dirname, "..", "..", "config", "clusters", `${clusterId}.json`)
-  ];
-
-  for (const filePath of candidatePaths) {
-    try {
-      if (fs.existsSync(filePath)) {
-        const raw = fs.readFileSync(filePath, "utf8");
-        const parsed = JSON.parse(raw);
-        return normalizeSchema(parsed, clusterId);
-      }
-    } catch (err) {
-      console.warn("[clusterSchemaLoader] local schema file skipped:", err.message);
-    }
+function loadClusterSchema(context) {
+  if (!require("./tenantResolver").isValidatedRoutingContext(context)) {
+    throw new Error("UNVERIFIED_ROUTING_CONTEXT");
   }
-
-  return null;
+  return validateWorkflowSchema(context.schema);
 }
-
-async function loadClusterSchema(clusterId) {
-  if (!clusterId) {
-    return buildNeutralFallbackSchema("generic_service");
-  }
-
-  const dbSchema = await loadClusterSchemaFromDb(clusterId);
-  if (dbSchema) return dbSchema;
-
-  const localSchema = tryReadLocalSchemaFile(clusterId);
-  if (localSchema) return localSchema;
-
-  return buildNeutralFallbackSchema(clusterId);
-}
-
-module.exports = {
-  buildNeutralFallbackSchema,
-  normalizeSchema,
-  loadClusterSchema
-};
+module.exports = { validateWorkflowSchema, loadClusterSchema };

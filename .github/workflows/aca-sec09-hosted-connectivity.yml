@@ -1,0 +1,20 @@
+name: ACA SEC09 hosted connectivity
+on:
+  pull_request:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  connectivity:
+    if: github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.head.ref == 'aca-product-commercial-consolidation'
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Verify fixed staging health endpoint
+        shell: bash
+        run: |
+          set -euo pipefail
+          url=https://alphine-aca-product-staging.onrender.com/health
+          status=$(curl --proto '=https' --connect-timeout 10 --max-time 90 --retry 1 --retry-delay 2 --output /dev/null --silent --show-error --write-out '%{http_code}' "$url")
+          echo "Staging health HTTP status: $status"
+          test "$status" = 200
