@@ -14,6 +14,8 @@ test("marketplace profile uses only signed tenant claim and rejects cross-scope 
  assert.deepEqual(await profile(identity),{business_name:"Fixture",preferred_lang:"en",region:"CA"});
  await assert.rejects(async()=>verifyBusinessToken({token:sign({scope:"other"}),publicKey,issuer,audience}),/UNAUTHORIZED/);
  await assert.rejects(async()=>verifyBusinessToken({token:sign({tenant_id:"7"}),publicKey,issuer,audience}),/UNAUTHORIZED/);
+ const multiAudience=jwt.sign({tenant_id:7,scope:"aca:profile:read"},privateKey,{algorithm:"RS256",issuer,audience:[audience,"https://other.example.invalid/mcp"],subject:"fixture@example.invalid",expiresIn:60});
+ await assert.throws(()=>verifyBusinessToken({token:multiAudience,publicKey,issuer,audience}),/UNAUTHORIZED/);
  await assert.rejects(async()=>verifyBusinessToken({token:sign(),publicKey,issuer,audience:"https://wrong.example.invalid/mcp"}),/jwt audience invalid/);
  const noRecord=verifyBusinessToken({token:sign({tenant_id:8}),publicKey,issuer,audience});
  await assert.rejects(profile(noRecord),/PROFILE_UNAVAILABLE/);
