@@ -10,7 +10,7 @@ const digest=x=>typeof x==='string'&&/^[a-f0-9]{64}$/.test(x);
 const id=x=>typeof x==='string'&&/^[A-Za-z0-9_-]{1,80}$/.test(x);
 const time=Number.isSafeInteger;
 const tasks=new Set(['S3-01','S3-02','S3-03','S3-04','S3-05','S3-06','S3-07','S3-08']);
-const roles=new Set(['manager','project-manager','architect','backend','frontend','qa','security','devops','orchestrator']);
+const roles=new Set(['manager',...Object.keys(require('./registry').roles)]);
 const keys=(x,k)=>x!==null&&typeof x==='object'&&!Array.isArray(x)&&Object.keys(x).sort().join(',')===k.split(',').sort().join(',');
 const deny=()=>Object.freeze({domain:'sg001-pilot-preparation-v1',status:'denied',executionAuthorized:false,releaseAuthorized:false});
 function evaluatePilotPreparation({scope,approval,evidence,now}={}){
