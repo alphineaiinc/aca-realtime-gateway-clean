@@ -946,7 +946,7 @@ try {
   );
 }
 
-require("./src/marketplace/mount").mountMarketplace(app, {env:process.env, pool:require("./src/db/pool")});
+require("./src/marketplace/runtimePools").mountRuntimeMarketplace(app, process.env);
 
 // ✅ Story 12.8 — Marketplace Plugin (.well-known) Binding
 const wellKnownPath = path.join(__dirname, "public", "wellknown");
