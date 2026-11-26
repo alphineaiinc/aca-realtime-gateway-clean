@@ -25,10 +25,13 @@ test("Google Speech-To-Text v8 remains explicitly installed and API-compatible",
 test("marketplace archive inputs include the source and tests used by acceptance checks", () => {
   const workflow = fs.readFileSync(path.join(root, ".github/workflows/marketplace-sdk-resolution.yml"), "utf8");
   for (const required of [
+    "plugin.json",
     "src/marketplace",
     "src/brain/utils/sttGoogle.js",
     "test/marketplace-mcp-authenticated.test.js",
     "test/marketplace-business-tools.test.js",
+    "test/marketplace-submission-metadata.test.js",
+    "test/marketplace-resource-metadata.test.js",
     "test/marketplace-mail-compat.test.js",
     "test/marketplace-dependency-surface.test.js"
   ]) assert.ok(workflow.includes(required), "missing archive input: " + required);
