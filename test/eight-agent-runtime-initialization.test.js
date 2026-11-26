@@ -4,11 +4,15 @@ const assert=require('node:assert/strict');
 const {generateKeyPairSync}=require('node:crypto');
 const {roles}=require('../src/automation/engineeringTeam/registry');
 const {initializeRuntime}=require('../src/automation/engineeringTeam/runtimeInitialization');
-const {publicKey}=generateKeyPairSync('rsa',{modulusLength:2048});
+const {publicKey,privateKey}=generateKeyPairSync('rsa',{modulusLength:2048});
 const scope={product:'development-automation',repository:'alphineaiinc/aca-realtime-gateway-clean',sha:'a'.repeat(40)};
 const config={scope,models:Object.fromEntries(Object.keys(roles).map(r=>[r,'fixture'])),budgetId:'11111111-1111-1111-1111-111111111111',paths:['src/automation/engineeringTeam/example.js'],issue:42,runnerImage:'node@sha256:'+'b'.repeat(64),limits:{maxCalls:8,maxOutputTokens:2000,maxSpendMicrousd:1000000}};
 const projectAuthority={project:scope.product,repository:scope.repository,sourceSha:scope.sha,issue:42,taskId:'S3-04',branch:'automation/stage3-fixture',purpose:'automation-preparation',authorization:'owner-approved-preparation',transferRequested:false,paths:config.paths};
-const opts={config,projectAuthority,pool:{query:async()=>assert.fail('database touched on initialization'),connect:async()=>assert.fail('database touched on initialization')},identity:{publicKey:publicKey.export({type:'spki',format:'pem'}),issuer:'fixture',audience:'fixture',principals:[{...scope,id:'manager',permission:'queue.manage'}],isRevoked:async()=>false},ceilings:{fixture:100}};
+const jwt=require('jsonwebtoken');
+const {digest}=require('../src/automation/engineeringTeam/patchPlanner');
+const {createActivationManifest}=require('../src/automation/engineeringTeam/activationManifest');
+const projectOwnerCredential=jwt.sign({...scope,permission:'owner.approval',purpose:'automation-preparation',projectBoundaryDigest:digest(JSON.stringify(['alphine-project-boundary-v1',createActivationManifest(config).evidenceSha256,projectAuthority]))},privateKey,{algorithm:'RS256',issuer:'fixture',audience:'fixture',subject:'owner',jwtid:'fixture-owner',expiresIn:300});
+const opts={config,projectAuthority,projectOwnerCredential,pool:{query:async()=>assert.fail('database touched on initialization'),connect:async()=>assert.fail('database touched on initialization')},identity:{publicKey:publicKey.export({type:'spki',format:'pem'}),issuer:'fixture',audience:'fixture',principals:[{...scope,id:'manager',permission:'queue.manage'},{...scope,id:'owner',permission:'owner.approval'}],isRevoked:async()=>false},ceilings:{fixture:100}};
 test('initialization composes durable components without touching database or activating execution',()=>{
  const runtime=initializeRuntime(opts);
  assert.equal(runtime.status,'initialized-inert');assert.equal(runtime.executionAllowed(),false);assert.equal(runtime.approvals.executionAllowed(),false);
@@ -58,3 +62,5 @@ test('runtime rejects missing and mismatched project authority before any queue 
  const readQueueState=async()=>assert.fail('queue read');
  for(const projectAuthority of [undefined,{...opts.projectAuthority,project:'aca'},{...opts.projectAuthority,branch:'main'},{...opts.projectAuthority,taskId:'P3-02'}])assert.throws(()=>initializeRuntime({...opts,projectAuthority,readQueueState}),/Project boundary denied/);
 });
+
+test('runtime denies unverified owner credentials before queue or database access',async()=>{const runtime=initializeRuntime({...opts,projectOwnerCredential:'forged',readQueueState:async()=>assert.fail('queue read')});await assert.rejects(runtime.queue.enqueue({scope,role:'orchestrator',credential:'manager'}),/Project owner authority denied/);});

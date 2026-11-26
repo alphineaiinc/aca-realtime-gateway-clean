@@ -13,13 +13,14 @@ function createIdentityVerifier({publicKey,issuer,audience,principals,isRevoked}
   if(p.permission==='queue.work')getRole(p.role);else if(p.role!==undefined)throw Error('Invalid privileged principal');
   registry.set(p.id,Object.freeze({id:p.id,product:p.product,repository:p.repository,sha:p.sha,permission:p.permission,...(p.role===undefined?{}:{role:p.role})}));
  }
- return async function authenticate(token){
+ return async function authenticate(token,projectBinding){
   try{
    if(typeof token!=='string'||token.length>4096)return null;
    const claims=verify(token,key,{algorithms:['RS256'],issuer,audience,maxAge:'5m',clockTolerance:0});
    const p=registry.get(claims.sub);
    if(!p||!Number.isSafeInteger(claims.iat)||!Number.isSafeInteger(claims.exp)||claims.exp<=claims.iat||claims.exp-claims.iat>300||claims.iat>Math.floor(Date.now()/1000)||typeof claims.jti!=='string'||! /^[A-Za-z0-9_.-]{1,100}$/.test(claims.jti)||claims.product!==p.product||claims.repository!==p.repository||claims.sha!==p.sha||claims.permission!==p.permission||claims.role!==p.role)return null;
-   if(await isRevoked({id:p.id,jti:claims.jti})!==false)return null;
+   if(projectBinding!==undefined&&(p.permission!=='owner.approval'||typeof projectBinding!=='string'||! /^[a-f0-9]{64}$/.test(projectBinding)||claims.projectBoundaryDigest!==projectBinding||claims.purpose!=='automation-preparation'))return null;
+   if(await isRevoked({id:p.id,jti:claims.jti})!==false||claims.exp<=Math.floor(Date.now()/1000))return null;
    return p;
   }catch{return null;}
  };

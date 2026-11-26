@@ -16,7 +16,7 @@ const {createWorkflowLedger}=require('./workflowLedger');
 const {createGovernanceAlertReader}=require('./governanceAlertReader');
 // Initialization is deliberately inert: no provider clients, scheduler or
 // external writes are created. Real execution requires separate acceptance.
-function initializeRuntime({config,pool,identity,ceilings,readQueueState,independentReview,costConfig,projectAuthority}={}){
+function initializeRuntime({config,pool,identity,ceilings,readQueueState,independentReview,costConfig,projectAuthority,projectOwnerCredential}={}){
  const manifest=createActivationManifest(config);
  if(!pool||typeof pool.query!=='function'||typeof pool.connect!=='function')throw Error('Transactional pool required');
  if(!ceilings||Object.values(manifest.models).some(model=>!Object.hasOwn(ceilings,model)))throw Error('Model ceilings required');
@@ -29,7 +29,7 @@ function initializeRuntime({config,pool,identity,ceilings,readQueueState,indepen
  const budget=createSpendBudget({pool,...manifest.scope,budgetId:manifest.budgetId,ceilings});
  const workflow=createWorkflowLedger({pool,scope:manifest.scope,authenticate});
  const governanceAlerts=createGovernanceAlertReader({pool,scope:manifest.scope,authenticate});
- const policy=readQueueState===undefined?null:createQueuePolicyBridge({manifest,readQueueState:createProjectBoundary({manifest,authority:projectAuthority,readQueueState})});
+ const policy=readQueueState===undefined?null:createQueuePolicyBridge({manifest,readQueueState:createProjectBoundary({manifest,authority:projectAuthority,readQueueState,authenticate,ownerCredential:projectOwnerCredential})});
  // Never expose the raw durable queue: new admissions and claims require fresh policy evidence.
  const admissionQueue=policy===null?null:createPolicyBoundQueue({queue,policy,scope:manifest.scope,issue:manifest.issue,manifestDigest:manifest.evidenceSha256});
  const reviewVerifier=independentReview===undefined?undefined:createActivationReviewVerifier({...independentReview,manifest});
