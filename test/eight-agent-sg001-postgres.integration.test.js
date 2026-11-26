@@ -15,6 +15,22 @@ test('SG001 isolated PostgreSQL preparation ledger: concurrent insert, restart, 
  const roundTrip=(await pools[0].query('SELECT $1::jsonb AS evidence',[JSON.stringify(ordering)])).rows[0].evidence;
  assert.equal(canonicalJson(ordering),canonicalJson(roundTrip));
  const stores=pools.map(pool=>createPilotPostgresStore({pool}));
+ // Isolated CI-only cryptographic fixture: ephemeral key, synthetic data,
+ // no operational credential, authority, external issuer or trusted release receipt.
+ const {generateKeyPairSync,sign}=require('node:crypto');
+ const {createPilotEvidenceVerifier}=require('../src/automation/engineeringTeam/pilotVerifiedEvidence');
+ const fixtureKeys=generateKeyPairSync('ed25519');
+ const fixtureNow=100000,fixtureRun=randomUUID(),fixtureBinding='e'.repeat(64);
+ const fixtureRecord={domain:'sg001-pilot-evidence-v2',issuer:'ci-only-jsonb-fixture',kind:'preparation',binding:fixtureBinding,issuedAt:fixtureNow-1,expiresAt:fixtureNow+1000,body:{evidence:{zz:{long:2,a:1},a:[{zz:2,a:1}]},approval:{zz:2,a:1}}};
+ const bytes=canonicalJson([fixtureRecord.domain,fixtureRecord.issuer,fixtureRecord.kind,fixtureRecord.binding,fixtureRecord.issuedAt,fixtureRecord.expiresAt,fixtureRecord.body]);
+ const fixtureEnvelope={record:fixtureRecord,signature:sign(null,Buffer.from(bytes),fixtureKeys.privateKey).toString('hex')};
+ const checkFixture=createPilotEvidenceVerifier({publicKey:fixtureKeys.publicKey.export({type:'spki',format:'pem'}),issuer:fixtureRecord.issuer,clock:()=>fixtureNow,isRevoked:async()=>false});
+ await pools[0].query('INSERT INTO sg001_pilot_evidence(run_id,envelope) VALUES ($1,$2::jsonb)',[fixtureRun,JSON.stringify(fixtureEnvelope)]);
+ const storedFixture=await stores[1].transact(fixtureRun,tx=>tx.readEvidence());
+ assert.deepEqual(await checkFixture(storedFixture,'preparation',fixtureBinding),{approval:fixtureRecord.body.approval,evidence:fixtureRecord.body.evidence,expiresAt:fixtureRecord.expiresAt});
+ const tampered=JSON.parse(JSON.stringify(storedFixture));tampered.record.body.evidence.zz.a=9;
+ assert.equal(await checkFixture(tampered,'preparation',fixtureBinding),null);
+ assert.equal(await checkFixture(storedFixture,'preparation','f'.repeat(64)),null);
  const runId=randomUUID(),receipt={runId,binding:'a'.repeat(64),domain:'sg001-pilot-preparation-record-v1',status:'recorded-preparation',ownerId:'fixture',runEnd:Date.now()+60000,cleanup:{actor:'cleanup-fixture',resource:'resource-fixture',deadline:Date.now()+120000},executionAuthorized:false,releaseAuthorized:false};
  const attempts=await Promise.allSettled(stores.map(s=>s.transact(runId,async tx=>await tx.read()===null&&await tx.insert(receipt))));
  assert.equal(attempts.filter(x=>x.status==='fulfilled'&&x.value===true).length,1);
