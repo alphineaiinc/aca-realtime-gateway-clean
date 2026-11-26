@@ -180,7 +180,7 @@ test("ElevenLabs upstream failure rejects safely without retrying", async () => 
     const { synthesizeSpeech } = require("../tts");
     await assert.rejects(() => synthesizeSpeech("hello", "en-US", {
       provider: "elevenlabs", useFillers: false,
-    }), /ElevenLabs TTS failed \(ECONNRESET\)/);
+    }), (err) => err.message === "Speech synthesis unavailable" && err.code === "TTS_PROVIDER_ERROR" && err.provider === "elevenlabs");
     assert.equal(calls, 1);
   } finally {
     Module._load = originalLoad;
