@@ -1,0 +1,282 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "ACA commercial customer API — draft",
+    "version": "0.1.0",
+    "description": "Source inventory pinned to 2813610fa4df452b46e0297542f32824b1a911e5. Not a public release or availability promise. Onboarding start and routing prepare require privileged provisioning credentials and are intentionally excluded. No customer SDK or API-key issuance verified."
+  },
+  "paths": {
+    "/tenant/login/start": {
+      "post": {
+        "summary": "/tenant/login/start",
+        "security": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "email"
+                ],
+                "properties": {
+                  "email": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Successful response; detailed response schema pending contract acceptance"
+          },
+          "400": {
+            "description": "Invalid request"
+          },
+          "401": {
+            "description": "Unauthorized or invalid challenge"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "503": {
+            "description": "Feature unavailable"
+          }
+        }
+      }
+    },
+    "/tenant/login/redeem": {
+      "post": {
+        "summary": "/tenant/login/redeem",
+        "security": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "token"
+                ],
+                "properties": {
+                  "token": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful response; detailed response schema pending contract acceptance"
+          },
+          "400": {
+            "description": "Invalid request"
+          },
+          "401": {
+            "description": "Unauthorized or invalid challenge"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "503": {
+            "description": "Feature unavailable"
+          }
+        }
+      }
+    },
+    "/tenant/onboarding/redeem": {
+      "post": {
+        "summary": "/tenant/onboarding/redeem",
+        "security": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "token",
+                  "email",
+                  "business_name"
+                ],
+                "properties": {
+                  "token": {
+                    "type": "string"
+                  },
+                  "email": {
+                    "type": "string"
+                  },
+                  "business_name": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful response; detailed response schema pending contract acceptance"
+          },
+          "400": {
+            "description": "Invalid request"
+          },
+          "401": {
+            "description": "Unauthorized or invalid challenge"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "503": {
+            "description": "Feature unavailable"
+          }
+        }
+      }
+    },
+    "/tenant/profile": {
+      "get": {
+        "summary": "/tenant/profile",
+        "security": [
+          {
+            "businessBearer": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response; detailed response schema pending contract acceptance"
+          },
+          "400": {
+            "description": "Invalid request"
+          },
+          "401": {
+            "description": "Unauthorized or invalid challenge"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "503": {
+            "description": "Feature unavailable"
+          }
+        }
+      }
+    },
+    "/tenant/requests": {
+      "get": {
+        "summary": "/tenant/requests",
+        "security": [
+          {
+            "businessBearer": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response; detailed response schema pending contract acceptance"
+          },
+          "400": {
+            "description": "Invalid request"
+          },
+          "401": {
+            "description": "Unauthorized or invalid challenge"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "503": {
+            "description": "Feature unavailable"
+          }
+        }
+      }
+    },
+    "/tenant/routing/status": {
+      "get": {
+        "summary": "/tenant/routing/status",
+        "security": [
+          {
+            "businessBearer": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response; detailed response schema pending contract acceptance"
+          },
+          "400": {
+            "description": "Invalid request"
+          },
+          "401": {
+            "description": "Unauthorized or invalid challenge"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "503": {
+            "description": "Feature unavailable"
+          }
+        }
+      }
+    },
+    "/api/chat": {
+      "post": {
+        "summary": "/api/chat",
+        "security": [
+          {
+            "businessBearer": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "message"
+                ],
+                "properties": {
+                  "message": {
+                    "type": "string"
+                  },
+                  "locale": {
+                    "type": "string"
+                  },
+                  "session_id": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful response; detailed response schema pending contract acceptance"
+          },
+          "400": {
+            "description": "Invalid request"
+          },
+          "401": {
+            "description": "Unauthorized or invalid challenge"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "503": {
+            "description": "Feature unavailable"
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "businessBearer": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT"
+      }
+    }
+  }
+}
