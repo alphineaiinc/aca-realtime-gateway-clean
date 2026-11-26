@@ -22,7 +22,7 @@
         "shortDescription": "Read your business profile",
         "longDescription": "Alphine ACA provides a read-only view of the business profile associated with the authenticated ACA tenant. It returns only the business name, preferred language, and region available to the connected account. It does not modify business records, access another tenant, or expose call recordings or customer data.",
         "developerName": "Alphine AI",
-        "category": "BUSINESS",
+        "category": "Business",
         "capabilities": [
           "Read business profile",
           "View configured language and region"
@@ -86,13 +86,14 @@
             }
           ]
         },
-        "review": {
-          "commerce": false,
-          "commerce_description": "This version is read-only and does not sell products, process payments, or perform commerce actions."
-        },
         "publication": {
           "release_notes": "Initial technical package draft. Read-only authenticated business profile tool; tenant-bound access and least-data response. Not yet connected to a production MCP endpoint."
-        }
+        },
+        "commerce": false,
+        "commerce_description": "This version is read-only and does not sell products, process payments, or perform commerce actions."
+      },
+      "publication": {
+        "release_notes": "Initial technical package draft. Read-only authenticated business profile tool; tenant-bound access and least-data response. Not yet connected to a production MCP endpoint."
       }
     }
   }
