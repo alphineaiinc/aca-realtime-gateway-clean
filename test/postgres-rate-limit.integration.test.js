@@ -1,0 +1,106 @@
+'use strict';
+const test = require('node:test');
+const assert = require('node:assert/strict');
+const { Pool } = require('pg');
+const { createPostgresRateLimiter, pruneExpiredRateLimitBuckets } = require('../src/middleware/postgresRateLimit');
+const enabled = process.env.RUN_RATE_LIMIT_CI === '1';
+test('shared PostgreSQL limiter enforces atomic budgets across independent pools', { skip: !enabled }, async t => {
+  const url = process.env.RATE_LIMIT_CI_DATABASE_URL;
+  assert.ok(url);
+  const parsed = new URL(url);
+  assert.equal(parsed.hostname, '127.0.0.1');
+  assert.equal(parsed.pathname, '/aca_rate_limit_ci');
+  const pools = [new Pool({ connectionString: url }), new Pool({ connectionString: url })];
+  t.after(async () => { await Promise.all(pools.map(p => p.end())); });
+  const scope = 'ci-' + require('node:crypto').randomUUID();
+  const limiters = pools.map(pool => createPostgresRateLimiter({ pool, scope, max: 5, windowMs: 60000 }));
+  async function invoke(limiter, tenant) {
+    const res = { code: 200, status(n) { this.code = n; return this; }, json() { return this; }, setHeader() {} };
+    await limiter({ tenant_id: tenant }, res, () => {});
+    return res.code;
+  }
+  const results = await Promise.all(Array.from({length: 20}, (_, i) => invoke(limiters[i % 2], 'tenant-a')));
+  assert.equal(results.filter(x => x === 200).length, 5);
+  assert.equal(results.filter(x => x === 429).length, 15);
+  assert.equal(await invoke(limiters[1], 'tenant-b'), 200);
+  assert.equal(await invoke(limiters[0], null), 401);
+  await pools[0].query("UPDATE aca_rate_limit_buckets SET reset_at = clock_timestamp() - interval '1 second' WHERE scope = $1", [scope]);
+  assert.equal(await invoke(limiters[1], 'tenant-a'), 200);
+  assert.equal(await pruneExpiredRateLimitBuckets(pools[0], 1), 1);
+  const remaining = await pools[1].query('SELECT hits FROM aca_rate_limit_buckets WHERE scope = $1', [scope]);
+  assert.equal(remaining.rowCount, 1);
+  assert.equal(Number(remaining.rows[0].hits), 1);
+  assert.equal(await pruneExpiredRateLimitBuckets(pools[1], 1), 0);
+  const publicScope = scope + '-public';
+  const publicLimiters = pools.map(pool => createPostgresRateLimiter({pool,scope:publicScope,max:3,windowMs:60000,publicGlobal:true}));
+  const publicResults = await Promise.all(Array.from({length:12},(_,i)=>invoke(publicLimiters[i%2],i%3===0?null:'caller-'+i)));
+  assert.equal(publicResults.filter(code=>code===200).length,3);
+  assert.equal(publicResults.filter(code=>code===429).length,9);
+  const unavailable = createPostgresRateLimiter({ pool: { query: async () => { throw new Error('private detail'); } }, scope });
+  assert.equal(await invoke(unavailable, 'tenant-a'), 503);
+});
+
+
+test('shared PostgreSQL IP ingress limiter budgets callers independently before authentication', { skip: !enabled }, async () => {
+  const url = process.env.RATE_LIMIT_CI_DATABASE_URL;
+  const pool = new Pool({ connectionString: url });
+  try {
+    const scope = 'ci-ip-' + require('node:crypto').randomUUID();
+    const limiter = createPostgresRateLimiter({ pool, scope, max: 2, windowMs: 60000, ipBased: true });
+    async function invokeIp(ip) {
+      const res = { code: 200, status(n) { this.code = n; return this; }, json() { return this; }, setHeader() {} };
+      await limiter({ ip }, res, () => {});
+      return res.code;
+    }
+    assert.equal(await invokeIp('198.51.100.10'), 200);
+    assert.equal(await invokeIp('198.51.100.10'), 200);
+    assert.equal(await invokeIp('198.51.100.10'), 429);
+    assert.equal(await invokeIp('198.51.100.11'), 200);
+    assert.equal(await invokeIp(undefined), 401);
+  } finally {
+    await pool.end();
+  }
+});
+
+test('billing pre-authentication IP budget is shared, bounded, and fail-closed', { skip: !enabled }, async t => {
+  const url = process.env.RATE_LIMIT_CI_DATABASE_URL;
+  const pools = [new Pool({ connectionString: url }), new Pool({ connectionString: url })];
+  t.after(async () => { await Promise.all(pools.map(p => p.end())); });
+  const scope = 'ci-billing-ip-' + require('node:crypto').randomUUID();
+  const limiters = pools.map(pool => createPostgresRateLimiter({
+    pool, scope, max: 60, windowMs: 60000, ipBased: true
+  }));
+  async function invoke(limiter, ip) {
+    const res = { code: 200, status(n) { this.code = n; return this; }, json() { return this; }, setHeader() {} };
+    await limiter({ ip }, res, () => {});
+    return res.code;
+  }
+  const results = await Promise.all(Array.from({ length: 80 }, (_, i) =>
+    invoke(limiters[i % 2], '198.51.100.42')));
+  assert.equal(results.filter(code => code === 200).length, 60);
+  assert.equal(results.filter(code => code === 429).length, 20);
+  assert.equal(await invoke(limiters[0], '198.51.100.43'), 200);
+  assert.equal(await invoke(limiters[1], undefined), 401);
+  const unavailable = createPostgresRateLimiter({
+    pool: { query: async () => { throw new Error('private database detail'); } },
+    scope: scope + '-unavailable', max: 60, windowMs: 60000, ipBased: true
+  });
+  assert.equal(await invoke(unavailable, '198.51.100.44'), 503);
+});
+
+test('billing routes apply distributed IP limiting before authentication and tenant limiting', () => {
+  const fs = require('node:fs');
+  const source = fs.readFileSync(require.resolve('../src/routes/billing.js'), 'utf8');
+  assert.match(source, /const billingIpRateLimit\s*=\s*require\(['"]\.\.\/middleware\/postgresRateLimit['"]\)\.createPostgresRateLimiter\(/);
+  assert.match(source, /scope:\s*['"]billing-ip['"]/);
+  assert.match(source, /windowMs:\s*60000/);
+  assert.match(source, /max:\s*60/);
+  assert.match(source, /ipBased:\s*true/);
+  assert.doesNotMatch(source, /ingressRateLimit/);
+  const routes = source.split('\n').filter(line => /router\.(get|post|put|patch|delete)\(/.test(line));
+  assert.ok(routes.length > 0);
+  for (const route of routes) {
+    assert.match(route, /billingIpRateLimit,\s*authenticate,\s*rateLimit/,
+      'each billing route must apply shared IP limit before auth and tenant limit');
+  }
+});

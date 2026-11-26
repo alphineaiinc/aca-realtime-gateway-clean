@@ -1,10 +1,11 @@
+const console = require("./voiceLogger").operationalConsole;
 // src/voice/sessionController.js
 
 const { createSession, getSession, removeSession } = require("./voiceSessionStore");
 const { STATES, transition } = require("./stateMachine");
 const { logEvent, logDecision, logError } = require("./voiceLogger");
 
-const { resolveTenantFromVoiceContext } = require("./tenantResolver");
+const { isValidatedRoutingContext } = require("./tenantResolver");
 const { loadClusterSchema } = require("./clusterSchemaLoader");
 const { extractWorkflowTurn } = require("./workflowExtractor");
 const { computeWorkflowState } = require("./workflowStateEngine");
@@ -385,6 +386,8 @@ function getPremiumPrompt(kind, session) {
 
 // 🔹 Wrap original slot question builder with premium tone
 function getPremiumNextSlotQuestion(businessType, slotName, session) {
+  const explicit = session?.clusterSchema?.intake_profile?.slotQuestions?.[slotName];
+  if (explicit) return explicit;
   return getPremiumSlotQuestion(slotName, session);
 }
 
@@ -482,9 +485,8 @@ function handleGreeting(callSid) {
     return null;
   }
 
+  if (!transition(session, STATES.READY_TO_SPEAK, "greeting_prepared")) return null;
   session.greeted = true;
-
-  transition(session, STATES.LISTENING, "greeting_sent");
 
   const reply = {
     shouldSpeak: true,
@@ -523,14 +525,15 @@ function handleTranscriptFinal(callSid, text) {
 
   logEvent(callSid, "TRANSCRIPT_FINAL", { text });
 
-  if (!text || text.trim().length < 3) {
+  if (!text || (text.trim().length < 3 && !/^(no|ok)$/i.test(text.trim()))) {
     logDecision(callSid, "Ignoring short/invalid transcript");
     return null;
   }
 
-  transition(session, STATES.PROCESSING, "final_transcript_received");
-
+  cancelSpeech(callSid);
+  if (!transition(session, STATES.PROCESSING, "final_transcript_received")) return { shouldProcess: false };
   session.isProcessing = true;
+  session.__responseStartedAt = require("node:perf_hooks").performance.now();
 
   return {
     shouldProcess: true,
@@ -578,32 +581,21 @@ function buildConversationTranscript(session) {
     .join("\n");
 }
 
-function applyBusinessSlotProfile(session, clusterSchema = null) {
-  const clusterId = String(
-    session?.clusterId ||
-    clusterSchema?.cluster_id ||
-    clusterSchema?.clusterId ||
-    ""
-  ).trim().toLowerCase();
+function getSessionSlotProfile(session) {
+  const schema = session?.clusterSchema || session?.routingContext?.schema;
+  const base = schema?.intake_profile;
+  if (!base) throw new Error("MISSING_WORKFLOW_PROFILE");
+  const intent = schema.intents.find((i) => i.intent === session.active_intent);
+  return intent ? { ...base, required: intent.required_slots, optional: intent.optional_slots } : base;
+}
 
-  const schemaBusinessType =
-    clusterSchema?.businessType ||
-    clusterSchema?.business_type ||
-    deriveBusinessTypeFromCluster(clusterId) ||
-    session?.businessType ||
-    "generic";
-
-  const businessType = normalizeBusinessType(schemaBusinessType);
-  const profile = getBusinessSlotProfile(businessType);
-
-  session.clusterId = clusterId || session.clusterId || null;
-  session.businessType = businessType;
-  session.clusterSchema = clusterSchema || session.clusterSchema || null;
-  session.requiredSlots = Array.isArray(profile.required) ? [...profile.required] : [];
-  session.optionalSlots = Array.isArray(profile.optional) ? [...profile.optional] : [];
-
-  logClusterState("applyBusinessSlotProfile", session);
-
+function applyBusinessSlotProfile(session, clusterSchema) {
+  session.clusterSchema = clusterSchema;
+  // Generic controls legacy extraction heuristics only; it never selects a workflow.
+  session.businessType = "generic";
+  const profile = getSessionSlotProfile(session);
+  session.requiredSlots = [...profile.required];
+  session.optionalSlots = [...profile.optional];
   return profile;
 }
 
@@ -1055,7 +1047,7 @@ function getSlotValueByAlias(slots = {}, aliases = []) {
 
 function buildConfirmationReplyFromSession(session) {
   const missingRequired = getNextMissingRequiredSlot(
-    session?.businessType || "generic",
+    getSessionSlotProfile(session),
     session?.slots || {}
   );
 
@@ -1067,60 +1059,12 @@ function buildConfirmationReplyFromSession(session) {
     );
   }
 
-  const slots = session?.slots || {};
-  const values = Object.entries(slots)
-    .filter(([, value]) => normalizeText(value))
-    .map(([key, value]) => ({ key, value: normalizeText(value) }));
-
-  if (!values.length) {
-    return getPremiumEmptyConfirmation(session);
-  }
-
-  const findValue = (matcher) => {
-    const hit = values.find(({ key }) => matcher(String(key).toLowerCase()));
-    return hit ? hit.value : "";
-  };
-
-  const dateValue =
-    findValue((key) => key.includes("date") || key.includes("day")) || "";
-  const timeValue =
-    findValue((key) => key.includes("time")) || "";
-  const nameValue =
-    findValue((key) => key.includes("name")) || "";
-  const phoneValue =
-    findValue((key) => key.includes("phone") || key.includes("number")) || "";
-  const partyValue =
-    findValue((key) =>
-      key.includes("party") ||
-      key.includes("size") ||
-      key.includes("guest") ||
-      key.includes("people") ||
-      key.includes("person")
-    ) || "";
-
-  const serviceValue =
-    findValue((key) =>
-      key.includes("service") ||
-      key.includes("type") ||
-      key.includes("reason") ||
-      key.includes("purpose")
-    ) || "";
-
-  const parts = [];
-
-if (serviceValue && session?.businessType === "medical") {
-  parts.push(serviceValue);
-}
-
-if (dateValue) parts.push(dateValue);
-if (timeValue) parts.push(`at ${timeValue}`);
-if (partyValue) parts.push(`for ${partyValue}`);
-
-if (parts.length > 0) {
-  return `${getPremiumConfirmLead(session)} ${parts.join(" ")}. Is that correct?`;
-}
-
-  return getPremiumEmptyConfirmation(session);
+  const schema = session.clusterSchema;
+  const intent = schema.intents.find(i => i.intent === session.active_intent);
+  const fields = intent?.confirmation_slots || getSessionSlotProfile(session).required;
+  const parts = fields.filter(key => normalizeText(session.slots?.[key])).map(key =>
+    key.replace(/_/g, " ") + ": " + normalizeText(session.slots[key]));
+  return parts.length ? getPremiumConfirmLead(session) + " " + parts.join(", ") + ". Is that correct?" : getPremiumEmptyConfirmation(session);
 }
 
 function buildSlotQuestion(slotName, session = null) {
@@ -1176,7 +1120,7 @@ function buildSafeFallbackReply(session) {
   const workflowStatus = String(session?.workflowStatus || "").toLowerCase();
 
   const missingRequired = getNextMissingRequiredSlot(
-    session?.businessType || "generic",
+    getSessionSlotProfile(session),
     session?.slots || {}
   );
 
@@ -1250,9 +1194,9 @@ function handleProcessingResult(callSid, brainResult) {
     });
   }
 
-  if (session.confirmationBlocked && !canConfirmNow(session.businessType, session.slots)) {
+  if (session.confirmationBlocked && !canConfirmNow(getSessionSlotProfile(session), session.slots)) {
   const nextMissingSlot = getNextMissingRequiredSlot(
-    session.businessType || "generic",
+    getSessionSlotProfile(session),
     session.slots || {}
   );
 
@@ -1300,22 +1244,68 @@ function handleProcessingResult(callSid, brainResult) {
   };
 }
 
-function handleSpeak(callSid) {
+function prepareSpeech(callSid) {
   const session = getSession(callSid);
-  if (!session) return;
-
-  session.isSpeaking = true;
-
-  transition(session, STATES.SPEAKING, "tts_start");
+  if (!session) return false;
+  if (session.state === STATES.READY_TO_SPEAK) return true;
+  // These paths produce a concrete local repair reply before normal processing.
+  if (![STATES.LISTENING, STATES.AWAITING_INPUT, STATES.AWAITING_END_OF_TURN].includes(session.state)) return false;
+  return transition(session, STATES.READY_TO_SPEAK, "repair_prepared");
 }
-
+function claimSpeech(callSid) {
+  if (!prepareSpeech(callSid)) return null;
+  const owner = {};
+  getSession(callSid).__speechOwner = owner;
+  return owner;
+}
+function isSpeechCurrent(callSid, owner) {
+  const session = getSession(callSid);
+  return !!session && !!owner && session.__speechOwner === owner;
+}
+function cancelSpeech(callSid) {
+  const session = getSession(callSid);
+  if (!session) return false;
+  session.__speechOwner = null;
+  session.__responseStartedAt = undefined;
+  if ([STATES.READY_TO_SPEAK, STATES.SPEAKING, STATES.PROCESSING].includes(session.state)) {
+    if (!transition(session, STATES.LISTENING, "speech_cancelled")) return false;
+  }
+  session.isSpeaking = false;
+  session.isProcessing = false;
+  return true;
+}
+function handleSpeak(callSid, owner) {
+  const session = getSession(callSid);
+  if (!session || session.state !== STATES.READY_TO_SPEAK || (owner !== undefined && !isSpeechCurrent(callSid, owner))) return false;
+  if (!transition(session, STATES.SPEAKING, "tts_start")) return false;
+  session.isSpeaking = true;
+  if (Number.isFinite(session.__responseStartedAt)) {
+    require("../monitor/resilienceMetrics").observeVoiceResponseMs(require("node:perf_hooks").performance.now()-session.__responseStartedAt);
+    session.__responseStartedAt = undefined;
+  }
+  return true;
+}
+function handleSpeechFailed(callSid, owner) {
+  const session = getSession(callSid);
+  if (!session || ![STATES.READY_TO_SPEAK, STATES.SPEAKING].includes(session.state) ||
+      (session.state === STATES.SPEAKING && owner === undefined) ||
+      (owner !== undefined && !isSpeechCurrent(callSid, owner))) return false;
+  if (!transition(session, STATES.LISTENING, "tts_failed")) return false;
+  session.__speechOwner = null;
+  session.__responseStartedAt = undefined;
+  session.isSpeaking = false;
+  return true;
+}
 function handleSpeechComplete(callSid) {
   const session = getSession(callSid);
-  if (!session) return;
-
+  if (!session || session.state !== STATES.SPEAKING) return false;
+  if (!transition(session, STATES.AWAITING_INPUT, "tts_complete")) return false;
+  session.__speechOwner = null;
   session.isSpeaking = false;
-
-  transition(session, STATES.AWAITING_INPUT, "tts_complete");
+  return true;
+}
+function handleSpeechInterrupted(callSid) {
+  return cancelSpeech(callSid);
 }
 
 function handleCallEnded(callSid) {
@@ -1341,8 +1331,29 @@ async function handleCallerTurn({ callSid, businessId = null, transcript, meta =
     };
   }
 
+  const routing = session.routingContext;
+  if (!isValidatedRoutingContext(routing) || routing.callSid !== callSid ||
+      (meta.routingContext && meta.routingContext !== routing) ||
+      businessId !== null || meta.tenantId !== undefined || meta.businessId !== undefined) {
+    return { shouldSpeak: false, replyText: "", replyType: "routing_error" };
+  }
+
   const utterance = normalizeText(transcript);
   session.lastCallerText = utterance;
+  if (session.workflowStatus === "ready_for_confirmation" &&
+      !session.confirmationBlocked && /^(yes|yes please|correct|that is correct|that's correct|okay|ok)[.!]?$/i.test(utterance)) {
+    try {
+      await require("./confirmedRequestStore").saveConfirmedRequest(routing, session.active_intent, session.slots);
+    } catch {
+      return { shouldSpeak: true, replyText: "I could not save your request yet. Would you like me to try again?", replyType: "request_save_failed" };
+    }
+    session.workflowStatus = "details_confirmed";
+    session.lastAskedSlot = null;
+    return { shouldSpeak: true, replyText: "Thank you. Your request has been recorded. Availability and fulfillment are not yet confirmed.", replyType: "details_confirmed" };
+  }
+  if (session.workflowStatus === "details_confirmed" && /^(yes|correct|okay|ok)[.!]?$/i.test(utterance)) {
+    return { shouldSpeak: true, replyText: "Is there anything else I can help with?", replyType: "acknowledgement" };
+  }
 
   const askingPhoneConfirm =
     /\b(confirm.*(phone|number)|what.*(phone|number)|did you get.*(phone|number))\b/i.test(utterance);
@@ -1395,41 +1406,6 @@ if (isClosing) {
 
   pushRecentTurn(session, "caller", utterance);
 
-  let routing;
-  try {
-    routing = await resolveTenantFromVoiceContext({
-      callSid,
-      businessId,
-      ...meta,
-    });
-  } catch (err) {
-    logError(callSid, "Tenant resolution crashed", {
-      error: err.message,
-      businessId,
-      meta,
-    });
-
-    return {
-      shouldSpeak: true,
-      replyText: getPremiumPrompt("error", session) || "Sorry — something went wrong. Please try again.",
-      replyType: "error",
-    };
-  }
-
-  if (!routing || !routing.ok || !routing.tenantId || !routing.clusterId) {
-    logError(callSid, "Tenant resolution failed", routing || { businessId, meta });
-
-    return {
-      shouldSpeak: true,
-      replyText: getPremiumPrompt("error", session) || "Sorry — something went wrong. Please try again.",
-      replyType: "error",
-    };
-  }
-
-  session.tenantId = routing.tenantId || null;
-  session.businessId = routing.businessId || businessId || null;
-  session.clusterId = routing.clusterId || null;
-
   logDecision(callSid, "Tenant cluster resolved", {
   tenantId: session.tenantId,
   businessId: session.businessId,
@@ -1440,7 +1416,7 @@ if (isClosing) {
  
   let clusterSchema;
   try {
-    clusterSchema = await loadClusterSchema(session.clusterId);
+    clusterSchema = await loadClusterSchema(routing);
   } catch (err) {
     logError(callSid, "Cluster schema load failed", {
       error: err.message,
@@ -1489,14 +1465,17 @@ if (isClosing) {
     };
   }
 
- const deterministicSlots = inferHeuristicSlotsFromUtterance(session, utterance);
-const holisticSlots = inferHolisticSlotsFromConversation(session);
-const extractionSlots = extraction?.slots || {};
+ const configuredSlots = (slots) => Object.fromEntries(Object.entries(slots).filter(([key]) =>
+  Object.hasOwn(clusterSchema.slot_definitions, key)));
+const deterministicSlots = configuredSlots(inferHeuristicSlotsFromUtterance(session, utterance));
+// Never re-extract from assistant prompts or overwrite current corrections with history.
+const holisticSlots = {};
+const extractionSlots = configuredSlots(mergeSlotsWithoutEmpty(extraction?.slots || {}, extraction?.slot_updates || {}));
 
 const combinedExtractionSlots = normalizeExtractedSlotsForSession(
   session,
   mergeSlotsWithoutEmpty(
-    mergeSlotsWithoutEmpty(extractionSlots, deterministicSlots),
+    mergeSlotsWithoutEmpty(deterministicSlots, extractionSlots),
     holisticSlots
   )
 );
@@ -1538,7 +1517,7 @@ const effectiveExtraction = {
 const newSlots = normalizeExtractedSlotsForSession(
   session,
   mergeSlotsWithoutEmpty(
-    mergeSlotsWithoutEmpty(workflowState.slots || {}, deterministicSlots),
+    mergeSlotsWithoutEmpty(deterministicSlots, workflowState.slots || {}),
     holisticSlots
   )
 );
@@ -1572,7 +1551,7 @@ logDecision(callSid, "Normalized slot aliases", {
 });
 
  const missingRequired = getMissingRequiredSlots(
-  session.businessType || "generic",
+  getSessionSlotProfile(session),
   session.slots || {}
 );
 
@@ -1644,13 +1623,13 @@ switch (session.businessType) {
     break;
 }
 
-if (coreComplete && !has("name")) {
+if (coreComplete && session.requiredSlots.includes("name") && !has("name")) {
   session.lastAskedSlot = "name";
-} else if (coreComplete && has("name") && !has("phone")) {
+} else if (coreComplete && session.requiredSlots.includes("phone") && has("name") && !has("phone")) {
   session.lastAskedSlot = "phone";
 } else if (missingRequired.length > 0) {
   session.lastAskedSlot = getNextMissingRequiredSlot(
-    session.businessType || "generic",
+    getSessionSlotProfile(session),
     session.slots || {}
   );
 } else {
@@ -1671,8 +1650,7 @@ if (coreComplete && !has("name")) {
   session.workflowStatus = workflowState.workflowStatus || "idle";
 
   if (
-  session.workflowStatus === "ready_for_confirmation" ||
-  session.workflowStatus === "completed"
+  !missingRequired.length && session.workflowStatus === "ready_for_confirmation"
 ) {
   session.lastAskedSlot = null;
   session.confirmationBlocked = false;
@@ -1750,9 +1728,9 @@ if (coreComplete && !has("name")) {
     });
   }
 
- if (session.confirmationBlocked && !canConfirmNow(session.businessType, session.slots)) {
+ if (session.confirmationBlocked && !canConfirmNow(getSessionSlotProfile(session), session.slots)) {
   const nextMissingSlot = getNextMissingRequiredSlot(
-    session.businessType || "generic",
+    getSessionSlotProfile(session),
     session.slots || {}
   );
 
@@ -1825,6 +1803,12 @@ if (coreComplete && !has("name")) {
 }
 
 module.exports = {
+  claimSpeech,
+  isSpeechCurrent,
+  cancelSpeech,
+  prepareSpeech,
+  handleSpeechFailed,
+  handleSpeechInterrupted,
   handleCallStarted,
   handleGreeting,
   handleTranscriptPartial,

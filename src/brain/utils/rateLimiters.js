@@ -2,7 +2,8 @@
 // Story 12.8 — lightweight in-memory rate limiting (Render-safe)
 // Secure default: best-effort abuse control; resets on deploy/restart (acceptable for demo MVP)
 
-const buckets = new Map(); // key -> { count, resetAt }
+const buckets = new Map();
+const CAPACITY = 10000; // key -> { count, resetAt }
 
 function nowMs() {
   return Date.now();
@@ -10,7 +11,9 @@ function nowMs() {
 
 function hit(key, windowMs, max) {
   const now = nowMs();
+  for (const [k,v] of buckets) if (v.resetAt <= now) buckets.delete(k);
   const cur = buckets.get(key);
+  if (!cur && buckets.size >= CAPACITY) return { ok: false, remaining: 0, resetAt: now + windowMs };
 
   if (!cur || now > cur.resetAt) {
     const next = { count: 1, resetAt: now + windowMs };
@@ -37,7 +40,6 @@ function rateLimitIP(opts) {
   return function (req, res, next) {
     try {
       const ip =
-        (req.headers["x-forwarded-for"] ? String(req.headers["x-forwarded-for"]).split(",")[0].trim() : "") ||
         req.ip ||
         req.connection?.remoteAddress ||
         "unknown";
@@ -54,7 +56,7 @@ function rateLimitIP(opts) {
         return res.status(429).json({ ok: false, error: "rate_limited" });
       }
     } catch (e) {
-      // Fail-open to avoid taking prod down due to limiter bug
+      return res.status(503).json({ ok: false, error: "rate_limit_unavailable" });
     }
     return next();
   };
@@ -79,7 +81,7 @@ function rateLimitKey(keyFn, opts) {
       if (!r.ok) {
         return res.status(429).json({ ok: false, error: "rate_limited" });
       }
-    } catch (e) {}
+    } catch (e) { return res.status(503).json({ ok: false, error: "rate_limit_unavailable" }); }
     return next();
   };
 }
