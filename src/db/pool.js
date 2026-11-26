@@ -20,15 +20,6 @@ function sanitizeEnvValue(value) {
     .replace(/^['"]+|['"]+$/g, "");
 }
 
-function redactDbUrl(raw) {
-  if (!raw) return "(missing)";
-  try {
-    return raw.replace(/:\/\/([^:]+):([^@]+)@/, "://$1:***@");
-  } catch {
-    return "(unreadable)";
-  }
-}
-
 // --- Base connection URL ---
 let baseUrl = sanitizeEnvValue(process.env.DATABASE_URL);
 
