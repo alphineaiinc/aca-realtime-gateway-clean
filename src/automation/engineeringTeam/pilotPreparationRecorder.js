@@ -26,7 +26,7 @@ function createPilotPreparationRecorder({store,authenticateOwner,readEvidence,cl
  if(digest([DOMAIN,result.binding,fresh?.approval,fresh?.evidence])!==binding)return denied();
  const again=await authenticateOwner(credential,binding,tx);
  if(!valid(again)||again.id!==owner.id||evaluatePilotPreparation({scope:snapshot,approval:fresh.approval,evidence:fresh.evidence,now:clock()}).status!=='preparation-consistent')return denied();
- const receipt=Object.freeze({domain:DOMAIN,status:'recorded-preparation',runId:snapshot.runId,binding,ownerId:owner.id,executionAuthorized:false,releaseAuthorized:false});
+ const receipt=Object.freeze({domain:DOMAIN,status:'recorded-preparation',runId:snapshot.runId,binding,ownerId:owner.id,cleanup:Object.freeze({...fresh.approval.cleanup,actions:Object.freeze([...fresh.approval.cleanup.actions])}),runEnd:fresh.approval.end,executionAuthorized:false,releaseAuthorized:false});
  if(await tx.insert(receipt)!==true)throw Error('Record insert failed');
  return receipt;
  });
