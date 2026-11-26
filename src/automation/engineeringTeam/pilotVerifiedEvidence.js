@@ -10,12 +10,13 @@ function createPilotEvidenceVerifier({publicKey,issuer,clock=Date.now,isRevoked}
  if(key.asymmetricKeyType!=='ed25519'||typeof issuer!=='string'||!issuer||typeof isRevoked!=='function')throw Error('Invalid pilot evidence verifier');
  return async function check(envelope,kind,binding){
  try{
- const r=envelope?.record;
+ const r=JSON.parse(JSON.stringify(envelope?.record));
+ const signature=envelope?.signature;
  if(!keys(r,'domain,issuer,kind,binding,issuedAt,expiresAt,body')||r.domain!==DOMAIN||r.issuer!==issuer||r.kind!==kind||!hex(binding)||r.binding!==binding||
  !Number.isSafeInteger(r.issuedAt)||!Number.isSafeInteger(r.expiresAt)||r.expiresAt<=r.issuedAt||r.expiresAt-r.issuedAt>300000||r.issuedAt>clock()||r.expiresAt<=clock()||
- typeof envelope.signature!=='string'||!/^[a-f0-9]{128}$/.test(envelope.signature))return null;
+ typeof signature!=='string'||!/^[a-f0-9]{128}$/.test(signature))return null;
  const payload=JSON.stringify([DOMAIN,issuer,kind,binding,r.issuedAt,r.expiresAt,r.body]);
- if(!verify(null,Buffer.from(payload),key,Buffer.from(envelope.signature,'hex'))||await isRevoked(issuer)!==false||r.expiresAt<=clock())return null;
+ if(!verify(null,Buffer.from(payload),key,Buffer.from(signature,'hex'))||await isRevoked(issuer)!==false||r.expiresAt<=clock())return null;
  return JSON.parse(payload)[6];
  }catch{return null;}
  };
