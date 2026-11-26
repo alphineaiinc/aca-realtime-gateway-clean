@@ -1,3 +1,4 @@
+const console = require("../voice/voiceLogger").operationalConsole;
 // ============================================================
 // src/db/pool.js — Final Render + Local PostgreSQL connection (adaptive SSL)
 // ============================================================
@@ -19,19 +20,10 @@ function sanitizeEnvValue(value) {
     .replace(/^['"]+|['"]+$/g, "");
 }
 
-function redactDbUrl(raw) {
-  if (!raw) return "(missing)";
-  try {
-    return raw.replace(/:\/\/([^:]+):([^@]+)@/, "://$1:***@");
-  } catch {
-    return "(unreadable)";
-  }
-}
-
 // --- Base connection URL ---
 let baseUrl = sanitizeEnvValue(process.env.DATABASE_URL);
 
-console.log("🔍 Using DATABASE_URL =", redactDbUrl(baseUrl));
+console.log("DATABASE_URL configured:", Boolean(baseUrl));
 
 // --- Detect environment type ---
 const isRender =
@@ -51,7 +43,7 @@ try {
   }
   new URL(baseUrl);
 } catch (err) {
-  console.error("❌ DATABASE_URL validation failed:", err.message);
+  console.error("❌ DATABASE_URL validation failed");
 }
 
 // --- Pool configuration ---
@@ -86,13 +78,13 @@ const pool = new Pool(poolConfig);
     console.log("📊 DB Info:", result.rows[0]);
     client.release();
   } catch (err) {
-    console.error("❌ Startup connection failed:", err.message);
+    console.error("❌ Startup connection failed", { code: err && err.code ? String(err.code) : null });
   }
 })();
 
 // --- Handle unexpected pool errors ---
 pool.on("error", (err) => {
-  console.error("❌ Unexpected PG Pool error:", err);
+  console.error("❌ Unexpected PG Pool error", { code: err && err.code ? String(err.code) : null });
   process.exit(-1);
 });
 

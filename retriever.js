@@ -1,3 +1,4 @@
+const console = require("./src/voice/voiceLogger").operationalConsole;
 // retriever.js
 // ACA Orchestrator — Story 12.6/12.7 behavior preserved:
 // - session memory (in-memory, tenant+session scoped, TTL + max turns)
@@ -294,7 +295,7 @@ async function retrieveAnswer(
         observeHttpRetry({
           scope: "retriever.searchKB",
           ok: false,
-          reason: String(err && err.message ? err.message : err),
+          reason: "RETRIEVAL_FAILED",
         });
       }
     } catch (_) {}

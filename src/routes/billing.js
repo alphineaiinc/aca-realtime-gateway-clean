@@ -8,40 +8,26 @@ const fs = require("fs");
 const path = require("path");
 const archiver = require("archiver");   // ensure available
 
+const { createAuthenticatedRateLimiter } = require("../middleware/authenticatedRateLimit");
+
 const router = express.Router();
+const billingRateLimit = createAuthenticatedRateLimiter({ windowMs: 60_000, max: 60 });
 
 
-// ---------------------------------------------------------------------
-// Simple in-memory rate limiter per partner for /pay (3 reqs / 10s)
-// ---------------------------------------------------------------------
-const RATE_WINDOW_MS = 10_000;
-const RATE_MAX = 3;
-const rateBucket = new Map(); // partner_id -> {count, resetAt}
-
-function rateLimit(req, res, next) {
-  const pid = req.partner_id || "anon";
-  const now = Date.now();
-  const bucket = rateBucket.get(pid) || { count: 0, resetAt: now + RATE_WINDOW_MS };
-  if (now > bucket.resetAt) {
-    bucket.count = 0;
-    bucket.resetAt = now + RATE_WINDOW_MS;
-  }
-  bucket.count += 1;
-  rateBucket.set(pid, bucket);
-  if (bucket.count > RATE_MAX) {
-    return res.status(429).json({ ok: false, error: "Rate limit exceeded. Try again shortly." });
-  }
-  next();
-}
+// Stricter payment-write budget, in addition to the general billing budget.
+const paymentRateLimit = createAuthenticatedRateLimiter({ windowMs: 10_000, max: 3 });
 
 // ---------------------------------------------------------------------
 // Middleware: partner / tenant JWT auth
 // ---------------------------------------------------------------------
 function authenticate(req, res, next) {
   try {
-    const token = (req.headers.authorization || "").replace("Bearer ", "");
+    const auth = req.headers.authorization || "";
+    if (!auth.startsWith("Bearer ")) throw new Error("unauthorized");
+    const token = auth.slice(7).trim();
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    req.tenant_id = decoded.tenant_id;
+    if (!Number.isSafeInteger(Number(decoded.tenant_id)) || Number(decoded.tenant_id) <= 0) throw new Error("unauthorized");
+    req.tenant_id = Number(decoded.tenant_id);
     req.partner_id = decoded.partner_id;
     next();
   } catch {
@@ -52,7 +38,7 @@ function authenticate(req, res, next) {
 // ---------------------------------------------------------------------
 // POST /api/billing/generate – create invoice
 // ---------------------------------------------------------------------
-router.post("/generate", authenticate, async (req, res) => {
+router.post("/generate", authenticate, billingRateLimit, async (req, res) => {
   try {
     const { usage_minutes, ai_tokens } = req.body;
     const invoice = await generateInvoice(
@@ -66,14 +52,14 @@ router.post("/generate", authenticate, async (req, res) => {
     res.json({ ok: true, invoice });
   } catch (err) {
     console.error("[billing/generate]", err);
-    res.status(500).json({ ok: false, error: err.message });
+    res.status(500).json({ ok: false, error: "billing_operation_failed" });
   }
 });
 
 // ---------------------------------------------------------------------
 // GET /api/billing/history – list invoices
 // ---------------------------------------------------------------------
-router.get("/history", authenticate, async (req, res) => {
+router.get("/history", authenticate, billingRateLimit, async (req, res) => {
   try {
     const { status, from, to } = req.query;
     const where = ["tenant_id = $1"];
@@ -96,74 +82,19 @@ router.get("/history", authenticate, async (req, res) => {
     res.json({ ok: true, invoices: result.rows });
   } catch (err) {
     console.error("[billing/history]", err);
-    res.status(500).json({ ok: false, error: err.message });
+    res.status(500).json({ ok: false, error: "billing_operation_failed" });
   }
 });
 
 // ---------------------------------------------------------------------
 // POST /api/billing/pay – mark invoice paid (rate-limited)
 // ---------------------------------------------------------------------
-router.post("/pay", authenticate, rateLimit, async (req, res) => {
-  try {
-    const { invoice_id, payment_method = "mock", notes = "" } = req.body;
-    if (!invoice_id) return res.status(400).json({ ok: false, error: "invoice_id required" });
-
-    const paymentRef = `pay_${Date.now()}`;
-    const upd = await pool.query(
-      `UPDATE billing_invoices
-          SET status='paid',
-              paid_at=NOW(),
-              paid_by=$1,
-              payment_method=$2,
-              payment_reference=$3,
-              notes=$4
-        WHERE id=$5 AND tenant_id=$6
-        RETURNING id, tenant_id, partner_id, status, paid_at, payment_method, payment_reference, amount_usd;`,
-      [
-        `partner_${req.partner_id}`,
-        payment_method,
-        paymentRef,
-        notes,
-        invoice_id,
-        req.tenant_id,
-      ]
-    );
-    if (upd.rowCount === 0)
-      return res.status(404).json({ ok: false, error: "Invoice not found or access denied" });
-
-    const row = upd.rows[0];
-    logPayment({
-      t: new Date().toISOString(),
-      event: "invoice_paid",
-      partner_id: req.partner_id,
-      tenant_id: row.tenant_id,
-      invoice_id: row.id,
-      amount_usd: row.amount_usd,
-      method: row.payment_method,
-      ref: row.payment_reference
-    });
-
-    console.log(`[billing/pay] partner=${req.partner_id} invoice=${invoice_id} method=${payment_method}`);
-    res.json({
-      ok: true,
-      payment: {
-        id: row.id,
-        status: row.status,
-        paid_at: row.paid_at,
-        payment_method: row.payment_method,
-        payment_reference: row.payment_reference
-      }
-    });
-  } catch (err) {
-    console.error("[billing/pay]", err);
-    res.status(500).json({ ok: false, error: err.message });
-  }
-});
+router.post("/pay", authenticate, billingRateLimit, paymentRateLimit, (req,res)=>res.status(503).json({ok:false,error:"verified_settlement_required"}));
 
 // ---------------------------------------------------------------------
 // GET /api/billing/status/:id – single invoice
 // ---------------------------------------------------------------------
-router.get("/status/:id", authenticate, async (req, res) => {
+router.get("/status/:id", authenticate, billingRateLimit, async (req, res) => {
   try {
     const invoiceId = parseInt(req.params.id);
     const result = await pool.query(
@@ -178,14 +109,14 @@ router.get("/status/:id", authenticate, async (req, res) => {
     res.json({ ok: true, invoice: result.rows[0] });
   } catch (err) {
     console.error("[billing/status]", err);
-    res.status(500).json({ ok: false, error: err.message });
+    res.status(500).json({ ok: false, error: "billing_operation_failed" });
   }
 });
 
 // ---------------------------------------------------------------------
 // GET /api/billing/stats – totals + monthly series
 // ---------------------------------------------------------------------
-router.get("/stats", authenticate, async (req, res) => {
+router.get("/stats", authenticate, billingRateLimit, async (req, res) => {
   try {
     const totals = await pool.query(
       `SELECT
@@ -220,14 +151,14 @@ router.get("/stats", authenticate, async (req, res) => {
     });
   } catch (err) {
     console.error("[billing/stats]", err);
-    res.status(500).json({ ok: false, error: err.message });
+    res.status(500).json({ ok: false, error: "billing_operation_failed" });
   }
 });
 
 // ---------------------------------------------------------------------
 // GET /api/billing/summary – alias for /stats (Story 11.7)
 // ---------------------------------------------------------------------
-router.get("/summary", authenticate, async (req, res) => {
+router.get("/summary", authenticate, billingRateLimit, async (req, res) => {
   try {
     const totals = await pool.query(
       `SELECT
@@ -262,14 +193,14 @@ router.get("/summary", authenticate, async (req, res) => {
     });
   } catch (err) {
     console.error("[billing/summary]", err);
-    res.status(500).json({ ok: false, error: err.message });
+    res.status(500).json({ ok: false, error: "billing_operation_failed" });
   }
 });
 
 // ---------------------------------------------------------------------
 // GET /api/billing/export – CSV export of invoices for tenant
 // ---------------------------------------------------------------------
-router.get("/export", authenticate, async (req, res) => {
+router.get("/export", authenticate, billingRateLimit, async (req, res) => {
   try {
     const result = await pool.query(
       `SELECT id, tenant_id, partner_id, amount_usd, status, payment_method,
@@ -294,34 +225,19 @@ router.get("/export", authenticate, async (req, res) => {
     res.send(csv);
   } catch (err) {
     console.error("[billing/export]", err);
-    res.status(500).json({ ok: false, error: err.message });
+    res.status(500).json({ ok: false, error: "billing_operation_failed" });
   }
 });
 
 // ---------------------------------------------------------------------
 // POST /api/billing/email/:id – mock email sender
 // ---------------------------------------------------------------------
-router.post("/email/:id", authenticate, async (req, res) => {
-  try {
-    const id = parseInt(req.params.id);
-    const q = await pool.query(
-      `SELECT id, invoice_path, amount_usd FROM billing_invoices
-        WHERE id=$1 AND tenant_id=$2`, [id, req.tenant_id]
-    );
-    if (q.rowCount === 0)
-      return res.status(404).json({ ok:false, error:"Invoice not found" });
-    console.log(`[billing/email] mock sent invoice=${id} path=${q.rows[0].invoice_path}`);
-    res.json({ ok:true, email_sent:true, invoice_id:id });
-  } catch (err) {
-    console.error("[billing/email]", err);
-    res.status(500).json({ ok:false, error: err.message });
-  }
-});
+router.post("/email/:id", authenticate, billingRateLimit, (req,res)=>res.status(503).json({ok:false,error:"billing_email_disabled"}));
 
 // ---------------------------------------------------------------------
 // GET /api/billing/download-all  –  returns ZIP of all invoices for tenant
 // ---------------------------------------------------------------------
-router.get("/download-all", authenticate, async (req, res) => {
+router.get("/download-all", authenticate, billingRateLimit, async (req, res) => {
   try {
     const invoiceDir = path.join(__dirname, "../../public/invoices", String(req.tenant_id));
     if (!fs.existsSync(invoiceDir)) {
@@ -346,7 +262,7 @@ router.get("/download-all", authenticate, async (req, res) => {
     await archive.finalize();
   } catch (err) {
     console.error("[billing/download-all]", err);
-    res.status(500).json({ ok:false, error:err.message });
+    res.status(500).json({ ok:false, error: "billing_operation_failed" });
   }
 });
 
