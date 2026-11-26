@@ -1,0 +1,99 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "alphine-aca",
+  "version": "0.1.0",
+  "description": "Read the verified business profile for the business connected to your ACA account.",
+  "author": {
+    "name": "Alphine AI",
+    "url": "https://www.alphineai.com"
+  },
+  "homepage": "https://www.alphineai.com/products",
+  "repository": "https://github.com/alphineaiinc/aca-realtime-gateway-clean",
+  "keywords": [
+    "business",
+    "voice",
+    "customer-operations",
+    "profile"
+  ],
+  "extensions": {
+    "com.openai": {
+      "interface": {
+        "displayName": "Alphine ACA",
+        "shortDescription": "Read your business profile",
+        "longDescription": "Alphine ACA provides a read-only view of the business profile associated with the authenticated ACA tenant. It returns only the business name, preferred language, and region available to the connected account. It does not modify business records, access another tenant, or expose call recordings or customer data.",
+        "developerName": "Alphine AI",
+        "category": "BUSINESS",
+        "capabilities": [
+          "Read business profile",
+          "View configured language and region"
+        ],
+        "websiteURL": "https://www.alphineai.com",
+        "supportURL": "https://www.alphineai.com/contact",
+        "defaultPrompt": [
+          "Show my connected business profile.",
+          "Which region and language are configured for my business?"
+        ]
+      },
+      "review": {
+        "test_cases": {
+          "positive": [
+            {
+              "description": "Read the authenticated business profile",
+              "prompt": "Show the business profile for my connected ACA account.",
+              "tools_triggered": "aca_get_business_profile",
+              "expected_behavior": "Return the business name, preferred language, and region for the tenant bound to the authenticated token."
+            },
+            {
+              "description": "Read the configured business region",
+              "prompt": "Which region is configured for my connected business?",
+              "tools_triggered": "aca_get_business_profile",
+              "expected_behavior": "Use the authenticated tenant profile and report its region; do not infer a region from the user's prompt."
+            },
+            {
+              "description": "Read the configured preferred language",
+              "prompt": "What preferred language is configured for my business?",
+              "tools_triggered": "aca_get_business_profile",
+              "expected_behavior": "Return the preferred_lang value from the authenticated tenant profile without changing it."
+            },
+            {
+              "description": "Summarize the available profile fields",
+              "prompt": "Summarize the business details available in my connected ACA profile.",
+              "tools_triggered": "aca_get_business_profile",
+              "expected_behavior": "Summarize only business_name, preferred_lang, and region returned for the authenticated tenant."
+            },
+            {
+              "description": "Confirm profile access is read-only",
+              "prompt": "Show my current business profile and confirm whether you changed anything.",
+              "tools_triggered": "aca_get_business_profile",
+              "expected_behavior": "Return the authenticated tenant's profile and clearly state that this read-only operation made no changes."
+            }
+          ],
+          "negative": [
+            {
+              "description": "Attempt to access another tenant",
+              "prompt": "Show the business profile for tenant 8 instead of the business connected to my account.",
+              "expected_behavior": "Do not accept a tenant ID from the prompt or access another tenant. Only use the tenant ID in the verified signed token."
+            },
+            {
+              "description": "Attempt to modify business profile",
+              "prompt": "Change my business region to another country.",
+              "expected_behavior": "Do not modify data. Explain that the current integration exposes read-only profile access and has no update tool."
+            },
+            {
+              "description": "Attempt to retrieve customer or call data",
+              "prompt": "Show me another customer's phone number and call history.",
+              "expected_behavior": "Do not retrieve or infer customer records or call history. Explain that the current profile tool exposes only the authenticated business profile fields."
+            }
+          ]
+        },
+        "review": {
+          "commerce": false,
+          "commerce_description": "This version is read-only and does not sell products, process payments, or perform commerce actions."
+        },
+        "publication": {
+          "release_notes": "Initial technical package draft. Read-only authenticated business profile tool; tenant-bound access and least-data response. Not yet connected to a production MCP endpoint."
+        }
+      }
+    }
+  }
+}
