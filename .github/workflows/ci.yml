@@ -52,7 +52,7 @@ jobs:
         env:
           RUN_ENGINEERING_QUEUE_CI: '1'
           ENGINEERING_QUEUE_CI_DATABASE_URL: postgresql://aca_ci:disposable-ci-only@127.0.0.1:5432/aca_engineering_queue_ci
-        run: node --test test/eight-agent-durable-queue.integration.test.js
+        run: node --test test/eight-agent-durable-queue.integration.test.js test/eight-agent-sg001-postgres.integration.test.js
 
   # Trusted sandbox attestation is intentionally disabled until its harness is supplied by a protected revision.
   postgres-ledger-integration:
