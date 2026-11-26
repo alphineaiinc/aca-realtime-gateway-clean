@@ -1,6 +1,8 @@
 name: ACA protected staging acceptance
 on:
-  workflow_dispatch:
+  push:
+    branches: [aca-l1-integrated-routing-onboarding]
+    paths: ['.github/workflows/aca-protected-acceptance.yml']
 permissions:
   contents: read
 concurrency:
@@ -8,7 +10,7 @@ concurrency:
   cancel-in-progress: false
 jobs:
   acceptance:
-    if: github.repository == 'alphineaiinc/aca-realtime-gateway-clean' && github.ref == 'refs/heads/aca-l1-integrated-routing-onboarding' && github.event_name == 'workflow_dispatch'
+    if: github.repository == 'alphineaiinc/aca-realtime-gateway-clean' && github.ref == 'refs/heads/aca-l1-integrated-routing-onboarding' && github.event_name == 'push'
     environment: aca-product-staging
     runs-on: ubuntu-latest
     timeout-minutes: 10
