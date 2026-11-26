@@ -28,6 +28,7 @@ test("marketplace archive inputs include the source and tests used by acceptance
     "src/marketplace",
     "src/brain/utils/sttGoogle.js",
     "test/marketplace-mcp-authenticated.test.js",
+    "test/marketplace-business-tools.test.js",
     "test/marketplace-mail-compat.test.js",
     "test/marketplace-dependency-surface.test.js"
   ]) assert.ok(workflow.includes(required), "missing archive input: " + required);
