@@ -22,6 +22,6 @@ function reserveMonthly({state,request,now}){
  for(const e of state.entries){if(!e||typeof e.id!=='string'||ids.has(e.id))throw Error('Invalid ledger');ids.add(e.id);used+=cents(e.workCents)+cents(e.cleanupCents);if(used>CAP)throw Error('Invalid ledger total');}
  if(ids.has(request.id)||used+total>CAP)throw Error('Budget denied');
  const entry=Object.freeze({id:request.id,workCents:request.workCents,cleanupCents:request.cleanupCents,evidenceSha256:request.evidenceSha256});
- return Object.freeze({month,reconciled:true,fixedAndAccruedCents:state.fixedAndAccruedCents,entries:Object.freeze([...state.entries.map(e=>Object.freeze({...e})),entry]),executionAuthorized:false});
+ return Object.freeze({...structuredClone(state),month,reconciled:true,fixedAndAccruedCents:state.fixedAndAccruedCents,entries:Object.freeze([...state.entries.map(e=>Object.freeze({...e})),entry]),executionAuthorized:false});
 }
 module.exports={CAP,monthAt,reserveMonthly};
