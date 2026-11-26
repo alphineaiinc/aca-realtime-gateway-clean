@@ -44,3 +44,16 @@ test("controlled staging disables shared login and onboarding transport before p
  }
  assert.equal(typeof createMailSender({...env,ACA_EMAIL_TRANSPORT:"gmail"}),"function");
 });
+
+for(const malformed of [null,[],{}, {access_token:" "},{access_token:"a b"}]){
+ test("Gmail rejects malformed token response "+JSON.stringify(malformed),async()=>{
+  let calls=0;const send=createGmailSender(env,async()=>{calls++;return {ok:true,json:async()=>malformed};});
+  await assert.rejects(send(mail),{message:"GMAIL_TOKEN_INVALID"});assert.equal(calls,1);
+ });
+}
+for(const malformed of [null,[],{}, {id:" "}]){
+ test("Gmail rejects malformed send receipt "+JSON.stringify(malformed),async()=>{
+  let calls=0;const send=createGmailSender(env,async()=>({ok:true,json:async()=>++calls===1?{access_token:"token"}:malformed}));
+  await assert.rejects(send(mail),{message:"GMAIL_SEND_UNCONFIRMED"});assert.equal(calls,2);
+ });
+}
