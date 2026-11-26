@@ -1,0 +1,12 @@
+'use strict';
+const test=require('node:test'),assert=require('node:assert/strict');
+const {reserveMonthly,monthAt}=require('./aggregateMonthlyBudgetDisabled');
+const now=Date.parse('2026-11-26T17:00:00Z'),month=monthAt(now);
+const state=()=>({month,reconciled:true,fixedAndAccruedCents:1000,entries:[]});
+const req=(patch={})=>({id:'a',month,workCents:5000,cleanupCents:1000,evidenceSha256:'a'.repeat(64),expiresAt:now+1000,...patch});
+test('aggregate across provider request IDs and preserve cleanup',()=>{const s=reserveMonthly({state:state(),request:req(),now});const t=reserveMonthly({state:s,request:req({id:'b',workCents:7000}),now});assert.equal(t.entries.length,2);assert.equal(t.executionAuthorized,false);assert.throws(()=>reserveMonthly({state:t,request:req({id:'c',workCents:1}),now}));});
+test('duplicate denial',()=>{const s=reserveMonthly({state:state(),request:req(),now});assert.throws(()=>reserveMonthly({state:s,request:req(),now}));});
+test('unknown invalid or missing bounds deny',()=>{for(const patch of [{workCents:undefined},{workCents:-1},{cleanupCents:0},{evidenceSha256:'bad'},{expiresAt:NaN},{workCents:1.5}])assert.throws(()=>reserveMonthly({state:state(),request:req(patch),now}));});
+test('unreconciled and stale month deny',()=>{for(const patch of [{reconciled:false},{month:'2026-10'}])assert.throws(()=>reserveMonthly({state:{...state(),...patch},request:req(),now}));});
+test('Toronto boundary and cross-month denial',()=>{assert.equal(monthAt(Date.parse('2026-12-01T04:59:59Z')),'2026-11');assert.equal(monthAt(Date.parse('2026-12-01T05:00:00Z')),'2026-12');assert.throws(()=>reserveMonthly({state:state(),request:req({expiresAt:Date.parse('2026-12-01T05:00:00Z')}),now}));});
+test('invalid ledger duplicates and over-cap deny',()=>{const e={id:'x',workCents:1000,cleanupCents:1000};for(const entries of [[e,e],[{...e,workCents:15000}]])assert.throws(()=>reserveMonthly({state:{...state(),entries},request:req(),now}));});
