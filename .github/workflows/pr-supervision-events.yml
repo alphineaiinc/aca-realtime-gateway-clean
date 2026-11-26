@@ -1,0 +1,10 @@
+name: ACA PR Supervision Event Observer (disabled integration hold)
+on:
+  workflow_dispatch:
+permissions: {}
+jobs:
+  hold:
+    if: ${{ false }}
+    runs-on: ubuntu-latest
+    steps:
+      - run: exit 1

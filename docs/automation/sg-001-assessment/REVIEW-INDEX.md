@@ -1,0 +1,46 @@
+# Local immutable review packet
+Copied from SG-001 normative commit 3ff0230e8c4c5344a1bf7a38db2050e9cd7251a6; original document blob 7b35ff26e90a5b6ea918831fadd224a0bd5cf3e5. The original proposed-status wording is preserved, with adoption recorded separately in ADOPTION-RECEIPT.md. Review the exact candidate against these frozen blobs and original task criteria; no waiver, runtime authority or operational acceptance inferred.
+
+- `BASELINES.md` — Git blob `b9143e053f4b286ba177d8bf056641c1c0d15107`
+- `INTERFACES-159.md` — Git blob `1df929cc6b9c3e3671ac13661cb788704e8f784d`
+- `INTERFACES-162.md` — Git blob `42306f1444c901bd343929689ddab48aad9d095d`
+- `docs__COMPANY_PROJECT_DASHBOARD_SOP.md.txt` — Git blob `e277cd9490f7d5ed156e0295ba7c00485d9ce327`
+- `docs__MASTER_PROJECT_COMPLETION_PLAN.md.txt` — Git blob `9b51f24b7630fb973269c42aa048bb17380e7c9d`
+- `docs__PHASE2_STANDARD_DEVELOPMENT_PROCEDURE.md.txt` — Git blob `cfa3cc8f695a9a8f7e3a3b5d5f0e22ae8f743def`
+- `docs__automation__PROTECTED_SANDBOX_ACCEPTANCE.md.txt` — Git blob `2a417748a0044d0429f652b9e9a04340e275e018`
+- `docs__automation__STAGE3_OPERATIONAL_ACCEPTANCE_HANDOVER.md.txt` — Git blob `980d3ba6f1ec10e3cfa93ba5a0d1ee8f2048427d`
+- `docs__standards__SDP-002-UNIVERSAL-DEVELOPMENT-REPORTING.md.txt` — Git blob `0069211241fbd48c3ce92e3f0dba4628f16442e4`
+- `pr159__docs__automation__PROTECTED_SANDBOX_ACCEPTANCE.md.txt` — Git blob `2a417748a0044d0429f652b9e9a04340e275e018`
+- `pr159__scripts__protected-sandbox__TRUST_BOUNDARY_PLAN.md.txt` — Git blob `8075d631fb4b4ed31c2fbcfa12379810bc05de09`
+- `pr159__scripts__protected-sandbox__acceptancePolicy.js.txt` — Git blob `144ad7f786022aefc8241aebbb1ec94fbab9b7d9`
+- `pr159__scripts__protected-sandbox__authenticatedTeardownEvidence.js.txt` — Git blob `42aa3e9021c017bb377a26d3c7196024d1137b55`
+- `pr159__src__automation__engineeringTeam__activationManifest.js.txt` — Git blob `712f13727d3841357e0598c72d35749be771202c`
+- `pr159__src__automation__engineeringTeam__activationReviewVerifier.js.txt` — Git blob `237baebc69e93c5cea365c1631bd82cbdf722de8`
+- `pr159__src__automation__engineeringTeam__approvalPolicy.js.txt` — Git blob `7bc1b7de6a93affdfbd38df21ef7397b3d5c99ca`
+- `pr159__src__automation__engineeringTeam__durableApproval.js.txt` — Git blob `a65187460e7a71c54d9c5d8fd45789db46aeaeef`
+- `pr159__src__automation__engineeringTeam__durableQueue.js.txt` — Git blob `441c468c641090365697ef4add9303ffe2158816`
+- `pr159__src__automation__engineeringTeam__governanceRecovery.js.txt` — Git blob `9f7f2bb265854c254b1c1d67bd007599eab7ab04`
+- `pr159__src__automation__engineeringTeam__identityVerifier.js.txt` — Git blob `46c50c4a9e3bbbd3ca489b7287281f8013eeefaa`
+- `pr159__src__automation__engineeringTeam__policyBoundQueue.js.txt` — Git blob `e7c8254fd378fc09c571da1873b973c20c482969`
+- `pr159__src__automation__engineeringTeam__providerReservation.js.txt` — Git blob `46a9b3cbcd9f6587f130590a6d9ca7a1c6bc2333`
+- `pr159__src__automation__engineeringTeam__registry.js.txt` — Git blob `d56eff5f4f8d64450a64416c7cb231af2d296066`
+- `pr159__src__automation__engineeringTeam__restrictedManagerRuntime.js.txt` — Git blob `83c9fe4b8008b60b2c3b7bbaea9380b63ab90fa2`
+- `pr159__src__automation__engineeringTeam__runtimeInitialization.js.txt` — Git blob `27a6a172537ccd5c3bbc8a74a9033b13d86cdf3b`
+- `pr159__src__automation__engineeringTeam__toolBroker.js.txt` — Git blob `5d27d832db6fc99b6ec63d9ef7016a188added76`
+- `scripts__protected-sandbox__TRUST_BOUNDARY_PLAN.md.txt` — Git blob `8075d631fb4b4ed31c2fbcfa12379810bc05de09`
+- `scripts__protected-sandbox__acceptancePolicy.js.txt` — Git blob `144ad7f786022aefc8241aebbb1ec94fbab9b7d9`
+- `scripts__protected-sandbox__authenticatedTeardownEvidence.js.txt` — Git blob `42aa3e9021c017bb377a26d3c7196024d1137b55`
+- `src__automation__engineeringTeam__activationManifest.js.txt` — Git blob `712f13727d3841357e0598c72d35749be771202c`
+- `src__automation__engineeringTeam__activationReviewVerifier.js.txt` — Git blob `237baebc69e93c5cea365c1631bd82cbdf722de8`
+- `src__automation__engineeringTeam__approvalPolicy.js.txt` — Git blob `7bc1b7de6a93affdfbd38df21ef7397b3d5c99ca`
+- `src__automation__engineeringTeam__durableApproval.js.txt` — Git blob `a65187460e7a71c54d9c5d8fd45789db46aeaeef`
+- `src__automation__engineeringTeam__durableQueue.js.txt` — Git blob `abf78b05ef2e8a60a1f6689147a7044978e9f88f`
+- `src__automation__engineeringTeam__governanceRecovery.js.txt` — Git blob `9f7f2bb265854c254b1c1d67bd007599eab7ab04`
+- `src__automation__engineeringTeam__identityVerifier.js.txt` — Git blob `9165a8cf161da0610a21c98b0e4fdb2483393480`
+- `src__automation__engineeringTeam__policyBoundQueue.js.txt` — Git blob `e7c8254fd378fc09c571da1873b973c20c482969`
+- `src__automation__engineeringTeam__projectBoundary.js.txt` — Git blob `ad0534e976048e3075d7220d3a251978b83d7cc6`
+- `src__automation__engineeringTeam__providerReservation.js.txt` — Git blob `46a9b3cbcd9f6587f130590a6d9ca7a1c6bc2333`
+- `src__automation__engineeringTeam__registry.js.txt` — Git blob `d56eff5f4f8d64450a64416c7cb231af2d296066`
+- `src__automation__engineeringTeam__restrictedManagerRuntime.js.txt` — Git blob `83c9fe4b8008b60b2c3b7bbaea9380b63ab90fa2`
+- `src__automation__engineeringTeam__runtimeInitialization.js.txt` — Git blob `b58ffa13e878eb9b1d4946a27c2f7e84bd7566f2`
+- `src__automation__engineeringTeam__toolBroker.js.txt` — Git blob `5d27d832db6fc99b6ec63d9ef7016a188added76`

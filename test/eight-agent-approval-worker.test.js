@@ -1,0 +1,72 @@
+'use strict';
+const test=require('node:test');
+const assert=require('node:assert/strict');
+const {createApprovalPolicy}=require('../src/automation/engineeringTeam/approvalPolicy');
+const {createQueueWorker}=require('../src/automation/engineeringTeam/queueWorker');
+const scope={product:'aca',repository:'fixture/aca',sha:'a'.repeat(40)};
+test('owner decisions are scoped, expiring, single decision and never activate offline execution',async()=>{
+ let now=1000;
+ const policy=createApprovalPolicy({clock:()=>now,ttlMs:1000,authenticate:async c=>c==='owner'?{id:'owner',product:scope.product,repository:scope.repository,permission:'owner.approval'}:c==='agent'?{id:'worker',product:scope.product,repository:scope.repository,permission:'owner.approval',role:'devops'}:null});
+ const req=policy.request({scope,operation:'provider.activate',evidence:'b'.repeat(64)});
+ const decision={id:req.id,binding:req.binding,decision:'approved'};
+ await assert.rejects(policy.recordDecision({...decision,credential:'agent'}));
+ await assert.rejects(policy.recordDecision({...decision,credential:'owner',binding:'wrong'}));
+ const result=await policy.recordDecision({...decision,credential:'owner'});
+ assert.equal(result.state,'approved');assert.equal(result.executionAuthorized,false);
+ await assert.rejects(policy.recordDecision({...decision,credential:'owner'}));
+ assert.equal(policy.executionAllowed(),false);
+ const expired=policy.request({scope,operation:'merge',evidence:'c'.repeat(64)});now+=1000;
+ await assert.rejects(policy.recordDecision({id:expired.id,binding:expired.binding,credential:'owner',decision:'approved'}));
+});
+function fixture({badScope=false,denyFinish=false}={}){
+ const calls=[];
+ const queue={async claim(){return {id:'fixture-task',lease_id:'fixture-lease'};},async finish(x){calls.push(x);if(denyFinish)throw Error('Lease denied');return x.outcome==='failed'?'queued':'succeeded';}};
+ const manager={createTask(input){return {...input,id:'local-task'};},async propose(input){return {...input,approval:false};}};
+ const worker=createQueueWorker({queue,manager,loadTask:async()=>({id:'fixture-task',...scope,repository:badScope?'other/repo':scope.repository,subject:'fixture'})});
+ return {worker,calls};
+}
+test('queue worker returns proposal only after successful lease completion',async()=>{
+ const {worker,calls}=fixture();
+ const result=await worker.runOnce({scope,role:'backend-developer',credential:'fixture'});
+ assert.equal(result.state,'succeeded');assert.equal(result.releaseApproved,false);
+ assert.equal(calls[0].leaseId,'fixture-lease');
+});
+test('queue worker rejects cross-scope payload and does not return proposal',async()=>{
+ const {worker,calls}=fixture({badScope:true});
+ const result=await worker.runOnce({scope,role:'backend-developer',credential:'fixture'});
+ assert.equal(result.state,'queued');assert.equal(result.proposal,undefined);assert.equal(calls[0].outcome,'failed');
+});
+test('queue worker does not release proposal after lease loss',async()=>{
+ const {worker}=fixture({denyFinish:true});
+ await assert.rejects(worker.runOnce({scope,role:'backend-developer',credential:'fixture'}),/Lease denied/);
+});
+
+test('S3-07 invalid and regressed approval clocks fail closed',async()=>{
+ let now=1000;const policy=createApprovalPolicy({clock:()=>now,ttlMs:1000,authenticate:async()=>({id:'owner',product:scope.product,repository:scope.repository,permission:'owner.approval'})});
+ const input={scope,operation:'queue.recover',evidence:'b'.repeat(64)};
+ const req=policy.request(input);
+ for(const invalid of [NaN,Infinity,-1,999,1000.5,2000]){
+  now=invalid;await assert.rejects(policy.recordDecision({id:req.id,binding:req.binding,decision:'approved'}));assert.equal(policy.executionAllowed(),false);
+ }
+ for(const invalid of [NaN,Infinity,-1,1000.5,Number.MAX_SAFE_INTEGER]){now=invalid;assert.throws(()=>policy.request(input),/clock/);}
+});
+
+test('worker pins lease scope across asynchronous payload loading',async()=>{
+ for(const phase of ['claim','load']){
+  const original={...scope},mutable={...scope},other={product:'other',repository:'fixture/other',sha:'b'.repeat(40)};
+  const calls=[];let proposed=0;
+  const queue={async claim(x){calls.push(x.scope);if(phase==='claim')Object.assign(mutable,other);return {id:'fixture-task',lease_id:'fixture-lease'};},async finish(x){calls.push(x.scope);assert.equal(x.outcome,'failed');return 'queued';}};
+  const manager={createTask(){proposed++;throw Error('unexpected');},propose:async()=>{throw Error('unexpected');}};
+  const worker=createQueueWorker({queue,manager,loadTask:async x=>{assert.deepEqual(x.scope,original);if(phase==='load')Object.assign(mutable,other);return {id:x.id,...other,subject:'wrong scope'};}});
+  const result=await worker.runOnce({scope:mutable,role:'backend-developer',credential:'fixture'});
+  assert.equal(result.state,'queued');assert.equal(proposed,0);assert.equal(calls.length,2);for(const s of calls){assert.deepEqual(s,original);assert.ok(Object.isFrozen(s));}
+ }
+});
+test('worker retains original scope for valid proposal and completion after caller mutation',async()=>{
+ const mutable={...scope},calls=[];
+ const queue={async claim(x){calls.push(x.scope);return {id:'fixture-task',lease_id:'fixture-lease'};},async finish(x){calls.push(x.scope);assert.equal(x.outcome,'succeeded');return 'succeeded';}};
+ const manager={createTask(x){assert.equal(x.product,scope.product);assert.equal(x.repository,scope.repository);assert.equal(x.sha,scope.sha);return {...x,id:'local-task'};},async propose(x){return {...x,approval:false};}};
+ const worker=createQueueWorker({queue,manager,loadTask:async x=>{Object.assign(mutable,{product:'other',repository:'fixture/other',sha:'b'.repeat(40)});return {id:x.id,...scope,subject:'fixture'};}});
+ assert.equal((await worker.runOnce({scope:mutable,role:'backend-developer',credential:'fixture'})).state,'succeeded');
+ for(const s of calls)assert.deepEqual(s,scope);
+});
