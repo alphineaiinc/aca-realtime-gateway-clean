@@ -1,9 +1,11 @@
+const console = require("./src/voice/voiceLogger").operationalConsole;
 // ===============================================
 // tts.js — Alphine AI Text-to-Speech Handler
 // Story 9.3 / 9.5 / 10.3 Integration + Global 113-language layer
 // Temporary provider swap: OpenAI default, ElevenLabs optional fallback
 // ===============================================
 const axios = require("axios");
+const {elevenLabsRequest}=require("./src/security/elevenLabsRequest");
 const path = require("path");
 const OpenAI = require("openai");
 
@@ -390,12 +392,22 @@ async function buildVoiceContext(text, langCode, options = {}) {
 // ------------------------------------------------------
 // OpenAI TTS branch
 // ------------------------------------------------------
+function ttsFailure(provider, error) {
+  const failure = new Error("Speech synthesis unavailable");
+  failure.code = "TTS_PROVIDER_ERROR";
+  failure.provider = provider === "elevenlabs" ? "elevenlabs" : "openai";
+  // No cause, raw body, status text, request, key fragments or original stack.
+  try {
+    const own = (value, key) => value && typeof value === "object" ? Object.getOwnPropertyDescriptor(value, key)?.value : undefined;
+    const status = own(error, "statusCode") ?? own(error, "status") ?? own(own(error, "response"), "status");
+    if (Number.isInteger(status) && status >= 100 && status <= 599) failure.statusCode = status;
+  } catch {}
+  return failure;
+}
+
 async function synthesizeWithOpenAI(text, langCode = "en-US", options = {}) {
   const apiKey = normalizeApiKey(process.env.OPENAI_API_KEY);
 
-  console.log("🔐 [tts:openai] key exists:", !!process.env.OPENAI_API_KEY);
-  console.log("🔐 [tts:openai] key trimmed exists:", !!apiKey);
-  console.log("🔐 [tts:openai] key length:", apiKey ? apiKey.length : 0);
 
   if (!apiKey) {
     throw new Error("Missing OPENAI_API_KEY in environment");
@@ -420,8 +432,6 @@ async function synthesizeWithOpenAI(text, langCode = "en-US", options = {}) {
   });
 
   console.log("🧠 [tts:openai] Text pipeline preview:", {
-    original_preview: safePreview(text),
-    processed_preview: safePreview(ctx.processedText),
     langCode,
     regionCode: ctx.regionCode,
     tonePreset: ctx.tonePreset,
@@ -439,7 +449,6 @@ async function synthesizeWithOpenAI(text, langCode = "en-US", options = {}) {
     model,
     voice,
     requestedFormat,
-    text_preview: safePreview(ctx.processedText),
   });
 
   try {
@@ -493,17 +502,9 @@ async function synthesizeWithOpenAI(text, langCode = "en-US", options = {}) {
 
     return finalBuffer;
   } catch (err) {
-    const status = err.status || err.response?.status || null;
-    const statusText = err.statusText || err.response?.statusText || null;
-    const decodedError = decodeErrorBody(err.response?.data) || err.message;
-
-    console.error("❌ [tts:openai] status:", status);
-    console.error("❌ [tts:openai] statusText:", statusText);
-    console.error("❌ [tts:openai] error body:", decodedError);
-    console.error("❌ [tts:openai] elapsedMs:", Date.now() - startedAt);
-    console.error("❌ [tts:openai] request failed in file:", __filename);
-
-    throw new Error("OpenAI TTS failed: " + (statusText || decodedError || err.message));
+    const failure = ttsFailure("openai", err);
+    console.error("TTS_PROVIDER_FAILURE", { statusCode: failure.statusCode, elapsedMs: Date.now() - startedAt });
+    throw failure;
   }
 }
 
@@ -514,10 +515,6 @@ async function synthesizeWithElevenLabs(text, langCode = "en-US", options = {}) 
   const rawApiKey = process.env.ELEVENLABS_API_KEY;
   const apiKey = normalizeApiKey(rawApiKey);
 
-  console.log("🔐 [tts:elevenlabs] key exists:", !!rawApiKey);
-  console.log("🔐 [tts:elevenlabs] key trimmed exists:", !!apiKey);
-  console.log("🔐 [tts:elevenlabs] key length:", apiKey ? apiKey.length : 0);
-  console.log("🔐 [tts:elevenlabs] key prefix:", apiKey ? apiKey.slice(0, 5) : "NONE");
 
   if (!apiKey) {
     throw new Error("Missing ELEVENLABS_API_KEY in environment");
@@ -537,8 +534,6 @@ async function synthesizeWithElevenLabs(text, langCode = "en-US", options = {}) 
   );
 
   console.log("🧠 [tts:elevenlabs] Text pipeline preview:", {
-    original_preview: safePreview(text),
-    processed_preview: safePreview(ctx.processedText),
     langCode,
     regionCode: ctx.regionCode,
     tonePreset: ctx.tonePreset,
@@ -561,18 +556,15 @@ async function synthesizeWithElevenLabs(text, langCode = "en-US", options = {}) 
     }
   }
 
-  const url = `https://api.elevenlabs.io/v1/text-to-speech/${selectedVoiceId}?output_format=${ctx.outputFormat}`;
+  const {url,options:destinationOptions}=elevenLabsRequest(selectedVoiceId,ctx.outputFormat);
   console.log("📤 [tts:elevenlabs] API Request:", {
     url,
     model_id: "eleven_multilingual_v2",
     language_code: baseLang,
-    text_preview: safePreview(ctx.processedText),
     stability,
     similarity_boost,
     outputFormat: ctx.outputFormat,
     acceptMime: ctx.acceptMime,
-    keyPrefix: apiKey ? apiKey.slice(0, 5) : "NONE",
-    keyLength: apiKey ? apiKey.length : 0,
   });
 
   try {
@@ -589,6 +581,7 @@ async function synthesizeWithElevenLabs(text, langCode = "en-US", options = {}) 
           Accept: ctx.acceptMime,
           "Content-Type": "application/json",
         },
+        ...destinationOptions,
         responseType: "arraybuffer",
       }
     );
@@ -610,19 +603,9 @@ async function synthesizeWithElevenLabs(text, langCode = "en-US", options = {}) 
 
     return finalBuffer;
   } catch (err) {
-    const status = err.response?.status || null;
-    const statusText = err.response?.statusText || null;
-    const decodedError = decodeErrorBody(err.response?.data);
-
-    console.error("❌ [tts:elevenlabs] status:", status);
-    console.error("❌ [tts:elevenlabs] statusText:", statusText);
-    console.error("❌ [tts:elevenlabs] error body:", decodedError || err.message);
-    console.error("❌ [tts:elevenlabs] request failed in file:", __filename);
-    console.error("❌ [tts:elevenlabs] axios error code:", err.code || null);
-
-    throw new Error(
-      "ElevenLabs TTS failed: " + (statusText || decodedError || err.message)
-    );
+    const failure = ttsFailure("elevenlabs", err);
+    console.error("TTS_PROVIDER_FAILURE", { statusCode: failure.statusCode });
+    throw failure;
   }
 }
 
@@ -636,7 +619,6 @@ async function synthesizeSpeech(text, langCode = "en-US", options = {}) {
     file: __filename,
     provider: DEFAULT_TTS_PROVIDER,
     langCode,
-    textPreview: safePreview(text, 120),
     optionKeys: Object.keys(options || {}),
   });
 
@@ -644,11 +626,12 @@ async function synthesizeSpeech(text, langCode = "en-US", options = {}) {
     .trim()
     .toLowerCase();
 
-  if (provider === "elevenlabs") {
-    return synthesizeWithElevenLabs(text, langCode, options);
+  try {
+    if (provider === "elevenlabs") return await synthesizeWithElevenLabs(text, langCode, options);
+    return await synthesizeWithOpenAI(text, langCode, options);
+  } catch (error) {
+    throw ttsFailure(provider, error);
   }
-
-  return synthesizeWithOpenAI(text, langCode, options);
 }
 
 module.exports = { synthesizeSpeech };

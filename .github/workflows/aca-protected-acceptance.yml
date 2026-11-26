@@ -1,0 +1,35 @@
+name: ACA protected staging acceptance
+on:
+  push:
+    branches: [aca-l1-integrated-routing-onboarding]
+    paths: ['.github/workflows/aca-protected-acceptance.yml']
+permissions:
+  contents: read
+concurrency:
+  group: aca-protected-staging-acceptance
+  cancel-in-progress: false
+jobs:
+  acceptance:
+    if: github.repository == 'alphineaiinc/aca-realtime-gateway-clean' && github.ref == 'refs/heads/aca-l1-integrated-routing-onboarding'
+    environment: aca-product-staging
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Hosted acceptance with restricted fixture role
+        env:
+          ACA_STAGING_ACCEPTANCE_DATABASE_URL: ${{ secrets.ACA_STAGING_ACCEPTANCE_DATABASE_URL }}
+          ACA_STAGING_ACCEPTANCE_CONFIRM: aca_product_staging
+        run: |
+          if [ -z "$ACA_STAGING_ACCEPTANCE_DATABASE_URL" ]; then
+            echo "Restricted staging secret not configured; acceptance not executed"
+            exit 1
+          fi
+          node integration/aca-hosted-fixture-runner.mjs

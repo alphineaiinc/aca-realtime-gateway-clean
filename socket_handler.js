@@ -329,7 +329,7 @@ function bindWebSocket(server) {
       // { event: "start", start: { customParameters: { business_id: "..." } } }
       if (msg && msg.event === "start" && msg.start && msg.start.customParameters) {
         ws.business_id = msg.start.customParameters.business_id;
-        console.log("🧩 Business context attached:", ws.business_id);
+        console.log("WS_BUSINESS_CONTEXT_ATTACHED");
 
         // Once we know tenant, enforce max connections and set membership safely
         const newTenantKey = tenantKeyFromWs(ws);

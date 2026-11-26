@@ -1,94 +1,24 @@
-// ================================
-// src/routes/dashboard.js
-// Story 2.13 — AI Brain Lifecycle + Confidence Dashboard UI
-// Builds on Story 2.11 — adds Brain diagnostics panel
-// ================================
-const express = require("express");
-const fs = require("fs");
-const path = require("path");
-const axios = require("axios");
+"use strict";
+const express=require("express");
+const path=require("path");
+const jwt=require("jsonwebtoken");
+const router=express.Router();
+const ingressRateLimit=require("../security/ingressLimit").ingressLimit({max:30});
 
-const router = express.Router();
-const LOG_PATH = path.join(__dirname, "../logs/response_tuning.log");
-
-// ----------------------------------------------------
-// Serve static dashboard UI
-// ----------------------------------------------------
-router.get("/", (req, res) => {
-  res.sendFile(path.join(__dirname, "../../public/dashboard/index.html"));
-});
-
-// ----------------------------------------------------
-// API endpoint — serve parsed adaptive-response log data
-// ----------------------------------------------------
-router.get("/data", (req, res) => {
+function requireDashboardAdmin(req,res,next){
+  res.set("Cache-Control","no-store");
   try {
-    res.set("Cache-Control", "no-store");
-
-    if (!fs.existsSync(LOG_PATH)) {
-      return res.json({ entries: [] });
-    }
-
-    const content = fs.readFileSync(LOG_PATH, "utf8");
-    const lines = content.trim().split("\n").filter(Boolean).slice(-200);
-
-    const entries = lines
-      .map((line) => {
-        try {
-          const match = line.match(/\[(.*?)\]\s\[(.*?)\]\s(.+)/);
-          if (!match) return null;
-          return {
-            timestamp: match[1],
-            level: match[2],
-            message: match[3],
-          };
-        } catch {
-          return null;
-        }
-      })
-      .filter(Boolean)
-      .sort((a, b) => (a.timestamp < b.timestamp ? 1 : -1));
-
-    res.json({ entries });
-  } catch (err) {
-    console.error("Dashboard API error:", err);
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// ----------------------------------------------------
-// NEW — /brain-status endpoint
-// Fetches diagnostics from /brain/diagnostics
-// so UI can display Brain status, uptime, memory, etc.
-// ----------------------------------------------------
-router.get("/brain-status", async (req, res) => {
-  try {
-    res.set("Cache-Control", "no-store");
-
-    const port = process.env.PORT || "8080";
-    const url = `http://127.0.0.1:${port}/brain/diagnostics`;
-
-    const response = await axios.get(url, {
-      timeout: 3000,
-    });
-
-    const diag = response.data || {};
-    return res.json({
-      ok: true,
-      brain_enabled: diag.brain_enabled ?? false,
-      uptime_sec: diag.uptime_sec ?? 0,
-      memory_mb: diag.memory_mb ?? 0,
-      query_count: diag.query_count ?? 0,
-      hostname: diag.hostname ?? "unknown",
-    });
-  } catch (err) {
-    console.error("⚠️ Brain diagnostics fetch failed:", err.message);
-    return res.status(500).json({
-      ok: false,
-      error: "Unable to fetch brain diagnostics",
-      details: err.message,
-    });
-  }
-});
-
-module.exports = router;
+    const auth=req.headers.authorization||"";
+    if(!auth.startsWith("Bearer ")||!process.env.JWT_SECRET) throw new Error("unauthorized");
+    const claims=jwt.verify(auth.slice(7).trim(),process.env.JWT_SECRET,{algorithms:["HS256"]});
+    if(claims.role!=="admin") return res.status(403).json({ok:false,error:"forbidden"});
+    next();
+  } catch {return res.status(401).json({ok:false,error:"unauthorized"});}
+}
+const recognizedLimit=require("express-rate-limit").rateLimit({windowMs:60000,limit:30,passOnStoreError:false});
+router.use(ingressRateLimit, recognizedLimit, requireDashboardAdmin);
+router.get("/", (req,res)=>res.sendFile(path.join(__dirname,"../../public/dashboard/index.html")));
+// Raw caller logs and host diagnostics are intentionally not exposed.
+router.get("/data", (req,res)=>res.json({entries:[],rawLogsAvailable:false}));
+router.get("/brain-status", (req,res)=>res.status(503).json({ok:false,error:"diagnostics_unavailable"}));
+module.exports=router;

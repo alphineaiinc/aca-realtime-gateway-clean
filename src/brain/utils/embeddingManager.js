@@ -18,20 +18,13 @@ const openai = new OpenAI({
 // ---------------------------------------------------------------------------
 async function getOrCreateEmbeddingSpace(business_id) {
   const { rows } = await pool.query(
-    `SELECT id FROM embedding_spaces WHERE business_id = $1`,
+    `SELECT id FROM master_tenants WHERE id = $1`,
     [business_id]
   );
 
   if (rows.length) return rows[0].id;
 
-  const insert = await pool.query(
-    `INSERT INTO embedding_spaces (business_id)
-     VALUES ($1)
-     RETURNING id`,
-    [business_id]
-  );
-
-  return insert.rows[0].id;
+  throw new Error("UNKNOWN_TENANT");
 }
 
 // ---------------------------------------------------------------------------
@@ -40,12 +33,7 @@ async function getOrCreateEmbeddingSpace(business_id) {
 async function embedTextForBusiness(business_id, text) {
   // ✅ Always coerce to string so we never send a raw number like 1
   const safeText = String(text ?? "");
-  console.log(
-    "🔍 embedTextForBusiness input type:",
-    typeof text,
-    "| preview:",
-    safeText.slice(0, 80)
-  );
+
 
   const spaceId = await getOrCreateEmbeddingSpace(business_id);
 
@@ -66,12 +54,7 @@ async function embedTextForBusiness(business_id, text) {
 async function embedText(text) {
   // ✅ Always coerce to string so we never send a raw number like 1
   const safeText = String(text ?? "");
-  console.log(
-    "🔍 embedText input type:",
-    typeof text,
-    "| preview:",
-    safeText.slice(0, 80)
-  );
+
 
   const embedding = await openai.embeddings.create({
     model: "text-embedding-3-small",
@@ -89,17 +72,19 @@ async function getNearestEmbeddingsForBusiness(
   vector,
   limit = 5
 ) {
+  if (!Number.isSafeInteger(business_id) || business_id <= 0 || !Array.isArray(vector) || !vector.length || !vector.every(Number.isFinite) || !Number.isInteger(limit) || limit < 1 || limit > 20) throw new Error("INVALID_RETRIEVAL");
   const query = `
-    SELECT id, question, answer, embedding
+    SELECT id, query_text AS question, answer, embedding
     FROM kb_entries
-    WHERE business_id = $1
-    ORDER BY embedding <-> $2
+    WHERE tenant_id = $1
+    ORDER BY embedding <-> $2::vector
     LIMIT $3
   `;
 
+  const vectorLiteral = Array.isArray(vector) ? "[" + vector.join(",") + "]" : vector;
   const { rows } = await pool.query(query, [
     business_id,
-    vector,
+    vectorLiteral,
     limit,
   ]);
 

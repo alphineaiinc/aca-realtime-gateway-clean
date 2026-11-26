@@ -1,9 +1,9 @@
 name: ACA CI
 on:
   pull_request:
-    branches: [main]
+    branches: [main, aca-product-commercial-consolidation, aca-chatgpt-marketplace]
   push:
-    branches: [main]
+    branches: [main, aca-marketplace-operational-integration]
 permissions:
   contents: read
 concurrency:
@@ -14,9 +14,26 @@ jobs:
     name: Node tests
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: onboarding_test
+          POSTGRES_PASSWORD: onboarding_test_only
+          POSTGRES_DB: onboarding_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U onboarding_test -d onboarding_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
       - name: Set up Node
         uses: actions/setup-node@v4
         with:
@@ -26,7 +43,7 @@ jobs:
         run: npm ci --ignore-scripts --no-audit --no-fund
       - name: Syntax check JavaScript files outside dependencies
         run: |
-          git ls-files -z '*.js' | grep -zv '^node_modules/' | xargs -0 -r -n 1 node --check
+          git ls-files -z '*.js' '*.mjs' | grep -zv '^node_modules/' | xargs -0 -r -n 1 node --check
       - name: Run test suite
         run: |
           if node -e "process.exit(require('./package.json').scripts?.test ? 0 : 1)"; then
@@ -34,3 +51,49 @@ jobs:
           else
             node --test test/*.test.js
           fi
+
+      - name: Isolated PostgreSQL onboarding concurrency test
+        env:
+          RUN_ONBOARDING_STAGING_INTEGRATION: '1'
+          ONBOARDING_STAGING_DATABASE_URL: postgres://onboarding_test:onboarding_test_only@localhost:5432/onboarding_test
+        run: |
+          node -e "const fs=require('node:fs');const {Client}=require('pg');(async()=>{const c=new Client({connectionString:process.env.ONBOARDING_STAGING_DATABASE_URL});await c.connect();try{await c.query(fs.readFileSync('migrations/draft_onboarding_challenges.sql','utf8'))}finally{await c.end()}})().catch(e=>{console.error(e.message);process.exitCode=1})"
+          node --test test/onboarding-postgres.integration.test.js
+
+      - name: Isolated product migration and onboarding acceptance
+        run: node --test integration/aca-product-postgres.test.js
+      - name: Isolated shared rate limit acceptance
+        env:
+          RUN_RATE_LIMIT_CI: '1'
+          RATE_LIMIT_CI_DATABASE_URL: postgres://onboarding_test:onboarding_test_only@127.0.0.1:5432/aca_rate_limit_ci
+        run: |
+          node -e "const {Client}=require('pg');(async()=>{const c=new Client({connectionString:'postgres://onboarding_test:onboarding_test_only@127.0.0.1:5432/onboarding_test'});await c.connect();try{await c.query('CREATE DATABASE aca_rate_limit_ci')}finally{await c.end()}})().catch(e=>{console.error(e.message);process.exitCode=1})"
+          node -e "const {Client}=require('pg');(async()=>{const c=new Client({connectionString:process.env.RATE_LIMIT_CI_DATABASE_URL});await c.connect();try{await c.query(require('fs').readFileSync('migrations/draft_aca_rate_limit_buckets.sql','utf8'))}finally{await c.end()}})().catch(e=>{console.error(e.message);process.exitCode=1})"
+          node --test test/postgres-rate-limit.integration.test.js
+      - name: Isolated commercial billing acceptance
+        run: |
+          node -e "const {Client}=require('pg');(async()=>{const c=new Client({connectionString:'postgres://onboarding_test:onboarding_test_only@127.0.0.1:5432/onboarding_test'});await c.connect();try{await c.query('CREATE DATABASE aca_commercial_ci')}finally{await c.end()}})().catch(e=>{console.error(e.message);process.exitCode=1})"
+          node --test integration/aca-commercial-postgres.test.js
+  hosted-staging:
+    name: Hosted ACA staging acceptance
+    if: github.event_name == 'pull_request' && github.head_ref == 'aca-l1-integrated-routing-onboarding' && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    env:
+      ACA_EXPECTED_REVISION: ${{ github.event.pull_request.head.sha }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Initial attempt does not contact staging
+        if: github.run_attempt == 1
+        run: echo "Await verified deployment and authorized job rerun"
+      - run: node integration/aca-live-revision.mjs
+        if: github.run_attempt > 1
+      - run: node integration/aca-hosted-acceptance.mjs
+        if: github.run_attempt > 1
+      - run: node integration/aca-commercial-negative.mjs
+        if: github.run_attempt > 1
+      - run: node integration/aca-live-revision.mjs
+        if: github.run_attempt > 1 && always()
