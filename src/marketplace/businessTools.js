@@ -8,6 +8,8 @@ function verifyBusinessToken({token,publicKey,issuer,audience}){
  if(!publicKey||!issuer||!audience||audience==="aca-business")throw Error("MARKETPLACE_CONFIG");
  if(typeof token!=="string"||token.length>8192)throw Error("UNAUTHORIZED");
  const claims=jwt.verify(token,publicKey,{algorithms:["RS256"],issuer,audience});
+ // jsonwebtoken accepts an audience allow-list; this resource requires one exact audience.
+ if(claims.iss!==issuer||claims.aud!==audience)throw Error("UNAUTHORIZED");
  if(typeof claims.sub!=="string"||!claims.sub.trim()||!Number.isSafeInteger(claims.tenant_id)||claims.tenant_id<=0||!Number.isInteger(claims.exp))throw Error("UNAUTHORIZED");
  const scopes=typeof claims.scope==="string"?claims.scope.split(" "):[];
  if(!scopes.includes("aca:profile:read"))throw Error("UNAUTHORIZED");
