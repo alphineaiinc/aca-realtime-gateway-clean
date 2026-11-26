@@ -1,27 +1,38 @@
 'use strict';
-// Disabled reference interlock. Requires dedicated durable store and independently held pins.
-// Store contract: atomic compare-and-set, durable before return, global across all callers.
-const {authenticate}=require('./budgetEvidenceDisabled');
-function createInterlock({store,keys,clock=Date.now}){
- const pins=Object.freeze({...keys});
- if(!Object.keys(pins).length||typeof store?.read!=='function'||typeof store?.compareAndSet!=='function')throw Error('Missing trusted dependencies');
- return Object.freeze({
- async begin(id){
- if(typeof id!=='string'||!/^[a-zA-Z0-9_-]{1,100}$/.test(id))throw Error('Invalid operation');
- const s=await store.read();
- if(!s||s.pending!==null||!Number.isSafeInteger(s.version)||s.version<0||s.version>=Number.MAX_SAFE_INTEGER)throw Error('Admission blocked');
- const next={version:s.version+1,pending:id};
- if(await store.compareAndSet(s,next)!==true)throw Error('Admission blocked');
- return Object.freeze(next);
- },
- async reconcile(envelope){
- const s=await store.read();
- if(!s||typeof s.pending!=='string'||!Number.isSafeInteger(s.version)||s.version>=Number.MAX_SAFE_INTEGER)throw Error('No reconcilable operation');
- const {payload:p}=authenticate(envelope,pins,{kind:'transaction-reconciliation',id:s.pending,version:s.version,reservationsRetained:true,ledgerReconciled:true},clock());
- if(!['committed','not-committed'].includes(p.outcome))throw Error('Unknown outcome');
- if(await store.compareAndSet(s,{version:s.version+1,pending:null})!==true)throw Error('Reconciliation conflict');
- return {reconciled:true,executionAuthorized:false};
- }
- });
+
+const {authenticate, ledgerDigest} = require('./budgetEvidenceDisabled');
+const {serialize, transaction, readInterlock, changeInterlock, readLedgers} = require('./pgBudgetInterlockDisabled');
+
+const MAX_PROOF_AGE_MS = 5 * 60 * 1000;
+
+function createInterlock({pool, keys, clock = Date.now}) {
+ const pins = Object.freeze({...keys});
+ if (!Object.keys(pins).length || typeof pool?.connect !== 'function') throw Error('Missing reconciliation dependencies');
+ return Object.freeze({async reconcile(envelope) {
+  const proof = structuredClone(envelope);
+  return serialize(pool, client => transaction(client, async () => {
+   const current = await readInterlock(client);
+   if (current.pending === null) throw Error('No reconcilable operation');
+   const pending = JSON.parse(current.pending);
+   if (!pending?.operationId || !Number.isSafeInteger(pending.preparedAt)) throw Error('Invalid pending evidence');
+   const ledgers = await readLedgers(client);
+   const digest = ledgerDigest(ledgers);
+   const now = clock();
+   const {payload} = authenticate(proof, pins, {
+    kind: 'transaction-reconciliation', operationId: pending.operationId, id: pending.id,
+    version: current.version, pendingDigest: ledgerDigest(pending), ledgerDigest: digest,
+    reservationsRetained: true, ledgerReconciled: true
+   }, now);
+   if (payload.issuedAt < pending.preparedAt || now - payload.issuedAt > MAX_PROOF_AGE_MS || pending.overrun !== false ||
+       !Object.values(ledgers).every(state => state.reconciled === true) ||
+       !((payload.outcome === 'committed' && digest === pending.after) ||
+         (payload.outcome === 'not-committed' && digest === pending.before))) {
+    throw Error('Reconciliation uncertainty');
+   }
+   await changeInterlock(client, current, null);
+   return {reconciled: true, executionAuthorized: false};
+  }));
+ }});
 }
-module.exports={createInterlock};
+
+module.exports = {createInterlock};

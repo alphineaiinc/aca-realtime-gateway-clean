@@ -1,22 +1,39 @@
 'use strict';
-const {authenticate}=require('./budgetEvidenceDisabled');
-const {createPersistentBudget}=require('./persistentMonthlyBudgetDisabled');
-const {monthAt}=require('./aggregateMonthlyBudgetDisabled');
-const {createHash}=require('node:crypto');
-// Disabled admission facade. Keys must originate outside candidate authority.
-function createAuthenticatedBudget({pool,keys,clock=Date.now}){
- const pins=Object.freeze({...keys});
- if(!Object.keys(pins).length)throw Error('Missing trust roots');
- return Object.freeze({async reserve(input,envelope){
- const request=structuredClone(input),proof=structuredClone(envelope);
- const adapter=createPersistentBudget({pool,clock,verifyEvidence:async({request,state,month,now})=>{
- const {payload:p,digest}=authenticate(proof,pins,{kind:'reservation',currency:'CAD',month,id:request.id,workCents:request.workCents,cleanupCents:request.cleanupCents,fixedAndAccruedCents:state.fixedAndAccruedCents,requestExpiresAt:request.expiresAt},now);
- if(digest!==request.evidenceSha256||p.expiresAt<request.expiresAt||p.liabilityThrough<request.expiresAt||!Number.isSafeInteger(p.liabilityThrough)||monthAt(p.liabilityThrough)!==month||p.allPriorLiabilitiesReconciled!==true||p.providerHardLimitVerified!==true)throw Error('Unbounded liability');
- const ledgerDigest=createHash('sha256').update(JSON.stringify(state)).digest('hex');
- if(p.ledgerDigest!==ledgerDigest)throw Error('Ledger evidence mismatch');
- return {...request,verified:true,fixedAndAccruedCents:state.fixedAndAccruedCents,expiresAt:p.expiresAt};
- }});
- return adapter.reserve(request);
- }});
+
+const {createPublicKey} = require('node:crypto');
+const {authenticate} = require('./budgetEvidenceDisabled');
+const {createPersistentBudget} = require('./persistentMonthlyBudgetDisabled');
+const {createInterlock} = require('./budgetInterlockDisabled');
+
+// Disabled facade. Trust pins must come from independent custody.
+function createAuthenticatedBudget({pool, keys, reconciliationKeys, clock = Date.now}) {
+ const pins = Object.freeze({...keys});
+ if (!Object.keys(pins).length) throw Error('Missing trust roots');
+ const reconciliationPins = Object.freeze({...reconciliationKeys});
+ if (reconciliationKeys) {
+  const fingerprint = pin => createPublicKey(pin).export({type: 'spki', format: 'der'}).toString('base64');
+  const admission = new Set(Object.values(pins).map(fingerprint));
+  if (Object.values(reconciliationPins).some(pin => admission.has(fingerprint(pin)))) {
+   throw Error('Reconciliation requires independent signing keys');
+  }
+ }
+ const interlock = reconciliationKeys && createInterlock({pool, keys: reconciliationPins, clock});
+ return Object.freeze({
+  async reserve(input, envelope) {
+   const proof = structuredClone(envelope);
+   const adapter = createPersistentBudget({pool, clock, verifyEvidence: ({request, version, now}) => {
+    const {payload, digest} = authenticate(proof, pins, {
+     kind: 'reservation', currency: 'CAD', version, id: request.id, requestExpiresAt: request.expiresAt
+    }, now);
+    return {...payload, digest};
+   }});
+   return adapter.reserve(input);
+  },
+  async reconcile(envelope) {
+   if (!interlock) throw Error('Missing reconciliation trust roots');
+   return interlock.reconcile(envelope);
+  }
+ });
 }
-module.exports={createAuthenticatedBudget};
+
+module.exports = {createAuthenticatedBudget};

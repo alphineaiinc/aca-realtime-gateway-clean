@@ -10,22 +10,44 @@ function authenticate(envelope,keys,expected,now){
  for(const [k,v] of Object.entries(expected))if(p[k]!==v)throw Error('Evidence scope mismatch');
  return {payload:p,digest:createHash('sha256').update(envelope.payload).digest('hex')};
 }
-// Append-only settlement observation: never release reservations or authorize execution.
-async function recordSettlement({pool,keys,envelope,month,id,clock=Date.now}){
- const client=await pool.connect();let discard=false;
- try{
- await client.query('BEGIN');await client.query('SELECT pg_advisory_xact_lock(172150,189)');
- const r=await client.query('SELECT state FROM da_monthly_budget_disabled WHERE month=$1 FOR UPDATE',[month]);
- if(r.rowCount!==1)throw Error('Missing ledger');
- const s=r.rows[0].state,e=s.entries.find(x=>x.id===id);
- if(!e||s.month!==month||s.reconciled!==true)throw Error('Missing reservation');
- const {payload:p,digest}=authenticate(envelope,keys,{kind:'settlement',month,id,reservationDigest:e.evidenceSha256,currency:'CAD'},clock());
- if(!Number.isSafeInteger(p.actualCents)||p.actualCents<0)throw Error('Invalid settlement');
- const records=s.settlementObservations||[];
- if(records.some(x=>x.id===id))throw Error('Settlement already recorded');
- const next={...s,reconciled:p.actualCents<=e.workCents+e.cleanupCents,settlementObservations:[...records,{id,digest,actualCents:p.actualCents}],executionAuthorized:false};
- const u=await client.query('UPDATE da_monthly_budget_disabled SET state=$2::jsonb WHERE month=$1',[month,JSON.stringify(next)]);if(u.rowCount!==1)throw Error('Update denied');
- await client.query('COMMIT');return {recorded:true,executionAuthorized:false};
- }catch(e){discard=true;try{await client.query('ROLLBACK');}catch{}throw e;}finally{client.release(discard);}
+// Sort object keys recursively and preserve array order, including after JSONB decoding.
+function canonicalJSON(value) {
+ if (value === null || typeof value === 'string' || typeof value === 'boolean') return JSON.stringify(value);
+ if (typeof value === 'number' && Number.isSafeInteger(value)) return JSON.stringify(value);
+ if (Array.isArray(value)) return '[' + value.map(canonicalJSON).join(',') + ']';
+ if (value && Object.getPrototypeOf(value) === Object.prototype) {
+  return '{' + Object.keys(value).sort().map(key => JSON.stringify(key) + ':' + canonicalJSON(value[key])).join(',') + '}';
+ }
+ throw Error('Invalid ledger JSON');
 }
-module.exports={authenticate,recordSettlement};
+
+function ledgerDigest(ledger) {
+ return createHash('sha256').update(canonicalJSON(ledger)).digest('hex');
+}
+
+// Append-only observation. An overrun keeps the global interlock pending.
+async function recordSettlement({pool, keys, envelope, month, id, clock = Date.now}) {
+ const {mutateLedger} = require('./persistentMonthlyBudgetDisabled');
+ const {entryTotal} = require('./aggregateMonthlyBudgetDisabled');
+ const proof = structuredClone(envelope);
+ const pins = Object.freeze({...keys});
+ await mutateLedger(pool, {kind: 'settlement', id, month}, ledgers => {
+  const state = Object.hasOwn(ledgers, month) && ledgers[month];
+  const entry = state && state.entries.find(candidate => candidate.id === id);
+  if (!entry || state.reconciled !== true) throw Error('Missing reservation');
+  const {payload, digest} = authenticate(proof, pins, {
+   kind: 'settlement', month, id, currency: 'CAD', reservationDigest: entry.evidenceSha256,
+   ledgerDigest: ledgerDigest(ledgers)
+  }, clock());
+  if (!Number.isSafeInteger(payload.actualCents) || payload.actualCents < 0) throw Error('Invalid settlement');
+  const records = state.settlementObservations || [];
+  if (records.some(record => record.id === id)) throw Error('Settlement already recorded');
+  const overrun = payload.actualCents > entryTotal(entry);
+  const next = {...state, reconciled: !overrun, executionAuthorized: false,
+   settlementObservations: [...records, {id, digest, actualCents: payload.actualCents}]};
+  return {updates: {[month]: next}, evidenceDigest: digest, expiresAt: payload.expiresAt, overrun};
+ }, clock);
+ return {recorded: true, executionAuthorized: false};
+}
+
+module.exports = {authenticate, ledgerDigest, recordSettlement};

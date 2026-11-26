@@ -25,3 +25,56 @@ function reserveMonthly({state,request,now}){
  return Object.freeze({...structuredClone(state),month,reconciled:true,fixedAndAccruedCents:state.fixedAndAccruedCents,entries:Object.freeze([...state.entries.map(e=>Object.freeze({...e})),entry]),executionAuthorized:false});
 }
 module.exports={CAP,monthAt,reserveMonthly};
+
+// Each calendar month has its own explicit, independently attested maximum.
+function reserveLiabilities({ledgers, request, evidence, now}) {
+ const {id, expiresAt, evidenceSha256} = request;
+ const {liabilityThrough, months} = evidence;
+ if (typeof id !== 'string' || !/^[\w-]{1,100}$/.test(id) || !/^[a-f0-9]{64}$/.test(evidenceSha256) ||
+     !Number.isSafeInteger(expiresAt) || expiresAt <= now ||
+     !Number.isSafeInteger(liabilityThrough) || liabilityThrough < expiresAt ||
+     evidence.allPriorLiabilitiesReconciled !== true || evidence.providerHardLimitVerified !== true ||
+     !months || typeof months !== 'object' || Array.isArray(months)) {
+  throw Error('Unbounded liability');
+ }
+ for (const state of Object.values(ledgers)) {
+  if (state.reconciled !== true) throw Error('Unreconciled ledger');
+  if (state.entries.some(entry => entry.id === id) ||
+      state.settlementObservations?.some(record => record.id === id)) throw Error('Reservation replay denied');
+ }
+ const start = monthAt(now);
+ const end = monthAt(liabilityThrough);
+ const ordinal = month => Number(month.slice(0, 4)) * 12 + Number(month.slice(5)) - 1;
+ const updates = {};
+ let cleanup = 0;
+ if (Object.keys(months).length !== ordinal(end) - ordinal(start) + 1) throw Error('Incomplete month coverage');
+ for (let i = ordinal(start); i <= ordinal(end); i++) {
+  const month = Math.floor(i / 12) + '-' + String(i % 12 + 1).padStart(2, '0');
+  const state = ledgers[month];
+  const bounds = Object.hasOwn(months, month) && months[month];
+  if (!state || !bounds) throw Error('Missing monthly ledger or bounds');
+  const fixedAndAccrued = cents(bounds.fixedCents) + cents(bounds.accruedCents);
+  if (fixedAndAccrued < cents(state.fixedAndAccruedCents)) throw Error('Opening liability understated');
+  const {workCents, cleanupCents, taxCents, feeCents, fxCents} = bounds;
+  const total = cents(workCents) + cents(cleanupCents) + cents(taxCents) + cents(feeCents) + cents(fxCents);
+  cleanup += cleanupCents;
+  let used = fixedAndAccrued;
+  for (const entry of state.entries) used += entryTotal(entry);
+  if (used + total > CAP) throw Error('Budget denied');
+  const entry = {id, workCents, cleanupCents, taxCents, feeCents, fxCents, evidenceSha256};
+  updates[month] = {...state, fixedAndAccruedCents: fixedAndAccrued, entries: [...state.entries, entry], executionAuthorized: false};
+ }
+ if (cleanup <= 0) throw Error('Missing cleanup bound');
+ return updates;
+}
+
+function entryTotal(entry) {
+ let total = cents(entry.workCents) + cents(entry.cleanupCents);
+ for (const field of ['taxCents', 'feeCents', 'fxCents']) {
+  if (Object.hasOwn(entry, field)) total += cents(entry[field]);
+ }
+ return total;
+}
+
+module.exports.reserveLiabilities = reserveLiabilities;
+module.exports.entryTotal = entryTotal;
