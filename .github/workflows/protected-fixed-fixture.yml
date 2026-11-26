@@ -1,0 +1,13 @@
+name: Protected fixed fixture (review hold)
+on:
+  workflow_dispatch:
+permissions: {}
+jobs:
+  review-hold:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 1
+    steps:
+      - name: Deny runtime until independently reviewed execution workflow is approved
+        run: |
+          echo 'Runtime execution withheld pending independent review and immutable source binding'
+          exit 1

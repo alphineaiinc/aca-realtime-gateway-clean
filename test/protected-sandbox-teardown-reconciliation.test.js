@@ -1,0 +1,12 @@
+'use strict';
+const test=require('node:test');
+const assert=require('node:assert/strict');
+const {reconcileTeardown}=require('../scripts/protected-sandbox/teardownReconciliation');
+const expected={repositoryId:1,runId:2,runAttempt:3,headSha:'a'.repeat(40),workflowBlob:'b'.repeat(40),harnessBlob:'c'.repeat(40),imageManifest:'d'.repeat(64),publisherEvidence:'e'.repeat(64),runnerIdentityDigest:'f'.repeat(64)};
+const runner={...expected,authority:'runner-control',lifecycle:'destroyed',quarantineCleared:true,residualCount:0};
+const publisher={...expected,authority:'publisher-control',provenanceVerified:true,sourceProtected:true};
+const assess=(r=runner,p=publisher)=>reconcileTeardown({expected,runnerAuthority:'runner-control',publisherAuthority:'publisher-control',readRunner:async()=>r,readPublisher:async()=>p});
+test('matching claims remain non-authoritative',async()=>{const result=await assess();assert.equal(result.reconciled,false);assert.equal(result.executionAuthorized,false);assert.equal(result.attestation,false);assert.match(result.evidenceDigest,/^[a-f0-9]{64}$/);});
+test('every scope mismatch is denied for both readers',async()=>{for(const key of Object.keys(expected)){assert.match((await assess({...runner,[key]:null})).reason,/scope mismatch/);assert.match((await assess(runner,{...publisher,[key]:null})).reason,/scope mismatch/);}});
+test('teardown and provenance uncertainty fail closed',async()=>{for(const patch of [{lifecycle:'running'},{quarantineCleared:false},{residualCount:1}])assert.match((await assess({...runner,...patch})).reason,/teardown unresolved/);for(const patch of [{sourceProtected:false},{provenanceVerified:false}])assert.match((await assess(runner,{...publisher,...patch})).reason,/provenance unresolved/);});
+test('same authority or reader and unavailable evidence deny',async()=>{const read=async()=>runner;assert.match((await reconcileTeardown({expected,runnerAuthority:'x',publisherAuthority:'x',readRunner:read,readPublisher:async()=>publisher})).reason,/independent readers/);assert.match((await reconcileTeardown({expected,runnerAuthority:'x',publisherAuthority:'y',readRunner:read,readPublisher:read})).reason,/independent readers/);assert.match((await reconcileTeardown({expected,runnerAuthority:'x',publisherAuthority:'y',readRunner:async()=>{throw Error('offline');},readPublisher:async()=>publisher})).reason,/unavailable/);});
