@@ -5,6 +5,8 @@ const express=require("express");
 const jwt=require("jsonwebtoken");
 const {generateKeyPairSync}=require("node:crypto");
 const {createMarketplaceRouter}=require("../src/marketplace/mcpRouter");
+const {rateLimitIP}=require("../src/brain/utils/rateLimiters");
+const fs=require("node:fs");
 
 test("authenticated MCP exposes only schema-backed profile reads and isolates tenants",async()=>{
  const {Client}=await import("@modelcontextprotocol/sdk/client/index.js");
@@ -55,4 +57,19 @@ test("profile lookup fails closed when a tenant has no matching master record",a
  const identity=verifyBusinessToken({token,publicKey,issuer,audience:resource});
  const read=createBusinessTools({pool:{query:async()=>({rows:[]})}});
  await assert.rejects(read(identity),/PROFILE_UNAVAILABLE/);
+});
+
+test("marketplace MCP ingress is rate-limited and rejects excess requests",()=>{
+ const source=fs.readFileSync(require.resolve("../src/marketplace/mcpRouter"),"utf8");
+ assert.match(source,/router\.use\(["']\/mcp["'],rateLimitIP\(/);
+ const limit=rateLimitIP({windowMs:60_000,max:1,keyPrefix:"marketplace_mcp_regression"});
+ const req={ip:"198.51.100.77"};
+ let status=200,body=null,continued=0;
+ const res={setHeader(){},status(code){status=code;return this;},json(value){body=value;return this;}};
+ limit(req,res,()=>{continued++;});
+ assert.equal(continued,1);
+ limit(req,res,()=>{continued++;});
+ assert.equal(status,429);
+ assert.deepEqual(body,{ok:false,error:"rate_limited"});
+ assert.equal(continued,1);
 });
