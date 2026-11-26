@@ -1,9 +1,9 @@
 name: ACA CI
 on:
   pull_request:
-    branches: [main, aca-product-commercial-consolidation]
+    branches: [main, aca-product-commercial-consolidation, aca-chatgpt-marketplace]
   push:
-    branches: [main]
+    branches: [main, aca-marketplace-operational-integration]
 permissions:
   contents: read
 concurrency:
