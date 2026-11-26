@@ -1,0 +1,24 @@
+'use strict';
+const test=require('node:test'),assert=require('node:assert/strict');
+const {Pool}=require('pg');
+const {randomUUID}=require('node:crypto');
+const fs=require('node:fs'),path=require('node:path');
+const {createPilotPostgresStore}=require('../src/automation/engineeringTeam/pilotPostgresStore');
+test('SG001 isolated PostgreSQL preparation ledger: concurrent insert, restart, rollback and non-authorizing constraints',{skip:process.env.RUN_ENGINEERING_QUEUE_CI!=='1',timeout:30000},async t=>{
+ const url=new URL(process.env.ENGINEERING_QUEUE_CI_DATABASE_URL);
+ assert.equal(url.hostname,'127.0.0.1');assert.equal(url.pathname,'/aca_engineering_queue_ci');
+ const pools=[new Pool({connectionString:url.toString(),max:2}),new Pool({connectionString:url.toString(),max:2})];
+ t.after(async()=>{await Promise.all(pools.map(p=>p.end()));});
+ await pools[0].query(fs.readFileSync(path.join(__dirname,'../migrations/draft_sg001_pilot_preparation.sql'),'utf8'));
+ const stores=pools.map(pool=>createPilotPostgresStore({pool}));
+ const runId=randomUUID(),receipt={runId,binding:'a'.repeat(64),domain:'sg001-pilot-preparation-record-v1',status:'recorded-preparation',ownerId:'fixture',executionAuthorized:false,releaseAuthorized:false};
+ const attempts=await Promise.allSettled(stores.map(s=>s.transact(runId,async tx=>await tx.read()===null&&await tx.insert(receipt))));
+ assert.equal(attempts.filter(x=>x.status==='fulfilled'&&x.value===true).length,1);
+ assert.deepEqual(await createPilotPostgresStore({pool:pools[1]}).transact(runId,tx=>tx.read()),receipt);
+ assert.equal(await stores[1].transact(runId,tx=>tx.insert(receipt)),false);
+ const other={...receipt,runId:randomUUID(),binding:'b'.repeat(64)};
+ await assert.rejects(stores[0].transact(other.runId,async tx=>{assert.equal(await tx.insert(other),true);throw Error('rollback fixture');}),/rollback fixture/);
+ assert.equal(await stores[1].transact(other.runId,tx=>tx.read()),null);
+ await assert.rejects(stores[0].transact(other.runId,tx=>tx.insert({...other,releaseAuthorized:true})),/Invalid non-authorizing receipt/);
+ await assert.rejects(pools[0].query('INSERT INTO sg001_pilot_preparation(run_id,binding,receipt) VALUES ($1,$2,$3::jsonb)',[other.runId,other.binding,JSON.stringify({...other,executionAuthorized:true})]),e=>e.code==='23514');
+});
