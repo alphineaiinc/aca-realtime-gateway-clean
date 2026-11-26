@@ -5,6 +5,7 @@ const console = require("./src/voice/voiceLogger").operationalConsole;
 // Temporary provider swap: OpenAI default, ElevenLabs optional fallback
 // ===============================================
 const axios = require("axios");
+const {elevenLabsRequest}=require("./src/security/elevenLabsRequest");
 const path = require("path");
 const OpenAI = require("openai");
 
@@ -555,7 +556,7 @@ async function synthesizeWithElevenLabs(text, langCode = "en-US", options = {}) 
     }
   }
 
-  const url = `https://api.elevenlabs.io/v1/text-to-speech/${selectedVoiceId}?output_format=${ctx.outputFormat}`;
+  const {url,options:destinationOptions}=elevenLabsRequest(selectedVoiceId,ctx.outputFormat);
   console.log("📤 [tts:elevenlabs] API Request:", {
     url,
     model_id: "eleven_multilingual_v2",
@@ -580,6 +581,7 @@ async function synthesizeWithElevenLabs(text, langCode = "en-US", options = {}) 
           Accept: ctx.acceptMime,
           "Content-Type": "application/json",
         },
+        ...destinationOptions,
         responseType: "arraybuffer",
       }
     );
