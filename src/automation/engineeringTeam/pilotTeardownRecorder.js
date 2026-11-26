@@ -14,9 +14,13 @@ function createPilotTeardownRecorder({pool,verifyEvidence,clock=Date.now}={}){
  await c.query('SELECT pg_advisory_xact_lock(hashtext($1),hashtext($2))',['sg001-preparation-v1',runId]);
  const r=(await c.query('SELECT receipt FROM sg001_pilot_preparation WHERE run_id=$1',[runId])).rows[0]?.receipt;
  if(!r||r.domain!=='sg001-pilot-preparation-record-v1'||r.executionAuthorized!==false||r.releaseAuthorized!==false)throw Error('Unknown preparation');
- const binding=hash([domain,runId,r.binding]);
+ const plan=r.cleanup;
+ if(!plan||typeof plan.resource!=='string'||typeof plan.actor!=='string'||!Number.isSafeInteger(plan.deadline)||!Number.isSafeInteger(r.runEnd)||plan.deadline<r.runEnd)throw Error('Missing approved cleanup plan');
+ const stop=(await c.query('SELECT receipt FROM sg001_pilot_stop WHERE run_id=$1',[runId])).rows[0]?.receipt;
+ if(!stop||stop.preparationBinding!==r.binding||!Number.isSafeInteger(stop.observedAt))throw Error('Missing verified stop');
+ const binding=hash([domain,runId,r.binding,plan.resource,plan.actor,plan.deadline,stop.binding]);
  const evidence=await verifyEvidence(envelope,'teardown',binding);
- if(!evidence||evidence.runId!==runId||evidence.preparationBinding!==r.binding||evidence.stopped!==true||evidence.accessRevoked!==true||evidence.resourceRemoved!==true||evidence.independentlyObserved!==true||typeof evidence.observationDigest!=='string'||!/^[a-f0-9]{64}$/.test(evidence.observationDigest)||!Number.isSafeInteger(evidence.observedAt)||evidence.observedAt>clock())throw Error('Unverified cleanup');
+ if(!evidence||evidence.runId!==runId||evidence.preparationBinding!==r.binding||evidence.stopped!==true||evidence.accessRevoked!==true||evidence.resourceRemoved!==true||evidence.independentlyObserved!==true||typeof evidence.observationDigest!=='string'||!/^[a-f0-9]{64}$/.test(evidence.observationDigest)||!Number.isSafeInteger(evidence.observedAt)||evidence.observedAt>clock()||evidence.observedAt<stop.observedAt||evidence.observedAt>=plan.deadline||clock()>=plan.deadline||evidence.resource!==plan.resource||evidence.actor!==plan.actor||evidence.stopBinding!==stop.binding)throw Error('Unverified cleanup');
  const receipt=Object.freeze({domain,status:'cleanup-evidence-recorded',runId,binding,observationDigest:evidence.observationDigest,executionAuthorized:false,releaseAuthorized:false});
  const inserted=await c.query('INSERT INTO sg001_pilot_teardown(run_id,binding,receipt) VALUES ($1,$2,$3::jsonb) ON CONFLICT DO NOTHING',[runId,binding,JSON.stringify(receipt)]);
  if(inserted.rowCount!==1)throw Error('Duplicate cleanup evidence');
