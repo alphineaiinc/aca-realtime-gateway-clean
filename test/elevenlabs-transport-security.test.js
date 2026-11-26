@@ -73,7 +73,7 @@ test("ElevenLabs rejects redirect responses without retrying at redirected origi
     const { synthesizeSpeech } = require("../tts");
     await assert.rejects(() => synthesizeSpeech("hello", "en-US", {
       provider: "elevenlabs", useFillers: false,
-    }), /ElevenLabs TTS failed/);
+    }), (err) => err.code === "TTS_PROVIDER_ERROR" && err.provider === "elevenlabs" && err.statusCode === 302);
     assert.equal(calls, 1, "redirect response must not cause a second authenticated request");
   } finally {
     Module._load = originalLoad;
@@ -258,7 +258,7 @@ test("ElevenLabs never exposes upstream response bodies or API key in errors", a
     const { synthesizeSpeech } = require("../tts");
     await assert.rejects(() => synthesizeSpeech("hello", "en-US", {
       provider: "elevenlabs", useFillers: false,
-    }), err => err.message === "ElevenLabs TTS failed (HTTP 401)");
+    }), err => err.message === "Speech synthesis unavailable" && err.code === "TTS_PROVIDER_ERROR" && err.statusCode === 401);
     assert.ok(!errors.join(" ").includes("test-eleven-key"));
     assert.ok(!errors.join(" ").includes("confidential caller text"));
   } finally {
@@ -300,7 +300,7 @@ test("ElevenLabs diagnostics omit credential length and untrusted error code", a
     const { synthesizeSpeech } = require("../tts");
     await assert.rejects(() => synthesizeSpeech("hello", "en-US", {
       provider: "elevenlabs", useFillers: false,
-    }), /ElevenLabs TTS failed/);
+    }), (err) => err.message === "Speech synthesis unavailable" && err.code === "TTS_PROVIDER_ERROR");
     const diagnostic = logs.concat(errors).join(" ");
     assert.ok(!diagnostic.includes(secret), "credential bytes must not appear in diagnostics");
     assert.ok(!diagnostic.includes("SENSITIVE_ERROR_CODE"), "untrusted transport code must not be logged");
