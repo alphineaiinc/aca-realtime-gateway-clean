@@ -11,8 +11,7 @@ function createMarketplaceRouter(config={}){
  const getBusinessProfile=createBusinessTools({pool:config.pool});
  const resourceMetadata=new URL("/.well-known/oauth-protected-resource"+new URL(config.resource).pathname,config.resource).href;
  router.get("/.well-known/oauth-protected-resource/mcp",metadata);
- router.use("/mcp",rateLimitIP({windowMs:60_000,max:60,keyPrefix:"marketplace_mcp"}));
- router.post("/mcp",express.json({limit:"32kb"}),async(req,res)=>{
+ router.post("/mcp",rateLimitIP({windowMs:60_000,max:60,keyPrefix:"marketplace_mcp"}),express.json({limit:"32kb"}),async(req,res)=>{
   res.set("Cache-Control","no-store");
   if(req.headers.origin&&req.headers.origin!==config.allowedOrigin)return res.status(403).end();
   const match=/^Bearer ([A-Za-z0-9._-]{1,8192})$/.exec(req.headers.authorization||"");
