@@ -16,7 +16,8 @@ function fixture(eligible=true){
    state.reserved=true;return {rows:[row]};
   }
   if(sql.includes("SET state=$3"))state.uncertain=true;
-  if(sql.includes("UPDATE public.aca_request_outbox"))state.delivered=true;
+  if(sql.includes("SET state=\'sent\'"))return {rowCount:1,rows:[]};
+  if(sql.includes("UPDATE public.aca_request_outbox")){state.delivered=true;return {rowCount:1,rows:[]};}
   return {rows:[]};
  };
  return {state,pool:{query,connect:async()=>({query,release:()=>state.released++})},row};
@@ -120,3 +121,15 @@ test("invalid local transport leaves durable claim untouched and permits repaire
   assert.equal(f.state.delivered,true);
  }finally{keys.forEach((k,i)=>{if(old[i]===undefined)delete process.env[k];else process.env[k]=old[i];});}
 });
+
+for(const target of ["SET state='sent'","UPDATE public.aca_request_outbox"]){
+ for(const rowCount of [0,2])test("ack rejects "+target+" rowCount="+rowCount,async()=>{
+  const f=fixture();const connect=f.pool.connect;let sends=0;
+  f.pool.connect=async()=>{const c=await connect();const q=c.query;c.query=async(sql,p)=>{if(sql.includes(target)){f.state.queries.push([sql,p]);return {rowCount,rows:[]};}return q(sql,p);};return c;};
+  const sendMail=async mail=>{sends++;return {accepted:[mail.to]};};
+  await assert.rejects(deliverOne({pool:f.pool,sendMail}),{message:"REQUEST_ACK_FAILED"});
+  assert.ok(f.state.queries.some(([q])=>q==="ROLLBACK"));
+  assert.ok(!f.state.queries.some(([q])=>q==="COMMIT"));
+  assert.equal(await deliverOne({pool:f.pool,sendMail}),false);assert.equal(sends,1);
+ });
+}
