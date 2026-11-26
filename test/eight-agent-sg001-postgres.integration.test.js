@@ -10,6 +10,10 @@ test('SG001 isolated PostgreSQL preparation ledger: concurrent insert, restart, 
  const pools=[new Pool({connectionString:url.toString(),max:2}),new Pool({connectionString:url.toString(),max:2})];
  t.after(async()=>{await Promise.all(pools.map(p=>p.end()));});
  await pools[0].query(fs.readFileSync(path.join(__dirname,'../migrations/draft_sg001_pilot_preparation.sql'),'utf8'));
+ const {canonicalJson}=require('../src/automation/engineeringTeam/pilotVerifiedEvidence');
+ const ordering={zz:{long:2,a:1},a:[{zz:2,a:1}]};
+ const roundTrip=(await pools[0].query('SELECT $1::jsonb AS evidence',[JSON.stringify(ordering)])).rows[0].evidence;
+ assert.equal(canonicalJson(ordering),canonicalJson(roundTrip));
  const stores=pools.map(pool=>createPilotPostgresStore({pool}));
  const runId=randomUUID(),receipt={runId,binding:'a'.repeat(64),domain:'sg001-pilot-preparation-record-v1',status:'recorded-preparation',ownerId:'fixture',runEnd:Date.now()+60000,cleanup:{actor:'cleanup-fixture',resource:'resource-fixture',deadline:Date.now()+120000},executionAuthorized:false,releaseAuthorized:false};
  const attempts=await Promise.allSettled(stores.map(s=>s.transact(runId,async tx=>await tx.read()===null&&await tx.insert(receipt))));
