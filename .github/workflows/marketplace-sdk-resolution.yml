@@ -39,7 +39,7 @@ jobs:
       - name: Generate exact revision marketplace acceptance bundle
         run: |
           mkdir -p marketplace-bundle
-          git archive HEAD src/marketplace src/brain/utils/sttGoogle.js docs/aca/chatgpt-marketplace.md docs/aca/marketplace-package-checklist.md package.json package-lock.json test/marketplace-mcp-authenticated.test.js test/marketplace-mail-compat.test.js test/marketplace-dependency-surface.test.js | tar -x -C marketplace-bundle
+          git archive HEAD .github/workflows/marketplace-sdk-resolution.yml src/marketplace src/brain/utils/sttGoogle.js docs/aca/chatgpt-marketplace.md docs/aca/marketplace-package-checklist.md package.json package-lock.json test/marketplace-mcp-authenticated.test.js test/marketplace-mail-compat.test.js test/marketplace-dependency-surface.test.js | tar -x -C marketplace-bundle
           cp marketplace-audit.json marketplace-bundle/
           git rev-parse HEAD > marketplace-bundle/REVISION
           tar -czf marketplace-acceptance.tar.gz -C marketplace-bundle .
