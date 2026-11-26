@@ -22,6 +22,7 @@ function createOAuthAuthorization({pool,issuer,resource,clientId,redirectUri,log
   validateRequest(request);
   const claims=jwt.verify(loginToken,loginSecret,{algorithms:["HS256"],issuer:"alphine-ai",audience:"aca-business"});
   if(claims.aud!=="aca-business"||claims.purpose!=="verified_business"||typeof claims.sub!=="string"||!claims.sub||!Number.isSafeInteger(claims.tenant_id)||claims.tenant_id<=0||!Number.isInteger(claims.exp))throw Error("INVALID_IDENTITY");
+  await cleanupExpired();
   const code=randomBytes(32).toString("base64url");
   const {rows}=await pool.query(`INSERT INTO public.aca_marketplace_oauth_codes(code_hash,email,tenant_id,client_id,redirect_uri,resource,challenge,expires_at)
  SELECT $1,email,tenant_id,$2,$3,$4,$5,NOW()+INTERVAL '2 minutes' FROM public.aca_business_identities WHERE email=$6 AND tenant_id=$7 AND is_active AND verified_at IS NOT NULL RETURNING code_hash`,[digest(code),clientId,redirectUri,resource,request.code_challenge,claims.sub,claims.tenant_id]);
@@ -36,6 +37,9 @@ function createOAuthAuthorization({pool,issuer,resource,clientId,redirectUri,log
   if(rows.length!==1||typeof rows[0].email!=="string"||!Number.isSafeInteger(rows[0].tenant_id)||rows[0].tenant_id<=0)throw Error("INVALID_GRANT");
   return {access_token:jwt.sign({sub:rows[0].email,tenant_id:rows[0].tenant_id,scope},key,{algorithm:"RS256",issuer,audience:resource,expiresIn:300}),token_type:"Bearer",expires_in:300,scope};
  }
- return {authorize,exchange,validateRequest,publicKey:createPublicKey(key)};
+ async function cleanupExpired(){
+  return pool.query("DELETE FROM public.aca_marketplace_oauth_codes WHERE code_hash IN (SELECT code_hash FROM public.aca_marketplace_oauth_codes WHERE expires_at<=NOW() ORDER BY expires_at LIMIT 100)");
+ }
+ return {authorize,exchange,validateRequest,cleanupExpired,publicKey:createPublicKey(key)};
 }
 module.exports={createOAuthAuthorization};
