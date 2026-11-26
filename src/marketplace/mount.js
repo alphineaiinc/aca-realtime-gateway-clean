@@ -9,6 +9,7 @@ function mountMarketplace(app,{env={},pool}={}){
  if(origin.protocol!=="https:"||origin.origin!==allowedOrigin)throw Error("INVALID_MARKETPLACE_ORIGIN");
  const publicKey=createPublicKey(env.ACA_MARKETPLACE_PUBLIC_KEY);
  if(publicKey.asymmetricKeyType!=="rsa"||publicKey.asymmetricKeyDetails.modulusLength<2048)throw Error("INVALID_MARKETPLACE_KEY");
- app.use(createMarketplaceRouter({enabled,resource,issuer,allowedOrigin,publicKey,pool}));
+ // The trusted issuer must map its subject to the verified ACA email identity.
+ app.use(createMarketplaceRouter({enabled,resource,issuer,allowedOrigin,publicKey,pool,requireActiveMembership:true}));
 }
 module.exports={mountMarketplace};
