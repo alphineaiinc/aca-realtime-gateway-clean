@@ -32,3 +32,19 @@ test('expectation snapshot resists mutation during asynchronous fixture read',as
 test('invalid expectation pins reject construction',()=>{
  for(const bad of [{...expected,digest:'latest'},{...expected,sourceSha:'main'},{...expected,rootDigest:''}])assert.throws(()=>createOfflineProvenanceContract(bad));
 });
+
+test('unresponsive asynchronous fixture denies at deadline and signals cancellation',async()=>{
+ const c=createOfflineProvenanceContract(expected,{timeoutMs:10});
+ let signal;
+ const r=await c.assessFixture(async s=>{signal=s;return new Promise(()=>{});});
+ denied(r);assert.equal(signal.aborted,true);
+});
+test('late fixture success cannot reverse deadline denial',async()=>{
+ const c=createOfflineProvenanceContract(expected,{timeoutMs:5});
+ let resolve;
+ const r=await c.assessFixture(()=>new Promise(r=>{resolve=r;}));
+ denied(r);resolve([fixture]);await Promise.resolve();denied(r);
+});
+test('invalid fixture deadlines reject construction',()=>{
+ for(const timeoutMs of [0,-1,5001,NaN,Infinity,1.5,'10'])assert.throws(()=>createOfflineProvenanceContract(expected,{timeoutMs}),/deadline/);
+});
