@@ -21,4 +21,17 @@ test('SG001 isolated PostgreSQL preparation ledger: concurrent insert, restart, 
  assert.equal(await stores[1].transact(other.runId,tx=>tx.read()),null);
  await assert.rejects(stores[0].transact(other.runId,tx=>tx.insert({...other,releaseAuthorized:true})),/Invalid non-authorizing receipt/);
  await assert.rejects(pools[0].query('INSERT INTO sg001_pilot_preparation(run_id,binding,receipt) VALUES ($1,$2,$3::jsonb)',[other.runId,other.binding,JSON.stringify({...other,executionAuthorized:true})]),e=>e.code==='23514');
+ const {createPilotTeardownRecorder}=require('../src/automation/engineeringTeam/pilotTeardownRecorder');
+ const observed={runId,preparationBinding:receipt.binding,stopped:true,accessRevoked:true,resourceRemoved:true,independentlyObserved:true,observationDigest:'c'.repeat(64),observedAt:Date.now()};
+ const expectedBinding=require('node:crypto').createHash('sha256').update(JSON.stringify(['sg001-pilot-teardown-record-v1',runId,receipt.binding])).digest('hex');
+ // Fixture verifier only; this tests transaction behavior, not signature validity.
+ const verifyEvidence=async (env,kind,binding)=>kind==='teardown'&&binding===expectedBinding?env:null;
+ const recorders=pools.map(pool=>createPilotTeardownRecorder({pool,verifyEvidence}));
+ assert.equal((await recorders[0].record({runId,envelope:{...observed,accessRevoked:false}})).status,'denied');
+ assert.equal((await recorders[0].record({runId,envelope:{...observed,preparationBinding:'d'.repeat(64)}})).status,'denied');
+ assert.equal((await recorders[0].record({runId:other.runId,envelope:observed})).status,'denied');
+ const cleanup=await Promise.all(recorders.map(r=>r.record({runId,envelope:observed})));
+ assert.equal(cleanup.filter(r=>r.status==='cleanup-evidence-recorded').length,1);
+ assert.equal((await recorders[0].record({runId,envelope:observed})).status,'denied');
+ assert.equal((await pools[1].query('SELECT receipt FROM sg001_pilot_teardown WHERE run_id=$1',[runId])).rows[0].receipt.releaseAuthorized,false);
 });
