@@ -1,8 +1,6 @@
 name: ACA protected staging acceptance
 on:
-  push:
-    branches: [aca-l1-integrated-routing-onboarding]
-    paths: ['.github/workflows/aca-protected-acceptance.yml']
+  workflow_dispatch:
 permissions:
   contents: read
 concurrency:
@@ -10,26 +8,36 @@ concurrency:
   cancel-in-progress: false
 jobs:
   acceptance:
-    if: github.repository == 'alphineaiinc/aca-realtime-gateway-clean' && github.ref == 'refs/heads/aca-l1-integrated-routing-onboarding'
+    if: github.repository == 'alphineaiinc/aca-realtime-gateway-clean' && github.ref == 'refs/heads/aca-l1-integrated-routing-onboarding' && github.event_name == 'workflow_dispatch'
     environment: aca-product-staging
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    env:
+      ACA_EXPECTED_REVISION: '7b312775ac3436f00e116cb4eb21594da4c2d1de'
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.sha }}
+          ref: '7b312775ac3436f00e116cb4eb21594da4c2d1de'
           persist-credentials: false
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
+      - name: Verify exact checkout and hosted revision
+        run: |
+          test "$(git rev-parse HEAD)" = "$ACA_EXPECTED_REVISION"
+          node integration/aca-live-revision.mjs
       - run: npm ci --ignore-scripts --no-audit --no-fund
       - name: Hosted acceptance with restricted fixture role
         env:
           ACA_STAGING_ACCEPTANCE_DATABASE_URL: ${{ secrets.ACA_STAGING_ACCEPTANCE_DATABASE_URL }}
           ACA_STAGING_ACCEPTANCE_CONFIRM: aca_product_staging
         run: |
+          node integration/aca-live-revision.mjs
           if [ -z "$ACA_STAGING_ACCEPTANCE_DATABASE_URL" ]; then
             echo "Restricted staging secret not configured; acceptance not executed"
             exit 1
           fi
           node integration/aca-hosted-fixture-runner.mjs
+      - name: Reverify exact hosted revision
+        if: always()
+        run: node integration/aca-live-revision.mjs
