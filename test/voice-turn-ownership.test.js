@@ -140,3 +140,18 @@ test("interim text cancels pending greeting even without a speech-start event", 
   const h = await harness(t); h.stt().onInterim("need help"); h.jobs[0].succeed(80); await h.startup;
   assert.deepEqual(h.lengths(), []); assert.equal(store.getSession(h.callSid).state, "awaiting_end_of_turn");
 });
+
+test("missing media send callback releases dispatch and retains input", async (t) => {
+  const h = await harness(t); await h.greet(); h.stt().onFinal("need help"); await until(() => h.jobs.length === 2);
+  h.ws.holdMedia = true; h.jobs[1].succeed(160); await until(() => h.ws.acceptMedia !== null);
+  const late = h.ws.acceptMedia;
+  const deadline = Date.now() + 7000;
+  while (h.ws.__dispatchInFlight) { if (Date.now() > deadline) assert.fail("send callback stranded dispatch"); await new Promise(r => setTimeout(r, 20)); }
+  assert.equal(h.ws.__pendingVoiceTranscript, "need help"); assert.equal(h.ws.__lastCommittedTranscript, "");
+  assert.equal(store.getSession(h.callSid).state, "listening");
+  assert.ok(h.ws.sent.some(m => m.event === "clear"));
+  const marks = h.ws.sent.filter(m => m.event === "mark").length;
+  late(); await new Promise(r => setImmediate(r));
+  assert.equal(h.ws.sent.filter(m => m.event === "mark").length, marks);
+  assert.equal(h.ws.__lastCommittedTranscript, "");
+});
