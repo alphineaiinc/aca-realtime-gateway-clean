@@ -940,7 +940,7 @@ try {
   );
 }
 
-require("./src/marketplace/runtimePools").mountRuntimeMarketplace(app, process.env);
+const marketplaceRuntime = require("./src/marketplace/runtimePools").mountRuntimeMarketplace(app, process.env);
 
 // ✅ Story 12.8 — Marketplace Plugin (.well-known) Binding
 const wellKnownPath = path.join(__dirname, "public", "wellknown");
@@ -1019,7 +1019,13 @@ const shutdown = require("./src/voice/boundedShutdown").createShutdown({
     for (const socket of upgradedSockets) socket.destroy();
   }),
   snapshot: () => { if (typeof saveSession === "function") return saveSession(global.__ACA_STATE__); },
-  end: () => require("./src/db/pool").end(),
+  end: async () => {
+    const results = await Promise.allSettled([
+      Promise.resolve().then(() => require("./src/db/pool").end()),
+      Promise.resolve().then(() => marketplaceRuntime.close())
+    ]);
+    if (results.some(result => result.status === "rejected")) throw Error("SHUTDOWN_POOL_CLEANUP_FAILED");
+  },
   exit: code => process.exit(code)
 });
 process.on("SIGINT", shutdown);
