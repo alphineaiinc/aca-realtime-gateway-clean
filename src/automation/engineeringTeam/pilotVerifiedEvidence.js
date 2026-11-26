@@ -35,4 +35,17 @@ function createVerifiedPilotRecorder({store,authenticate,verifyEvidence,loadEvid
  return await verifyEvidence(envelope,'preparation',binding);
  }});
 }
-module.exports={createPilotEvidenceVerifier,createVerifiedPilotRecorder};
+// No runtime registration. Separate pinned verifier configuration per evidence role.
+function createDisabledPilotComposition({pool,identity,preparationEvidence,stopEvidence,teardownEvidence,clock=Date.now}={}){
+ const {createIdentityVerifier}=require('./identityVerifier');
+ const {createPilotPostgresStore}=require('./pilotPostgresStore');
+ const {createPilotStopRecorder}=require('./pilotStopRecorder');
+ const {createPilotTeardownRecorder}=require('./pilotTeardownRecorder');
+ const configs=[preparationEvidence,stopEvidence,teardownEvidence];
+ const pins=configs.map(c=>createPublicKey(c.publicKey).export({type:'spki',format:'der'}).toString('hex'));
+ if(new Set(pins).size!==3||new Set(configs.map(c=>c.issuer)).size!==3)throw Error('Distinct evidence authorities required');
+ const [prep,stop,cleanup]=configs.map(c=>createPilotEvidenceVerifier({...c,clock}));
+ const recorder=createVerifiedPilotRecorder({store:createPilotPostgresStore({pool}),authenticate:createIdentityVerifier(identity),verifyEvidence:prep,loadEvidence:tx=>tx.readEvidence(),clock});
+ return Object.freeze({record:recorder.record,stop:createPilotStopRecorder({pool,verifyEvidence:stop,clock}).record,recordCleanup:createPilotTeardownRecorder({pool,verifyEvidence:cleanup,clock}).record,executionAllowed:()=>false});
+}
+module.exports={createPilotEvidenceVerifier,createVerifiedPilotRecorder,createDisabledPilotComposition};
