@@ -16,10 +16,10 @@ function createGmailSender(env=process.env,fetcher=globalThis.fetch){
   const mid=messageId||"<"+randomUUID()+"@alphineai.com>";
   if(!/^<[A-Za-z0-9.-]+@[A-Za-z0-9.-]+>$/.test(mid))throw Error("GMAIL_INVALID_MESSAGE");
   const token=await post("https://oauth2.googleapis.com/token",{"content-type":"application/x-www-form-urlencoded"},new URLSearchParams({client_id:id,client_secret:secret,refresh_token:refresh,grant_type:"refresh_token"}).toString());
-  if(typeof token.access_token!=="string"||!token.access_token||/[\r\n]/.test(token.access_token))throw Error("GMAIL_TOKEN_INVALID");
+  if(typeof token?.access_token!=="string"||!token.access_token.trim()||/\s/.test(token.access_token))throw Error("GMAIL_TOKEN_INVALID");
   const mime=["From: "+from,"To: "+to,"Subject: =?UTF-8?B?"+Buffer.from(subject).toString("base64")+"?=","Message-ID: "+mid,"MIME-Version: 1.0","Content-Type: text/plain; charset=UTF-8","Content-Transfer-Encoding: base64","",Buffer.from(text).toString("base64").match(/.{1,76}/g)?.join("\r\n")||""].join("\r\n");
   const result=await post("https://gmail.googleapis.com/gmail/v1/users/me/messages/send",{"content-type":"application/json",authorization:"Bearer "+token.access_token},JSON.stringify({raw:Buffer.from(mime).toString("base64url")}));
-  if(typeof result.id!=="string"||!result.id)throw Error("GMAIL_SEND_UNCONFIRMED");
+  if(typeof result?.id!=="string"||!result.id.trim())throw Error("GMAIL_SEND_UNCONFIRMED");
   return {accepted:[to],messageId:mid};
  };
 }
