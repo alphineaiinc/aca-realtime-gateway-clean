@@ -5,8 +5,10 @@ const {getRole}=require('./registry');
 const {sequence}=require('./offlineTeam');
 const scopeKey=s=>JSON.stringify([s.product,s.repository,s.sha]);
 const validScope=s=>s&&typeof s.product==='string'&&/^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,79}$/.test(s.product)&&typeof s.repository==='string'&&/^[a-zA-Z0-9_.-]+\/[a-zA-Z0-9_.-]+$/.test(s.repository)&&s.repository.length<=200&&typeof s.sha==='string'&&/^[a-f0-9]{40}$/.test(s.sha);
-function createDurableQueue({pool,scopes,authenticate,leaseSeconds=60,fixtureProposalStorage=false}={}){
+function createDurableQueue({pool,scopes,authenticate,leaseSeconds=60,fixtureProposalStorage=false,admissionGuard}={}){
  if(!pool||typeof pool.query!=='function'||typeof authenticate!=='function'||!Array.isArray(scopes)||!scopes.length||!scopes.every(validScope)||!Number.isSafeInteger(leaseSeconds)||leaseSeconds<5||leaseSeconds>300)throw Error('Invalid queue configuration');
+ if(admissionGuard!==undefined&&typeof admissionGuard!=='function')throw Error('Invalid admission guard');
+ async function assertAdmission(){if(admissionGuard!==undefined&&await admissionGuard()!==true)throw Error('Queue admission denied');}
  const allowed=new Set(scopes.map(scopeKey));
  function checkScope(s){if(!validScope(s)||!allowed.has(scopeKey(s)))throw Error('Scope denied');return [s.product,s.repository,s.sha];}
  async function identity(credential,scope,role,permission){
@@ -61,6 +63,7 @@ function createDurableQueue({pool,scopes,authenticate,leaseSeconds=60,fixturePro
     const w=await client.query('SELECT id FROM engineering_team_workflows WHERE id=$1 AND product=$2 AND repository=$3 AND head_sha=$4 AND next_step=$5 FOR UPDATE',[workflowId,...params,workflowStep]);
     if(w.rowCount!==1)throw Error('Workflow enqueue denied');
    }
+   await assertAdmission();
    const result=await client.query(`WITH task AS (INSERT INTO engineering_team_tasks(id,product,repository,head_sha,role,workflow_id,workflow_step) VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING id), audit AS (INSERT INTO engineering_team_queue_audit(task_id,event) SELECT id,'queued' FROM task) SELECT id FROM task`,[id,...params,role,workflowId??null,workflowStep??null]);
    if(result.rowCount!==1)throw Error('Queue insert failed');return id;
    });
@@ -71,6 +74,7 @@ function createDurableQueue({pool,scopes,authenticate,leaseSeconds=60,fixturePro
    return guarded(params,async client=>{
     if(await identity(credential,{product:params[0],repository:params[1],sha:params[2]},null,'queue.manage')!==actor)throw Error('Identity denied');
     await assertActive(client,params,sequence[workflowStep]);
+    await assertAdmission();
     const result=await client.query(`SELECT t.id,t.role,t.state,t.attempts,t.lease_until,
       EXISTS(SELECT 1 FROM engineering_team_proposal_receipts r WHERE r.task_id=t.id) AS has_receipt
       FROM engineering_team_tasks t JOIN engineering_team_workflows w ON w.id=t.workflow_id
@@ -85,6 +89,7 @@ function createDurableQueue({pool,scopes,authenticate,leaseSeconds=60,fixturePro
    return guarded(params,async client=>{
     if(await identity(credential,{product:params[0],repository:params[1],sha:params[2]},role,'queue.work')!==worker)throw Error('Identity denied');
     await assertActive(client,params,role);
+   await assertAdmission();
    const result=await client.query(`WITH candidate AS (SELECT id FROM engineering_team_tasks WHERE product=$1 AND repository=$2 AND head_sha=$3 AND role=$4 AND state='queued' AND attempts<2 AND (($8::uuid IS NULL AND workflow_id IS NULL) OR id=$8::uuid) ORDER BY created_at,id LIMIT 1 FOR UPDATE SKIP LOCKED), task AS (UPDATE engineering_team_tasks t SET state='running',attempts=attempts+1,worker_id=$5,lease_id=$6,lease_until=clock_timestamp()+make_interval(secs=>$7) FROM candidate c WHERE t.id=c.id RETURNING t.id,t.lease_id,t.attempts,t.lease_until), audit AS (INSERT INTO engineering_team_queue_audit(task_id,event) SELECT id,'claimed' FROM task) SELECT * FROM task`,[...params,role,worker,lease,leaseSeconds,expectedTaskId??null]);
    return result.rows[0]||null;
    });

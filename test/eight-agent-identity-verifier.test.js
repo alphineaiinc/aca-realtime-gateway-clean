@@ -15,3 +15,14 @@ test('wrong scope, privilege, issuer, expiry and revoked identity denied',async(
  assert.equal(await createIdentityVerifier({...options,isRevoked:async()=>true})(token()),null);
  assert.equal(await createIdentityVerifier({...options,isRevoked:async()=>{throw Error('unavailable');}})(token()),null);
 });
+
+test('general authentication rejects any purpose-bound credential',async()=>{
+ const owner={...p,id:'owner',permission:'owner.approval'};delete owner.role;
+ const auth=createIdentityVerifier({...options,principals:[owner]});
+ const make=claims=>jwt.sign({product:owner.product,repository:owner.repository,sha:owner.sha,permission:owner.permission,...claims},privateKey,{algorithm:'RS256',issuer:options.issuer,audience:options.audience,subject:owner.id,jwtid:'owner-fixture',expiresIn:60});
+ const binding='a'.repeat(64);
+ for(const claims of [{purpose:'automation-preparation'},{projectBoundaryDigest:binding},{purpose:null},{projectBoundaryDigest:null},{purpose:'automation-preparation',projectBoundaryDigest:binding}])assert.equal(await auth(make(claims)),null);
+ assert.deepEqual(await auth(make({})),owner);
+ assert.deepEqual(await auth(make({purpose:'automation-preparation',projectBoundaryDigest:binding}),binding),owner);
+ assert.equal(await auth(make({}),binding),null);
+});

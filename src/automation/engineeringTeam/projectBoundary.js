@@ -29,7 +29,7 @@ function createProjectBoundary({manifest,authority,readQueueState,authenticate,o
   if(!owner||owner.permission!=='owner.approval'||owner.product!==PROJECT||owner.repository!==REPOSITORY||owner.sha!==pinned.sourceSha)throw Error('Project owner authority denied');
   return owner.id;
  };
- return async function readBoundState(request){
+ async function readBoundState(request){
   if(request?.scope?.product!==PROJECT||request.scope.repository!==REPOSITORY||
      request.scope.sha!==pinned.sourceSha||request.issueNumber!==pinned.issue)throw Error('Project boundary denied');
   const ownerId=await verifyOwner();
@@ -40,6 +40,9 @@ function createProjectBoundary({manifest,authority,readQueueState,authenticate,o
     state.boundaryDigest!==boundaryDigest)throw Error('Project boundary evidence denied');
   if(await verifyOwner()!==ownerId)throw Error('Project owner authority denied');
   return state;
- };
+ }
+ // Host-only closure: no token, digest or caller-supplied override is accepted.
+ Object.defineProperty(readBoundState,'revalidateOwner',{value:async()=>{await verifyOwner();return true;}});
+ return Object.freeze(readBoundState);
 }
 module.exports={createProjectBoundary};

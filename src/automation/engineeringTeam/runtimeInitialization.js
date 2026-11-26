@@ -24,12 +24,13 @@ function initializeRuntime({config,pool,identity,ceilings,readQueueState,indepen
  if(costEnvelope&&Object.keys(costEnvelope.ceilings).some(model=>ceilings[model]!==costEnvelope.ceilings[model]))throw Error('Cost ceiling mismatch');
  const authenticate=createIdentityVerifier(identity);
  const scopes=[manifest.scope];
- const queue=createDurableQueue({pool,scopes,authenticate});
+ const boundary=readQueueState===undefined?null:createProjectBoundary({manifest,authority:projectAuthority,readQueueState,authenticate,ownerCredential:projectOwnerCredential});
+ const queue=createDurableQueue({pool,scopes,authenticate,admissionGuard:boundary===null?async()=>false:boundary.revalidateOwner});
  const approvals=createDurableApprovalPolicy({pool,scopes,authenticate});
  const budget=createSpendBudget({pool,...manifest.scope,budgetId:manifest.budgetId,ceilings});
  const workflow=createWorkflowLedger({pool,scope:manifest.scope,authenticate});
  const governanceAlerts=createGovernanceAlertReader({pool,scope:manifest.scope,authenticate});
- const policy=readQueueState===undefined?null:createQueuePolicyBridge({manifest,readQueueState:createProjectBoundary({manifest,authority:projectAuthority,readQueueState,authenticate,ownerCredential:projectOwnerCredential})});
+ const policy=readQueueState===undefined?null:createQueuePolicyBridge({manifest,readQueueState:boundary});
  // Never expose the raw durable queue: new admissions and claims require fresh policy evidence.
  const admissionQueue=policy===null?null:createPolicyBoundQueue({queue,policy,scope:manifest.scope,issue:manifest.issue,manifestDigest:manifest.evidenceSha256});
  const reviewVerifier=independentReview===undefined?undefined:createActivationReviewVerifier({...independentReview,manifest});
