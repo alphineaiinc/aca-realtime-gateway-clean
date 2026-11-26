@@ -1,3 +1,4 @@
+const console = require("./src/voice/voiceLogger").operationalConsole;
 // index.js – Orchestrator with Tanglish detection + debug logging
 console.log("🧭 process.cwd():", process.cwd());
 console.log("🧭 __dirname:", __dirname);
@@ -915,6 +916,22 @@ const http = require("http"); // ✅ Needed so express-ws binds to the same serv
 const cors = require("cors");
 const bodyParser = require("body-parser");
 const app = express();
+app.set("trust proxy", require("./src/security/proxyPolicy").proxyPolicy(process.env.ACA_TRUSTED_PROXY_CIDRS || ""));
+// Global bounded ingress before parsers, authentication and expensive handlers.
+const { rateLimit: recognizedRateLimit } = require("express-rate-limit");
+const { ingressLimit: boundedIngress } = require("./src/security/ingressLimit");
+// Separate bounded budgets for provider callback namespaces; no authentication bypass.
+const ingressClass = req => /^\/twilio(?:\/|$)/i.test(req.path) ? "twilio" : /^\/api\/stripe(?:\/|$)/i.test(req.path) ? "stripe" : "ordinary";
+const ordinaryIngress = boundedIngress({max: 300, windowMs: 60000});
+const twilioIngress = boundedIngress({max: 300, windowMs: 60000});
+const stripeIngress = boundedIngress({max: 300, windowMs: 60000});
+const ingressBudgets = {ordinary:ordinaryIngress,twilio:twilioIngress,stripe:stripeIngress};
+// Independent process-local emergency ceilings; do not depend on forwarded identity.
+// Keep existing per-IP budgets and isolate provider classes.
+const aggregateIngressBudgets = Object.fromEntries(["ordinary","twilio","stripe"].map(kind=>[kind,boundedIngress({max: 3000, windowMs: 60000, globalBudget:true})]));
+app.use((req,res,next)=>aggregateIngressBudgets[ingressClass(req)](req,res,next));
+app.use((req,res,next)=>ingressBudgets[ingressClass(req)](req,res,next));
+app.use(recognizedRateLimit({windowMs: 60000, limit: 300, standardHeaders: "draft-8", legacyHeaders: false, passOnStoreError: false, keyGenerator: req => (ingressClass(req)+":")+require("express-rate-limit").ipKeyGenerator(req.ip)}));
 
 // ✅ Story 12.8 — security headers + origin allowlist guard (fail-closed in prod)
 try {
@@ -928,6 +945,8 @@ try {
     e && e.message ? e.message : String(e)
   );
 }
+
+require("./src/marketplace/runtimePools").mountRuntimeMarketplace(app, process.env);
 
 // ✅ Story 12.8 — Marketplace Plugin (.well-known) Binding
 const wellKnownPath = path.join(__dirname, "public", "wellknown");
@@ -984,69 +1003,12 @@ function requireAdmin(req, res, next) {
   }
 }
 
-function createRateLimiter({ windowMs, max, keyFn }) {
-  const hits = new Map();
-
-  setInterval(() => {
-    const now = Date.now();
-    for (const [key, value] of hits.entries()) {
-      if (now - value.windowStart >= windowMs) {
-        hits.delete(key);
-      }
-    }
-  }, Math.max(30000, windowMs)).unref();
-
-  return function rateLimit(req, res, next) {
-    try {
-      const key = keyFn ? keyFn(req) : req.ip || "unknown";
-      const now = Date.now();
-
-      const existing = hits.get(key);
-      if (!existing || now - existing.windowStart >= windowMs) {
-        hits.set(key, { count: 1, windowStart: now });
-        return next();
-      }
-
-      existing.count += 1;
-
-      if (existing.count > max) {
-        return res.status(429).json({
-          ok: false,
-          error: "rate_limited",
-        });
-      }
-
-      return next();
-    } catch (err) {
-      console.warn("⚠️ rate limiter error:", err.message);
-      return next();
-    }
-  };
-}
-
-const publicRateLimit = createRateLimiter({
-  windowMs: 60 * 1000,
-  max: 20,
-  keyFn: (req) => req.ip || "unknown",
-});
-
-const demoRateLimit = createRateLimiter({
-  windowMs: 60 * 1000,
-  max: 10,
-  keyFn: (req) => {
-    const auth = req.headers.authorization || "";
-    return `${req.ip || "unknown"}:${auth.slice(0, 80)}`;
-  },
-});
-
-const authRateLimit = createRateLimiter({
-  windowMs: 60 * 1000,
-  max: 30,
-  keyFn: (req) => {
-    const auth = req.headers.authorization || "";
-    return `${req.ip || "unknown"}:${auth.slice(0, 80)}`;
-  },
-});
+// Bounded pre-authentication IP budgets; never key on unverified bearer text.
+const { ingressLimit: createIngressLimit } = require("./src/security/ingressLimit");
+const publicRateLimit = createIngressLimit({ windowMs: 60000, max: 20 });
+const demoRateLimit = createIngressLimit({ windowMs: 60000, max: 10 });
+const authRateLimit = createIngressLimit({ windowMs: 60000, max: 30 });
+const monitorRateLimit = createIngressLimit({ windowMs: 60000, max: 30 });
 
 // ✅ Story 12.5/12.6 — Create HTTP server EARLY so express-ws binds correctly
 const server = http.createServer(app);
@@ -1092,45 +1054,17 @@ if (compression) {
 }
 
 // ✅ FIX (Story 12.3): app must exist before any app.use(...)
+// Stripe signature verification requires the untouched raw request body.
+app.use("/api/stripe", require("./src/routes/stripeWebhook"));
+
 app.use(express.json({ limit: "1mb" }));
 
-app.post("/api/gpt/chat", async (req, res) => {
-  try {
-    const result = await handleConversationTurn({
-      sessionId: req.body?.session_id,
-      message: req.body?.message,
-      channel: "chat",
-      tenantBusinessType: req.body?.tenant_business_type || null,
-      tenantId: 1,
-      locale: "en-US",
-    });
-
-    if (!result.ok) {
-      return res.status(400).json(result);
-    }
-
-    return res.status(200).json({
-      ok: true,
-      reply: result.reply,
-      session_id: result.session_id,
-      source: result.source,
-      scenario: result.scenario,
-      tenant_business_type: result.tenant_business_type,
-      business_type: result.business_type,
-      context: result.context,
-    });
-  } catch (err) {
-    console.error("❌ /api/gpt/chat error:", err);
-    return res.status(500).json({
-      ok: false,
-      error: "Internal server error",
-    });
-  }
-});
+// Public marketplace chat must not use a real tenant's knowledge or session.
+app.post("/api/gpt/chat", (_req,res)=>res.status(503).json({ok:false,error:"Marketplace chat unavailable pending isolated demo configuration"}));
 
 // ✅ Initialize express-ws so WebSocket routes actually work
 try {
-  require("express-ws")(app, server); // ✅ bind to the real listening server
+  require("express-ws")(app, server, { wsOptions: require("./src/voice/streamSecurity").WS_OPTIONS }); // ✅ bind to the real listening server
   console.log("✅ express-ws WebSocket support initialized");
 } catch (err) {
   console.warn("⚠️ express-ws init failed:", err.message);
@@ -1155,7 +1089,7 @@ app.use((err, req, res, next) => {
 
   if (isJsonSyntax) {
     console.warn("⚠️ Invalid JSON received:", {
-      path: req.originalUrl || req.url,
+      path: req.path,
       method: req.method,
       ip: req.ip,
       contentType: req.headers["content-type"],
@@ -1179,7 +1113,7 @@ try {
 }
 
 // Trust Render proxy and log runtime roots once
-app.set("trust proxy", 1);
+
 console.log("🧭 process.cwd():", process.cwd());
 console.log("🧭 __dirname:", __dirname);
 
@@ -1191,7 +1125,7 @@ const {
 app.use("/twilio", twilioRouter);
 console.log("✅ Mounted /twilio routes");
 
-app.get("/monitor/twilio-debug", requireAdmin, (req, res) => {
+app.get("/monitor/twilio-debug", monitorRateLimit, requireAdmin, (req, res) => {
   try {
     return res.status(200).json({
       ok: true,
@@ -1315,11 +1249,10 @@ app.get(/^\/\.well-known\/(.+)$/i, (req, res) => {
 
 console.log("✅ .well-known bound to:", wellKnownAbsolute);
 
-// Stripe Webhook Route (Story 11.6)
-app.use("/api/stripe", require("./src/routes/stripeWebhook"));
-
 // also expose everything under /public normally
 const staticDir = path.resolve(__dirname, "public");
+// Invoice files are private; never serve them through the public static roots.
+app.use(require("./src/security/privateStaticGuard"));
 app.use(express.static(staticDir));
 console.log("✅ Static assets served from absolute path:", staticDir);
 
@@ -1381,6 +1314,7 @@ app.get("/health", (req, res) => {
     res.status(200).json({
       ok: true,
       service: "ACA-Orchestrator",
+      ...(process.env.RENDER_SERVICE_ID === "srv-dc2ffvm8bjmc73fhn8j0" && /^[a-f0-9]{40}$/.test(process.env.RENDER_GIT_COMMIT || "") ? { revision: process.env.RENDER_GIT_COMMIT } : {}),
       environment: process.env.NODE_ENV || "production",
       ts: new Date().toISOString(),
     });
@@ -1389,7 +1323,7 @@ app.get("/health", (req, res) => {
   }
 });
 
-app.get("/monitor/resilience", requireAdmin, (req, res) => {
+app.get("/monitor/resilience", monitorRateLimit, requireAdmin, (req, res) => {
   res.set("Content-Type", "text/plain; version=0.0.4");
   res.send(getMetricsText());
 });
@@ -1463,7 +1397,7 @@ try {
 // ============================================================
 // === Story 9.6 — Global Matrix Health Endpoint ===
 // ============================================================
-app.get("/monitor/deploy-matrix", requireAdmin, async (req, res) => {
+app.get("/monitor/deploy-matrix", monitorRateLimit, requireAdmin, async (req, res) => {
   try {
     const dashboardUrl =
       process.env.DASHBOARD_URL || "https://alphine-dashboard.vercel.app";
@@ -1541,7 +1475,26 @@ const PORT = process.env.PORT || 8080;
 
 // ✅ IMPORTANT: use server.listen (not app.listen) so express-ws works on the same server
 server.listen(PORT, () => {
+  if (process.env.ACA_PRODUCTION_EMAIL_SCHEDULER === "true" &&
+      process.env.RENDER_SERVICE_ID === "srv-d3rfh8umcj7s73cj28c0") {
+    const scheduler = require("./src/voice/commercialNotificationScheduler").start({
+      pool: require("./src/db/pool"),
+      onError: () => console.warn("ACA commercial notification failed")
+    });
+    server.once("close", () => { scheduler.stop(); });
+    process.once("SIGTERM", () => { scheduler.stop(); });
+    process.once("SIGINT", () => { scheduler.stop(); });
+  }
+
   console.log(`🧠 Orchestrator live on port ${PORT}`);
+  // Staging-only startup hook; no public trigger and no automatic retry.
+  if (process.env.RENDER_SERVICE_ID === "srv-dc2ffvm8bjmc73fhn8j0" &&
+      process.env.ACA_STAGING_ACCEPTANCE_RUN === "true") {
+    Promise.resolve().then(() => require("./src/voice/stagingEmailAcceptance").run({
+      pool: require("./src/db/pool")
+    })).then(status => console.log("ACA_STAGING_EMAIL_ACCEPTANCE", { acceptanceOutcome: status }))
+      .catch(() => console.warn("ACA_STAGING_EMAIL_ACCEPTANCE", { acceptanceOutcome: "failed" }));
+  }
 });
 
 // NOTE: We intentionally do NOT call bindWebSocket(server) here.

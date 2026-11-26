@@ -1,3 +1,4 @@
+const console = require("./voiceLogger").operationalConsole;
 // src/voice/stateMachine.js
 
 const STATES = {
@@ -19,9 +20,10 @@ const STATES = {
 const ALLOWED_TRANSITIONS = {
   idle: ["greeting", "ended", "failed"],
 
-  greeting: ["listening", "ended", "failed"],
+  greeting: ["ready_to_speak", "listening", "ended", "failed"],
 
   listening: [
+    "ready_to_speak",
     "awaiting_end_of_turn",
     "processing",
     "ended",
@@ -29,6 +31,7 @@ const ALLOWED_TRANSITIONS = {
   ],
 
   awaiting_end_of_turn: [
+    "ready_to_speak",
     "processing",
     "listening",
     "ended",
@@ -62,7 +65,7 @@ const ALLOWED_TRANSITIONS = {
     "failed",
   ],
 
-  ready_to_speak: ["speaking", "ended", "failed"],
+  ready_to_speak: ["speaking", "listening", "ended", "failed"],
 
   speaking: [
     "awaiting_input",
@@ -72,6 +75,7 @@ const ALLOWED_TRANSITIONS = {
   ],
 
   awaiting_input: [
+    "ready_to_speak",
     "awaiting_end_of_turn",
     "processing",
     "listening",
@@ -92,23 +96,21 @@ function canTransition(from, to) {
 
 function transition(session, to, reason = "unknown") {
   if (!session || typeof session !== "object") {
-    console.warn(`⚠️ transition called without valid session | to=${to} | reason=${reason}`);
+    console.warn("STATE_REJECTED");
     return false;
   }
 
   const from = session.state || STATES.IDLE;
 
   if (!canTransition(from, to)) {
-    console.warn(`⚠️ Invalid transition: ${from} → ${to} | reason=${reason}`);
+    console.warn("STATE_REJECTED", { previousState: from, state: to, accepted: false });
     return false;
   }
 
   session.state = to;
   session.updatedAt = Date.now();
 
-  console.log(
-    `🔁 [STATE] ${session.callSid || "unknown_call"} | ${from} → ${to} | reason=${reason}`
-  );
+  console.log("STATE_TRANSITION", { previousState: from, state: to, accepted: true });
 
   return true;
 }

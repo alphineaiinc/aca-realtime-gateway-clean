@@ -13,7 +13,7 @@ function nowMs() { return Date.now(); }
 // Story 12.8.1 — Public Demo Mode Guards (security-first)
 // Updates:
 // - Normalize IP parsing + strip IPv6 ::ffff: prefix
-// - Respect Render/Cloudflare forwarding chain safely (first IP only)
+// - Use Express resolved IP; never parse raw forwarding headers
 // - Add minimal helper: attachDemoJtiFromAuth(req) (non-breaking)
 // - Add safe bucket sweeper (unref) to avoid unbounded Map growth
 // - Keep existing exported API (no breaking changes)
@@ -27,13 +27,7 @@ function normalizeIp(ip) {
 }
 
 function getClientIp(req) {
-  // Render forwards IP in x-forwarded-for (first is client)
-  const xff = (req.headers["x-forwarded-for"] || "").toString();
-  if (xff) {
-    const first = xff.split(",")[0].trim();
-    return normalizeIp(first);
-  }
-  return normalizeIp((req.socket && req.socket.remoteAddress) || "unknown");
+  return normalizeIp(req.ip || req.socket?.remoteAddress || "unknown");
 }
 
 function strictOriginCheck(req, res, next) {

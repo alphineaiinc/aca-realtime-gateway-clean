@@ -6,6 +6,8 @@ const jwt = require("jsonwebtoken");
 const { retrieveAnswer } = require("../../retriever");
 
 const router = express.Router();
+const ingressRateLimit = require('../security/ingressLimit').ingressLimit({ max: 30 });
+const sharedIpLimit = require('../middleware/postgresRateLimit').createPostgresRateLimiter({ pool: require('../db/pool'), scope: 'chat-ip', max: 30, ipBased: true });
 
 // -------------------------------
 // Security: small input limits
@@ -102,106 +104,14 @@ function rateLimit(req, res, next) {
 // -------------------------------
 // Auth middleware: JWT required
 // -------------------------------
-function authenticate(req, res, next) {
-  try {
-    const token = (req.headers.authorization || "").replace(/^Bearer\s+/i, "").trim();
-    if (!token) return res.status(401).json({ ok: false, error: "Unauthorized" });
+const {verifiedBusiness:authenticate}=require("../security/verifiedBusinessMiddleware");
 
-    let decoded = null;
-    let verifiedAsDemo = false;
-
-    // ---------------------------------------------------------
-    // 1) Try normal app JWT first
-    // ---------------------------------------------------------
-    try {
-      decoded = jwt.verify(token, process.env.JWT_SECRET);
-    } catch (e) {
-      decoded = null;
-    }
-
-    // ---------------------------------------------------------
-    // 2) If normal JWT fails, try demo JWT
-    // ---------------------------------------------------------
-    if (!decoded) {
-      try {
-        decoded = jwt.verify(token, process.env.DEMO_JWT_SECRET);
-        verifiedAsDemo = true;
-      } catch (e) {
-        decoded = null;
-      }
-    }
-
-    if (!decoded) {
-      console.warn("🔐 [chat] JWT verify failed for both JWT_SECRET and DEMO_JWT_SECRET");
-      console.warn("🔐 [chat] JWT_SECRET present?", !!process.env.JWT_SECRET);
-      console.warn("🔐 [chat] DEMO_JWT_SECRET present?", !!process.env.DEMO_JWT_SECRET);
-      return res.status(401).json({ ok: false, error: "Unauthorized" });
-    }
-
-    // ---------------------------------------------------------------------
-    // ✅ Story 12.8.1 — Demo token enforcement (tenant lock + IP binding)
-    // ---------------------------------------------------------------------
-    const isDemo = verifiedAsDemo || (decoded && (decoded.role === "demo" || decoded.demo === true));
-    if (isDemo) {
-      const cfg = (typeof demoConfig === "function") ? demoConfig() : null;
-
-      // Demo must be explicitly enabled
-      if (!cfg || !cfg.enabled) {
-        return res.status(401).json({ ok: false, error: "Unauthorized" });
-      }
-
-      // If token was verified as demo, accept it even if ip_hash is absent.
-      // This matches the current /api/demo/token payload you tested.
-      if (decoded.ip_hash) {
-        if (typeof getClientIp !== "function" || typeof hashIp !== "function") {
-          console.warn("🔐 [chat] demo guards not available (getClientIp/hashIp missing)");
-          return res.status(401).json({ ok: false, error: "Unauthorized" });
-        }
-
-        const ip = getClientIp(req);
-        const expected = hashIp(ip);
-
-        if (decoded.ip_hash !== expected) {
-          return res.status(401).json({ ok: false, error: "Unauthorized" });
-        }
-      }
-
-      // Force demo tenant + role
-      req.tenant_id = cfg.tenantId || decoded.tenant_id;
-      req.partner_id = null;
-      req.role = "demo";
-      req.demo_jti = decoded.demo_jti || decoded.jti || null;
-
-      if (!req.tenant_id) {
-        return res.status(401).json({ ok: false, error: "Unauthorized" });
-      }
-
-      return next();
-    }
-
-    // keep it flexible: your tokens sometimes contain tenant_id + partner_id + role
-    req.tenant_id = decoded.tenant_id;
-    req.partner_id = decoded.partner_id;
-    req.role = decoded.role;
-
-    if (!req.tenant_id && !req.partner_id) {
-      return res.status(401).json({ ok: false, error: "Unauthorized" });
-    }
-
-    next();
-  } catch (err) {
-    console.warn("🔐 [chat] auth middleware failed:", err?.message || err);
-    console.warn("🔐 [chat] JWT_SECRET present?", !!process.env.JWT_SECRET);
-    console.warn("🔐 [chat] DEMO_JWT_SECRET present?", !!process.env.DEMO_JWT_SECRET);
-    return res.status(401).json({ ok: false, error: "Unauthorized" });
-  }
-}
 
 // -------------------------------
 // POST /api/chat
 // body: { session_id, locale, message }
 // -------------------------------
-router.post("/", authenticate, rateLimit, async (req, res) => {
+router.post("/", ingressRateLimit, sharedIpLimit, authenticate, rateLimit, async (req, res) => {
   try {
     const session_id = String(req.body?.session_id || "webchat");
     const locale = String(req.body?.locale || "en-US");
