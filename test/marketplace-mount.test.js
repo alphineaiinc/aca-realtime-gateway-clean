@@ -3,7 +3,7 @@ const test=require("node:test"),assert=require("node:assert/strict"),express=req
 const {generateKeyPairSync}=require("node:crypto");
 const {mountMarketplace}=require("../src/marketplace/mount");
 async function withApp(env,fn,pool={query:async()=>{throw Error("unexpected query");}}){
- const app=express();mountMarketplace(app,{env,pool});
+ const app=express();mountMarketplace(app,{env,resourcePool:pool});
  const server=app.listen(0,"127.0.0.1");try{await new Promise(r=>server.once("listening",r));await fn("http://127.0.0.1:"+server.address().port);}finally{server.closeAllConnections();await new Promise(r=>server.close(r));}
 }
 test("default mount denies MCP and discovery",async()=>withApp({},async base=>{
