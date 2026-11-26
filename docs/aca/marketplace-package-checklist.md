@@ -1,83 +1,83 @@
-# ACA ChatGPT marketplace submission checklist
+# ACA ChatGPT / Codex plugin submission checklist
 
-Status: technical package work is progressing; **not submission-ready**. Do not submit or publish until all external identity, endpoint, legal, reviewer and approval gates below are satisfied.
+Status: **technical package draft; not submission-ready**. Current implementation is read-only and exposes one authenticated business-profile tool. Do not submit, deploy, publish, or provision credentials until the external gates below are completed and separately authorized.
 
 ## Implemented technical boundary
 
-- MCP router is disabled by default and must remain unmounted until separately authorized production release.
+- MCP router remains disabled by default and must not be mounted in production without separate authorization.
 - Authenticated profile tool accepts RS256 tokens only from the configured trusted issuer, exact resource audience, unexpired tokens and `aca:profile:read` scope.
-- The trusted issuer must issue the signed `tenant_id` claim from its verified tenant membership mapping. Caller-supplied tenant identifiers are never accepted.
-- Profile reads use the actual `public.master_tenants(id,business_name,preferred_lang,region)` schema.
-- Request-count tools are intentionally not exposed: the connected ACA main schema has no verified customer-request table. Do not infer a table name or create one during marketplace packaging.
-- The connected main database has no `aca_business_identities` or `aca_customer_requests` tables. Live issuer configuration and tenant-claim mapping remain release gates.
-- MCP ingress has bounded IP rate limiting. The marketplace acceptance workflow installs and audits the committed lockfile without modifying the reviewed revision.
+- Trusted issuer must derive signed `tenant_id` from verified tenant membership. Caller-supplied tenant IDs are never accepted.
+- Profile reads use actual `public.master_tenants(id integer,business_name,preferred_lang,region)` schema.
+- Request-count and customer-record tools are not exposed because no verified request/customer table exists in the connected ACA main schema.
+- MCP ingress has bounded IP rate limiting.
+- Protected-resource metadata advertises only the implemented `aca:profile:read` scope.
+- Marketplace workflow installs and audits the committed lockfile without mutating the reviewed revision.
 
-## Official public-directory package requirements
+## Portable plugin package
 
-Reviewed against the current OpenAI plugin submission documentation (2026-11-26):
-https://developers.openai.com/plugins/deploy/submission
-https://developers.openai.com/plugins/deploy/submission-errors
-https://developers.openai.com/plugins/deploy/app-review
+Official current reference: https://developers.openai.com/plugins/build/plugins
 
-### Portable package files
+- [x] Root `plugin.json` portable Agent Plugins manifest drafted.
+- [ ] Root `mcp.json` with exactly one `streamable-http` MCP server and stable public HTTPS URL. Not created because no production endpoint is verified or authorized.
+- [ ] Primary square listing icon, supported PNG/JPEG/WebP/SVG, at least 48x48 and no more than 5 MiB.
+- [ ] Complete package ZIP with every referenced asset.
+- [ ] Upload and metadata validation in the OpenAI Developer Platform.
+- [ ] No `.app.json` app references or lifecycle hooks in the public submission ZIP.
 
-- [ ] Root portable plugin manifest (current schema) with the MCP server declaration.
-- [ ] Root `mcp.json` with the stable public HTTPS MCP endpoint and supported OAuth configuration. No secrets or client secret in package.
-- [ ] Include every file referenced by manifest paths.
-- [ ] Primary listing logo/icon; `logo` and `composerIcon` paths for Codex-compatible packages. Square image, supported PNG/JPEG/WebP/SVG, at least 48x48, no more than 5 MiB.
-- [ ] Semantic package version and publisher metadata.
-- [ ] Automated upload/package validation completed with no blocking findings.
+## Listing metadata
 
-### Listing metadata
+For MCP review the official portal requires all four HTTPS listing URLs. See https://developers.openai.com/plugins/deploy/submission.
 
-- [ ] `displayName` (maximum 30 characters).
-- [ ] `shortDescription` (maximum 30 characters).
-- [ ] `longDescription` (maximum 4,000 characters).
-- [ ] `developerName` (maximum 80 characters) matching the verified developer identity.
-- [ ] Supported directory `category`.
-- [ ] Product website URL (HTTPS).
-- [ ] Customer support URL (HTTPS).
-- [ ] Privacy policy URL (HTTPS).
-- [ ] Terms of service URL (HTTPS).
-- [ ] Up to three optional starter prompts, each no more than 128 characters.
-- [ ] Up to 20 optional capability labels, each no more than 120 characters.
-
-### MCP connection and review
-
-- [ ] Stable, publicly accessible production HTTPS MCP endpoint.
-- [ ] Complete OAuth configuration, supported client registration, authorization and token endpoints/scopes.
-- [ ] Complete publisher/domain verification challenge in the OpenAI portal.
-- [ ] Connect MCP server and complete automated tool scan; resolve all blocking findings.
-- [ ] Exactly five positive test cases. Each includes description, prompt, expected tool names and observable expected behavior.
-- [ ] Exactly three negative test cases. Each explains why the plugin must not act and its safe refusal/clarification/fallback.
-- [ ] Reviewer-accessible video walkthrough URL.
-- [ ] Release notes for the submitted version.
-- [ ] Dedicated reviewer account and sample data entered separately in the secure review-details form, not in the ZIP. Reviewer login must not require MFA, SMS/email codes or private-network access.
-- [ ] Complete policy attestations and submit the selected draft for review.
-- [ ] Receive approval; publication is a separate explicit action.
-
-## Current evidence and external blockers
-
-| Requirement | Current status |
+| Field | Current evidence |
 |---|---|
-| Exact-revision source/lockfile audit | Implemented |
-| Tenant profile schema compatibility | Implemented against existing table; issuer mapping unverified |
-| Request count | Disabled until a real supported request schema exists |
-| OAuth issuer and production token claims | Not provisioned or verified |
-| Production HTTPS MCP endpoint | Not deployed; production changes not authorized |
-| Root portable manifest and `mcp.json` | Not yet created; endpoint/configuration values are not verified |
-| Public listing website | `https://www.alphineai.com` exists |
-| Support URL | Contact page exists; dedicated support page needs confirmation |
-| Privacy URL | `https://www.alphineai.com/privacy` exists but its published content says full privacy documentation is still forthcoming; not acceptable as final review evidence yet |
-| Terms of service URL | Not located; must be published and verified |
-| Verified OpenAI publisher identity | Must be completed by the organization in the OpenAI Platform Dashboard |
-| Five positive / three negative cases | Not yet authored in final package and run against a real reviewer endpoint |
-| Reviewer walkthrough | Not recorded |
-| Secure reviewer account | Not provisioned |
-| Official scan/review/approval | Not started |
+| `displayName`, `shortDescription`, `longDescription` | Drafted in `plugin.json` |
+| `developerName` | Drafted as Alphine AI; portal publisher identity still needs verification |
+| `category` and capabilities | Drafted |
+| `websiteURL` | `https://www.alphineai.com` |
+| `supportURL` | `https://www.alphineai.com/contact` (contact page; confirm support adequacy) |
+| `privacyPolicyURL` | Not accepted as final: published page says full privacy documentation is forthcoming |
+| `termsOfServiceURL` | No verified public URL found; must be published and verified |
+| Logo | No approved package asset verified yet |
+| Publisher/domain identity | Must be completed in the submission portal |
+
+## MCP connection and authentication
+
+Official references:
+- https://developers.openai.com/plugins/deploy/submission
+- https://developers.openai.com/plugins/deploy/submission-errors
+- https://developers.openai.com/plugins/deploy/app-review
+
+- [ ] Production HTTPS MCP endpoint and stable origin.
+- [ ] OAuth discovery or explicit authorization/token endpoint configuration in `mcp.json`.
+- [ ] OAuth client registration and callback URI validated in portal; never put client secret in package.
+- [ ] Trusted issuer maps authenticated principal to the integer `master_tenants.id` and issues the signed tenant claim.
+- [ ] Complete exact-host domain challenge at `/.well-known/openai-apps-challenge` when portal requests it.
+- [ ] Connect MCP and complete automated tool scan; resolve all blocking findings.
+- [ ] Verify no unsupported tool scopes or unimplemented tools are advertised.
+
+## Reviewer materials
+
+The `plugin.json` includes exactly five positive and three negative test-case drafts. They have not been executed against a production reviewer endpoint. Official requirements: five positive cases, three negative cases, accessible video walkthrough, release notes, and reviewer credentials entered separately in the secure portal form.
+
+- [x] Five positive case drafts.
+- [x] Three negative case drafts.
+- [x] Release notes draft.
+- [ ] Execute all eight cases against the real connected test account; capture evidence.
+- [ ] Record and publish reviewer-accessible video walkthrough; add `review.demo_recording_url`.
+- [ ] Create dedicated reviewer tenant/account with sample data and no MFA/email/SMS challenge; enter credentials only in secure portal form, never in ZIP.
+- [ ] Complete policy attestations and submit the selected draft for review.
+- [ ] Receive approval; publication remains a separate explicit action.
+
+## Website/legal content
+
+- Website: `https://www.alphineai.com` is reachable.
+- Contact: `https://www.alphineai.com/contact` is reachable.
+- Privacy: `https://www.alphineai.com/privacy` currently states full privacy documentation will be added soon; this is not adequate final privacy evidence.
+- Terms: no verified terms-of-service URL found.
+- Product page describes ACA as actively being built and validated; listing claims must not imply a generally available production product.
 
 ## Guardrails
 
 - No production deployment, credential provisioning, public submission, publication, database migration or merge is authorized by this checklist.
-- Never use placeholder URLs, invented publisher verification, fake reviewer credentials or test-only endpoints as production evidence.
+- Do not use placeholder URLs, invented publisher verification, fake reviewer credentials or test-only endpoints as production evidence.
 - CAD $0 additional spending. Preserve carrier PR #157 independently.
