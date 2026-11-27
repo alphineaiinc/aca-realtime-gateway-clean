@@ -34,7 +34,8 @@ jobs:
           node-version: '22'
       - run: npm ci --ignore-scripts --no-audit --no-fund
       - run: node --test src/automation/engineeringTeam/*Disabled.test.js
-      - run: node --test verification/da-budget-postgres.integration.cjs
+      - run: timeout --signal=TERM --kill-after=5s 90s node --test verification/da-budget-postgres.integration.cjs
         env:
           DA_BUDGET_TEST_ONLY: '1'
+          DA_BUDGET_DISPOSABLE_CONFIRMED: '1'
           DA_BUDGET_TEST_DATABASE_URL: postgresql://da_budget_test:disposable-only@127.0.0.1:5432/da_budget_disposable
