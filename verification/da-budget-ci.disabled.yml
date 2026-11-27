@@ -23,8 +23,10 @@ jobs:
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
+          fetch-depth: 0
       - name: Verify frozen implementation tree
         run: |
+          git cat-file -e 5f683f1ed79cd6730be6824955aca9a2e4ed4537^{commit}
           git diff --exit-code 5f683f1ed79cd6730be6824955aca9a2e4ed4537 HEAD -- src/automation/engineeringTeam package.json package-lock.json
           git rev-parse HEAD
       - uses: actions/setup-node@v4
