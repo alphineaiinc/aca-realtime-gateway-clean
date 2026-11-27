@@ -1,0 +1,38 @@
+# INERT TEMPLATE: not registered under .github/workflows.
+# Activation requires separate owner approval, verified zero-cost and trigger boundaries.
+name: DA budget verification
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  budget:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: da_budget_test
+          POSTGRES_PASSWORD: disposable-only
+          POSTGRES_DB: da_budget_disposable
+        ports:
+          - 5432:5432
+        options: --health-cmd "pg_isready -U da_budget_test -d da_budget_disposable" --health-interval 5s --health-timeout 3s --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Verify frozen implementation tree
+        run: |
+          git diff --exit-code 5f683f1ed79cd6730be6824955aca9a2e4ed4537 HEAD -- src/automation/engineeringTeam package.json package-lock.json
+          git rev-parse HEAD
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm ci --ignore-scripts --no-audit --no-fund
+      - run: node --test src/automation/engineeringTeam/*Disabled.test.js
+      - run: node --test verification/da-budget-postgres.integration.cjs
+        env:
+          DA_BUDGET_TEST_ONLY: '1'
+          DA_BUDGET_TEST_DATABASE_URL: postgresql://da_budget_test:disposable-only@127.0.0.1:5432/da_budget_disposable
