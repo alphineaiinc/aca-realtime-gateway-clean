@@ -20,7 +20,7 @@ jobs:
           - 5432:5432
         options: --health-cmd "pg_isready -U da_budget_test -d da_budget_disposable" --health-interval 5s --health-timeout 3s --health-retries 10
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           persist-credentials: false
           fetch-depth: 0
@@ -29,7 +29,7 @@ jobs:
           git cat-file -e 5f683f1ed79cd6730be6824955aca9a2e4ed4537^{commit}
           git diff --exit-code 5f683f1ed79cd6730be6824955aca9a2e4ed4537 HEAD -- src/automation/engineeringTeam package.json package-lock.json
           git rev-parse HEAD
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: '22'
       - run: npm ci --ignore-scripts --no-audit --no-fund
