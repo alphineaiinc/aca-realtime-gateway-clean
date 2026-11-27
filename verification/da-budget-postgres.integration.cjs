@@ -21,15 +21,18 @@ test('disposable PostgreSQL budget adapter verification', {timeout:60000}, async
  assert.equal(process.env.DA_BUDGET_DISPOSABLE_CONFIRMED,'1');
  const schema = 'budget_'+randomUUID().replaceAll('-','');
  const admin = new Pool({connectionString:url,connectionTimeoutMillis:3000,options:'-c statement_timeout=5000 -c lock_timeout=4000'});
- let pool, created=false;
+ let pool, createAttempted=false;
  try {
   const identity=(await admin.query("SELECT current_database() AS db, current_user AS usr, inet_server_addr()::text AS addr, (SELECT count(*)::int FROM pg_namespace WHERE nspname NOT IN ('public','information_schema') AND nspname NOT LIKE 'pg_%') AS extra, (SELECT count(*)::int FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='public') AS objects")).rows[0];
   assert.equal(identity.db,'da_budget_disposable');
   assert.equal(identity.usr,'da_budget_test');
   assert.equal(identity.extra,0);
   assert.equal(identity.objects,0);
+  const before=await admin.query('SELECT 1 FROM pg_namespace WHERE nspname=$1',[schema]);
+  assert.equal(before.rowCount,0,'Random disposable schema already exists');
+  // Mark before sending CREATE: server may commit even if acknowledgement is lost.
+  createAttempted=true;
   await admin.query('CREATE SCHEMA '+schema);
-  created=true;
   pool = new Pool({connectionString:url,options:'-c search_path='+schema+' -c statement_timeout=5000 -c lock_timeout=4000',max:4,connectionTimeoutMillis:3000});
   await pool.query(schemaSQL);
   await pool.query(ledgerSQL);
@@ -109,7 +112,7 @@ test('disposable PostgreSQL budget adapter verification', {timeout:60000}, async
   }
  } finally {
   try {if(pool) await pool.end();} finally {
-   try {if(created){await admin.query('DROP SCHEMA '+schema+' CASCADE'); const remaining=await admin.query('SELECT 1 FROM pg_namespace WHERE nspname=$1',[schema]); assert.equal(remaining.rowCount,0,'Cleanup not verified');}} finally {await admin.end();}
+   try {if(createAttempted){await admin.query('DROP SCHEMA IF EXISTS '+schema+' CASCADE'); const remaining=await admin.query('SELECT 1 FROM pg_namespace WHERE nspname=$1',[schema]); assert.equal(remaining.rowCount,0,'Cleanup not verified');}} finally {await admin.end();}
   }
  }
 });
