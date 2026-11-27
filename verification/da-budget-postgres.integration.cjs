@@ -14,15 +14,28 @@ test('disposable PostgreSQL budget adapter verification', {timeout:60000}, async
  assert.equal(u.hostname,'127.0.0.1');
  assert.equal(u.pathname,'/da_budget_disposable');
  assert.equal(u.username,'da_budget_test');
+ assert.equal(u.protocol,'postgresql:');
+ assert.equal(u.port,'5432');
+ assert.equal(u.search,'');
+ assert.equal(u.hash,'');
+ assert.equal(process.env.DA_BUDGET_DISPOSABLE_CONFIRMED,'1');
  const schema = 'budget_'+randomUUID().replaceAll('-','');
- const admin = new Pool({connectionString:url,connectionTimeoutMillis:3000});
- let pool;
+ const admin = new Pool({connectionString:url,connectionTimeoutMillis:3000,options:'-c statement_timeout=5000 -c lock_timeout=4000'});
+ let pool, created=false;
  try {
+  const identity=(await admin.query("SELECT current_database() AS db, current_user AS usr, inet_server_addr()::text AS addr, (SELECT count(*)::int FROM pg_namespace WHERE nspname NOT IN ('public','information_schema') AND nspname NOT LIKE 'pg_%') AS extra, (SELECT count(*)::int FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='public') AS objects")).rows[0];
+  assert.equal(identity.db,'da_budget_disposable');
+  assert.equal(identity.usr,'da_budget_test');
+  assert.equal(identity.extra,0);
+  assert.equal(identity.objects,0);
   await admin.query('CREATE SCHEMA '+schema);
+  created=true;
   pool = new Pool({connectionString:url,options:'-c search_path='+schema+' -c statement_timeout=5000 -c lock_timeout=4000',max:4,connectionTimeoutMillis:3000});
   await pool.query(schemaSQL);
   await pool.query(ledgerSQL);
-  const now = Date.now(), month = monthAt(now), next = monthAt(now+35*86400000);
+  const dbNow=async()=>Number((await pool.query('SELECT floor(extract(epoch FROM clock_timestamp())*1000)::bigint AS ms')).rows[0].ms);
+  const now = await dbNow(), month = monthAt(now), next = monthAt(now+35*86400000);
+  assert.equal(monthAt(now+120000),month,'Retry outside Toronto month boundary');
   const initial = m => ({month:m,entries:[],reconciled:true,fixedAndAccruedCents:0});
   async function reset(){
    await pool.query('DELETE FROM da_budget_interlock_disabled');
@@ -57,8 +70,8 @@ test('disposable PostgreSQL budget adapter verification', {timeout:60000}, async
     await transaction(c,async()=>changeInterlock(c,await readInterlock(c),'pending'));
     await assert.rejects(transaction(c,async()=>{
      await readLedgers(c,{lock:true});
-     await writeLedger(c,month,{...initial(month),entries:[{id:'a'}]},{expiresAt:Date.now()+30000,preparedMonth:month});
-     await writeLedger(c,next,{...initial(next),entries:[{id:'a'}]},{expiresAt:Date.now()-1,preparedMonth:month});
+     await writeLedger(c,month,{...initial(month),entries:[{id:'a'}]},{expiresAt:(await dbNow())+30000,preparedMonth:month});
+     await writeLedger(c,next,{...initial(next),entries:[{id:'a'}]},{expiresAt:(await dbNow())-1,preparedMonth:month});
     }),/Ledger update denied/);
    });
    assert.equal((await readInterlock(pool)).pending,'pending');
@@ -83,7 +96,7 @@ test('disposable PostgreSQL budget adapter verification', {timeout:60000}, async
      const marked=await transaction(c,async()=>changeInterlock(c,await readInterlock(c),'pending'));
      await transaction(c,async()=>{
       await readLedgers(c,{lock:true});
-      await writeLedger(c,month,{...initial(month),entries:[{id:'a'}]},{expiresAt:Date.now()+30000,preparedMonth:month});
+      await writeLedger(c,month,{...initial(month),entries:[{id:'a'}]},{expiresAt:(await dbNow())+30000,preparedMonth:month});
      });
      await transaction(c,()=>changeInterlock(c,marked,null));
     }),/injected acknowledgement failure/);
@@ -96,7 +109,7 @@ test('disposable PostgreSQL budget adapter verification', {timeout:60000}, async
   }
  } finally {
   try {if(pool) await pool.end();} finally {
-   try {await admin.query('DROP SCHEMA IF EXISTS '+schema+' CASCADE');} finally {await admin.end();}
+   try {if(created){await admin.query('DROP SCHEMA '+schema+' CASCADE'); const remaining=await admin.query('SELECT 1 FROM pg_namespace WHERE nspname=$1',[schema]); assert.equal(remaining.rowCount,0,'Cleanup not verified');}} finally {await admin.end();}
   }
  }
 });
