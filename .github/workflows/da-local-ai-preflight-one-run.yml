@@ -1,0 +1,192 @@
+name: DA local AI setup preflight
+on:
+  push:
+    branches: [da-budget-verification-b232]
+    paths: ['.github/workflows/da-local-ai-preflight-one-run.yml']
+permissions:
+  contents: read
+concurrency:
+  group: da-local-ai-preflight-one-run
+  cancel-in-progress: false
+jobs:
+  preflight:
+    if: >-
+      github.repository == 'alphineaiinc/aca-realtime-gateway-clean' &&
+      github.ref == 'refs/heads/da-budget-verification-b232' &&
+      github.event_name == 'push' && github.run_attempt == 1 &&
+      github.actor == 'alphineaiinc' && github.actor_id == '230486228' &&
+      github.triggering_actor == 'alphineaiinc' &&
+      github.event.before == '6b5a5ee5afa2efe9812db155c08db08d7081710f' &&
+      github.event.created == false && github.event.deleted == false &&
+      github.event.forced == false && github.event.head_commit.id == github.sha
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - name: Verify authorization and source identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          base=6b5a5ee5afa2efe9812db155c08db08d7081710f
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          test "$(git rev-list --parents -n 1 HEAD)" = "$GITHUB_SHA $base"
+          test "$(git diff --name-status "$base" HEAD)" = "$(printf 'A\t.github/workflows/da-local-ai-preflight-one-run.yml')"
+          git checkout --detach "$base"
+          test "$(git rev-parse HEAD)" = "$base"
+          git diff --exit-code 5f683f1ed79cd6730be6824955aca9a2e4ed4537 HEAD -- src/automation/engineeringTeam package.json package-lock.json
+          test "$(git hash-object verification/localModelTransport.cjs)" = 73a6a55a24485ae9c6739be8d740ba7e31189fe3
+          test "$(git hash-object verification/localTeamPilot.cjs)" = 295a1cce072f77830104751f32170b29ef51c07b
+          echo "Exact preflight source: $base; run $GITHUB_RUN_ID attempt $GITHUB_RUN_ATTEMPT"
+      - name: Download and verify public artifacts before isolation
+        timeout-minutes: 5
+        shell: bash
+        run: |
+          set -euo pipefail
+          root="$RUNNER_TEMP/da-ai-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
+          mkdir -m 700 "$root"
+          mkdir -p "$root/input/runtime" "$root/input/candidate"
+          curl --fail --silent --show-error --location --proto '=https' --proto-redir '=https' --max-redirs 5 --connect-timeout 15 --max-time 75 --retry 0 --max-filesize 24000000 -o "$root/runtime.tar.gz" 'https://github.com/ggml-org/llama.cpp/releases/download/b12805/llama-b12805-bin-ubuntu-x64.tar.gz'
+          test "$(stat -c %s "$root/runtime.tar.gz")" = 23467699
+          printf '%s  %s\n' 061607232572c2c2f1fbb566b36a378394b9b2cc230d4dff8abf88667652479a "$root/runtime.tar.gz" | sha256sum -c -
+          curl --fail --silent --show-error --location --proto '=https' --proto-redir '=https' --max-redirs 5 --connect-timeout 15 --max-time 180 --retry 0 --max-filesize 1117320768 -o "$root/input/model.gguf" 'https://huggingface.co/Qwen/Qwen2.5-Coder-1.5B-Instruct-GGUF/resolve/2ab9f8f42af02fc212effaef7c4850c885e965f4/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf'
+          test "$(stat -c %s "$root/input/model.gguf")" = 1117320768
+          printf '%s  %s\n' cc324af070c2ecbfd324a30884d2f951a7ff756aba85cb811a6ec436933bb046 "$root/input/model.gguf" | sha256sum -c -
+          python3 - "$root" <<'PY'
+          import sys, tarfile, pathlib
+          p=pathlib.Path(sys.argv[1])
+          with tarfile.open(p/'runtime.tar.gz','r:gz') as t:
+              members=t.getmembers()
+              assert len(members)<2000 and sum(m.size for m in members)<250_000_000
+              assert all(m.isfile() or m.isdir() or m.issym() or m.islnk() for m in members)
+              t.extractall(p/'input/runtime',members=members,filter='data')
+          print('Pinned archive extracted with data filter')
+          PY
+          cp --parents verification/localModelTransport.cjs verification/localTeamPilot.cjs src/automation/engineeringTeam/{registry,contracts,modelAdapter,manager,managerTeamWorkflow,toolBroker}.js "$root/input/candidate"
+          # These are runner-provided libraries, not independently reviewed release artifacts.
+          mkdir "$root/input/host-libs"
+          for lib in libgomp.so.1 libstdc++.so.6 libgcc_s.so.1; do
+            cp -L "/usr/lib/x86_64-linux-gnu/$lib" "$root/input/host-libs/$lib"
+          done
+          cp -L "$(command -v node)" "$root/input/node"
+          sha256sum "$root/input/node" "$root/input/host-libs/"*
+          find "$root/input" -type d -exec chmod 755 {} +
+          chmod 444 "$root/input/model.gguf"
+          find "$root/input/candidate" -type f -exec chmod 444 {} +
+          echo 'Both publisher artifact bytes and lengths verified'
+      - name: Prepare isolated disposable image and verify effective controls
+        timeout-minutes: 3
+        shell: bash
+        run: |
+          set -euo pipefail
+          root="$RUNNER_TEMP/da-ai-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
+          name="da-ai-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
+          # Pull one standard OS base; resolve its immutable digest before creating the test image.
+          if docker image inspect ubuntu:24.04 >/dev/null 2>&1; then
+            echo present > "$root/base-state"
+          else
+            echo absent > "$root/base-state"
+          fi
+          timeout 50s docker pull ubuntu:24.04
+          base=$(docker image inspect --format '{{index .RepoDigests 0}}' ubuntu:24.04)
+          [[ "$base" =~ ^ubuntu@sha256:[0-9a-f]{64}$ ]]
+          printf '%s\n' "$base" > "$root/base-digest"
+          echo "OS base resolved: $base"
+          # Build a tiny trusted host probe, not candidate code; no remote compiler dependencies.
+          cat > "$root/probe.c" <<'C'
+          #include <assert.h>
+          #include <unistd.h>
+          #include <string.h>
+          #include <stdio.h>
+          #include <sys/socket.h>
+          #include <netinet/in.h>
+          #include <arpa/inet.h>
+          #include <ifaddrs.h>
+          #include <errno.h>
+          int main(void){
+            assert(getuid()==65534 && geteuid()==65534);
+            struct ifaddrs *a,*p; assert(getifaddrs(&a)==0);
+            for(p=a;p;p=p->ifa_next) assert(strcmp(p->ifa_name,"lo")==0);
+            freeifaddrs(a);
+            int s=socket(AF_INET,SOCK_STREAM,0); assert(s>=0);
+            struct sockaddr_in v={.sin_family=AF_INET,.sin_addr.s_addr=htonl(INADDR_LOOPBACK)};
+            assert(bind(s,(void*)&v,sizeof(v))==0); assert(listen(s,1)==0);
+            socklen_t l=sizeof(v);assert(getsockname(s,(void*)&v,&l)==0);
+            int c=socket(AF_INET,SOCK_STREAM,0);assert(c>=0);assert(connect(c,(void*)&v,sizeof(v))==0);
+            int d=accept(s,0,0);assert(d>=0);assert(write(c,"x",1)==1);char x=0;assert(read(d,&x,1)==1&&x=='x');
+            close(d);close(c);close(s);
+            c=socket(AF_INET,SOCK_STREAM|SOCK_NONBLOCK,0);assert(c>=0);
+            v.sin_port=htons(443);assert(inet_pton(AF_INET,"192.0.2.1",&v.sin_addr)==1);
+            assert(connect(c,(void*)&v,sizeof(v))==-1 && (errno==ENETUNREACH||errno==EHOSTUNREACH||errno==EACCES));
+            close(c);puts("Nonroot; loopback roundtrip PASS; non-loopback TEST-NET route denied");return 0;
+          }
+          C
+          gcc -O2 -static -Wall -Wextra -o "$root/input/probe" "$root/probe.c"
+          chmod 555 "$root/input/probe"
+          docker create --name "$name-stage" --network none --entrypoint /bin/false "$base" >/dev/null
+          docker cp "$root/input" "$name-stage:/opt/pilot"
+          docker commit "$name-stage" "$name:preflight" > "$root/image-id"
+          docker rm -v "$name-stage" >/dev/null
+          docker create --name "$name-test" --network none --read-only --cap-drop ALL --security-opt no-new-privileges --user 65534:65534 --memory 4g --memory-swap 4g --cpus 2 --pids-limit 64 --tmpfs /tmp:rw,noexec,nosuid,nodev,size=16777216 --entrypoint /bin/bash "$name:preflight" -euc '
+            test "$(id -u)" = 65534
+            grep -Eq "^CapEff:[[:space:]]+0+$" /proc/self/status
+            grep -Eq "^NoNewPrivs:[[:space:]]+1$" /proc/self/status
+            test ! -e /var/run/docker.sock
+            test ! -e /run/docker.sock
+            test ! -d /home/runner
+            ! env | cut -d= -f1 | grep -Ei "token|secret|credential|api.key|password"
+            test ! -w /opt/pilot/model.gguf
+            if touch /opt/pilot/candidate/probe-write 2>/dev/null; then exit 1; fi
+            touch /tmp/probe-write; rm /tmp/probe-write
+            /opt/pilot/probe
+            cd /opt/pilot
+            printf "%s  %s\n" cc324af070c2ecbfd324a30884d2f951a7ff756aba85cb811a6ec436933bb046 model.gguf | sha256sum -c -
+            find runtime -type f -name llama-server > /tmp/server-list
+            test "$(wc -l < /tmp/server-list)" = 1
+            server=$(cat /tmp/server-list)
+            export LD_LIBRARY_PATH="/opt/pilot/host-libs:$(dirname "$PWD/$server")"
+            ./node --version
+            timeout 20s "$PWD/$server" --version
+            echo "READONLY_NONROOT_LOOPBACK_PREFLIGHT_PASS; no model loaded or inference requested"
+          ' >/dev/null
+          docker inspect "$name-test" > "$root/inspect.json"
+          python3 - "$root/inspect.json" <<'PY'
+          import json,sys
+          x=json.load(open(sys.argv[1]))[0]; h=x['HostConfig']
+          assert h['NetworkMode']=='none' and h['ReadonlyRootfs'] and not h['Privileged']
+          assert x['Config']['User']=='65534:65534' and not h.get('Binds')
+          assert not any(m['Type'] in ('bind','volume') for m in x['Mounts'])
+          assert h['CapDrop']==['ALL'] and any(s.startswith('no-new-privileges') for s in h['SecurityOpt'])
+          assert h['Memory']==4294967296 and h['MemorySwap']==4294967296 and h['NanoCpus']==2000000000 and h['PidsLimit']==64
+          assert not h.get('PortBindings') and not h.get('Devices') and not h.get('DeviceRequests')
+          print('Host inspect PASS: isolated network, no binds/volumes/devices/ports, readonly, nonroot, caps dropped, 4GiB memory, 2CPU, 64PIDs')
+          print('Image ID:',x['Image'],'Container ID:',x['Id'])
+          PY
+          timeout --signal=TERM --kill-after=5s 50s docker start -a "$name-test"
+          test "$(docker inspect --format '{{.State.ExitCode}}' "$name-test")" = 0
+      - name: Bounded teardown and verify resource absence
+        if: ${{ always() }}
+        timeout-minutes: 1
+        shell: bash
+        run: |
+          set -euo pipefail
+          root="$RUNNER_TEMP/da-ai-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
+          name="da-ai-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
+          for c in "$name-test" "$name-stage"; do
+            if docker container inspect "$c" >/dev/null 2>&1; then timeout 10s docker rm -f -v "$c"; fi
+            test -z "$(docker ps -aq --filter "name=^/$c$")"
+          done
+          if docker image inspect "$name:preflight" >/dev/null 2>&1; then timeout 15s docker image rm "$name:preflight"; fi
+          if docker image inspect "$name:preflight" >/dev/null 2>&1; then exit 1; fi
+          if test -f "$root/image-id"; then
+            image=$(cat "$root/image-id")
+            if docker image inspect "$image" >/dev/null 2>&1; then exit 1; fi
+          fi
+          if test -f "$root/base-state" && test "$(cat "$root/base-state")" = absent; then
+            if docker image inspect ubuntu:24.04 >/dev/null 2>&1; then timeout 10s docker image rm ubuntu:24.04; fi
+          fi
+          if test -d "$root"; then rm -rf -- "$root"; fi
+          test ! -e "$root"
+          echo 'Exact disposable containers, pilot image and scratch path absent; no inference or agent dispatch'
