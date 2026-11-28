@@ -1,3 +1,4 @@
+const console = require("./src/voice/voiceLogger").operationalConsole;
 // index.js – Orchestrator with Tanglish detection + debug logging
 console.log("🧭 process.cwd():", process.cwd());
 console.log("🧭 __dirname:", __dirname);
@@ -1130,7 +1131,7 @@ app.post("/api/gpt/chat", async (req, res) => {
 
 // ✅ Initialize express-ws so WebSocket routes actually work
 try {
-  require("express-ws")(app, server); // ✅ bind to the real listening server
+  require("express-ws")(app, server, { wsOptions: require("./src/voice/streamSecurity").WS_OPTIONS }); // ✅ bind to the real listening server
   console.log("✅ express-ws WebSocket support initialized");
 } catch (err) {
   console.warn("⚠️ express-ws init failed:", err.message);
@@ -1155,7 +1156,7 @@ app.use((err, req, res, next) => {
 
   if (isJsonSyntax) {
     console.warn("⚠️ Invalid JSON received:", {
-      path: req.originalUrl || req.url,
+      path: req.path,
       method: req.method,
       ip: req.ip,
       contentType: req.headers["content-type"],
