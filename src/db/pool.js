@@ -31,28 +31,20 @@ function redactDbUrl(raw) {
 // --- Base connection URL ---
 let baseUrl = sanitizeEnvValue(process.env.DATABASE_URL);
 
-console.log("🔍 Using DATABASE_URL =", redactDbUrl(baseUrl));
+console.log("Database connection configuration loaded");
 
-// --- Detect environment type ---
-const isRender =
-  baseUrl.includes("neon.tech") ||
-  baseUrl.includes("render.com") ||
-  baseUrl.includes("sslmode=require");
-
-// --- Append sslmode if missing for cloud ---
-if (isRender && baseUrl && !baseUrl.includes("sslmode")) {
-  baseUrl += baseUrl.includes("?") ? "&sslmode=require" : "?sslmode=require";
+// Remote connections require verified TLS; only loopback is exempt.
+const parsed = new URL(baseUrl);
+if (!["postgres:", "postgresql:"].includes(parsed.protocol) || !parsed.hostname) {
+  throw new Error("Invalid PostgreSQL connection configuration");
 }
-
-// --- Validate URL early so startup log is clearer ---
-try {
-  if (!baseUrl) {
-    throw new Error("DATABASE_URL is missing");
+const isRender = !["localhost", "127.0.0.1", "[::1]"].includes(parsed.hostname.toLowerCase());
+for (const key of [...parsed.searchParams.keys()]) {
+  if (["ssl", "sslmode", "sslcert", "sslkey", "sslrootcert", "host", "hostaddr"].includes(key.toLowerCase())) {
+    parsed.searchParams.delete(key);
   }
-  new URL(baseUrl);
-} catch (err) {
-  console.error("❌ DATABASE_URL validation failed:", err.message);
 }
+baseUrl = parsed.toString();
 
 // --- Pool configuration ---
 const poolConfig = {
@@ -60,7 +52,7 @@ const poolConfig = {
   ssl: isRender
     ? {
         require: true,
-        rejectUnauthorized: false, // ✅ required for managed Neon/Render SSL
+        rejectUnauthorized: true, // Verify the server certificate and hostname
       }
     : false, // ✅ disables SSL for localhost
   max: 10,
@@ -80,19 +72,19 @@ const pool = new Pool(poolConfig);
     );
     console.log(
       `🌐 Connected successfully to ${
-        isRender ? "Render/Neon (SSL verified)" : "Local PostgreSQL (non-SSL)"
+        isRender ? "Remote PostgreSQL (TLS certificate validation enabled)" : "Local PostgreSQL (non-SSL)"
       }`
     );
     console.log("📊 DB Info:", result.rows[0]);
     client.release();
   } catch (err) {
-    console.error("❌ Startup connection failed:", err.message);
+    console.error("Database startup connection failed", { code: typeof err.code === "string" && /^[A-Z0-9_]{1,64}$/.test(err.code) ? err.code : "UNKNOWN" });
   }
 })();
 
 // --- Handle unexpected pool errors ---
 pool.on("error", (err) => {
-  console.error("❌ Unexpected PG Pool error:", err);
+  console.error("Unexpected database pool error", { code: typeof err.code === "string" && /^[A-Z0-9_]{1,64}$/.test(err.code) ? err.code : "UNKNOWN" });
   process.exit(-1);
 });
 
